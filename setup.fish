@@ -43,6 +43,7 @@ alias giit='git'
 # tools
 alias asciirec='uvx --offline asciinema rec -c bash ~/Videos/`date +%Y-%m-%d-%H-%M-%S`.rec'
 alias clip='xclip -selection clipboard'
+alias icdiff='uvx --offline icdiff'
 alias jupyter-lab='uvx --offline --from jupyterlab jupyter-lab'
 alias marimo='uvx --offline marimo'
 alias pdftotext='PYTHONUTF8=1 uvx markitdown'

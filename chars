@@ -1,0 +1,27 @@
+#!/bin/bash
+# Usage: chars file1 [file2 ...]
+
+for file in "$@"; do
+  lineno=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    ((lineno++))
+    len=${#line}
+    for ((i=0; i<len; i++)); do
+      char="${line:$i:1}"
+      # Get the character's code; if not available (e.g. multibyte), skip
+      code=$(printf "%d" "'$char" 2>/dev/null)
+      [ -z "$code" ] && continue
+      # If code is non-ASCII (greater than 127)
+      if (( code > 127 )); then
+        # If the character is printable, use it; otherwise, show a placeholder.
+        if [[ "$char" =~ [[:print:]] ]]; then
+          disp="$char"
+        else
+          disp="?"
+        fi
+        col=$((i+1))
+        echo "$file: Row $lineno, Column $col, Char: $disp, HTML: &#$code;"
+      fi
+    done
+  done < "$file"
+done
