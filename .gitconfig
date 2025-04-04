@@ -1,0 +1,206 @@
+# Useful references:
+# https://github.com/cypher/dotfiles/blob/master/gitconfig
+# https://github.com/k88hudson/git-flight-rules
+
+# Undo last commit
+#   git commit --amend              # Change the last commit
+#   git reset --soft HEAD~1         # Undo last commit, keep changes
+#   git reset --hard HEAD~1         # Unto last commit, ignore changes
+#   git push origin +HEAD           # Force current HEAD to server
+#   git reset --hard origin/master  # Reset current branch to origin/master
+
+# Squash commits. https://youtu.be/V5KrD7CmO4o
+#   git rebase -i HEAD~2            # Re-work the last 2 commits.
+#   git merge --squash branch       # Squash branch into current one
+
+# Rebase branch-name on top of master. https://youtu.be/f1wnYdLEpgI
+#   git checkout branch-name
+#   git rebase master
+
+# Copy specific commits to master
+#   git checkout master
+#   git cherry-pick 612ecb3..9aa1233
+
+# Stash specific files
+#   git stash -p
+
+# Remove ALL untracked files (CAREFUL!)
+#   git clean -fdx
+
+# Merge with explicit commit: http://arjanvandergaag.nl/blog/clarify-git-history-with-merge-commits.html
+#   git checkout master
+#   git merge --no-ff --no-commit branch-name
+#   git commit
+
+# Find unmerged branches
+#   git branch --no-merged
+
+# Fetch file from branch
+#   git checkout branch -- path/to/file
+
+# Show file at branch / commit
+#   git show branch:path/to/file
+
+# Sort branches by latest commit
+#   git for-each-ref --sort=-committerdate --format='%(refname:short) %(committerdate:short)'
+
+# Count of commits by author since time period
+#   git shortlog --summary --numbered --since="1 month ago"
+
+# Find all changes to a (deleted) file or path
+#   git log --all -- <path-to-file>
+
+# Delete branches removed from remote
+#   git fetch --prune
+
+# Show dangling commits
+#   git fsck --no-reflogs
+
+# Delete dangling commits: http://stackoverflow.com/a/4528593/100904
+#   git reflog expire --expire-unreachable=now --all
+#   git gc --prune=now
+
+# SSH verbose
+#   GIT_SSH_COMMAND="ssh -v" git pull
+
+# Ignore / skip pre-commit hook (e.g. for flake8)
+#   git commit -n
+#   git commit --no-verify
+
+# Git push with [ci skip] or [skip ci] skips CI in Gitlab. So does:
+#   git push -o ci.skip
+
+# Checkout orphan branch
+#   git checkout --orphan branch-name
+
+# Checkout master after deleting it locally
+#   git fetch origin master:master
+
+# Pulls parent repo along with submodules
+#   git pull --recurse-submodules`
+# Show submodule commit, path, and branch
+#   git submodule status
+# Resets each submodule to parent-tracked commit
+#   git submodule update --init --recursive
+
+[user]
+    name = S Anand
+    email = root.node@gmail.com
+
+# See http://git-scm.com/book/en/Git-Basics-Viewing-the-Commit-History
+[alias]
+    l = log --pretty=format:"%h\\ %ad\\ %s\\ [%an]" --date=short
+    ls = log --all --graph --pretty=format:"%C(red)%h\\ %C(yellow)%ad%C(cyan)%d\\ %Creset%s%Cgreen\\ [%cn]" --decorate --date=relative
+    ll = log --pretty=format:"%C(red)%h\\ %C(yellow)%ad%C(cyan)%d\\ %Creset%s%Cgreen\\ [%cn]" --decorate --stat --date=relative
+    lll = log -p -10 --word-diff
+    df = diff --word-diff --ignore-all-space --patience
+    dif = diff
+    # Use git up instead of git pull. http://stackoverflow.com/a/15316602
+    up = "!git remote update -p; git merge --ff-only @{u}"
+    tags = tag -l
+    branches = branch -a
+    remotes = remote -v
+
+    # Add and commit file(s)
+    addmit = "!f() { git add $*; git commit $*; }; f"
+
+    # Go to previous commit, next commit, first commit or last commit on master
+    prev = checkout HEAD^1
+    next = "!git checkout `git rev-list HEAD..master | tail -1`"
+    first = "!git checkout `git rev-list HEAD | tail -1`"
+    last = checkout master
+
+    # git find xxx lists all commits with the string xxx
+    find = "!git log --source --all -S "
+    # git search xxx lists the diffs of all commits with the string xxx
+    search = "!git log --source --all -p -S "
+    webui = !D:/Apps/git-webui/release/libexec/git-core/git-webui
+
+[instaweb]
+    # Download lighttpd and add it to the PATH
+    # Add GITWEB_CONFIG to system environment variables
+    local = true
+    httpd = lighttpd
+    port = 4321
+    browser = /c/Users/Anand/AppData/Local/Google/Chrome/Application/chrome.exe
+
+[color]
+    ui = auto
+
+[color "branch"]
+    current = yellow reverse
+    local = yellow
+    remote = green
+
+[color "diff"]
+    meta = yellow bold
+    frag = magenta bold
+    old = red bold
+    new = green bold
+
+[color "status"]
+    added = yellow
+    changed = green
+    untracked = cyan
+
+[advice]
+    # Disable the advice shown when you attempt to push something that's not
+    # fast forward-able
+    # pushNonFastForward = false
+
+    # Disable “how to stage/unstage/add” hints given by git status:
+    # statusHints = false
+
+[core]
+    # Don't convert LF to CRLF or any such thing. Even on Windows, we'll stick to LF
+    autocrlf = false
+
+    # Git for Windows does not read Cygwin file modes. So ignore them
+    filemode = false
+
+    # Git 2.37 onwards makes git status more efficient
+    fsmonitor = true
+
+[diff]
+    # Allow git diff to do basic rename and copy detection:
+    renames = copies
+
+[push]
+    # When pushing without giving a refspec, push the current branch to its
+    # upstream branch. See the git config man page for more possible options.
+    default = tracking
+
+    # Create branch on remote automatically. Same as adding --set-upstream
+    autoSetupRemote = true
+
+[pager]
+    color = true
+
+[merge]
+    # Always show a diffstat at the end of a merge
+    stat = true
+
+[help]
+    autocorrect = 1
+[webui]
+    autoupdate = true
+[init]
+    defaultBranch = main
+[credential "helperselector"]
+    selected = wincred
+[filter "lfs"]
+    clean = git-lfs clean -- %f
+    smudge = git-lfs smudge -- %f
+    process = git-lfs filter-process
+    required = true
+[safe]
+    directory = /code/
+    directory = /c/code/
+    directory = /cygdrive/c/code/
+    directory = /github/
+    directory = /c/github/
+    directory = /cygdrive/c/github/
+    directory = ~/code/
+[credential "https://code.gramener.com"]
+	helper =
+	helper = !/usr/bin/glab auth git-credential
