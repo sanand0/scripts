@@ -7,5 +7,5 @@ if [[ $# -eq 0 ]]; then
     cat $HOME/.config/files.txt
 else
     echo "$*" >> "$FRECENT"
-    open "$HOME/$*"
+    setsid open "$HOME/$*" >/dev/null 2>&1 &
 fi
