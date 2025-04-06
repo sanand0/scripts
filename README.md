@@ -1,20 +1,46 @@
 # Scripts
 
-These are personal productivity utilities that simplify my workflow.
+These are personal productivity utilities that simplify my workflow on Windows (Cygwin) and Linux. These are in 2 places:
 
-I clone this into `~/code/scripts/` and configure my shell to source the scripts from there.
+| Type    | Location                                         | Windows Path          | Linux Path            |
+| ------- | ------------------------------------------------ | --------------------- | --------------------- |
+| Public  | [GitHub](https://github.com/sanand0/scripts)     | `C:\code\scripts\`    | `~/code/scripts/`     |
+| Private | [Dropbox](https://www.dropbox.com/home/scripts/) | `C:\Dropbox\scripts\` | `/c/Dropbox/scripts/` |
 
-This is intended to work with fish and bash on both Ubuntu and Cygwin.
+**Note**: I use `/c/Dropbox` as a symlink to `C:\Dropbox` in Cygwin to standardize scripts.
 
-## Setup
+## Common Setup
 
 ```bash
-# Configure fish, which is my default shell
 echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
-
-# Configure bash, which was my earlier default
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
-
-# Configure git shortcuts
-ln -s ~/code/scripts/.gitconfig ~/.gitconfig
 ```
+
+## Linux Setup
+
+```bash
+ln -s ~/code/scripts/.gitconfig ~/.gitconfig
+ln -s /c/Dropbox/scripts/.ssh ~/.ssh
+```
+
+## Windows Setup
+
+On an **Admin** command prompt, run:
+
+```
+CD /D C:\cygwin\home\Anand\
+MKLINK /H .gitconfig C:\code\scripts\.gitconfig
+MKLINK /D .ssh C:\Dropbox\scripts\.ssh
+```
+
+[Disable inherited permissions](https://stackoverflow.com/a/58275268/100904), remove all permissions,
+and only add yourself with full permissions.
+
+## System setup
+
+Here are the setup details for my laptops.
+
+- [Linux](setup/linux.md)
+- [Windows](setup/windows.md)
+- [Android](setup/android.md)
+- [Online tools](setup/online.md) replacing installed software
