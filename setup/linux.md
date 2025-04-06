@@ -35,6 +35,10 @@ Here is the setup for my Linux laptops.
     - Modify `/usr/share/applications/microsoft-edge.desktop` to add a remote debugging port as `Exec=/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U`
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
+  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
+    - `llm install llm-cmd llm-openrouter`
+    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free`
+  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
@@ -99,7 +103,7 @@ Here is the setup for my Linux laptops.
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
   - SSH setup: `cd ~/.ssh; ln -s ~/Dropbox/.ssh; chmod og-r .ssh/*`
-  - Don't enable Wayland since touchegg gestures works better with X11 but if you want to, see `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
+  - Don't enable Wayland since touchegg gestures works better with X11 but if you _do_ want to enableWayland, set `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
   - #TODO: Always on top
   - #TODO: CLI for alarm
   - #TODO: 4-finger swipe = drag
@@ -111,10 +115,12 @@ Here is the setup for my Linux laptops.
     - Fn+S = Screenshot. PrtSc = Screenshot area.
     - Fn+4 = Sleep mode.
 
-To explore:
+Things I skipped:
 
-- Warp terminal app. Has integrated AI prompt. Just DOES things!
-  - Does sed, tee, cat, echo, etc. by itself and it JUST WORKS.
-  - Autosuggest is great. It KNOWS what you do.
-  - Was using kitty is a GPU powered terminal emulator.
+- [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
+- Warp terminal app. I prefer `llm cmd` for simplicity.
 - Guake: Visor terminal. Ctrl+F12. Visor appears, which is a shell.
+
+Notes:
+
+- Use `fish_trace=1 fish` to debug fish startup or fish scripts.

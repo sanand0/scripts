@@ -51,12 +51,9 @@ alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
 # mp3tag alternative
 alias puddletag='uvx --offline puddletag'
 
-# LLMs
-alias cursor='cursor --no-sandbox'
-alias deepseek='uvx llm -m deepseek-chat'
-alias llm='uvx llm'
-# Setup: mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui
-alias openwebui='cd ~/apps/opebwebui; uv run open-webui serve'
+# Apps
+alias llm='uv run --directory ~/apps/llm llm'
+alias openwebui='uv run --directory ~/apps/opebwebui open-webui serve'
 
 # Download YouTube video
 alias youtube-dl="uvx yt-dlp"
@@ -86,8 +83,4 @@ end
 
 if command -v zoxide >/dev/null 2>&1
     zoxide init fish | source
-end
-
-if command -v atuin>/dev/null 2>&1
-    atuin init fish | source
 end

@@ -21,6 +21,7 @@ echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 ```bash
 ln -s ~/code/scripts/.gitconfig ~/.gitconfig
 ln -s /c/Dropbox/scripts/.ssh ~/.ssh
+ln -s /c/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 ```
 
 ## Windows Setup
@@ -31,6 +32,7 @@ On an **Admin** command prompt, run:
 CD /D C:\cygwin\home\Anand\
 MKLINK /H .gitconfig C:\code\scripts\.gitconfig
 MKLINK /D .ssh C:\Dropbox\scripts\.ssh
+REM TODO: Set up `llm` keys.json on Windows
 ```
 
 [Disable inherited permissions](https://stackoverflow.com/a/58275268/100904), remove all permissions,
