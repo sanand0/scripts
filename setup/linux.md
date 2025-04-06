@@ -37,7 +37,7 @@ Here is the setup for my Linux laptops.
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
     - `llm install llm-cmd llm-openrouter`
-    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free`
+    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
