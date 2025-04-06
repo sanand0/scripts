@@ -9,6 +9,7 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
+  - Modify `/usr/share/applications/microsoft-edge.desktop` to add a remote debugging and wayland as `Exec=/usr/bin/microsoft-edge-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --remote-debugging-port=9222 %U`
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
@@ -32,7 +33,6 @@ Here is the setup for my Linux laptops.
   - tmux: `sudo snap install tmux`
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rofi: `sudo apt install rofi` to switch windows.
-    - Modify `/usr/share/applications/microsoft-edge.desktop` to add a remote debugging port as `Exec=/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U`
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
@@ -74,9 +74,6 @@ Here is the setup for my Linux laptops.
     - `flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
     - [Meld](https://flathub.org/apps/org.gnome.meld) instead of Beyond Compare
     - [Touche](https://github.com/JoseExposito/touche)
-      - Swipe with 3 fingers - Up: Execute a command `amixer sset Master 5%+`. Repeat command. (Pulse is not installed)
-      - Swipe with 3 fingers - Down: Execute a command `amixer sset Master 5%-`. Repeat command.
-      - Swipe left/right with 3 fingers: `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` on Gesture start.
   - Peek instead of ScreenToGIF: `sudo apt install peek`
   - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
   - Docker (via CLI installation instructions)
@@ -95,15 +92,20 @@ Here is the setup for my Linux laptops.
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
   - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
-  - Set up dropbox on rclone but don't mount it
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
   - Settings > Apps > Default Apps > Web > Microsoft Edge
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - SSH setup: `cd ~/.ssh; ln -s ~/Dropbox/.ssh; chmod og-r .ssh/*`
-  - Don't enable Wayland since touchegg gestures works better with X11 but if you _do_ want to enableWayland, set `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
+  - Enable Wayland for smooth scrolling and touch gestures:
+    - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
+    - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
+    - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
+  - On Touche, set up these gestures:
+    - Swipe with 4 fingers - Up: Execute a command `amixer sset Master 5%+`. Repeat command. (Pulse is not installed)
+    - Swipe with 4 fingers - Down: Execute a command `amixer sset Master 5%-`. Repeat command.
+    - Swipe left/right with 4 fingers: `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` on Gesture begin.
   - #TODO: Always on top
   - #TODO: CLI for alarm
   - #TODO: 4-finger swipe = drag
