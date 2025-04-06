@@ -52,8 +52,8 @@ alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
 alias puddletag='uvx --offline puddletag'
 
 # Apps
-alias llm='uv run --directory ~/apps/llm llm'
-alias openwebui='uv run --directory ~/apps/opebwebui open-webui serve'
+alias llm='uv run --offline --directory ~/apps/llm llm'
+alias openwebui='uv run --offline --directory ~/apps/opebwebui open-webui serve'
 
 # Download YouTube video
 alias youtube-dl="uvx yt-dlp"
