@@ -25,20 +25,24 @@ Here is the setup for my Linux laptops.
   - fnm: `curl -fsSL https://fnm.vercel.app/install | bash` to install node
   - node: `fnm install 23`
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
-  - autokey: `sudo apt install autokey-gtk` and set up with phrases
-  - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
+  - duckdb: `curl https://install.duckdb.org | sh`
+  - sqlite3: `sudo apt install sqlite3`
   - caddy: `sudo apt install caddy`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - jq: `sudo apt-get install jq`
   - tmux: `sudo snap install tmux`
   - fdupes: `sudo apt install fdupes` to find duplicate files
-  - rofi: `sudo apt install rofi` to switch windows.
-    - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
-    - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
+  - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
+  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
     - `llm install llm-cmd llm-openrouter`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
+  - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
+    - expanso: Needs libwxbase which is no longer installed with Debian?
+  - rofi: `sudo apt install rofi` to switch windows.
+    - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
+    - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
@@ -47,6 +51,7 @@ Here is the setup for my Linux laptops.
   - [Starship](https://starship.rs/) fast prompt: `curl -sS https://starship.rs/install.sh | sh`
   - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
     - More modern than autojump, fasd, etc.
+  - Guake. `sudo apt install guake`. Bind Ctrl+F12 to toggle Guake.
   - ImageMagick:
     - `wget https://imagemagick.org/archive/binaries/magick`
     - `sudo mv magick /usr/local/bin/magick`
@@ -82,9 +87,10 @@ Here is the setup for my Linux laptops.
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - 7zip, Zoom, OBS
 - Configurations
-  - Settings > Keyboard > Custom Shortcuts > Add:
-    - `Alt+E` runs `nautilus`
-    - `Alt+F1` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"`
+  - Settings > Keyboard:
+    - Launchers > Home Folder - `Super+E`
+    - Custom Shortcuts > Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"`
+    - Custom Shortcuts > Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
   - `sudo apt install gnome-tweaks`
     - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
   - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
@@ -98,7 +104,7 @@ Here is the setup for my Linux laptops.
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - Enable Wayland for smooth scrolling and touch gestures:
+  - Consider enabling Wayland for smooth scrolling and touch gestures. But it has problems with autokey, rofi, and other apps.
     - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
     - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
     - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
@@ -121,7 +127,6 @@ Things I skipped:
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
 - Warp terminal app. I prefer `llm cmd` for simplicity.
-- Guake: Visor terminal. Ctrl+F12. Visor appears, which is a shell.
 
 Notes:
 

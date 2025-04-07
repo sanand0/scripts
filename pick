@@ -1,0 +1,28 @@
+#!/bin/bash
+# Define the frecent file location
+FRECENT="$HOME/.config/files.frecent.txt"
+
+# Generate the file list while preserving order.
+# For the frecent part, we remove the leading count using sed so that filenames with spaces remain intact.
+file_list=$(
+  tail -n 1000 "$FRECENT" | sort | uniq -c | sort -rn | sed 's/^[[:space:]]*[0-9]\+[[:space:]]//'
+  cat "$HOME/.config/files.txt"
+)
+
+# Use fzf to let the user select a file.
+selected=$(echo "$file_list" | fzf --prompt="Select file: ")
+
+# Exit if no file was selected
+if [ -z "$selected" ]; then
+  echo "No file selected. Exiting."
+  exit 1
+fi
+
+# Append the selected file to the frecent file
+echo "$selected" >> "$FRECENT"
+
+# Open the selected file.
+# On macOS, 'open' is used; for Linux, you might switch this to 'xdg-open'.
+setsid open "$HOME/$selected" >/dev/null 2>&1 &
+
+sleep 1
