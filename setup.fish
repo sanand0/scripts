@@ -4,6 +4,10 @@
 fish_add_path "$HOME/code/scripts"
 # Some of my scripts are still on Dropbox. TODO: Migrate them
 fish_add_path "$HOME/Dropbox/scripts"
+# Add specific virtualenv paths
+fish_add_path "$HOME/apps/datasette/.venv/bin"
+fish_add_path "$HOME/apps/llm/.venv/bin"
+fish_add_path "$HOME/apps/openwebui/.venv/bin"
 
 # $SCRIPT_DIR is where this file is located. Use it to read other files.
 set SCRIPT_DIR (dirname (status --current-filename))
@@ -50,11 +54,6 @@ alias pdftotext='PYTHONUTF8=1 uvx markitdown'
 alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
 # mp3tag alternative
 alias puddletag='uvx --offline puddletag'
-
-# Apps
-alias datasette='uv run --offline --directory ~/apps/datasette datasette'
-alias llm='uv run --offline --directory ~/apps/llm llm'
-alias openwebui='uv run --offline --directory ~/apps/opebwebui open-webui serve'
 
 # Download YouTube video
 alias youtube-dl="uvx yt-dlp"

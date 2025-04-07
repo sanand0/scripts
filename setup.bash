@@ -131,6 +131,11 @@ if [ -f /c/Dropbox/scripts/.git-completion.sh ]; then
     source /c/Dropbox/scripts/.git-completion.sh
 fi
 
+# Add specific virtualenv paths
+export PATH="$HOME/apps/datasette/.venv/bin:$PATH"
+export PATH="$HOME/apps/llm/.venv/bin:$PATH"
+export PATH="$HOME/apps/openwebui/.venv/bin:$PATH"
+
 # On WSL Linux, run /usr/bin/ before rest of path. Use system Python
 if [ `uname` == "Linux" ]; then
     export PATH="/usr/bin:$PATH"
@@ -228,11 +233,6 @@ alias whisper="/c/Apps/whisper/faster-whisper-xxl --print_progress --output_dir 
 # alias elasticsearch='/c/Apps/elasticsearch/bin/elasticsearch.bat'
 # alias gh='/c/Program\ Files/Github\ CLI/gh'
 # alias rg='uvx --from ripgrep rg'
-
-# LLM models
-alias datasette='uv run --offline --directory ~/apps/datasette datasette'
-alias llm='uv run --offline --directory ~/apps/llm llm'
-alias openwebui='uv run --offline --directory ~/apps/opebwebui open-webui serve'
 
 # Run deno with full permissions
 alias denoall='deno --allow-all'
