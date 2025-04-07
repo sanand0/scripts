@@ -52,6 +52,7 @@ alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
 alias puddletag='uvx --offline puddletag'
 
 # Apps
+alias datasette='uv run --offline --directory ~/apps/datasette datasette'
 alias llm='uv run --offline --directory ~/apps/llm llm'
 alias openwebui='uv run --offline --directory ~/apps/opebwebui open-webui serve'
 

@@ -230,8 +230,9 @@ alias whisper="/c/Apps/whisper/faster-whisper-xxl --print_progress --output_dir 
 # alias rg='uvx --from ripgrep rg'
 
 # LLM models
-alias llm='uvx --offline llm'
-alias deepseek='uvx --offline llm -m deepseek-chat'
+alias datasette='uv run --offline --directory ~/apps/datasette datasette'
+alias llm='uv run --offline --directory ~/apps/llm llm'
+alias openwebui='uv run --offline --directory ~/apps/opebwebui open-webui serve'
 
 # Run deno with full permissions
 alias denoall='deno --allow-all'
