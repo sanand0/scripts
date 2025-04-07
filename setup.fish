@@ -73,6 +73,10 @@ function youtube-subtitles
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
+if command -v fnm >/dev/null 2>&1
+    fnm env | source
+end
+
 if command -v starship >/dev/null 2>&1
     starship init fish | source
 end
