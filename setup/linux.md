@@ -12,6 +12,7 @@ Here is the setup for my Linux laptops.
   - Modify `/usr/share/applications/microsoft-edge.desktop` to add a remote debugging and wayland as `Exec=/usr/bin/microsoft-edge-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --remote-debugging-port=9222 %U`
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
+  - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
   - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
   - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
