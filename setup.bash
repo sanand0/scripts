@@ -135,6 +135,7 @@ fi
 export PATH="$HOME/apps/datasette/.venv/bin:$PATH"
 export PATH="$HOME/apps/llm/.venv/bin:$PATH"
 export PATH="$HOME/apps/openwebui/.venv/bin:$PATH"
+export PATH="$HOME/apps/gramex/.venv/bin:$PATH"
 
 # On WSL Linux, run /usr/bin/ before rest of path. Use system Python
 if [ `uname` == "Linux" ]; then

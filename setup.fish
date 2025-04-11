@@ -8,6 +8,7 @@ fish_add_path "$HOME/Dropbox/scripts"
 fish_add_path "$HOME/apps/datasette/.venv/bin"
 fish_add_path "$HOME/apps/llm/.venv/bin"
 fish_add_path "$HOME/apps/openwebui/.venv/bin"
+fish_add_path "$HOME/apps/gramex/.venv/bin"
 
 # $SCRIPT_DIR is where this file is located. Use it to read other files.
 set SCRIPT_DIR (dirname (status --current-filename))

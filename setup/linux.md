@@ -85,6 +85,7 @@ Here is the setup for my Linux laptops.
   - Docker (via CLI installation instructions)
   - Foliate: via "App Center"
     - User stylesheet at `~/snap/foliate/current/.config/com.github.johnfactotum.Foliate/user-stylesheet.css` has `p { line-height: 1.8 !important; }`
+    - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - 7zip, Zoom, OBS
 - Configurations
@@ -92,6 +93,8 @@ Here is the setup for my Linux laptops.
     - Launchers > Home Folder - `Super+E`
     - Custom Shortcuts > Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"`
     - Custom Shortcuts > Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
+    - Custom Shortcuts > Guake: `Ctrl+F12` runs `guake`
+    - Custom Shortcuts > Warp: `Alt+F12` runs `warp://action/new_tab`
   - `sudo apt install gnome-tweaks`
     - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
   - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
@@ -127,7 +130,6 @@ Here is the setup for my Linux laptops.
 Things I skipped:
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
-- Warp terminal app. I prefer `llm cmd` for simplicity.
 
 Notes:
 
