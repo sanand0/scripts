@@ -9,7 +9,7 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
-  - Modify `/usr/share/applications/microsoft-edge.desktop` to add a remote debugging and wayland as `Exec=/usr/bin/microsoft-edge-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --remote-debugging-port=9222 %U`
+  - Modify `/usr/share/applications/microsoft-edge.desktop` to add `Exec=/usr/bin/microsoft-edge-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --remote-debugging-port=9222 %U`
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
   - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
@@ -91,10 +91,11 @@ Here is the setup for my Linux laptops.
 - Configurations
   - Settings > Keyboard:
     - Launchers > Home Folder - `Super+E`
-    - Custom Shortcuts > Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"`
-    - Custom Shortcuts > Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
-    - Custom Shortcuts > Guake: `Ctrl+F12` runs `guake`
-    - Custom Shortcuts > Warp: `Alt+F12` runs `warp://action/new_tab`
+    - Custom Shortcuts:
+      - Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"` - doesn't work well on Wayland
+      - Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
+      - Guake: `Ctrl+F12` runs `guake`
+      - Warp: `Alt+F12` runs `warp://action/new_tab`
   - `sudo apt install gnome-tweaks`
     - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
   - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
@@ -108,17 +109,26 @@ Here is the setup for my Linux laptops.
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - Consider enabling Wayland for smooth scrolling and touch gestures. But it has problems with autokey, rofi, and other apps.
+  - Consider enabling Wayland for smooth scrolling and touch gestures. But it has problems with autokey, rofi, etc.
     - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
     - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
     - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
   - On Touche, set up these gestures:
-    - Swipe with 4 fingers - Up: Execute a command `amixer sset Master 5%+`. Repeat command. (Pulse is not installed)
-    - Swipe with 4 fingers - Down: Execute a command `amixer sset Master 5%-`. Repeat command.
-    - Swipe left/right with 4 fingers: `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` on Gesture begin.
+    - Global Gestures (Application: All)
+      - Swipe Up with 4 fingers: Execute command `amixer sset Master 5%+` (Volume up). Repeat command.
+      - Swipe Down with 4 fingers: Execute command `amixer sset Master 5%-` (Volume down). Repeat command.
+      - Swipe Left/Right with 4 fingers: Execute command `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` (Play/Pause VLC) on gesture begin.
+      - Tap with 2 fingers: Right mouse click (Button 3) on gesture begin.
+      - Tap with 3 fingers: Middle mouse click (Button 2) on gesture begin.
+      - Pinch Out with 4 fingers: Show Desktop (Animated).
+      - Pinch In with 4 fingers: Send keys `Super_L + A` on gesture begin.
+    - Application: microsoft-edge
+      - Pinch Out with 2 fingers: Send keys `Control_L + equal` (Zoom In). Repeat keys.
+      - Pinch In with 2 fingers: Send keys `Control_L + minus` (Zoom Out). Repeat keys.
+      - Swipe Left with 3 fingers: Send keys `Alt_L + Left` (Back) on gesture begin.
+      - Swipe Right with 3 fingers: Send keys `Alt_L + Right` (Forward) on gesture begin.
   - #TODO: Always on top
   - #TODO: CLI for alarm
-  - #TODO: 4-finger swipe = drag
 - Notes
   - `xrandr --output eDP-1 --brightness 0.5 --gamma 0.9` sets the SOFTWARE brightness and gamma.
   - Connecting to the Hyderabad airport wifi failed. I set the Identity > Mac Address to the default and Cloned Address to Random.
