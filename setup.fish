@@ -33,6 +33,16 @@ function update-files
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
 end
 
+# less should color files
+export LESS='-R'
+export LESSOPEN='|pygmentize -g -O style=github-dark %s'
+
+# Set up tmux if we're inside tmux
+if set -q TMUX
+    # Enable mouse mode for scrolling, clicking, resizing, etc.
+    tmux set-option -g mouse on
+end
+
 # Set up fzf
 set -gx FZF_DEFAULT_COMMAND 'fd --type f --follow --exclude node_modules --strip-cwd-prefix'
 set -gx FZF_CTRL_T_COMMAND "$FZF_DEFAULT_COMMAND"
@@ -48,13 +58,13 @@ alias giit='git'
 # tools
 alias asciirec='uvx --offline asciinema rec -c bash ~/Videos/`date +%Y-%m-%d-%H-%M-%S`.rec'
 alias clip='xclip -selection clipboard'
+alias codex='npx -y @openai/codex'
+alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
 alias icdiff='uvx --offline icdiff'
 alias jupyter-lab='uvx --offline --from jupyterlab jupyter-lab'
 alias marimo='uvx --offline marimo'
 alias pdftotext='PYTHONUTF8=1 uvx markitdown'
-alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
-# mp3tag alternative
-alias puddletag='uvx --offline puddletag'
+alias puddletag='uvx --offline puddletag'  # mp3tag alternative
 
 # Download YouTube video
 alias youtube-dl="uvx yt-dlp"
