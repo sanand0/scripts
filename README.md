@@ -20,6 +20,7 @@ echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 
 ```bash
 ln -s ~/code/scripts/.gitconfig ~/.gitconfig
+ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
 ln -s /c/Dropbox/scripts/.ssh ~/.ssh
 chmod og-r .ssh/*
 ln -s /c/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json

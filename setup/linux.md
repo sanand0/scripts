@@ -34,11 +34,6 @@ Here is the setup for my Linux laptops.
   - tmux: `sudo snap install tmux`
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
-  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; uv pip install datasette`
-  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
-    - `llm install llm-cmd llm-openrouter`
-    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
-  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows.
@@ -87,6 +82,14 @@ Here is the setup for my Linux laptops.
     - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - 7zip, Zoom, OBS
+- uv tools
+  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; uv pip install datasette`
+  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
+    - `llm install llm-cmd llm-openrouter`
+    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
+  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
+  - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; uv pip install marimo`
+  - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; uv pip install gramex gramex-enterprise; gramex setup --all`
 - Configurations
   - Settings > Keyboard:
     - Launchers > Home Folder - `Super+E`
@@ -116,7 +119,10 @@ Here is the setup for my Linux laptops.
     - Global Gestures (Application: All)
       - Swipe Up with 4 fingers: Execute command `amixer sset Master 5%+` (Volume up). Repeat command.
       - Swipe Down with 4 fingers: Execute command `amixer sset Master 5%-` (Volume down). Repeat command.
-      - Swipe Left/Right with 4 fingers: Execute command `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` (Play/Pause VLC) on gesture begin.
+      - Swipe Left/Right with 4 fingers: Execute command `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` (Play/Pause VLC) on gesture begin. You can also explore these:
+        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next`
+        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous`
+        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play`
       - Tap with 2 fingers: Right mouse click (Button 3) on gesture begin.
       - Tap with 3 fingers: Middle mouse click (Button 2) on gesture begin.
       - Pinch Out with 4 fingers: Show Desktop (Animated).

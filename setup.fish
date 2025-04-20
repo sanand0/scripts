@@ -6,24 +6,59 @@ fish_add_path "$HOME/code/scripts"
 fish_add_path "$HOME/Dropbox/scripts"
 # Add specific virtualenv paths
 fish_add_path "$HOME/apps/datasette/.venv/bin"
+fish_add_path "$HOME/apps/gramex/.venv/bin"
 fish_add_path "$HOME/apps/llm/.venv/bin"
 fish_add_path "$HOME/apps/openwebui/.venv/bin"
-fish_add_path "$HOME/apps/gramex/.venv/bin"
 
 # $SCRIPT_DIR is where this file is located. Use it to read other files.
 set SCRIPT_DIR (dirname (status --current-filename))
 
-# I store environment variables in a .env file in my home directory. This is a simple way to manage them.
-# Load all environment variables
-for line in (grep -v '^#' "/c/Dropbox/scripts/.env")
-    # Skip lines that don't contain an '='
-    if not echo $line | grep -q '='
-        continue
-    end
-    # Split the line on '=' into key and value
-    set -l key (echo $line | cut -d '=' -f1)
-    set -l value (echo $line | cut -d '=' -f2-)
-    set -gx $key $value
+# I store environment variables in a .env file. This is a simple way to manage them.
+set --local envfile "/c/Dropbox/scripts/.env"
+if test -f $envfile
+    while read --line line
+        # Skip empty lines or those starting with '#'
+        and not string match -qr '^\s*($|#)' -- $line
+        # Split first '=' into key and value
+        and string split --max 1 "=" -- $line | read key value
+        # Export to environment
+        and set -gx $key $value
+    end < $envfile
+end
+
+# less should color files
+export LESS='-R'
+export LESSOPEN='|pygmentize -g -O style=github-dark %s'
+
+# grep should color files
+export GREP_OPTIONS='--color=auto'
+
+# Set up fzf
+export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-cwd-prefix'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
+
+# Abbreviations / aliases
+abbr --add gt   git
+abbr --add gi   git
+abbr --add it   git
+abbr --add gitt git
+abbr --add giit git
+abbr --add clip 'xclip -selection clipboard'
+abbr --add codex 'npx -y @openai/codex'
+abbr --add icdiff 'uvx --offline icdiff'
+abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
+abbr --add marimo 'uvx marimo'
+abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
+abbr --add puddletag 'uvx --offline puddletag'
+abbr --add youtube-audio 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
+abbr --add youtube-dl 'uvx yt-dlp'
+abbr --add youtube-opus 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
+abbr --add yt-dlp 'uvx yt-dlp'
+
+function asciirec
+    set -l ts (date "+%Y-%m-%d-%H-%M-%S")
+    uvx --offline asciinema rec -c bash ~/Videos/$ts.rec
 end
 
 # `update-files` caches files in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
@@ -33,69 +68,14 @@ function update-files
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
 end
 
-# less should color files
-export LESS='-R'
-export LESSOPEN='|pygmentize -g -O style=github-dark %s'
-
-# Set up tmux if we're inside tmux
-if set -q TMUX
-    # Enable mouse mode for scrolling, clicking, resizing, etc.
-    tmux set-option -g mouse on
-end
-
-# Set up fzf
-set -gx FZF_DEFAULT_COMMAND 'fd --type f --follow --exclude node_modules --strip-cwd-prefix'
-set -gx FZF_CTRL_T_COMMAND "$FZF_DEFAULT_COMMAND"
-set -gx FZF_DEFAULT_OPTS '--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
-
-# git aliases
-alias gt='git'
-alias gi='git'
-alias it='git'
-alias gitt='git'
-alias giit='git'
-
-# tools
-alias asciirec='uvx --offline asciinema rec -c bash ~/Videos/`date +%Y-%m-%d-%H-%M-%S`.rec'
-alias clip='xclip -selection clipboard'
-alias codex='npx -y @openai/codex'
-alias gramex='uvx --python 3.11 --with-requirements requirements.txt gramex'
-alias icdiff='uvx --offline icdiff'
-alias jupyter-lab='uvx --offline --from jupyterlab jupyter-lab'
-alias marimo='uvx --offline marimo'
-alias pdftotext='PYTHONUTF8=1 uvx markitdown'
-alias puddletag='uvx --offline puddletag'  # mp3tag alternative
-
-# Download YouTube video
-alias youtube-dl="uvx yt-dlp"
-# Download high-quality audio for music
-alias youtube-audio='uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
-# Download compressed audio for speech-to-text
-alias youtube-opus='uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
-
-# VLC commands
-alias next='dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next'
-alias prev='dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous'
-alias pause='dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause'
-alias play='dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play'
-
 # Function to download subtitles from YouTube videos
 function youtube-subtitles
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
-if command -v fnm >/dev/null 2>&1
-    fnm env | source
-end
+type -q fzf; and fzf --fish | source
+type -q zoxide; and zoxide init fish | source
+type -q starship; and starship init fish | source
 
-if command -v starship >/dev/null 2>&1
-    starship init fish | source
-end
-
-if command -v fzf >/dev/null 2>&1
-    fzf --fish | source
-end
-
-if command -v zoxide >/dev/null 2>&1
-    zoxide init fish | source
-end
+# Skip fnm env on startup because it is slow
+# type -q fnm; and fnm env | source
