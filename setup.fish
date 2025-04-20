@@ -10,18 +10,8 @@ fish_add_path "$HOME/apps/gramex/.venv/bin"
 fish_add_path "$HOME/apps/llm/.venv/bin"
 fish_add_path "$HOME/apps/openwebui/.venv/bin"
 
-# I store environment variables in a .env file. This is a simple way to manage them.
-set --local envfile "/c/Dropbox/scripts/.env"
-if test -f $envfile
-    while read --line line
-        # Skip empty lines or those starting with '#'
-        and not string match -qr '^\s*($|#)' -- $line
-        # Split first '=' into key and value
-        and string split --max 1 "=" -- $line | read key value
-        # Export to environment
-        and set -gx $key $value
-    end < $envfile
-end
+# I store secrets in a .env file
+source "/c/Dropbox/scripts/.env"
 
 # less should color files
 export LESS='-R'
