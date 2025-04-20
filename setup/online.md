@@ -10,6 +10,10 @@ Here are tools I prefer over installed apps:
 - [Paste HTML/Rich text as Markdown](https://euangoddard.github.io/clipboard2markdown/)
 - [Markdown to HTML](https://markdowntohtml.com/) converts markdown to HTML
 
+Explore:
+
+- [Vert](https://vert.sh/) for audio/video/document conversations
+
 Past apps I've used:
 
 - [Piped.video](https://piped.video/) is a YouTube player. Like CloudTube, Invidious, NewPipe, FreeTube

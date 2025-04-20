@@ -80,7 +80,6 @@ Here is the setup for my Linux laptops.
     - `flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
     - [Meld](https://flathub.org/apps/org.gnome.meld) instead of Beyond Compare
     - [Touche](https://github.com/JoseExposito/touche)
-  - Peek instead of ScreenToGIF: `sudo apt install peek`
   - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
   - Docker (via CLI installation instructions)
   - Foliate: via "App Center"
@@ -137,9 +136,10 @@ Here is the setup for my Linux laptops.
     - Fn+S = Screenshot. PrtSc = Screenshot area.
     - Fn+4 = Sleep mode.
 
-Things I skipped:
+Things I skipped / dropped:
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
+- Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 
 Notes:
 
