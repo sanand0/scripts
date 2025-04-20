@@ -10,9 +10,6 @@ fish_add_path "$HOME/apps/gramex/.venv/bin"
 fish_add_path "$HOME/apps/llm/.venv/bin"
 fish_add_path "$HOME/apps/openwebui/.venv/bin"
 
-# $SCRIPT_DIR is where this file is located. Use it to read other files.
-set SCRIPT_DIR (dirname (status --current-filename))
-
 # I store environment variables in a .env file. This is a simple way to manage them.
 set --local envfile "/c/Dropbox/scripts/.env"
 if test -f $envfile
