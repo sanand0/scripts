@@ -26,7 +26,7 @@ Here is the setup for my Linux laptops.
   - fnm: `curl -fsSL https://fnm.vercel.app/install | bash` to install node
   - node: `fnm install 23`
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
-  - duckdb: `curl https://install.duckdb.org | sh`
+  - duckdb: `curl https://install.duckdb.org | sh` (re-run to upgrade)
   - sqlite3: `sudo apt install sqlite3`
   - caddy: `sudo apt install caddy`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
