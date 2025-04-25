@@ -32,6 +32,8 @@ Here is the setup for my Linux laptops.
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - jq: `sudo apt-get install jq`
   - tmux: `sudo snap install tmux`
+  - lynx: `sudo apt install lynx`
+  - ngrok: `sudo snap install ngrok`
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
@@ -61,6 +63,8 @@ Here is the setup for my Linux laptops.
     - `curl -LO https://gitlab.com/gitlab-org/cli/-/releases/v1.55.0/downloads/glab_1.55.0_linux_amd64.deb`
     - `sudo apt install ./glab_1.55.0_linux_amd64.deb`
     - `glab config set -g host code.gramener.com`
+  - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
+    - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`

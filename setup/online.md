@@ -9,7 +9,7 @@ Here are tools I prefer over installed apps:
 - [I Love PDF](https://www.ilovepdf.com/compress_pdf) compresses PDFs
 - [WebsocketKing](https://websocketking.com/) tests websockets
 - [Paste HTML/Rich text as Markdown](https://euangoddard.github.io/clipboard2markdown/)
-- [Markdown to HTML](https://markdowntohtml.com/) converts markdown to HTML
+- Markdown to HTML: [Dillinger.io](https://dillinger.io/) | (https://markdowntohtml.com/)
 
 Explore:
 

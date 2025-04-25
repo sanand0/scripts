@@ -25,12 +25,21 @@ export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
 
-# Abbreviations / aliases
+# Mis-spellings
 abbr --add gt   git
 abbr --add gi   git
 abbr --add it   git
 abbr --add gitt git
 abbr --add giit git
+
+# Mail & calendar
+export PAGER='bat'      # Required for cmdg
+export EDITOR='nano'    # Required for cmdg
+abbr --add mail cmdg
+abbr --add gcalcli 'uvx gcalcli'
+abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date tomorrow)'
+
+# Utilities and configurations
 abbr --add clip 'xclip -selection clipboard'
 abbr --add codex 'npx -y @openai/codex'
 abbr --add icdiff 'uvx --offline icdiff'
