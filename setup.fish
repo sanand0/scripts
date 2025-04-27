@@ -37,7 +37,7 @@ export PAGER='bat'      # Required for cmdg
 export EDITOR='nano'    # Required for cmdg
 abbr --add mail cmdg
 abbr --add gcalcli 'uvx gcalcli'
-abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date tomorrow)'
+abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
 # Utilities and configurations
 abbr --add clip 'xclip -selection clipboard'
