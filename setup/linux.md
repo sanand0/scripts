@@ -49,7 +49,6 @@ Here is the setup for my Linux laptops.
   - [Starship](https://starship.rs/) fast prompt: `curl -sS https://starship.rs/install.sh | sh`
   - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
     - More modern than autojump, fasd, etc.
-  - Guake. `sudo apt install guake`. Bind Ctrl+F12 to toggle Guake.
   - ImageMagick:
     - `wget https://imagemagick.org/archive/binaries/magick`
     - `sudo mv magick /usr/local/bin/magick`
@@ -99,9 +98,9 @@ Here is the setup for my Linux laptops.
     - Launchers > Home Folder - `Super+E`
     - Custom Shortcuts:
       - Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"` - doesn't work well on Wayland
-      - Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
-      - Guake: `Ctrl+F12` runs `guake`
       - Warp: `Alt+F12` runs `warp://action/new_tab`
+      - SKIP: Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
+      - SKIP: Guake: `Ctrl+F12` runs `guake`
   - `sudo apt install gnome-tweaks`
     - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
   - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
@@ -149,6 +148,7 @@ Here is the setup for my Linux laptops.
 Things I skipped / dropped:
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
+- Guake. `sudo apt install guake`. VS Code terminal was good enough and I wasn't using it.
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 
 Notes:
