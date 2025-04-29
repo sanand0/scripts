@@ -9,6 +9,7 @@ fish_add_path "$HOME/apps/datasette/.venv/bin"
 fish_add_path "$HOME/apps/gramex/.venv/bin"
 fish_add_path "$HOME/apps/llm/.venv/bin"
 fish_add_path "$HOME/apps/openwebui/.venv/bin"
+fish_add_path "$HOME/apps/puddletag/.venv/bin"  # mp3tag equivalent
 
 # I store secrets in a .env file
 source "/c/Dropbox/scripts/.env"
@@ -47,7 +48,6 @@ abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 abbr --add marimo 'uvx marimo'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
-abbr --add puddletag 'uvx --offline puddletag'
 abbr --add youtube-audio 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
 abbr --add youtube-dl 'uvx yt-dlp'
 abbr --add youtube-opus 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
