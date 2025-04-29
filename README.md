@@ -1,4 +1,4 @@
-# Scripts
+# Setup
 
 These are personal productivity utilities that simplify my workflow on Windows (Cygwin) and Linux. These are in 2 places:
 
@@ -15,6 +15,8 @@ These are personal productivity utilities that simplify my workflow on Windows (
 echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 ```
+
+Add [`ai-code-rules.md`](ai-code-rules.md) to VS code's `github.copilot.chat.codeGeneration.instructions` or Cursor or other AI code editor settings.
 
 ## Linux Setup
 
@@ -48,3 +50,11 @@ Here are the setup details for my laptops.
 - [Windows](setup/windows.md)
 - [Android](setup/android.md)
 - [Online tools](setup/online.md) replacing installed software
+
+# Scripts
+
+- [chars](chars) lists non-ASCII characters in files.
+- [rgb](rgb) converts RGB to hex and vice versa.
+- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
+- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
+- [generate/](generate/) has scripts to generate data.
