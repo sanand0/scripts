@@ -53,6 +53,11 @@ abbr --add youtube-dl 'uvx yt-dlp'
 abbr --add youtube-opus 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
 abbr --add yt-dlp 'uvx yt-dlp'
 
+# Functions are slow. fnm is slow. So boot it up when needed
+abbr --add npx 'abbr --erase npx; fnm env | source; npx '
+abbr --add npm 'abbr --erase npm; fnm env | source; npm '
+abbr --add node 'abbr --erase node; fnm env | source; node '
+
 function asciirec
     set -l ts (date "+%Y-%m-%d-%H-%M-%S")
     uvx --offline asciinema rec -c bash ~/Videos/$ts.rec
