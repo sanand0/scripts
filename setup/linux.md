@@ -21,9 +21,10 @@ Here is the setup for my Linux laptops.
   - git: `sudo apt install git git-lfs`
   - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python. Maybe fnm?
   - curl: `sudo apt install curl`
+  - micro: `cd ~/.local/bin; curl https://getmic.ro | bash`
   - fish: `sudo apt install fish; printf "/usr/bin/fish\n" | sudo tee -a /etc/shells;`
   - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-  - fnm: `curl -fsSL https://fnm.vercel.app/install | bash` to install node
+  - fnm: `curl -fsSL https://fnm.vercel.app/install | bash`
   - node: `fnm install 23`
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
   - duckdb: `curl https://install.duckdb.org | sh` (re-run to upgrade)
