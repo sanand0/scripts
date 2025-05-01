@@ -54,6 +54,7 @@ Here are the setup details for my laptops.
 # Scripts
 
 - [chars](chars) lists non-ASCII characters in files.
+- [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.

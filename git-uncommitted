@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Loop over first‐level directories
+for d in */; do
+    dir="${d%/}"
+
+    # If not a Git repo
+    if [ ! -e "$dir/.git" ]; then
+        printf 'NO GIT\t%s\n' "$dir"
+        continue
+    fi
+
+    # Get branch + short status
+    status=$(git -C "$dir" status --short --branch 2>/dev/null)
+
+    # 1) Uncommitted changes?
+    if [ "$(wc -l <<<"$status")" -gt 1 ]; then
+        printf 'COMMIT\t%s\n' "$dir"
+
+    # 2) Remote ahead/behind?
+    elif [[ "$status" == *\[*\]* ]]; then
+        printf 'PUSH\t%s\n' "$dir"
+    fi
+done
