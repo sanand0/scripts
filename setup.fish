@@ -1,15 +1,17 @@
 # Main fish configuration file
 
 # Add scripts to PATH
-fish_add_path "$HOME/code/scripts"
+set -gx PATH "$PATH:$HOME/code/scripts"
 # Some of my scripts are still on Dropbox. TODO: Migrate them
-fish_add_path "$HOME/Dropbox/scripts"
+set -gx PATH "$PATH:$HOME/Dropbox/scripts"
 # Add specific virtualenv paths
-fish_add_path "$HOME/apps/datasette/.venv/bin"
-fish_add_path "$HOME/apps/gramex/.venv/bin"
-fish_add_path "$HOME/apps/llm/.venv/bin"
-fish_add_path "$HOME/apps/openwebui/.venv/bin"
-fish_add_path "$HOME/apps/puddletag/.venv/bin"  # mp3tag equivalent
+set -gx PATH "$PATH:$HOME/apps/datasette/.venv/bin"
+set -gx PATH "$PATH:$HOME/apps/gramex/.venv/bin"
+set -gx PATH "$PATH:$HOME/apps/llm/.venv/bin"
+set -gx PATH "$PATH:$HOME/apps/marimo/.venv/bin"
+set -gx PATH "$PATH:$HOME/apps/openwebui/.venv/bin"
+set -gx PATH "$PATH:$HOME/apps/puddletag/.venv/bin"  # mp3tag equivalent
+set -gx PATH "$PATH:$HOME/apps/ruff/.venv/bin"
 
 # I store secrets in a .env file
 source "/c/Dropbox/scripts/.env"
