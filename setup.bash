@@ -75,11 +75,9 @@ parse_git_branch() {
 DATE_COLOR='\[\e[35m\]'
 DIR_COLOR='\[\e[33m\]'
 GIT_COLOR='\[\e[32m\]'
-CONDA_COLOR='\[\e[34m\]'
 RESET_COLOR='\[\e[0m\]'
 NEWLINE=$'\n'
-# Note: For Conda to not add another environment before PS1, run `conda config --set changeps1 false`
-export PS1="${NEWLINE}${DATE_COLOR}\d \@ ${DIR_COLOR}\w${GIT_COLOR}\$(parse_git_branch) ${CONDA_COLOR}\${CONDA_DEFAULT_ENV}${RESET_COLOR}${NEWLINE}\$ "
+export PS1="${NEWLINE}${DATE_COLOR}\d \@ ${DIR_COLOR}\w${GIT_COLOR}\$(parse_git_branch) ${NEWLINE}\$ "
 
 shopt -s nocaseglob                 # Use case-insensitive filename globbing
 shopt -s histappend                 # Append to the history file, don't overwrite it

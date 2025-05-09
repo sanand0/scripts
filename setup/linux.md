@@ -18,6 +18,7 @@ Here is the setup for my Linux laptops.
   - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
   - To update cursor, [download](https://www.cursor.com/downloads), shut down cursor, replace image at `/opt/cursor.appimage`, and restart cursor
 - Software
+  - Opera: From https://www.opera.com/download
   - git: `sudo apt install git git-lfs`
   - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python. Maybe fnm?
   - curl: `sudo apt install curl`
@@ -33,16 +34,21 @@ Here is the setup for my Linux laptops.
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - jq: `sudo apt-get install jq`
   - tmux: `sudo snap install tmux`
+  - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
+  - w3m: `sudo apt install w3m`
   - ngrok: `sudo snap install ngrok`
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
+  - gcloud: `curl https://sdk.cloud.google.com | bash`
+  - psql: `sudo apt-get install -y postgresql-client`
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
+  - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
     - Just press `Ctrl+T` to open fzf when typing a command.
@@ -69,8 +75,7 @@ Here is the setup for my Linux laptops.
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`
     - `sudo service ollama restart`
-    - `ollama pull gemma3`
-    - `ollama pull phi4-mini`
+    - `ollama pull qwen3 gemma3 phi4-mini`
   - Audacity via "Software"
   - [TouchEgg](https://github.com/JoseExposito/touchegg) for touch gestures
     - `sudo add-apt-repository ppa:touchegg/stable; sudo apt update; sudo apt install touchegg`
@@ -85,6 +90,7 @@ Here is the setup for my Linux laptops.
     - User stylesheet at `~/snap/foliate/current/.config/com.github.johnfactotum.Foliate/user-stylesheet.css` has `p { line-height: 1.8 !important; }`
     - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
+  - VLC
   - 7zip, Zoom, OBS
 - uv tools
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; uv pip install datasette`

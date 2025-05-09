@@ -1,17 +1,24 @@
 # Main fish configuration file
 
+# Migrate setup from ~/.config/fish/config.fish
+set -gx PATH $PATH $HOME/.local/share/fnm
+set -gx PATH $PATH $HOME/.lmstudio/bin
+
 # Add scripts to PATH
-set -gx PATH "$PATH:$HOME/code/scripts"
+set -gx PATH $PATH $HOME/code/scripts
 # Some of my scripts are still on Dropbox. TODO: Migrate them
-set -gx PATH "$PATH:$HOME/Dropbox/scripts"
+set -gx PATH $PATH $HOME/Dropbox/scripts
 # Add specific virtualenv paths
-set -gx PATH "$PATH:$HOME/apps/datasette/.venv/bin"
-set -gx PATH "$PATH:$HOME/apps/gramex/.venv/bin"
-set -gx PATH "$PATH:$HOME/apps/llm/.venv/bin"
-set -gx PATH "$PATH:$HOME/apps/marimo/.venv/bin"
-set -gx PATH "$PATH:$HOME/apps/openwebui/.venv/bin"
-set -gx PATH "$PATH:$HOME/apps/puddletag/.venv/bin"  # mp3tag equivalent
-set -gx PATH "$PATH:$HOME/apps/ruff/.venv/bin"
+set -gx PATH $PATH $HOME/apps/datasette/.venv/bin
+set -gx PATH $PATH $HOME/apps/gramex/.venv/bin
+set -gx PATH $PATH $HOME/apps/llm/.venv/bin
+set -gx PATH $PATH $HOME/apps/marimo/.venv/bin
+set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
+set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
+set -gx PATH $PATH $HOME/apps/ruff/.venv/bin
+
+# Via Google Cloud SDK.
+if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
 
 # I store secrets in a .env file
 source "/c/Dropbox/scripts/.env"
@@ -65,10 +72,10 @@ function asciirec
     uvx --offline asciinema rec -c bash ~/Videos/$ts.rec
 end
 
-# `update-files` caches files in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
+# `update-files` caches files and directories in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
 function update-files
     cd $HOME
-    fd --type f --follow --exclude node_modules --exclude ImageCache > $HOME/.config/files.txt
+    fd --follow --exclude node_modules --exclude ImageCache > $HOME/.config/files.txt
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
 end
 
