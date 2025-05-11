@@ -7,8 +7,8 @@ import unicodedata
 for file in sys.argv[1:]:
     row = 0
     with open(file, encoding="utf8") as f:
-        for row in f:
+        for line in f:
             row += 1
-            for col, ch in enumerate(row, 1):
+            for col, ch in enumerate(line, 1):
                 if ord(ch) > 127:
                     print(f"{file}:{row}:{col}: {ch} \\u{ord(ch):04X} ({unicodedata.name(ch)})")
