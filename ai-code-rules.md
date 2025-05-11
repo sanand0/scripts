@@ -9,6 +9,7 @@
 
 HTML/CSS/JS:
 - Use ESM: <script type="module">
+- No TypeScript. Only JavaScript
 - Use MODERN JavaScript. Minimize libraries
 - Use hyphenated HTML class/ID names (id="user-id" not id="userId")
 - For single line if / for statements, avoid { blocks }
