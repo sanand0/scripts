@@ -17,6 +17,7 @@ Here is the setup for my Linux laptops.
   - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
   - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
   - To update cursor, [download](https://www.cursor.com/downloads), shut down cursor, replace image at `/opt/cursor.appimage`, and restart cursor
+- Install [Windsurf](https://windsurf.com/editor/download-linux)
 - Software
   - Opera: From https://www.opera.com/download
   - git: `sudo apt install git git-lfs`
