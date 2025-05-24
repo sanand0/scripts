@@ -14,6 +14,6 @@ HTML/CSS/JS:
 - Use hyphenated HTML class/ID names (id="user-id" not id="userId")
 - For single line if / for statements, avoid { blocks }
 - Use .insertAdjacentHTML / .replaceChildren (or lit-html). Avoid document.createElement
-- Use Bootstrap for CSS. Avoid custom CSS
+- Use Bootstrap classes for CSS. Avoid custom CSS
 - Use D3 for data visualization
 - Show errors to the user (beautifully). Avoid console.error()

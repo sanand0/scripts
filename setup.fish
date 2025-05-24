@@ -52,21 +52,25 @@ abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Iho
 # Utilities and configurations
 abbr --add clip 'xclip -selection clipboard'
 abbr --add codex 'npx -y @openai/codex'
+abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add icdiff 'uvx --offline icdiff'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 abbr --add marimo 'uvx marimo'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
-abbr --add youtube-audio 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
-abbr --add youtube-dl 'uvx yt-dlp'
-abbr --add youtube-opus 'uvx yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
-abbr --add yt-dlp 'uvx yt-dlp'
+abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
+abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
+abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
+abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 
 # Functions are slow. fnm is slow. So boot it up when needed
 abbr --add npx 'abbr --erase npx; fnm env | source; npx '
 abbr --add npm 'abbr --erase npm; fnm env | source; npm '
 abbr --add node 'abbr --erase node; fnm env | source; node '
+
+# Usage: pdf_decrypt file.pdf password
+abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
 
 function asciirec
     set -l ts (date "+%Y-%m-%d-%H-%M-%S")
