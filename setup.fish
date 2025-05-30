@@ -55,10 +55,10 @@ abbr --add codex 'npx -y @openai/codex'
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add icdiff 'uvx --offline icdiff'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
-abbr --add marimo 'uvx marimo'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
+abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
 abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
 abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
@@ -75,6 +75,12 @@ abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pd
 function asciirec
     set -l ts (date "+%Y-%m-%d-%H-%M-%S")
     uvx --offline asciinema rec -c bash ~/Videos/$ts.rec
+end
+
+# Usage: `llm "Write a one-line bash command to ..." | copycode
+# Copies the last code block
+function copycode --description 'Stream to screen and copy last fenced block'
+    tee /dev/tty | awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=$0} END{print buf}' | xclip -selection clipboard
 end
 
 # `update-files` caches files and directories in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily

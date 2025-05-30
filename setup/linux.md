@@ -34,6 +34,7 @@ Here is the setup for my Linux laptops.
   - caddy: `sudo apt install caddy`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - jq: `sudo apt-get install jq`
+  - csvq: `curl -L https://github.com/mithrandie/csvq/releases/download/v1.18.1/csvq-v1.18.1-linux-amd64.tar.gz | tar xzO csvq-v1.18.1-linux-amd64/csvq > ~/.local/bin/csvq && chmod +x ~/.local/bin/csvq`
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
@@ -42,6 +43,8 @@ Here is the setup for my Linux laptops.
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
   - gcloud: `curl https://sdk.cloud.google.com | bash`
+  - opentofu: `sudo snap install --classic opentofu`
+  - aws: `sudo snap install --classic aws`
   - psql: `sudo apt-get install -y postgresql-client`
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
@@ -94,14 +97,15 @@ Here is the setup for my Linux laptops.
   - VLC
   - 7zip, Zoom, OBS
 - uv tools
-  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; uv pip install datasette`
-  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; uv pip install llm`
-    - `llm install llm-cmd llm-openrouter`
+  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
+  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
+    - `llm-cmd llm-openrouter llm-gemini llm-anthropic`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
-  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; uv pip install open-webui`
-  - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; uv pip install marimo`
-  - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; uv pip install puddletag`
-  - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; uv pip install gramex gramex-enterprise; gramex setup --all`
+    - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
+  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
+  - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo`
+  - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag`
+  - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex gramex-enterprise; gramex setup --all`
 - Configurations
   - Settings > Keyboard:
     - Launchers > Home Folder - `Super+E`
