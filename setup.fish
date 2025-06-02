@@ -50,6 +50,7 @@ abbr --add gcalcli 'uvx gcalcli'
 abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
 # Utilities and configurations
+abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
 abbr --add clip 'xclip -selection clipboard'
 abbr --add codex 'npx -y @openai/codex'
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
