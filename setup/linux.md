@@ -33,7 +33,8 @@ Here is the setup for my Linux laptops.
   - sqlite3: `sudo apt install sqlite3`
   - caddy: `sudo apt install caddy`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
-  - jq: `sudo apt-get install jq`
+  - jq: `sudo apt install jq`
+  - csvkit: `sudo apt install csvkit`
   - csvq: `curl -L https://github.com/mithrandie/csvq/releases/download/v1.18.1/csvq-v1.18.1-linux-amd64.tar.gz | tar xzO csvq-v1.18.1-linux-amd64/csvq > ~/.local/bin/csvq && chmod +x ~/.local/bin/csvq`
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
@@ -53,6 +54,7 @@ Here is the setup for my Linux laptops.
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
+  - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
     - Just press `Ctrl+T` to open fzf when typing a command.
