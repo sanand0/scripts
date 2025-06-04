@@ -55,6 +55,7 @@ Here is the setup for my Linux laptops.
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
   - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
+  - ripgrep: [Download](https://github.com/BurntSushi/ripgrep/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
     - Just press `Ctrl+T` to open fzf when typing a command.
@@ -90,11 +91,12 @@ Here is the setup for my Linux laptops.
     - `flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
     - [Meld](https://flathub.org/apps/org.gnome.meld) instead of Beyond Compare
     - [Touche](https://github.com/JoseExposito/touche)
-  - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
-  - Docker (via CLI installation instructions)
+    - Note: [Foliate](https://flathub.org/apps/com.github.johnfactotum.Foliate) fails
   - Foliate: via "App Center"
     - User stylesheet at `~/snap/foliate/current/.config/com.github.johnfactotum.Foliate/user-stylesheet.css` has `p { line-height: 1.8 !important; }`
     - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
+  - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
+  - Docker (via CLI installation instructions)
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - VLC
   - 7zip, Zoom, OBS
@@ -159,6 +161,7 @@ Here is the setup for my Linux laptops.
     - Fn+L = Low power mode. Fn+M = Medium power mode. Fn+H = High power mode.
     - Fn+S = Screenshot. PrtSc = Screenshot area.
     - Fn+4 = Sleep mode.
+  - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
 
 Things I skipped / dropped:
 
