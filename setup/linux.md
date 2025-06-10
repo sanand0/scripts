@@ -125,6 +125,8 @@ Here is the setup for my Linux laptops.
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
   - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+    - List mounts: `mount | grep rclone` or `rclone rc mount/listmounts`
+    - Unmount: `umount /home/sanand/hetzner`
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
   - Settings > Apps > Default Apps > Web > Microsoft Edge

@@ -15,6 +15,11 @@ HTML/CSS/JS:
 - Use hyphenated HTML class/ID names (id="user-id" not id="userId")
 - For single line if / for statements, avoid { blocks }
 - Show errors to the user (beautifully). Avoid console.error()
+- Show a loading indicator while waiting for fetch()
 - Use .insertAdjacentHTML / .replaceChildren (or lit-html). Avoid document.createElement
 - Use Bootstrap classes for CSS. Avoid custom CSS
 - Use D3 for data visualization
+
+Linting:
+- `uvx ruff --line-length 100`
+- `npx prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` -- do not format HTML files
