@@ -74,9 +74,14 @@ abbr --add node 'abbr --erase node; fnm env | source; node '
 # Usage: pdf_decrypt file.pdf password
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
 
-function asciirec
+function asciirec --description "Record terminal session with asciinema"
     set -l ts (date "+%Y-%m-%d-%H-%M-%S")
     uvx --offline asciinema rec -c bash ~/Videos/$ts.rec
+end
+
+function mcd --description "mkdir DIR && cd DIR"
+    mkdir -p -- $argv[1]
+    and cd -- $argv[1]
 end
 
 # Usage: `llm "Write a one-line bash command to ..." | copycode
@@ -86,7 +91,7 @@ function copycode --description 'Stream to screen and copy last fenced block'
 end
 
 # `update-files` caches files and directories in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
-function update-files
+function update-files --description 'Update $HOME/.config/files.txt with all files in $HOME'
     cd $HOME
     fd --follow --exclude node_modules --exclude ImageCache > $HOME/.config/files.txt
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
