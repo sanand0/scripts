@@ -21,5 +21,6 @@ HTML/CSS/JS:
 - Use D3 for data visualization
 
 Linting:
-- `uvx ruff --line-length 100`
-- `npx prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` -- do not format HTML files
+- PY: `uvx ruff --line-length 100`
+- JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` -- do not format HTML files
+- HTML: `npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline`
