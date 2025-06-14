@@ -65,6 +65,8 @@ abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
 abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 abbr --add unbrace 'fnm env | source; npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
+# Usage: webp-lossless --color=16 *.png
+abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6'
 
 # Functions are slow. fnm is slow. So boot it up when needed
 abbr --add npx 'abbr --erase npx; fnm env | source; npx '
