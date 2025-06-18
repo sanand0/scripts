@@ -9,7 +9,15 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
-  - Modify `/usr/share/applications/microsoft-edge.desktop` to add `Exec=/usr/bin/microsoft-edge-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --remote-debugging-port=9222 %U`
+
+  - Modify `/usr/share/applications/microsoft-edge.desktop` to add `Exec=/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U`
+    ```bash
+    mkdir -p ~/.local/share/applications
+    desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop --set-key=Exec --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U'
+    update-desktop-database ~/.local/share/applications   # refresh caches
+    ```
+  - To use Wayland, add `--enable-features=UseOzonePlatform --ozone-platform=wayland`
+
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
   - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
@@ -60,6 +68,7 @@ Here is the setup for my Linux laptops.
   - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
     - Just press `Ctrl+T` to open fzf when typing a command.
   - bat: `sudo apt install bat && sudo ln -s /usr/bin/batcat /usr/local/bin/bat` for color previews in fzf
+  - wireguard (VPN): `sudo apt install -y wireguard-tools`
   - [Starship](https://starship.rs/) fast prompt: `curl -sS https://starship.rs/install.sh | sh`
   - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
     - More modern than autojump, fasd, etc.
