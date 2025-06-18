@@ -24,3 +24,11 @@ Linting:
 - PY: `uvx ruff --line-length 100`
 - JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` -- do not format HTML files
 - HTML: `npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline`
+
+In pull request descriptions, include well-formatted Markdown covering:
+- The problem this PR solves (1 sentence)
+- What code / config / doc changes were made in which files.
+- What to review, what's safe vs. what needs extra scrutiny.
+- Exact steps to verify locally.
+- Deployment risks and mitigations
+- What can developers learn from this PR?
