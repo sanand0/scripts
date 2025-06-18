@@ -55,6 +55,7 @@ abbr --add clip 'xclip -selection clipboard'
 abbr --add codex 'npx -y @openai/codex'
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add icdiff 'uvx --offline icdiff'
+abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
@@ -67,6 +68,7 @@ abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 abbr --add unbrace 'fnm env | source; npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # Usage: webp-lossless --color=16 *.png
 abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6'
+abbr --add webp-lossy 'magick mogrify -format webp -define webp:lossless=false -define webp:method=6 --quality 10'
 
 # Functions are slow. fnm is slow. So boot it up when needed
 abbr --add npx 'abbr --erase npx; fnm env | source; npx '
@@ -102,6 +104,10 @@ end
 # Function to download subtitles from YouTube videos
 function youtube-subtitles
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
+end
+
+function opus
+    ffmpeg -i $argv[1] -c:a libopus -b:a 16k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
 end
 
 type -q fzf; and fzf --fish | source
