@@ -77,7 +77,7 @@ DIR_COLOR='\[\e[33m\]'
 GIT_COLOR='\[\e[32m\]'
 RESET_COLOR='\[\e[0m\]'
 NEWLINE=$'\n'
-export PS1="${NEWLINE}${DATE_COLOR}\d \@ ${DIR_COLOR}\w${GIT_COLOR}\$(parse_git_branch) ${NEWLINE}\$ "
+export PS1="${NEWLINE}${DATE_COLOR}\d \@ ${DIR_COLOR}\w${GIT_COLOR}\$(parse_git_branch)${RESET_COLOR} ${NEWLINE}\$ "
 
 shopt -s nocaseglob                 # Use case-insensitive filename globbing
 shopt -s histappend                 # Append to the history file, don't overwrite it

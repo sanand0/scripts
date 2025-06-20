@@ -9,15 +9,15 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
-
-  - Modify `/usr/share/applications/microsoft-edge.desktop` to add `Exec=/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U`
-    ```bash
-    mkdir -p ~/.local/share/applications
-    desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop --set-key=Exec --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U'
-    update-desktop-database ~/.local/share/applications   # refresh caches
-    ```
-  - To use Wayland, add `--enable-features=UseOzonePlatform --ozone-platform=wayland`
-
+- Add Edge startup options: remote debugging. [Persist changes](https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c)
+  ```bash
+  mkdir -p ~/.local/share/applications
+  desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop \
+    --set-key=Exec \
+      # For Wayland, add --enable-features=UseOzonePlatform --ozone-platform=wayland
+    --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U'
+  update-desktop-database ~/.local/share/applications   # refresh caches
+  ```
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
   - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
@@ -112,7 +112,7 @@ Here is the setup for my Linux laptops.
 - uv tools
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
-    - `llm-cmd llm-openrouter llm-gemini llm-anthropic`
+    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
     - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
@@ -173,6 +173,7 @@ Here is the setup for my Linux laptops.
     - Fn+S = Screenshot. PrtSc = Screenshot area.
     - Fn+4 = Sleep mode.
   - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
+  - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
 Things I skipped / dropped:
 
@@ -183,3 +184,8 @@ Things I skipped / dropped:
 Notes:
 
 - Use `fish_trace=1 fish` to debug fish startup or fish scripts.
+
+
+
+
+sudo apt install sox

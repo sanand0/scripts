@@ -60,6 +60,37 @@ abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
+
+# Channels (-f pulse -i)
+#   default                                                 # PulseAudio's "default" source-your microphone input via the default sink-source loopback
+#   alsa_output.pci-0000_00_1f.3.analog-stereo.monitor      # The monitor of your stereo output ("what-you-hear") created by PulseAudio for speaker capture
+# Mixing & per-source processing (-filter_complex)
+#   [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=4[m]
+#     highpass=f=100             # Cuts frequencies below 100 Hz to remove rumble and handling noise
+#     lowpass=f=12000            # Attenuates above 12 kHz to reduce hiss and harshness
+#     afftdn=nf=-30              # FFT denoiser with noise floor at -30 dB (-20 dB = stronger NR; -40 dB = gentler)
+#     volume=6                   # *4 dB boost on the mic path before mixing (volume=4 => +12 dB)
+#     [m]                        # Labels this processed mic stream as "[m]"
+#   [1:a]pan=mono|c0=FR[s]       # Collapses speaker stream to mono, maps it to the Front Right channel, labels "[s]" (pan filter)
+#   [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]
+#     amerge                     # Merges the two mono inputs ("m"=L, "s"=R) into a single stereo stream
+#     loudnorm=I=-16:LRA=7:tp=-1 # EBU R128 loudness normalization (Integrated -16 LUFS; Loudness Range 7; True-Peak ceiling -1 dBTP)
+#     [a]                        # Labels the final processed stream as "[a]"
+# Output mapping & encoding
+#   -map "[a]"                   # Selects the filtered audio "[a]" for output
+#   -ar 48000                    # Resamples to 48 kHz (Opus native rate) for optimal quality
+#   -ac 2                        # Forces 2 output channels (L/R stereo)
+#   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
+#   -b:a 128k                    # Sets bitrate to 128 kb/s for high-quality stereo Opus
+abbr --add record 'ffmpeg \
+  -f pulse -i default \
+  -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
+  -filter_complex "\
+    [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=7[m]; \
+    [1:a]pan=mono|c0=FR[s]; \
+    [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]" \
+  -map "[a]" -ar 48000 -ac 2 -c:a libopus -b:a 128k ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
+
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
 abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
@@ -99,6 +130,23 @@ function update-files --description 'Update $HOME/.config/files.txt with all fil
     cd $HOME
     fd --follow --exclude node_modules --exclude ImageCache > $HOME/.config/files.txt
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
+end
+
+function pyrun
+    # Join all arguments into one quoted prompt
+    set query (string join ' ' $argv)
+
+    llm "$query" --system '
+Write minimal Python code inside ```python...```
+Begin with inline script dependencies. Example:
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["pandas", ...]
+# ///
+import pandas as pd
+...' \
+    | awk '{print > "/dev/stderr"} /^```/{code = !code; next} code' \
+    | uv run -
 end
 
 # Function to download subtitles from YouTube videos
