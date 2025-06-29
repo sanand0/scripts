@@ -54,6 +54,7 @@ abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python 
 abbr --add clip 'xclip -selection clipboard'
 abbr --add codex 'npx -y @openai/codex'
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
+abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
 abbr --add icdiff 'uvx --offline icdiff'
 abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
@@ -81,7 +82,7 @@ abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 #   -ar 48000                    # Resamples to 48 kHz (Opus native rate) for optimal quality
 #   -ac 2                        # Forces 2 output channels (L/R stereo)
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
-#   -b:a 128k                    # Sets bitrate to 128 kb/s for high-quality stereo Opus
+#   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
 abbr --add record 'ffmpeg \
   -f pulse -i default \
   -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
@@ -89,7 +90,30 @@ abbr --add record 'ffmpeg \
     [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=7[m]; \
     [1:a]pan=mono|c0=FR[s]; \
     [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]" \
-  -map "[a]" -ar 48000 -ac 2 -c:a libopus -b:a 128k ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
+  -map "[a]" -ar 48000 -ac 2 -c:a libopus -b:a 24k ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
+
+# Channels & source (-f x11grab -i)
+#   -f x11grab                         # Captures your X11 screen
+#   -video_size 1920x1080              # Sets recording resolution
+#   -framerate 5                       # Low frame rate to minimize CPU
+#   -i $DISPLAY+0,0                    # Uses current DISPLAY at offset 0,0
+# Hardware-accelerated processing (-vf, -c:v)
+#   format=nv12                        # Converts to NV12 pixel format for VAAPI
+#   hwupload                           # Uploads frames to GPU memory
+#   -c:v h264_vaapi                    # Encodes via VAAPI (Intel/AMD GPU)
+#   -qp 20                             # Quality parameter (20→visually lossless)
+# Output
+#   ~/Downloads/screenrecord-<timestamp>.mp4
+abbr --add screenrecord 'ffmpeg \
+    -vaapi_device /dev/dri/renderD128 \
+    -f x11grab \
+    -video_size 1920x1080 \
+    -framerate 5 \
+    -i $DISPLAY+0,0 \
+    -vf 'format=nv12,hwupload' \
+    -c:v h264_vaapi \
+    -qp 20 \
+    ~/Downloads/screenrecord-$(date "+%Y-%m-%d-%H-%M-%S").mp4'
 
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
@@ -154,8 +178,22 @@ function youtube-subtitles
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
+# opus file.mp4    # generates file.opus
 function opus
-    ffmpeg -i $argv[1] -c:a libopus -b:a 16k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+    ffmpeg -i $argv[1] -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+end
+
+# webm-compress $imput $width $frame_samples $output
+# webm-compress input.webm 500 8 compressed.webm
+function webm-compress
+    set in $argv[1]
+    set --default width $argv[2] 500
+    set --default sampling $argv[4] 1
+    set --default out $argv[4] (string replace '.webm' '.compressed.webm' $in)
+    ffmpeg -i $in \
+        -filter_complex "select='not(mod(n\,$sampling))',scale=$width:-1" \
+        -c:v libvpx-vp9 -b:v 0 -crf 40 \
+        $out
 end
 
 type -q fzf; and fzf --fish | source
