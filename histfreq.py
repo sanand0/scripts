@@ -1,0 +1,56 @@
+"""
+histfreq.py - rank the top N shell commands from a NUL-delimited stream.
+
+  history --null | uv run histfreq.py -n 40
+"""
+
+import argparse
+import re
+import shlex
+import sys
+from collections import Counter
+
+ENV_RE = re.compile(r"^(?:\w+=\S+\s+)+")  # VAR=VAL ...
+WRAPPERS = {"sudo", "env", "time", "nice"}
+PUNCT_RE = re.compile(r"^[^\w]+$")
+
+
+def canonical(entry: str) -> str:
+    """Return first real command token or ''."""
+    entry = ENV_RE.sub("", entry.strip())
+    try:
+        toks = shlex.split(entry, posix=True)
+    except ValueError:
+        return ""
+    i = 0
+    while i < len(toks) and toks[i] in WRAPPERS:
+        i += 1
+    if i >= len(toks):
+        return ""
+    cmd = toks[i].lstrip("'\"`([{").rsplit("/", 1)[-1]
+    if (
+        not cmd
+        or cmd.startswith("-")
+        or "=" in cmd
+        or ":" in cmd
+        or cmd.isnumeric()
+        or PUNCT_RE.match(cmd)
+    ):
+        return ""
+    return cmd
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-n", type=int, default=20, help="rows to show")
+    n = ap.parse_args().n
+
+    entries = sys.stdin.buffer.read().decode(errors="ignore").split("\0")
+    counts = Counter(filter(None, map(canonical, entries)))
+
+    for idx, (cmd, cnt) in enumerate(counts.most_common(n), 1):
+        print(f"{idx:3} {cmd:15} {cnt}")
+
+
+if __name__ == "__main__":
+    main()
