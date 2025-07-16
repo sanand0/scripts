@@ -62,6 +62,19 @@ abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highligh
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
+# Spaced recall from Markdown notes
+abbr --add recall 'deno run --allow-read --allow-env recall.js | glow --width 0'
+# Life Lessons from the top 200 lines of 5 / 20 recent random notes
+abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
+    | sort -nr \
+    | head -n 20 \
+    | cut -d" " -f2- \
+    | shuf \
+    | head -n 5 \
+    | xargs -I {} head -n 200 "{}" \
+    | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
+'
+
 # Channels (-f pulse -i)
 #   default                                                 # PulseAudio's "default" source-your microphone input via the default sink-source loopback
 #   alsa_output.pci-0000_00_1f.3.analog-stereo.monitor      # The monitor of your stereo output ("what-you-hear") created by PulseAudio for speaker capture
@@ -83,7 +96,8 @@ abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 #   -ac 2                        # Forces 2 output channels (L/R stereo)
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
 #   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
-abbr --add record 'ffmpeg \
+abbr --add record 'read -l message -P "Use a headset to avoid echo. Press ENTER."; \
+  ffmpeg \
   -f pulse -i default \
   -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
   -filter_complex "\
@@ -114,7 +128,7 @@ abbr --add screenrecord 'ffmpeg \
     -c:v h264_vaapi \
     -qp 20 \
     ~/Downloads/screenrecord-$(date "+%Y-%m-%d-%H-%M-%S").mp4'
-
+abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
 abbr --add youtube-dl 'uvx --with mutagen yt-dlp'

@@ -48,11 +48,13 @@ Here is the setup for my Linux laptops.
   - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
   - w3m: `sudo apt install w3m`
+  - neomutt: `sudo apt install neomutt`
+  - glow: `sudo snap install glow` - Markdown rich text formatter
   - ngrok: `sudo snap install ngrok`
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
   - gcloud: `curl https://sdk.cloud.google.com | bash`
-  - opentofu: `sudo snap install --classic opentofu`
+  - opentofu: `sudo snap install --classic opentofu` - Terraform alternative
   - aws: `sudo snap install --classic aws`
   - psql: `sudo apt-get install -y postgresql-client`
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
@@ -60,6 +62,7 @@ Here is the setup for my Linux laptops.
   - rofi: `sudo apt install rofi` to switch windows.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
+  - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
   - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
   - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
@@ -72,6 +75,13 @@ Here is the setup for my Linux laptops.
   - [Starship](https://starship.rs/) fast prompt: `curl -sS https://starship.rs/install.sh | sh`
   - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
     - More modern than autojump, fasd, etc.
+  - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/create-local-tunnel/):
+    ```bash
+    sudo mkdir -p --mode=0755 /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+    sudo apt-get update && sudo apt-get install cloudflared
+    ```
   - ImageMagick:
     - `wget https://imagemagick.org/archive/binaries/magick`
     - `sudo mv magick /usr/local/bin/magick`
@@ -138,6 +148,7 @@ Here is the setup for my Linux laptops.
     - Unmount: `umount /home/sanand/hetzner`
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
+  - Disable quiet spash for boot logs: `sudo sed -i 's/quiet splash//' /etc/default/grub; sudo update-grub`
   - Settings > Apps > Default Apps > Web > Microsoft Edge
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
@@ -184,8 +195,5 @@ Things I skipped / dropped:
 Notes:
 
 - Use `fish_trace=1 fish` to debug fish startup or fish scripts.
-
-
-
 
 sudo apt install sox
