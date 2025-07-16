@@ -63,7 +63,7 @@ abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+brac
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
 # Spaced recall from Markdown notes
-abbr --add recall 'deno run --allow-read --allow-env recall.js | glow --width 0'
+abbr --add recall 'recall.js | glow --width 0'
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | sort -nr \

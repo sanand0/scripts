@@ -1,8 +1,10 @@
+#!/usr/bin/env -S deno run --allow-read --allow-env
+
 /* Helps practice spaced recall from my notes.
 
 Usage:
 
-deno run --allow-read --allow-env recall.js | glow --width 0
+recall.js | glow
 
 This automatically picks the latest files matching EITHER:
 
