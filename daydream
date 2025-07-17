@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Daydream for research ideas. https://gwern.net/ai-daydreaming
+
+# -e exit on any command error
+# -u error on unset variables
+# -o pipefail pipeline fails if any segment fails
+set -euo pipefail
+
+# Parse command line arguments
+mode="generate" # Default mode
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --random) mode="random"; shift ;;
+        --latest) mode="latest"; shift ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
+    esac
+done
+
+if [[ "$mode" == "random" ]]; then
+    # Show a random daydream
+    shuf -n1 ~/Dropbox/notes/daydream.jsonl | jq -r '.concept1, "", .concept2, "", .idea' | glow
+    exit 0
+fi
+
+if [[ "$mode" == "latest" ]]; then
+    # Show a latest daydream
+    tail -n1 ~/Dropbox/notes/daydream.jsonl | jq -r '.concept1, "", .concept2, "", .idea' | glow
+    exit 0
+fi
+
+# 1. Fetch two core‑concepts
+CONCEPT1=$(recall @llm @til core-concepts --no-source)
+CONCEPT2=$(recall @llm @til core-concepts --no-source)
+
+# 2. Build multiline prompt
+CONCEPTS=$(cat <<EOF
+<CONCEPT1>
+$CONCEPT1
+</CONCEPT1>
+
+<CONCEPT2>
+$CONCEPT2
+</CONCEPT2>
+EOF
+)
+
+# 3. Show it
+echo "$CONCEPTS"
+
+# 4. Generate idea (stream + capture)
+IDEA=$(llm --model o4-mini --system "You are a creative synthesizer. Your task is to find deep, non-obvious,
+and potentially groundbreaking connections between the provided concepts.
+Do not state the obvious. Generate a hypothesis, a novel analogy,
+a potential research question, or a creative synthesis.
+Be speculative but ground your reasoning.
+
+Think step-by-step to explore potential connections:
+
+#. Are these concepts analogous in some abstract way?
+#. Could one concept be a metaphor for the other?
+#. Do they represent a similar problem or solution in different domains?
+#. Could they be combined to create a new idea or solve a problem?
+#. What revealing contradiction or tension exists between them?
+
+Synthesize your most interesting finding.
+" "$CONCEPTS" | tee /dev/tty)
+
+# 5. Evaluate idea (stream + capture)
+EVAL=$(llm --model o4-mini --system "You are a discerning critic with very high standards. Check if the provided idea is:
+
+- novel: Would a domain expert be surprised?
+- coherent: Is the reasoning internally consistent?
+- feasible: Is there a plausible path to execution or test?
+- impactful: If it works, is the payoff non-trivial?
+
+.. with a short “why” (≤40 words).
+" --schema 'novel bool, novel_why, coherent bool, coherent_why, feasible bool, feasible_why, impactful bool, impactful_why' "$IDEA" | tee /dev/tty)
+
+# 6. Merge into one JSON line and append
+json=$(printf '%s' "$EVAL" \
+  | jq -c \
+      --arg concept1 "$CONCEPT1" \
+      --arg concept2 "$CONCEPT2" \
+      --arg idea "$IDEA" \
+      --arg timestamp "$(date -Iseconds)" \
+    '. + {
+        concept1:$concept1,
+        concept2:$concept2,
+        idea:$idea,
+        timestamp:$timestamp
+      }'
+)
+
+echo "$json" >> ~/Dropbox/notes/daydream.jsonl
