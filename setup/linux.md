@@ -100,6 +100,7 @@ Here is the setup for my Linux laptops.
     - `sudo apt install ./xh_0.24.1_amd64.deb`
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
+  - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`. [Video](https://youtu.be/CPLdltN7wgE)
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`
