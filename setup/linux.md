@@ -95,6 +95,9 @@ Here is the setup for my Linux laptops.
     - `curl -LO https://gitlab.com/gitlab-org/cli/-/releases/v1.55.0/downloads/glab_1.55.0_linux_amd64.deb`
     - `sudo apt install ./glab_1.55.0_linux_amd64.deb`
     - `glab config set -g host code.gramener.com`
+  - xh (curl alternative):
+    - `curl -LO https://github.com/ducaale/xh/releases/download/v0.24.1/xh_0.24.1_amd64.deb`
+    - `sudo apt install ./xh_0.24.1_amd64.deb`
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
