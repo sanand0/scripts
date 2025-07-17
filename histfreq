@@ -1,3 +1,5 @@
+#!/usr/bin/env -S uv run --script
+
 """
 histfreq.py - rank the top N shell commands from a NUL-delimited stream.
 
@@ -42,7 +44,7 @@ def canonical(entry: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-n", type=int, default=20, help="rows to show")
+    ap.add_argument("-n", type=int, default=40, help="rows to show")
     n = ap.parse_args().n
 
     entries = sys.stdin.buffer.read().decode(errors="ignore").split("\0")

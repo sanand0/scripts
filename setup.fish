@@ -56,15 +56,13 @@ abbr --add codex 'npx -y @openai/codex'
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
 abbr --add icdiff 'uvx --offline icdiff'
-abbr --add histfreq 'history --null | uv run $HOME/code/scripts/histfreq.py -n 40'
 abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
+abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
 abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
-# Spaced recall from Markdown notes
-abbr --add recall 'recall.js | glow --width 0'
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | sort -nr \

@@ -4,7 +4,7 @@
 
 Usage:
 
-recall.js | glow
+recall | glow
 
 This automatically picks the latest files matching EITHER:
 
@@ -21,7 +21,9 @@ import remarkStringify from "npm:remark-stringify";
 import { visit } from "npm:unist-util-visit";
 
 // args & paths
-const terms = Deno.args.length ? Deno.args : ["llm", "til"];
+const flags = Deno.args.filter((arg) => arg.startsWith("--"));
+let terms = Deno.args.filter((arg) => !arg.startsWith("--"));
+if (!terms.length) terms = ["@llm", "@til", "core-concepts", "@explore"];
 const term = terms[Math.floor(Math.random() * terms.length)];
 const re = new RegExp(term, "i");
 
@@ -52,4 +54,4 @@ const choice = pick(Math.random() * weights.reduce((a, b) => a + b));
 // stringify the chosen bullet & render to terminal
 const md = unified().use(remarkStringify).stringify(choice);
 console.log(md);
-console.log("Source:", files[0].path);
+if (!flags.includes("--no-source")) console.log("Source:", files[0].path);
