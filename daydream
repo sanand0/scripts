@@ -8,6 +8,8 @@ set -euo pipefail
 
 # Parse command line arguments
 mode="generate" # Default mode
+goal=""
+declare -a concept_terms=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         # --random shows a random row
@@ -19,7 +21,20 @@ while [[ $# -gt 0 ]]; do
             n=${1:-1}  # Default to 1 if no number provided
             [[ "$n" =~ ^[0-9]+$ ]] && shift || n=1  # Shift only if it was a number
             ;;
-        *) echo "Unknown parameter: $1"; exit 1 ;;
+        -c|--concept)
+            shift
+            concept_terms+=("$1")
+            shift
+            ;;
+        -*) echo "Unknown parameter: $1"; exit 1 ;;
+        *)
+            if [[ -z "$goal" ]]; then
+                goal="$1"
+                shift
+            else
+                echo "Unknown parameter: $1"; exit 1
+            fi
+            ;;
     esac
 done
 
@@ -35,21 +50,22 @@ if [[ "$mode" == "latest" ]]; then
     exit 0
 fi
 
-# 1. Fetch two core-concepts
-CONCEPT1=$(recall @llm @til core-concepts --no-source)
-CONCEPT2=$(recall @llm @til core-concepts --no-source)
+# 1. Fetch concepts
+# concept_terms holds recall prompts; concepts holds retrieved text
+while ((${#concept_terms[@]} < 2)); do
+    concept_terms+=("@llm @til core-concepts")
+done
+
+declare -a concepts=()
+for t in "${concept_terms[@]}"; do
+    concepts+=("$(recall $t --no-source --decay=0)")
+done
 
 # 2. Build multiline prompt
-CONCEPTS=$(cat <<EOF
-<CONCEPT1>
-$CONCEPT1
-</CONCEPT1>
-
-<CONCEPT2>
-$CONCEPT2
-</CONCEPT2>
-EOF
-)
+CONCEPTS="<GOAL>${goal}</GOAL>"
+for c in "${concepts[@]}"; do
+    CONCEPTS+=$'\n<CONCEPT>\n'"$c"$'\n</CONCEPT>'
+done
 
 # 3. Show it
 echo "$CONCEPTS"
@@ -57,10 +73,10 @@ echo "$CONCEPTS"
 # 4. Generate idea (stream + capture)
 IDEA=$(llm --model o4-mini --system "You are a radical concept synthesiser hired to astound even experts.
 
-GOAL: Generate one radically non-obvious idea fusing CONCEPT 1 and CONCEPT 2, with concrete next steps.
+GOAL: Generate one radically non-obvious <GOAL>-aligned idea fusing provided <CONCEPT>s with concrete next steps.
 
 THINK:
-1. Generate 5+ candidate links using these lenses: Inversion, Mechanism-transplant, Constraint-violation, Scale-jump, Any other radical angle
+1. Generate 5+ candidate links using these lenses: Inversion, Mechanism-transplant, Constraint-violation, Scale-jump, Oblique strategies, Any other radical angle
 2. Score for Novelty x Utility (1-5 each); select the highest-scoring fusion
 3. Converge: stress-test for edge-cases; refine language.
 
@@ -120,13 +136,13 @@ CRITICAL: If you can't identify significant weaknesses or alternatives, you're b
 # 6. Merge into one JSON line and append
 json=$(printf '%s' "$EVAL" \
   | jq -c \
-      --arg concept1 "$CONCEPT1" \
-      --arg concept2 "$CONCEPT2" \
+      --argjson concepts "$(printf '%s\n' "${concepts[@]}" | jq -R . | jq -s .)" \
+      --arg goal "$goal" \
       --arg idea "$IDEA" \
       --arg timestamp "$(date -Iseconds)" \
     '. + {
-        concept1:$concept1,
-        concept2:$concept2,
+        concepts:$concepts,
+        goal:$goal,
         idea:$idea,
         timestamp:$timestamp
       }'
