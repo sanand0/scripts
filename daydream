@@ -52,15 +52,14 @@ fi
 
 # 1. Fetch concepts
 # concept_terms holds recall prompts; concepts holds retrieved text
+while ((${#concept_terms[@]} < 2)); do
+    concept_terms+=("@llm @til core-concepts")
+done
+
 declare -a concepts=()
-if [[ ${#concept_terms[@]} -eq 0 ]]; then
-    concepts+=("$(recall @llm @til core-concepts --no-source)")
-    concepts+=("$(recall @llm @til core-concepts --no-source)")
-else
-    for t in "${concept_terms[@]}"; do
-        concepts+=("$(recall "$t" --no-source --decay=0)")
-    done
-fi
+for t in "${concept_terms[@]}"; do
+    concepts+=("$(recall "$t" --no-source --decay=0)")
+done
 
 # 2. Build multiline prompt
 CONCEPTS="<GOAL>${goal}</GOAL>"
