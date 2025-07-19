@@ -137,7 +137,6 @@ CRITICAL: If you can't identify significant weaknesses or alternatives, you're b
 json=$(printf '%s' "$EVAL" \
   | jq -c \
       --argjson concepts "$(printf '%s\n' "${concepts[@]}" | jq -R . | jq -s .)" \
-      # convert bash array -> JSON array
       --arg goal "$goal" \
       --arg idea "$IDEA" \
       --arg timestamp "$(date -Iseconds)" \
