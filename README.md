@@ -59,3 +59,5 @@ Here are the setup details for my laptops.
 - [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
 - [generate/](generate/) has scripts to generate data.
+- [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`

@@ -28,13 +28,14 @@ const term = terms[Math.floor(Math.random() * terms.length)];
 const re = new RegExp(term, "i");
 
 const HOME = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
-const DIR = `${HOME}/Dropbox/notes`;
+const DIRS = [`${HOME}/Dropbox/notes`, `${HOME}/Dropbox/notes/about`];
 
 // pick newest matching .md file
 const files = [];
-for await (const e of Deno.readDir(DIR))
-  if (e.isFile && e.name.endsWith(".md") && re.test(e.name))
-    files.push({ path: `${DIR}/${e.name}`, mtime: (await Deno.stat(`${DIR}/${e.name}`)).mtime?.getTime() || 0 });
+for (const DIR of DIRS)
+  for await (const e of Deno.readDir(DIR))
+    if (e.isFile && e.name.endsWith(".md") && re.test(e.name))
+      files.push({ path: `${DIR}/${e.name}`, mtime: (await Deno.stat(`${DIR}/${e.name}`)).mtime?.getTime() || 0 });
 
 files.sort((a, b) => b.mtime - a.mtime);
 const txt = await Deno.readTextFile(files[0].path);
