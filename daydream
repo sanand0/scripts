@@ -58,7 +58,7 @@ done
 
 declare -a concepts=()
 for t in "${concept_terms[@]}"; do
-    concepts+=("$(recall "$t" --no-source --decay=0)")
+    concepts+=("$(recall $t --no-source --decay=0)")
 done
 
 # 2. Build multiline prompt
