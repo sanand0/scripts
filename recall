@@ -47,8 +47,9 @@ visit(tree, "list", (node, _, parent) => {
   if (parent.type === "root") node.children.forEach((li) => items.push(li));
 });
 
-// spaced‑recall random: weight ∝ 1/(index+1)
-const weights = items.map((_, i) => 1 / (i + 1));
+// spaced‑recall with decay
+const decay = Number(flags.find((f) => f.startsWith("--decay="))?.slice(8) ?? 0.02);
+const weights = items.map((_, i) => Math.pow(1 - decay, i));
 const pick = (r, acc = 0) => items.find((_, i) => (acc += weights[i]) >= r);
 const choice = pick(Math.random() * weights.reduce((a, b) => a + b));
 
