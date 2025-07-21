@@ -186,6 +186,14 @@ import pandas as pd
     | uv run -
 end
 
+# Pastes from stdin on command line buffer.
+# Usage: llm -t fish "Write a one-line command to ..." | pasteit
+function pasteit
+    read -l buf
+    commandline -r -- $buf
+    commandline -f repaint
+end
+
 # Function to download subtitles from YouTube videos
 function youtube-subtitles
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
