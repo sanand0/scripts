@@ -101,6 +101,12 @@ Here is the setup for my Linux laptops.
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
   - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`. [Video](https://youtu.be/CPLdltN7wgE)
+  - gitwatch:
+    - `sudo apt install inotify-tools`
+    - `git clone https://github.com/gitwatch/gitwatch ~/.local/bin/gitwatch`
+    - `chmod +x ~/.local/bin/gitwatch`
+    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit %%d" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
+    - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-notes`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`
@@ -147,9 +153,12 @@ Here is the setup for my Linux laptops.
     - [dash-to-panel](https://github.com/home-sweet-gnome/dash-to-panel)
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
-  - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+  - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
     - List mounts: `mount | grep rclone` or `rclone rc mount/listmounts`
     - Unmount: `umount /home/sanand/hetzner`
+  - Set up s-anand.net rclone and mount
+    - `rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa`
+    - `rclone mount s-anand.net:~ /home/sanand/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full  --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
   - Disable quiet spash for boot logs: `sudo sed -i 's/quiet splash//' /etc/default/grub; sudo update-grub`
