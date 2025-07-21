@@ -53,7 +53,7 @@ fi
 # 1. Fetch concepts
 # concept_terms holds recall prompts; concepts holds retrieved text
 while ((${#concept_terms[@]} < 2)); do
-    concept_terms+=("@llm @til core-concepts")
+    concept_terms+=("llms til core-concepts claude-code-uses")
 done
 
 declare -a concepts=()
@@ -136,7 +136,7 @@ CRITICAL: If you can't identify significant weaknesses or alternatives, you're b
 # 6. Merge into one JSON line and append
 json=$(printf '%s' "$EVAL" \
   | jq -c \
-      --argjson concepts "$(printf '%s\n' "${concepts[@]}" | jq -R . | jq -s .)" \
+      --argjson concepts "$(printf '%s\0' "${concepts[@]}" | jq -Rs 'split("\u0000")[:-1]')" \
       --arg goal "$goal" \
       --arg idea "$IDEA" \
       --arg timestamp "$(date -Iseconds)" \
@@ -148,4 +148,4 @@ json=$(printf '%s' "$EVAL" \
       }'
 )
 
-echo "$json" >> ~/Dropbox/notes/daydream.jsonl
+echo "$json" >> ~/code/til-live/daydream.jsonl
