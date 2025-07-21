@@ -6,13 +6,8 @@ Usage:
 
 recall | glow
 
-This automatically picks the latest files matching EITHER:
-
-- "llm" (@llms.md), OR
-- "til" (@til-things-i-learned.md)
-
-... and prints a random top-level bullet (preferring recent ones).
-
+It picks the latest files matching "llms" "til" "core-concepts" ...
+and prints a random top-level bullet (preferring recent ones).
 */
 
 import { unified } from "npm:unified";
@@ -23,12 +18,12 @@ import { visit } from "npm:unist-util-visit";
 // args & paths
 const flags = Deno.args.filter((arg) => arg.startsWith("--"));
 let terms = Deno.args.filter((arg) => !arg.startsWith("--"));
-if (!terms.length) terms = ["@llm", "@til", "core-concepts", "@explore"];
+if (!terms.length) terms = ["llms.md", "til.md", "core-concepts", "oblique-strategies", "claude-code-uses"];
 const term = terms[Math.floor(Math.random() * terms.length)];
 const re = new RegExp(term, "i");
 
 const HOME = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
-const DIRS = [`${HOME}/Dropbox/notes`, `${HOME}/Dropbox/notes/about`];
+const DIRS = [`${HOME}/Dropbox/notes`, `${HOME}/code/til-live`, `${HOME}/Dropbox/notes/about`];
 
 // pick newest matching .md file
 const files = [];
