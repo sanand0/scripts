@@ -4,7 +4,7 @@
 - Avoid try blocks unless the operation is error-prone
 - Use functions, not classes
 - Keep configurations in separate config files, not code (.env, config.json, config.toml)
-- Keep files under ~500 lines, split logically
+- Keep code files under ~500 lines, split logically
 - When modifying code, follow existing style. Retain existing comments.
 - In Python, add type hints and write single-line docstrings
 
@@ -24,6 +24,8 @@ Linting:
 - PY: `uvx ruff --line-length 100`
 - JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` -- do not format HTML files
 - HTML: `npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline`
+
+For [npm packages](.)
 
 In pull request descriptions, include well-formatted Markdown covering:
 - The problem this PR solves (1 sentence)
