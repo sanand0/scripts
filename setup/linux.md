@@ -9,6 +9,7 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
+  - Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `~/.config/microsoft-edge/Default/HubApps`
 - Add Edge startup options: remote debugging. [Persist changes](https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c)
   ```bash
   mkdir -p ~/.local/share/applications
@@ -105,7 +106,7 @@ Here is the setup for my Linux laptops.
     - `sudo apt install inotify-tools`
     - `git clone https://github.com/gitwatch/gitwatch ~/.local/bin/gitwatch`
     - `chmod +x ~/.local/bin/gitwatch`
-    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit %%d" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
+    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
     - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-notes`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
