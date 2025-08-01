@@ -16,7 +16,7 @@ echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 ```
 
-Add [`ai-code-rules.md`](ai-code-rules.md) to VS code's `github.copilot.chat.codeGeneration.instructions` or Cursor or other AI code editor settings.
+See [`ai-code-rules/`](ai-code-rules/README.md) for setting up AI code editors.
 
 ## Linux Setup
 
