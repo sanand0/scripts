@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Parse command line arguments
 mode="generate" # Default mode
-goal=""
+goal="useful innovative idea"
 declare -a concept_terms=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
