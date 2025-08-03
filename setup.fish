@@ -186,6 +186,10 @@ import pandas as pd
     | uv run -
 end
 
+function with
+    llm --extract --system "Write a fish command using $argv[1]" "$argv[2..]"
+end
+
 # Pastes from stdin on command line buffer.
 # Usage: llm -t fish "Write a one-line command to ..." | pasteit
 function pasteit
