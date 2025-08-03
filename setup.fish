@@ -74,6 +74,7 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
 
+# Audio record only
 # Channels (-f pulse -i)
 #   default                                                 # PulseAudio's "default" source-your microphone input via the default sink-source loopback
 #   alsa_output.pci-0000_00_1f.3.analog-stereo.monitor      # The monitor of your stereo output ("what-you-hear") created by PulseAudio for speaker capture
@@ -103,8 +104,14 @@ abbr --add record 'read -l message -P "Use a headset to avoid echo. Press ENTER.
     [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=7[m]; \
     [1:a]pan=mono|c0=FR[s]; \
     [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]" \
-  -map "[a]" -ar 48000 -ac 2 -c:a libopus -b:a 24k ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
+  -map "[a]" \
+  -ar 48000 \
+  -ac 2 \
+  -c:a libopus \
+  -b:a 24k \
+  ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
 
+# Screen record only
 # Channels & source (-f x11grab -i)
 #   -f x11grab                         # Captures your X11 screen
 #   -video_size 1920x1080              # Sets recording resolution
@@ -127,6 +134,34 @@ abbr --add screenrecord 'ffmpeg \
     -c:v h264_vaapi \
     -qp 20 \
     ~/Downloads/screenrecord-$(date "+%Y-%m-%d-%H-%M-%S").mp4'
+
+# Screen + audio
+# Includes options from record and screenrecord above, plus a `-map 2:v`
+abbr --add videorecord '
+  read -l message -P "Use a headset to avoid echo. Press ENTER."; \
+  ffmpeg \
+    -vaapi_device /dev/dri/renderD128 \
+    -f pulse -i default \
+    -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
+    -f x11grab \
+    -video_size 1920x1080 \
+    -framerate 5 \
+    -i $DISPLAY+0,0 \
+    -filter_complex "\
+      [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=7[m]; \
+      [1:a]pan=mono|c0=FR[s]; \
+      [m][s]amerge,loudnorm=I=-16:LRA=7:tp=-1[a]" \
+    -map 2:v \
+    -map "[a]" \
+    -vf "format=nv12,hwupload" \
+    -c:v h264_vaapi \
+    -qp 20 \
+    -ar 48000 \
+    -ac 2 \
+    -c:a libopus \
+    -b:a 24k \
+    ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
+
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
