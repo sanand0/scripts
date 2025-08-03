@@ -206,7 +206,7 @@ end
 
 function update-hetzner --description 'Update $HOME/.config/hetzner.txt with all files in $HOME/hetzner'
     cd $HOME
-    fd . hetzner > $HOME/.config/hetzner.txt
+    fd . hetzner --exclude node_modules --exclude ImageCache > $HOME/.config/hetzner.txt
     sort $HOME/.config/hetzner.txt -o $HOME/.config/hetzner.txt
 end
 

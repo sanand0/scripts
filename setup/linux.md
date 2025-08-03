@@ -106,7 +106,9 @@ Here is the setup for my Linux laptops.
     - `sudo apt install inotify-tools`
     - `git clone https://github.com/gitwatch/gitwatch ~/.local/bin/gitwatch`
     - `chmod +x ~/.local/bin/gitwatch`
-    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
+    - `printf '[Unit]\nDescription=Auto‑push til\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-til.service`
+    - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-til`
+    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/notes\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
     - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-notes`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
