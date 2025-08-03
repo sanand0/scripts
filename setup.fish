@@ -200,8 +200,14 @@ end
 # `update-files` caches files and directories in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
 function update-files --description 'Update $HOME/.config/files.txt with all files in $HOME'
     cd $HOME
-    fd --follow --exclude node_modules --exclude ImageCache > $HOME/.config/files.txt
+    fd --follow --exclude node_modules --exclude ImageCache --exclude hetzner --exclude s-anand.net --exclude google-cloud-sdk > $HOME/.config/files.txt
     sort $HOME/.config/files.txt -o $HOME/.config/files.txt
+end
+
+function update-hetzner --description 'Update $HOME/.config/hetzner.txt with all files in $HOME/hetzner'
+    cd $HOME
+    fd . hetzner > $HOME/.config/hetzner.txt
+    sort $HOME/.config/hetzner.txt -o $HOME/.config/hetzner.txt
 end
 
 function pyrun
