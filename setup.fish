@@ -135,7 +135,7 @@ abbr --add screenrecord 'ffmpeg \
     -qp 20 \
     ~/Downloads/screenrecord-$(date "+%Y-%m-%d-%H-%M-%S").mp4'
 
-# Screen + audio
+# Screen + audio recording.
 # Includes options from record and screenrecord above, plus a `-map 2:v`
 abbr --add videorecord '
   read -l message -P "Use a headset to avoid echo. Press ENTER."; \
@@ -162,6 +162,7 @@ abbr --add videorecord '
     -b:a 24k \
     ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
 
+abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
