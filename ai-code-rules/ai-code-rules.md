@@ -1,4 +1,5 @@
 - Write SHORT, CONCISE, READABLE code
+- Minimize code changes. Never remove comments
 - Deduplicate maximally. Use iteration, higher-order functions, vectorization
 - Validate early via if-return pattern
 - Avoid error handling unless an operation is error-prone
