@@ -28,7 +28,6 @@ Linting:
 - JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'`
 - HTML: `npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline`
 
-
 References:
 
 - To [test browser JS apps](test-browser-js-apps.md) read @test-browser-js-apps.md
