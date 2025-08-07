@@ -9,6 +9,8 @@ This directory lists guidelines for AI Code Agents.
 
 ## Usage
 
+Automatically linked at:
+
 - [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions):
   - In `~/.config/Code/User/prompts/ai-code-rules.md`
   - Add `[Rules](/home/sanand/code/scripts/ai-code-rules/ai-code-rules.md)`
@@ -20,5 +22,8 @@ This directory lists guidelines for AI Code Agents.
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/f21ff093897980a51a4ad1ea6ee167dee53416b6/docs/cli/configuration.md?plain=1#L40):
   - In `~/.gemini/settings.json`
   - Add `"contextFileName": "/home/sanand/code/scripts/ai-code-rules/ai-code-rules.md",`
-- [Cursor](https://docs.cursor.com/en/context/rules#user-rules):
-  - Copy-paste into Settings > Rules.
+
+Manually update at:
+
+- [Cursor](https://docs.cursor.com/en/context/rules#user-rules): Copy-paste into Settings > Rules.
+- [ChatGPT Codex](https://chatgpt.com/codex): Codex Settings > Custom instructions

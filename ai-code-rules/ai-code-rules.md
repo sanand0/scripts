@@ -7,6 +7,7 @@
 - Keep code files under ~500 lines. Split logically
 - Follow existing code & comment style
 - Include type hints and single-line docstrings
+- PRs messages: state problem, changes made, what needs review, and deployment risks & mitigations.
 
 HTML/CSS/JS:
 
@@ -27,14 +28,6 @@ Linting:
 - JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'`
 - HTML: `npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline`
 
-Pull requests should mention:
-
-- Problem this PR solves (1 sentence)
-- Changes to code / config / doc made and in which files.
-- What to review, what's safe vs. what needs extra scrutiny.
-- Steps to verify locally.
-- Deployment risks and mitigations
-- What can developers learn from this PR?
 
 References:
 
