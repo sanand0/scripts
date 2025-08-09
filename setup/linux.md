@@ -127,7 +127,7 @@ Here is the setup for my Linux laptops.
 - uv tools
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
-    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic`
+    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
     - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
