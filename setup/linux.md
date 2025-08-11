@@ -48,6 +48,7 @@ Here is the setup for my Linux laptops.
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
+  - qpdf: `sudo apt install qpdf`
   - w3m: `sudo apt install w3m`
   - neomutt: `sudo apt install neomutt`
   - glow: `sudo snap install glow` - Markdown rich text formatter
