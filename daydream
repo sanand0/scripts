@@ -71,7 +71,7 @@ done
 echo "$CONCEPTS"
 
 # 4. Generate idea (stream + capture)
-IDEA=$(llm --model o4-mini --system "You are a radical concept synthesiser hired to astound even experts.
+IDEA=$(llm --model gpt-5 --system "You are a radical concept synthesiser hired to astound even experts.
 
 GOAL: Generate one radically non-obvious <GOAL>-aligned idea fusing provided <CONCEPT>s with concrete next steps.
 
