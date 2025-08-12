@@ -59,7 +59,7 @@ Here is the setup for my Linux laptops.
   - opentofu: `sudo snap install --classic opentofu` - Terraform alternative
   - aws: `sudo snap install --classic aws`
   - psql: `sudo apt-get install -y postgresql-client`
-  - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
+  - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
