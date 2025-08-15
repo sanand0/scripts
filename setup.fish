@@ -64,7 +64,7 @@ abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+brac
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
-abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
+abbr --add recall 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | sort -nr \
     | head -n 20 \
     | cut -d" " -f2- \
