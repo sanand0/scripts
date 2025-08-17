@@ -156,6 +156,7 @@ Here is the setup for my Linux laptops.
     - `rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa`
     - `rclone mount s-anand.net:~ /home/sanand/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full  --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
+  - Set (short) password: `sudo passwd sanand`. But default, Ubuntu requires long passwords, but this overrides it.
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
   - Disable quiet spash for boot logs: `sudo sed -i 's/quiet splash//' /etc/default/grub; sudo update-grub`
   - Settings > Apps > Default Apps > Web > Microsoft Edge
