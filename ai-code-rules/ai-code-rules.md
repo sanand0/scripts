@@ -9,6 +9,7 @@
 - Follow existing code & comment style
 - Include type hints and single-line docstrings
 - PRs messages: state problem, changes made, what needs review, and deployment risks & mitigations.
+- On completion, suggest further improvements
 
 HTML/CSS/JS:
 
