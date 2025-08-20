@@ -53,6 +53,7 @@ Here is the setup for my Linux laptops.
   - neomutt: `sudo apt install neomutt`
   - glow: `sudo snap install glow` - Markdown rich text formatter
   - ngrok: `sudo snap install ngrok`
+  - mtp-tools: `sudo apt install mtp-tools` to read Android MTP file system
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
   - gcloud: `curl https://sdk.cloud.google.com | bash`
