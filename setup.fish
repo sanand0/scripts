@@ -224,7 +224,12 @@ Begin with inline script dependencies. Example:
 # ///
 import pandas as pd
 ...' \
-    | awk '{print > "/dev/stderr"} /^```/{code = !code; next} code' \
+    | awk '
+        { print > "/dev/stderr"; all = all $0 ORS }
+        /^```/ { seen = 1; code = !code; next }
+        code   { print; next }
+        END    { if (!seen) print all }
+      ' \
     | uv run -
 end
 
