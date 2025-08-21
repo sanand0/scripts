@@ -225,7 +225,7 @@ Begin with inline script dependencies. Example:
 import pandas as pd
 ...' \
     | awk '{print > "/dev/stderr"} /^```/{code = !code; next} code' \
-    | uv run -
+    | echo
 end
 
 function with
