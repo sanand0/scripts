@@ -12,7 +12,7 @@ This directory lists guidelines for AI Code Agents.
 Automatically linked at:
 
 - [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions):
-  - In `~/.config/Code/User/prompts/ai-code-rules.md`
+  - In `~/.config/Code/User/prompts/ai-code-rules.instructions.md`
   - Add `[Rules](/home/sanand/code/scripts/ai-code-rules/ai-code-rules.md)`
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/memory):
   - In `~/.claude/CLAUDE.md`
