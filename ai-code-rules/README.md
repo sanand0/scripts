@@ -27,3 +27,4 @@ Manually update at:
 
 - [Cursor](https://docs.cursor.com/en/context/rules#user-rules): Copy-paste into Settings > Rules.
 - [ChatGPT Codex](https://chatgpt.com/codex): Codex Settings > Custom instructions
+- WindSurf: No documented global “rules” markdown
