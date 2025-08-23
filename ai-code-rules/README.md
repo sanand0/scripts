@@ -22,6 +22,8 @@ Automatically linked at:
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/f21ff093897980a51a4ad1ea6ee167dee53416b6/docs/cli/configuration.md?plain=1#L40):
   - In `~/.gemini/settings.json`
   - Add `"contextFileName": "/home/sanand/code/scripts/ai-code-rules/ai-code-rules.md",`
+- [Cline](https://docs.cline.bot/features/cline-rules): `~/Cline/Rules`
+- [OpenCode](https://opencode.ai/docs/config/?utm_source=chatgpt.com): `~/.config/opencode/mode/`
 
 Manually update at:
 
