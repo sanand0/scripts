@@ -11,6 +11,11 @@
 - PRs messages: state problem, changes made, what needs review, and deployment risks & mitigations.
 - On completion, suggest further improvements
 
+Python:
+
+- Use `uv run` instead of `python` or `python3`.
+- Include inline script metadata
+
 HTML/CSS/JS:
 
 - Use ESM: <script type="module">
