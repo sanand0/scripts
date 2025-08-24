@@ -14,7 +14,7 @@
 Python:
 
 - Use `uv run` instead of `python` or `python3`.
-- Include inline script metadata
+- Add dependencies as inline script metadata at the top, e.g. `# dependencies = ["pandas", "requests<3"]`
 
 HTML/CSS/JS:
 
