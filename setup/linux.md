@@ -161,7 +161,7 @@ Here is the setup for my Linux laptops.
 
     mount | grep rclone           # list rclone mounts
     rclone rc mount/listmounts    # list mounts via rclone
-    umount /home/sanand/hetzner   # unmount
+    umount /home/sanand/hetzner   # unmount - official process
     ```
   - Set up s-anand.net rclone and mount
     - `rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa`
