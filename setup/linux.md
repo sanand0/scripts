@@ -151,6 +151,7 @@ Here is the setup for my Linux laptops.
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
   - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+    - sudo
     - List mounts: `mount | grep rclone` or `rclone rc mount/listmounts`
     - Unmount: `umount /home/sanand/hetzner`
   - Set up s-anand.net rclone and mount
