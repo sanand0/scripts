@@ -164,7 +164,7 @@ Here is the setup for my Linux laptops.
     ```bash
     sudo mkdir /mnt/s-anand.net
     sudo chown -R sanand:sanand /mnt/s-anand.net
-    rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa`
+    rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa
     rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
     ```
   - Set up gdrive-straive rclone and mount
