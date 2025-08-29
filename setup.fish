@@ -135,7 +135,7 @@ abbr --add screenrecord 'ffmpeg \
     -qp 20 \
     ~/Downloads/screenrecord-$(date "+%Y-%m-%d-%H-%M-%S").mp4'
 
-# Screen + audio
+# Screen + audio recording.
 # Includes options from record and screenrecord above, plus a `-map 2:v`
 abbr --add videorecord '
   read -l message -P "Use a headset to avoid echo. Press ENTER."; \
@@ -162,6 +162,7 @@ abbr --add videorecord '
     -b:a 24k \
     ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
 
+abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add ws windsurf
 abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
@@ -169,9 +170,9 @@ abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
 abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 abbr --add unbrace 'fnm env | source; npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
-# Usage: webp-lossless --color=16 *.png
-abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6'
-abbr --add webp-lossy 'magick mogrify -format webp -define webp:lossless=false -define webp:method=6 --quality 10'
+# TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
+# abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
+abbr --add webp-lossy 'cwebp -q 10 -m 6'
 
 # Functions are slow. fnm is slow. So boot it up when needed
 abbr --add npx 'abbr --erase npx; fnm env | source; npx '
@@ -223,7 +224,12 @@ Begin with inline script dependencies. Example:
 # ///
 import pandas as pd
 ...' \
-    | awk '{print > "/dev/stderr"} /^```/{code = !code; next} code' \
+    | awk '
+        { print > "/dev/stderr"; all = all $0 ORS }
+        /^```/ { seen = 1; code = !code; next }
+        code   { print; next }
+        END    { if (!seen) print all }
+      ' \
     | uv run -
 end
 

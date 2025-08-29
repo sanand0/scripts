@@ -23,7 +23,7 @@ const term = terms[Math.floor(Math.random() * terms.length)];
 const re = new RegExp(term, "i");
 
 const HOME = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "";
-const DIRS = [`${HOME}/Dropbox/notes`, `${HOME}/code/til-live`, `${HOME}/Dropbox/notes/about`];
+const DIRS = [`${HOME}/Dropbox/notes`, `${HOME}/code/til`, `${HOME}/Dropbox/notes/about`];
 
 // pick newest matching .md file
 const files = [];

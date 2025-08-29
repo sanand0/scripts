@@ -48,17 +48,19 @@ Here is the setup for my Linux laptops.
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
+  - qpdf: `sudo apt install qpdf` to split pages
   - w3m: `sudo apt install w3m`
   - neomutt: `sudo apt install neomutt`
   - glow: `sudo snap install glow` - Markdown rich text formatter
   - ngrok: `sudo snap install ngrok`
+  - mtp-tools: `sudo apt install mtp-tools` to read Android MTP file system. Just installing it, connecting my Redmi via USB and enabling file transfer showed the files on Gnome
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
   - gcloud: `curl https://sdk.cloud.google.com | bash`
   - opentofu: `sudo snap install --classic opentofu` - Terraform alternative
   - aws: `sudo snap install --classic aws`
   - psql: `sudo apt-get install -y postgresql-client`
-  - autokey: `sudo apt install autokey-gtk` and set up with phrases. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
+  - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
@@ -102,14 +104,6 @@ Here is the setup for my Linux laptops.
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
   - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`. [Video](https://youtu.be/CPLdltN7wgE)
-  - gitwatch:
-    - `sudo apt install inotify-tools`
-    - `git clone https://github.com/gitwatch/gitwatch ~/.local/bin/gitwatch`
-    - `chmod +x ~/.local/bin/gitwatch`
-    - `printf '[Unit]\nDescription=Auto‑push til\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/til-live\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-til.service`
-    - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-til`
-    - `printf '[Unit]\nDescription=Auto‑push notes\n\n[Service]\nExecStart=%%h/.local/bin/gitwatch/gitwatch.sh -s 10 -r origin -b live -m "auto-commit" /home/sanand/code/notes\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n' > ~/.config/systemd/user/gitwatch-notes.service`
-    - `systemctl --user daemon-reload; systemctl --user enable --now gitwatch-notes`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`
@@ -135,7 +129,7 @@ Here is the setup for my Linux laptops.
 - uv tools
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
-    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic`
+    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
     - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
@@ -157,12 +151,26 @@ Here is the setup for my Linux laptops.
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
   - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
-    - List mounts: `mount | grep rclone` or `rclone rc mount/listmounts`
-    - Unmount: `umount /home/sanand/hetzner`
+    ```bash
+    sudo mkdir /mnt/hetzner
+    sudo chown -R sanand:sanand /mnt/hetzner/
+    rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+
+    mount | grep rclone           # list rclone mounts
+    rclone rc mount/listmounts    # list mounts via rclone
+    umount /home/sanand/hetzner   # unmount - official process
+    ```
   - Set up s-anand.net rclone and mount
-    - `rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa`
-    - `rclone mount s-anand.net:~ /home/sanand/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full  --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+    ```bash
+    sudo mkdir /mnt/s-anand.net
+    sudo chown -R sanand:sanand /mnt/s-anand.net
+    rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa
+    rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+    ```
+  - Set up gdrive-straive rclone and mount
+    -
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
+  - Set (short) password: `sudo passwd sanand`. But default, Ubuntu requires long passwords, but this overrides it.
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
   - Disable quiet spash for boot logs: `sudo sed -i 's/quiet splash//' /etc/default/grub; sudo update-grub`
   - Settings > Apps > Default Apps > Web > Microsoft Edge

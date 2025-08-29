@@ -1,0 +1,224 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = [
+#   "typer>=0.12",
+#   "httpx>=0.27",
+#   "google-auth>=2.27",
+#   "google-auth-oauthlib>=1.2",
+#   "rich>=13.7"
+# ]
+# ///
+
+"""Minimal, elegant Gmail search CLI."""
+
+import asyncio
+import httpx
+import json
+import os
+import sys
+import typer
+from datetime import timezone
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence
+from rich.console import Console
+
+HEADERS = ["Date", "From", "To", "Subject"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
+
+def client_config_from_env() -> Dict[str, Any]:
+    """Build InstalledApp client config from env vars."""
+    cid = os.getenv("GOOGLE_DESKTOP_CLIENT_ID", "").strip()
+    csec = os.getenv("GOOGLE_DESKTOP_CLIENT_SECRET", "").strip()
+    if not cid or not csec:
+        print(
+            "Missing GOOGLE_DESKTOP_CLIENT_ID/GOOGLE_DESKTOP_CLIENT_SECRET in env", file=sys.stderr
+        )
+        return {}
+    return {
+        "installed": {
+            "client_id": cid,
+            "client_secret": csec,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost", "http://127.0.0.1"],
+        }
+    }
+
+
+def ensure_credentials() -> str:
+    """Ensure OAuth creds via InstalledAppFlow; return access token."""
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    cfg = client_config_from_env()
+    if not cfg:
+        return ""
+
+    token_file = Path(os.path.expanduser("~/.config/gmail/token.json"))
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    creds: Optional[Credentials] = None
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+    need_flow = (not creds) or (not set(SCOPES).issubset(set((creds.scopes or []))))
+    if need_flow:
+        flow = InstalledAppFlow.from_client_config(cfg, SCOPES)
+        creds = flow.run_local_server(port=0, open_browser=True)
+        token_file.write_text(creds.to_json())
+    elif creds and not creds.valid:
+        creds.refresh(Request())
+        token_file.write_text(creds.to_json())
+    return creds.token if creds else ""
+
+
+async def api_get(client: httpx.AsyncClient, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """GET JSON from Gmail API with explicit error surfacing."""
+    r = await client.get(path, params=params)
+    if r.status_code >= 400:
+        ctype = r.headers.get("content-type", "")
+        body = r.json() if "json" in ctype else {"error": r.text}
+        code = body.get("error", {}).get("code", r.status_code)
+        msg = body.get("error", {}).get("message", body.get("error", ""))
+        hint = (
+            "Authenticate with GOOGLE_DESKTOP_CLIENT_ID/GOOGLE_DESKTOP_CLIENT_SECRET if needed."
+            if code in (401, 403)
+            else ""
+        )
+        print(f"HTTP {code}: {msg} {hint}", file=sys.stderr)
+        return {"error": {"code": code, "message": msg}}
+    return r.json()
+
+
+async def list_messages(
+    client: httpx.AsyncClient, q: str, page_size: int, limit: int
+) -> List[Dict[str, Any]]:
+    """List message refs up to limit with internal pagination."""
+    items: List[Dict[str, Any]] = []
+    token: Optional[str] = None
+    while len(items) < limit:
+        take = min(page_size, limit - len(items))
+        params = {"q": q, "maxResults": take}
+        if token:
+            params["pageToken"] = token
+        data = await api_get(client, "/messages", params)
+        msgs = data.get("messages", [])
+        if not msgs:
+            return items
+        items += msgs
+        token = data.get("nextPageToken")
+        if not token:
+            return items
+    return items
+
+
+async def get_metadata(client: httpx.AsyncClient, msg_id: str) -> Dict[str, Any]:
+    """Fetch per-message metadata only with selected headers."""
+    params = {"format": "metadata"}
+    for h in HEADERS:
+        params.setdefault("metadataHeaders", []).append(h)
+    return await api_get(client, f"/messages/{msg_id}", params)
+
+
+async def gather_details(
+    client: httpx.AsyncClient, refs: Sequence[Dict[str, Any]], concurrency: int = 16
+) -> List[Dict[str, Any]]:
+    """Fetch details concurrently with a semaphore."""
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(ref: Dict[str, Any]) -> Dict[str, Any]:
+        async with sem:
+            return await get_metadata(client, ref["id"])
+
+    return await asyncio.gather(*[one(r) for r in refs])
+
+
+def fmt_date(s: str) -> str:
+    """Format RFC2822 date to yyyy-mm-dd hh:mm (local)."""
+    if not s:
+        return ""
+    try:
+        dt = parsedate_to_datetime(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return s
+
+
+FIELDS = {
+    "id": lambda m, hm: m.get("id", ""),
+    "date": lambda m, hm: fmt_date(hm.get("date", "")),
+    "from": lambda m, hm: hm.get("from", ""),
+    "to": lambda m, hm: hm.get("to", ""),
+    "subject": lambda m, hm: hm.get("subject", ""),
+    "snippet": lambda m, hm: m.get("snippet", ""),
+    "labels": lambda m, hm: ",".join(m.get("labelIds", [])),
+    "size": lambda m, hm: m.get("sizeEstimate", ""),
+}
+
+
+def to_row(m: Dict[str, Any], fields: Sequence[str]) -> Dict[str, Any]:
+    """Convert Gmail message to selected fields."""
+    hdrs = m.get("payload", {}).get("headers", [])
+    hm = {h.get("name", "").lower(): h.get("value", "") for h in hdrs}
+    return {k: FIELDS[k](m, hm) for k in fields if k in FIELDS}
+
+
+def print_tsv(rows: List[Dict[str, Any]], fields: Sequence[str]) -> None:
+    """Render TSV with header, colorized per column."""
+    con = Console(highlight=False)
+    con.print("\t".join(fields))
+    c = ["cyan", "magenta", "green", "white", "blue", "yellow"]
+    for r in rows:
+        v = [str(r.get(f, "")) for f in fields]
+        con.print("\t".join(f"[{c[i % len(c)]}]{x}[/{c[i % len(c)]}]" for i, x in enumerate(v)))
+
+
+app = typer.Typer(add_completion=False, no_args_is_help=True, help="Search Gmail.")
+
+
+@app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
+def main(
+    q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
+    user_id: str = typer.Option("me", "--user", help="Gmail user: 'me' or email."),
+    limit: int = typer.Option(20, "-n", "--limit", min=1, help="Total results to print."),
+    fields: List[str] = typer.Option(
+        ["date", "from", "subject", "snippet"],
+        "--fields",
+        help=f"Repeat to add fields. Valid: {', '.join(FIELDS.keys())}",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON (items)."),
+):
+    """Search Gmail and print messages in a clean table or JSON."""
+    if limit < 1:
+        return
+
+    tok = ensure_credentials()
+    if not tok:
+        return
+    base = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}"
+    headers_http = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+
+    async def _run() -> None:
+        async with httpx.AsyncClient(base_url=base, headers=headers_http, timeout=30) as client:
+            page_size = limit if limit <= 500 else 500
+            refs = await list_messages(client=client, q=q, page_size=page_size, limit=limit)
+            if not refs:
+                if json_out:
+                    print(json.dumps({"items": []}))
+                return
+
+            details = await gather_details(client, refs)
+            rows = [to_row(m, fields) for m in details]
+            if json_out:
+                print(json.dumps({"items": rows}, ensure_ascii=False))
+                return
+            print_tsv(rows, fields)
+
+    asyncio.run(_run())
+
+
+if __name__ == "__main__":
+    app()
