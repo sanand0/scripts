@@ -1,0 +1,272 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#   "typer>=0.12",
+#   "httpx>=0.27",
+#   "google-auth>=2.27",
+#   "google-auth-oauthlib>=1.2"
+# ]
+# ///
+
+"""Tag Google Tasks via OpenAI classification."""
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import httpx
+import typer
+
+SCOPES = ["https://www.googleapis.com/auth/tasks"]
+TAGS = ["#media", "#post", "#demo", "#api", "#explore", "#data", "#tool", "#other"]
+
+
+def client_config_from_env() -> Dict[str, Any]:
+    """Build InstalledApp client config from env vars."""
+    cid = os.getenv("GOOGLE_DESKTOP_CLIENT_ID", "").strip()
+    csec = os.getenv("GOOGLE_DESKTOP_CLIENT_SECRET", "").strip()
+    if not cid or not csec:
+        typer.echo("Missing GOOGLE_DESKTOP_CLIENT_ID/GOOGLE_DESKTOP_CLIENT_SECRET", err=True)
+        return {}
+    return {
+        "installed": {
+            "client_id": cid,
+            "client_secret": csec,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost", "http://127.0.0.1"],
+        }
+    }
+
+
+def ensure_token() -> str:
+    """Ensure OAuth creds for Google Tasks; return access token."""
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    cfg = client_config_from_env()
+    if not cfg:
+        return ""
+    token_file = Path(os.path.expanduser("~/.config/googletasks/token.json"))
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    creds: Optional[Credentials] = None
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+    need_flow = (not creds) or (not set(SCOPES).issubset(set((creds.scopes or []))))
+    if need_flow:
+        flow = InstalledAppFlow.from_client_config(cfg, SCOPES)
+        creds = flow.run_local_server(port=0, open_browser=True)
+        token_file.write_text(creds.to_json())
+    elif creds and not creds.valid:
+        creds.refresh(Request())
+        token_file.write_text(creds.to_json())
+    return creds.token if creds else ""
+
+
+def api(client: httpx.Client, method: str, url: str, **kw: Any) -> Dict[str, Any]:
+    """HTTP JSON helper without retries."""
+    r = client.request(method, url, **kw)
+    return r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+
+
+def fetch_lists(client: httpx.Client) -> List[Dict[str, Any]]:
+    """Fetch all task lists."""
+    data = api(client, "GET", "/users/@me/lists")
+    return data.get("items", [])
+
+
+def fetch_tasks(client: httpx.Client, list_id: str) -> List[Dict[str, Any]]:
+    """Fetch tasks from a list with max page size, all pages."""
+    items: List[Dict[str, Any]] = []
+    token: Optional[str] = None
+    while True:
+        params = {"showCompleted": "true", "showHidden": "true", "maxResults": 100}
+        if token:
+            params["pageToken"] = token
+        data = api(client, "GET", f"/lists/{list_id}/tasks", params=params)
+        for t in (data.get("items", []) or []):
+            links = " ".join([l.get("link", "") for l in t.get("links", [])]).strip()
+            t["links_joined"] = links
+            items.append(t)
+        token = data.get("nextPageToken")
+        if not token:
+            return items
+
+
+def merge_subtasks(tasks: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Attach children under parents and fold child text into parent notes."""
+    by_id = {t["id"]: {**t, "children": []} for t in tasks if t.get("id")}
+    for t in by_id.values():
+        p = t.get("parent")
+        if p and p in by_id:
+            by_id[p]["children"].append(t)
+
+    def fmt(t: Dict[str, Any], lvl: int = 0) -> str:
+        indent = "  " * lvl
+        lines = [f"{indent}- {t.get('title','').strip()}"]
+        notes = (t.get("notes", "") or "").strip()
+        if notes:
+            lines += [f"{indent}  {x}" for x in notes.splitlines() if x.strip()]
+        link = (t.get("links_joined", "") or "").strip()
+        if link:
+            lines.append(f"{indent}  - {link}")
+        for c in t.get("children", []):
+            lines.append(fmt(c, lvl + 1))
+        return "\n".join(lines)
+
+    roots: List[Dict[str, Any]] = []
+    for t in by_id.values():
+        if t.get("parent"):
+            continue
+        base = (t.get("notes", "") or "").strip()
+        subs = [fmt(c) for c in t.get("children", [])]
+        t["full_notes"] = "\n".join([x for x in [base, *subs] if x])
+        roots.append(t)
+    return sorted(roots, key=lambda x: x.get("updated", ""), reverse=True)
+
+
+def untagged(title: str) -> bool:
+    """True if title lacks any known tag."""
+    low = title.lower()
+    return not any(tag in low for tag in TAGS)
+
+
+def build_prompt(objs: List[Tuple[int, str]]) -> Tuple[str, str]:
+    """Return (system, user) prompts."""
+    sys_prompt = """
+You are a precise classifier. Categorize each task into **one** of:
+
+- `#media`: Slides, animations, videos, design visuals (Manim/Marp/Veo/Google Vids).
+- `#post`: Written publishables (blog, memo, review, 1-2 page writeups).
+- `#demo`: Browser demo / web app / prototype (single-page UX, public preview).
+- `#api`: Backend/service/agent endpoints (Workers, FastAPI, OpenAPI, CLI exposed as service).
+- `#explore`: Research/evaluation/spike/watch/market scan; learning first, shipping optional.
+- `#data`: ETL/scraping/analytics/data stories; datasets, automation, visualization.
+- `#tool`: Engineering hygiene & dev tooling (tests/CI/lint/scaffold/PR agents/standards).
+- `#selfhelp`: Personal productivity, learning, health, psychology, habits.
+- `#other`: One-offs not fitting above.
+
+Return JSON {tags: [{ id: ..., tag: "#post", confidence: 0.0-1.0, why: "(≤12-words)" }] }
+One object per `id`. No repetition. Don't invent IDs. Preserve input order.
+""".strip()
+    user_arr = [{"id": i, "task": t} for i, t in objs]
+    return sys_prompt, json.dumps(user_arr, ensure_ascii=False)
+
+
+def classify(openai_key: str, pairs: List[Tuple[int, str]]) -> Dict[int, str]:
+    """Call OpenAI to map ids to tags."""
+    if not pairs:
+        return {}
+    sys_p, user_p = build_prompt(pairs)
+    headers = {
+        "Authorization": f"Bearer {openai_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": "gpt-5-mini",
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": sys_p},
+            {"role": "user", "content": user_p},
+        ],
+    }
+    with httpx.Client(timeout=60) as c:
+        r = c.post("https://api.openai.com/v1/chat/completions", headers=headers, json=body)
+    data = r.json()
+    content = (data.get("choices", [{}])[0].get("message", {}) or {}).get("content", "{}")
+    parsed = json.loads(content)
+    out: Dict[int, str] = {}
+    for item in parsed.get("tags", []) or []:
+        try:
+            out[int(item.get("id"))] = str(item.get("tag", "")).strip()
+        except Exception:
+            continue
+    return out
+
+
+def task_text(t: Dict[str, Any]) -> str:
+    """Concise, rich text for classification."""
+    parts = [t.get("title", "").strip()]
+    notes = (t.get("full_notes", "") or "").strip()
+    if notes:
+        parts.append(notes)
+    return "\n".join([p for p in parts if p])
+
+
+def update_titles(client: httpx.Client, changes: List[Tuple[str, str, str]]) -> List[Tuple[str, str, str]]:
+    """Apply title updates; return applied list (list_id, task_id, title)."""
+    applied: List[Tuple[str, str, str]] = []
+    for list_id, task_id, title in changes:
+        api(client, "PATCH", f"/lists/{list_id}/tasks/{task_id}", json={"title": title})
+        applied.append((list_id, task_id, title))
+    return applied
+
+
+app = typer.Typer(add_completion=False, no_args_is_help=True, help="Tag Google Tasks with #categories.")
+
+
+@app.command()
+def tag(
+    user: str = typer.Option("@me", "--user", help="Tasks user: '@me' or email."),
+    dry: bool = typer.Option(False, "--dry", help="Show actions without updating titles."),
+    limit: int = typer.Option(0, "-n", "--limit", min=0, help="Max tasks to classify (0 = all)."),
+):
+    """Classify untagged top-level tasks and append a tag to titles."""
+    tok = ensure_token()
+    if not tok:
+        return
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not openai_key:
+        typer.echo("Missing OPENAI_API_KEY", err=True)
+        return
+
+    headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+    base = f"https://tasks.googleapis.com/tasks/v1/users/{user}"
+    with httpx.Client(base_url=base, headers=headers, timeout=30) as client:
+        lists = fetch_lists(client)
+        all_tasks: List[Dict[str, Any]] = []
+        for lst in lists:
+            for t in fetch_tasks(client, lst["id"]):
+                t["listId"], t["listTitle"] = lst.get("id", ""), lst.get("title", "")
+                all_tasks.append(t)
+
+    roots = merge_subtasks(all_tasks)
+    candidates = [t for t in roots if untagged(t.get("title", ""))]
+    if limit:
+        candidates = candidates[:limit]
+
+    pairs: List[Tuple[int, str]] = [(i + 1, task_text(t)) for i, t in enumerate(candidates)]
+    id_to_task: Dict[int, Dict[str, Any]] = {i + 1: t for i, t in enumerate(candidates)}
+    id_to_tag = classify(openai_key, pairs)
+
+    updates: List[Tuple[str, str, str]] = []
+    for i, tag in id_to_tag.items():
+        if tag not in TAGS:
+            continue
+        t = id_to_task.get(i)
+        if not t:
+            continue
+        title = t.get("title", "").rstrip()
+        low = title.lower()
+        if any(x in low for x in TAGS):
+            continue
+        new_title = f"{title} {tag}" if not title.endswith(tag) else title
+        updates.append((t["listId"], t["id"], new_title))
+
+    if dry or not updates:
+        for _, _, ttl in updates:
+            print(ttl)
+        return
+
+    with httpx.Client(base_url=base, headers={**headers, "Content-Type": "application/json"}, timeout=30) as client:
+        applied = update_titles(client, updates)
+    for _, _, ttl in applied:
+        print(ttl)
+
+
+if __name__ == "__main__":
+    app()

@@ -75,6 +75,10 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
 '
 
 # Audio record only
+# Stats
+#   -hide_banner                 # Removes long build/config header
+#   -stats                       # Show size=... time=... bitrate=... speed=...
+#   -v warning                   # Only warnings and above. use -v error for quieter
 # Channels (-f pulse -i)
 #   default                                                 # PulseAudio's "default" source-your microphone input via the default sink-source loopback
 #   alsa_output.pci-0000_00_1f.3.analog-stereo.monitor      # The monitor of your stereo output ("what-you-hear") created by PulseAudio for speaker capture
@@ -96,8 +100,12 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
 #   -ac 2                        # Forces 2 output channels (L/R stereo)
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
 #   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
-abbr --add record 'read -l message -P "Use a headset to avoid echo. Press ENTER."; \
-  ffmpeg \
+function record
+  echo "- "(set_color yellow)"Goal & role"(set_color normal)". Write in `meeting`. Verify early."
+  echo "- "(set_color yellow)"Kind candor"(set_color normal)". Say it aloud if tense."
+  echo ""
+  read -l -P "Use HEADSET to avoid echo. Press ENTER: "
+  ffmpeg -hide_banner -stats -v error \
   -f pulse -i default \
   -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
   -filter_complex "\
@@ -109,7 +117,8 @@ abbr --add record 'read -l message -P "Use a headset to avoid echo. Press ENTER.
   -ac 2 \
   -c:a libopus \
   -b:a 24k \
-  ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus'
+  ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus
+end
 
 # Screen record only
 # Channels & source (-f x11grab -i)
@@ -124,7 +133,7 @@ abbr --add record 'read -l message -P "Use a headset to avoid echo. Press ENTER.
 #   -qp 20                             # Quality parameter (20→visually lossless)
 # Output
 #   ~/Downloads/screenrecord-<timestamp>.mp4
-abbr --add screenrecord 'ffmpeg \
+abbr --add screenrecord 'ffmpeg -hide_banner -stats -v warning \
     -vaapi_device /dev/dri/renderD128 \
     -f x11grab \
     -video_size 1920x1080 \
@@ -139,7 +148,7 @@ abbr --add screenrecord 'ffmpeg \
 # Includes options from record and screenrecord above, plus a `-map 2:v`
 abbr --add videorecord '
   read -l message -P "Use a headset to avoid echo. Press ENTER."; \
-  ffmpeg \
+  ffmpeg -hide_banner -stats -v warning \
     -vaapi_device /dev/dri/renderD128 \
     -f pulse -i default \
     -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
@@ -192,6 +201,27 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
+function meeting --description "Create a new meeting transcript file"
+    set date $(date -Idate)
+    set title "$date $argv[1..]"
+    set file "$HOME/Dropbox/notes/transcripts/$title.md"
+    code $file
+    if not test -e $file
+        echo "---
+tags:
+goal:
+role:
+kind candor:
+effectiveness:
+---
+
+# $title
+
+## Transcript
+" > $file
+    end
+end
+
 # Usage: `llm "Write a one-line bash command to ..." | copycode
 # Copies the last code block
 function copycode --description 'Stream to screen and copy last fenced block'
@@ -211,7 +241,7 @@ function update-hetzner --description 'Update $HOME/.config/hetzner.txt with all
     sort $HOME/.config/hetzner.txt -o $HOME/.config/hetzner.txt
 end
 
-function pyrun
+function pyrun --description "Write & run Python code to execute a task"
     # Join all arguments into one quoted prompt
     set query (string join ' ' $argv)
 
@@ -233,36 +263,31 @@ import pandas as pd
     | uv run -
 end
 
-function with
+function with --description "Usage: with CMD,CMD ... ask LLM for fish code for a task ..."
     llm --extract --system "Write a fish command using $argv[1]" "$argv[2..]"
 end
 
-# Pastes from stdin on command line buffer.
-# Usage: llm -t fish "Write a one-line command to ..." | pasteit
-function pasteit
+function pasteit --description "Paste from stdin into buffer. Usage: llm -t fish 'Write a one-line command to ...' | pasteit "
     read -l buf
     commandline -r -- $buf
     commandline -f repaint
 end
 
-# Function to download subtitles from YouTube videos
-function youtube-subtitles
+function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
-# opus file.mp4    # generates file.opus
-function opus
-    ffmpeg -i $argv[1] -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+function opus --description "opus file.mp4 converts it to file.opus"
+    ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
 end
 
-# webm-compress $imput $width $frame_samples $output
-# webm-compress input.webm 500 8 compressed.webm
-function webm-compress
+# webm-compress $input $width $frame_samples $output
+function webm-compress --description "webm-compress input.webm 500 (width) 8 (sampling) output.webm"
     set in $argv[1]
     set --default width $argv[2] 500
     set --default sampling $argv[4] 1
     set --default out $argv[4] (string replace '.webm' '.compressed.webm' $in)
-    ffmpeg -i $in \
+    ffmpeg -hide_banner -stats -v warning -i $in \
         -filter_complex "select='not(mod(n\,$sampling))',scale=$width:-1" \
         -c:v libvpx-vp9 -b:v 0 -crf 40 \
         $out
