@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# A shortcut to convert voice to code and pass it to an LLM with a system prompt.
+
+set -euo pipefail
+
+AUDIO="${XDG_CACHE_HOME:-$HOME/.cache}/talkcode/rec.opus"
+mkdir -p "$(dirname "$AUDIO")"
+
+echo "Recording… press Q to stop." >&2
+# Mic only, 16 kHz mono, voice filtering, fast Opus
+ffmpeg -hide_banner -v error \
+  -f pulse -i default \
+  -ac 1 -ar 16000 \
+  -af "highpass=f=100,lowpass=f=6000" \
+  -c:a libopus -b:a 16k -vbr on \
+  -compression_level 2 -application voip -frame_duration 60 \
+  -y "$AUDIO"
+
+echo "Processing…" >&2
+
+# Read system prompt. Default to Transcription
+SYSTEM_TEXT='Transcribe this'
+if [[ -f ./ask.md ]]; then
+  SYSTEM_TEXT="$(< ./ask.md)"
+fi
+
+# Why Gemini not OpenAI? As of 11 Sep 2025: No Opus, `llm` rejects -a with audio
+llm -a "$AUDIO" -m gemini-2.5-flash -s "$SYSTEM_TEXT" "$@"

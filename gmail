@@ -14,81 +14,18 @@
 import asyncio
 import httpx
 import json
-import os
-import sys
 import typer
 from datetime import timezone
 from email.utils import parsedate_to_datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
+from email.utils import parseaddr
 from rich.console import Console
+from pathlib import Path
+from google_oauth import ensure_token, api
 
 HEADERS = ["Date", "From", "To", "Subject"]
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-
-
-def client_config_from_env() -> Dict[str, Any]:
-    """Build InstalledApp client config from env vars."""
-    cid = os.getenv("GOOGLE_DESKTOP_CLIENT_ID", "").strip()
-    csec = os.getenv("GOOGLE_DESKTOP_CLIENT_SECRET", "").strip()
-    if not cid or not csec:
-        print(
-            "Missing GOOGLE_DESKTOP_CLIENT_ID/GOOGLE_DESKTOP_CLIENT_SECRET in env", file=sys.stderr
-        )
-        return {}
-    return {
-        "installed": {
-            "client_id": cid,
-            "client_secret": csec,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost", "http://127.0.0.1"],
-        }
-    }
-
-
-def ensure_credentials() -> str:
-    """Ensure OAuth creds via InstalledAppFlow; return access token."""
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from google_auth_oauthlib.flow import InstalledAppFlow
-
-    cfg = client_config_from_env()
-    if not cfg:
-        return ""
-
-    token_file = Path(os.path.expanduser("~/.config/gmail/token.json"))
-    token_file.parent.mkdir(parents=True, exist_ok=True)
-    creds: Optional[Credentials] = None
-    if token_file.exists():
-        creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-    need_flow = (not creds) or (not set(SCOPES).issubset(set((creds.scopes or []))))
-    if need_flow:
-        flow = InstalledAppFlow.from_client_config(cfg, SCOPES)
-        creds = flow.run_local_server(port=0, open_browser=True)
-        token_file.write_text(creds.to_json())
-    elif creds and not creds.valid:
-        creds.refresh(Request())
-        token_file.write_text(creds.to_json())
-    return creds.token if creds else ""
-
-
-async def api_get(client: httpx.AsyncClient, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """GET JSON from Gmail API with explicit error surfacing."""
-    r = await client.get(path, params=params)
-    if r.status_code >= 400:
-        ctype = r.headers.get("content-type", "")
-        body = r.json() if "json" in ctype else {"error": r.text}
-        code = body.get("error", {}).get("code", r.status_code)
-        msg = body.get("error", {}).get("message", body.get("error", ""))
-        hint = (
-            "Authenticate with GOOGLE_DESKTOP_CLIENT_ID/GOOGLE_DESKTOP_CLIENT_SECRET if needed."
-            if code in (401, 403)
-            else ""
-        )
-        print(f"HTTP {code}: {msg} {hint}", file=sys.stderr)
-        return {"error": {"code": code, "message": msg}}
-    return r.json()
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+GMAIL_TOKEN_FILE = Path("~/.config/sanand-scripts/token.gmail.json").expanduser()
 
 
 async def list_messages(
@@ -102,7 +39,7 @@ async def list_messages(
         params = {"q": q, "maxResults": take}
         if token:
             params["pageToken"] = token
-        data = await api_get(client, "/messages", params)
+        data = await api(client, "GET", "/messages", params=params)
         msgs = data.get("messages", [])
         if not msgs:
             return items
@@ -118,7 +55,7 @@ async def get_metadata(client: httpx.AsyncClient, msg_id: str) -> Dict[str, Any]
     params = {"format": "metadata"}
     for h in HEADERS:
         params.setdefault("metadataHeaders", []).append(h)
-    return await api_get(client, f"/messages/{msg_id}", params)
+    return await api(client, "GET", f"/messages/{msg_id}", params=params)
 
 
 async def gather_details(
@@ -151,6 +88,7 @@ FIELDS = {
     "id": lambda m, hm: m.get("id", ""),
     "date": lambda m, hm: fmt_date(hm.get("date", "")),
     "from": lambda m, hm: hm.get("from", ""),
+    "email": lambda m, hm: parseaddr(hm.get("from", ""))[1],
     "to": lambda m, hm: hm.get("to", ""),
     "subject": lambda m, hm: hm.get("subject", ""),
     "snippet": lambda m, hm: m.get("snippet", ""),
@@ -179,6 +117,17 @@ def print_tsv(rows: List[Dict[str, Any]], fields: Sequence[str]) -> None:
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Search Gmail.")
 
 
+def parse_fields(values: List[str]) -> List[str]:
+    """Split --fields values by commas and/or whitespace."""
+    if not values:
+        return []
+    tokens: List[str] = []
+    for v in values:
+        for part in v.replace(",", " ").split():
+            tokens.append(part.strip())
+    return tokens
+
+
 @app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
 def main(
     q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
@@ -187,15 +136,25 @@ def main(
     fields: List[str] = typer.Option(
         ["date", "from", "subject", "snippet"],
         "--fields",
-        help=f"Repeat to add fields. Valid: {', '.join(FIELDS.keys())}",
+        help=(
+            "Fields to print; repeat or separate with commas/spaces. "
+            f"Valid: {', '.join(FIELDS.keys())}"
+        ),
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON (items)."),
 ):
-    """Search Gmail and print messages in a clean table or JSON."""
+    """Search Gmail and print messages in a clean table or JSON.
+
+    Examples:\n
+    - gmail --limit 50 "from:example.com"  # list 50 recent inbox emails\n
+    - gmail --fields date,email "subject:invoice"  # show date and only sender email\n
+    - gmail --fields "date, from, subject" in:archive  # comma/space separated fields\n
+    - gmail --json --fields "email subject" "has:attachment newer_than:1y"  # JSON output\n
+    """
     if limit < 1:
         return
 
-    tok = ensure_credentials()
+    tok = ensure_token(scopes=GMAIL_SCOPES, token_file=GMAIL_TOKEN_FILE)
     if not tok:
         return
     base = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}"
@@ -211,11 +170,12 @@ def main(
                 return
 
             details = await gather_details(client, refs)
-            rows = [to_row(m, fields) for m in details]
+            sel_fields = parse_fields(fields)
+            rows = [to_row(m, sel_fields) for m in details]
             if json_out:
                 print(json.dumps({"items": rows}, ensure_ascii=False))
                 return
-            print_tsv(rows, fields)
+            print_tsv(rows, sel_fields)
 
     asyncio.run(_run())
 

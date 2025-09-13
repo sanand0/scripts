@@ -30,21 +30,39 @@ Here is the setup for my Linux laptops.
 - Software
   - Opera: From https://www.opera.com/download
   - git: `sudo apt install git git-lfs`
-  - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python. Maybe fnm?
+  - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python.
   - curl: `sudo apt install curl`
   - micro: `cd ~/.local/bin; curl https://getmic.ro | bash`
   - fish: `sudo apt install fish; printf "/usr/bin/fish\n" | sudo tee -a /etc/shells;`
   - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-  - fnm: `curl -fsSL https://fnm.vercel.app/install | bash`
-  - node: `fnm install 23`
+  - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
+    ```bash
+    mise use -g aws-cli
+    mise use -g caddy
+    mise use -g cloudflared
+    mise use -g duckdb
+    mise use -g gcloud
+    mise use -g glab # Then glab config set -g host code.gramener.com
+    mise use -g jq
+    mise use -g lazygit # Video: https://youtu.be/CPLdltN7wgE
+    mise use -g node
+    mise use -g opentofu
+    mise use -g pandoc
+    mise use -g rclone
+    mise use -g ripgrep
+    mise use -g starship
+    mise use -g ubi:ayoisaiah/f2
+    mise use -g ubi:junegunn/fzf # Everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
+    mise use -g ubi:mithrandie/csvq
+    mise use -g xh
+    mise use -g zoxide
+    ```
+    - `mise unuse -g` to remove unused tools; `mise config ls` to list installed tools
+    - See [registry](https://mise.jdx.dev/registry.html) for more
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
-  - duckdb: `curl https://install.duckdb.org | sh` (re-run to upgrade)
   - sqlite3: `sudo apt install sqlite3`
-  - caddy: `sudo apt install caddy`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
-  - jq: `sudo apt install jq`
   - csvkit: `sudo apt install csvkit`
-  - csvq: `curl -L https://github.com/mithrandie/csvq/releases/download/v1.18.1/csvq-v1.18.1-linux-amd64.tar.gz | tar xzO csvq-v1.18.1-linux-amd64/csvq > ~/.local/bin/csvq && chmod +x ~/.local/bin/csvq`
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
   - lynx: `sudo apt install lynx`
@@ -52,39 +70,19 @@ Here is the setup for my Linux laptops.
   - w3m: `sudo apt install w3m`
   - neomutt: `sudo apt install neomutt`
   - glow: `sudo snap install glow` - Markdown rich text formatter
-  - ngrok: `sudo snap install ngrok`
   - mtp-tools: `sudo apt install mtp-tools` to read Android MTP file system. Just installing it, connecting my Redmi via USB and enabling file transfer showed the files on Gnome
   - fdupes: `sudo apt install fdupes` to find duplicate files
-  - rclone: `curl https://rclone.org/install.sh | sudo bash` - mounts hetzner storage box on startup
-  - gcloud: `curl https://sdk.cloud.google.com | bash`
-  - opentofu: `sudo snap install --classic opentofu` - Terraform alternative
-  - aws: `sudo snap install --classic aws`
-  - psql: `sudo apt-get install -y postgresql-client`
+  - psql: `sudo apt install -y postgresql-client`
+  - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
-  - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
-  - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
-  - ripgrep: [Download](https://github.com/BurntSushi/ripgrep/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
-  - [fzf](https://github.com/junegunn/fzf) ([video](https://youtu.be/F8dgIPYjvH8)) instead of Everything: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz -C ~/.local/bin/`.
-    - Just press `Ctrl+T` to open fzf when typing a command.
   - bat: `sudo apt install bat && sudo ln -s /usr/bin/batcat /usr/local/bin/bat` for color previews in fzf
-  - wireguard (VPN): `sudo apt install -y wireguard-tools`
-  - [Starship](https://starship.rs/) fast prompt: `curl -sS https://starship.rs/install.sh | sh`
-  - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
-    - More modern than autojump, fasd, etc.
-  - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/create-local-tunnel/):
-    ```bash
-    sudo mkdir -p --mode=0755 /usr/share/keyrings
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
-    sudo apt-get update && sudo apt-get install cloudflared
-    ```
   - ImageMagick:
     - `wget https://imagemagick.org/archive/binaries/magick`
     - `sudo mv magick /usr/local/bin/magick`
@@ -94,16 +92,8 @@ Here is the setup for my Linux laptops.
     - `curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg`
     - `echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null`
     - `sudo apt install gh`
-  - glab cli:
-    - `curl -LO https://gitlab.com/gitlab-org/cli/-/releases/v1.55.0/downloads/glab_1.55.0_linux_amd64.deb`
-    - `sudo apt install ./glab_1.55.0_linux_amd64.deb`
-    - `glab config set -g host code.gramener.com`
-  - xh (curl alternative):
-    - `curl -LO https://github.com/ducaale/xh/releases/download/v0.24.1/xh_0.24.1_amd64.deb`
-    - `sudo apt install ./xh_0.24.1_amd64.deb`
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
-  - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`. [Video](https://youtu.be/CPLdltN7wgE)
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
     - `sudo apt install nvidia-modprobe`
     - `sudo nvidia-modprobe -u`
@@ -137,6 +127,7 @@ Here is the setup for my Linux laptops.
   - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag`
   - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex gramex-enterprise; gramex setup --all`
 - Configurations
+
   - Settings > Keyboard:
     - Launchers > Home Folder - `Super+E`
     - Custom Shortcuts:
@@ -151,6 +142,7 @@ Here is the setup for my Linux laptops.
     - Clipboard History - Win+Shift+V
     - Emoji Copy - Win+.
   - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+
     ```bash
     sudo mkdir /mnt/hetzner
     sudo chown -R sanand:sanand /mnt/hetzner/
@@ -160,6 +152,7 @@ Here is the setup for my Linux laptops.
     rclone rc mount/listmounts    # list mounts via rclone
     umount /home/sanand/hetzner   # unmount - official process
     ```
+
   - Set up s-anand.net rclone and mount
     ```bash
     sudo mkdir /mnt/s-anand.net
@@ -167,8 +160,7 @@ Here is the setup for my Linux laptops.
     rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa
     rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
     ```
-  - Set up gdrive-straive rclone and mount
-    -
+  - ## Set up gdrive-straive rclone and mount
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Set (short) password: `sudo passwd sanand`. But default, Ubuntu requires long passwords, but this overrides it.
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
@@ -177,7 +169,7 @@ Here is the setup for my Linux laptops.
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - Consider enabling Wayland for smooth scrolling and touch gestures. But it has problems with autokey, rofi, etc.
+  - Wayland enables smooth scrolling and touch gestures. But it has problems with autokey, rofi, etc.
     - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
     - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
     - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
@@ -200,6 +192,7 @@ Here is the setup for my Linux laptops.
       - Swipe Right with 3 fingers: Send keys `Alt_L + Right` (Forward) on gesture begin.
   - #TODO: Always on top
   - #TODO: CLI for alarm
+
 - Notes
   - `xrandr --output eDP-1 --brightness 0.5 --gamma 0.9` sets the SOFTWARE brightness and gamma.
   - Connecting to the Hyderabad airport wifi failed. I set the Identity > Mac Address to the default and Cloned Address to Random.
@@ -215,6 +208,37 @@ Things I skipped / dropped:
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
 - Guake. `sudo apt install guake`. VS Code terminal was good enough and I wasn't using it.
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
+- wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
+- ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
+- Migrated to `mise`:
+  - aws: `sudo snap install --classic aws-cli`
+  - caddy: `sudo apt install caddy`
+  - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/local-management/create-local-tunnel/):
+    ```bash
+    sudo mkdir -p --mode=0755 /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+    sudo apt-get update && sudo apt-get install cloudflared
+    ```
+  - csvq: `curl -L https://github.com/mithrandie/csvq/releases/download/v1.18.1/csvq-v1.18.1-linux-amd64.tar.gz | tar xzO csvq-v1.18.1-linux-amd64/csvq > ~/.local/bin/csvq && chmod +x ~/.local/bin/csvq`
+  - duckdb: `curl https://install.duckdb.org | sh` (re-run to upgrade)
+  - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
+  - fnm: `curl -fsSL https://fnm.vercel.app/install | bash; fnm install 24`
+  - fzf: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz  -C ~/.local/bin/`.
+  - gcloud: `curl https://sdk.cloud.google.com | bash`
+  - glab cli: `curl -LO https://gitlab.com/gitlab-org/cli/-/releases/v1.55.0/downloads/glab_1.55.0_linux_amd64.deb; sudo apt install ./glab_1.55.0_linux_amd64.deb`
+  - jq: `sudo apt install jq`
+  - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`.
+  - opentofu: `sudo snap install --classic opentofu` - Terraform alternative
+  - pandoc: [Download](https://github.com/jgm/pandoc/releases) and `sudo dpkg -i ...`
+  - rclone: `curl https://rclone.org/install.sh | sudo bash`
+  - ripgrep: [Download](https://github.com/BurntSushi/ripgrep/releases) and `sudo dpkg -i ...`
+  - starship: `curl -sS https://starship.rs/install.sh | sh`. [Fast prompts](https://starship.rs/)
+  - xh (curl alternative):
+    - `curl -LO https://github.com/ducaale/xh/releases/download/v0.24.1/xh_0.24.1_amd64.deb`
+    - `sudo apt install ./xh_0.24.1_amd64.deb`
+  - [zoxide](https://github.com/ajeetdsouza/zoxide) smart cd (`z`): `curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh`
+    - More modern than autojump, fasd, etc.
 
 Notes:
 

@@ -1,7 +1,10 @@
 # Main fish configuration file
 
+# https://mise.jdx.dev/getting-started.html
+# Install mise via `curl https://mise.run | sh`
+$HOME/.local/bin/mise activate fish | source
+
 # Migrate setup from ~/.config/fish/config.fish
-set -gx PATH $PATH $HOME/.local/share/fnm
 set -gx PATH $PATH $HOME/.lmstudio/bin
 
 # Add scripts to PATH
@@ -19,9 +22,6 @@ set -gx PATH $PATH $HOME/apps/ruff/.venv/bin
 
 # Via Google Cloud SDK.
 if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
-
-# I store secrets in a .env file
-source "/c/Dropbox/scripts/.env"
 
 # less should color files
 export LESS='-R'
@@ -100,11 +100,14 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
 #   -ac 2                        # Forces 2 output channels (L/R stereo)
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
 #   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
-function record
-  echo "- "(set_color yellow)"Goal & role"(set_color normal)". Write in `meeting`. Verify early."
-  echo "- "(set_color yellow)"Kind candor"(set_color normal)". Say it aloud if tense."
-  echo ""
+function record --description "record audio from mic + speakers into ~/Documents/calls"
   read -l -P "Use HEADSET to avoid echo. Press ENTER: "
+  # Optional output filename; default to timestamped path
+  if test (count $argv) -gt 0
+    set out "$argv[1..]"
+  else
+    set out record-$(date "+%Y-%m-%d-%H-%M-%S")
+  end
   ffmpeg -hide_banner -stats -v error \
   -f pulse -i default \
   -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
@@ -117,7 +120,7 @@ function record
   -ac 2 \
   -c:a libopus \
   -b:a 24k \
-  ~/Downloads/record-$(date "+%Y-%m-%d-%H-%M-%S").opus
+  "$HOME/Documents/calls/$out.opus"
 end
 
 # Screen record only
@@ -178,15 +181,10 @@ abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-form
 abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
 abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
-abbr --add unbrace 'fnm env | source; npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
+abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
 abbr --add webp-lossy 'cwebp -q 10 -m 6'
-
-# Functions are slow. fnm is slow. So boot it up when needed
-abbr --add npx 'abbr --erase npx; fnm env | source; npx '
-abbr --add npm 'abbr --erase npm; fnm env | source; npm '
-abbr --add node 'abbr --erase node; fnm env | source; node '
 
 # Usage: pdf_decrypt file.pdf password
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
@@ -210,7 +208,6 @@ function meeting --description "Create a new meeting transcript file"
         echo "---
 tags:
 goal:
-role:
 kind candor:
 effectiveness:
 ---
@@ -220,25 +217,31 @@ effectiveness:
 ## Transcript
 " > $file
     end
+    # Also start an audio recording named after the meeting
+    record "$title"
 end
 
-# Usage: `llm "Write a one-line bash command to ..." | copycode
-# Copies the last code block
-function copycode --description 'Stream to screen and copy last fenced block'
-    tee /dev/tty | awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=$0} END{print buf}' | xclip -selection clipboard
+# Like llm -e but with streaming.
+function copycode --description 'Stream + copy last code fence. Usage: llm "Write Tetris in Python" | copycode'
+    tee /dev/tty | awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=buf$0"\n"} END{print buf}' | xclip -selection clipboard
 end
 
-# `update-files` caches files and directories in $HOME into $HOME/.config/files.txt. Speeds up fzf search. Takes ~1 min. Run daily
-function update-files --description 'Update $HOME/.config/files.txt with all files in $HOME'
+function pasteit --description "Paste output into buffer. Usage: llm -t fish 'Largest file' | pasteit"
+    read -l buf
+    commandline -r -- $buf
+    commandline -f repaint
+end
+
+function update-files --description 'Caches $HOME files into ~/.config/sanand-scripts/files.txt. Speeds fzf search'
     cd $HOME
-    fd --follow --exclude node_modules --exclude ImageCache --exclude hetzner --exclude s-anand.net --exclude google-cloud-sdk > $HOME/.config/files.txt
-    sort $HOME/.config/files.txt -o $HOME/.config/files.txt
+    fd --follow --exclude node_modules --exclude ImageCache --exclude hetzner --exclude s-anand.net --exclude google-cloud-sdk > $HOME/.config/sanand-scripts/files.txt
+    sort $HOME/.config/sanand-scripts/files.txt -o $HOME/.config/sanand-scripts/files.txt
 end
 
-function update-hetzner --description 'Update $HOME/.config/hetzner.txt with all files in $HOME/hetzner'
+function update-hetzner --description 'Caches $HOME/hetzner/ files into ~/.config/sanand-scripts/hetzner.txt. Speeds fzf search'
     cd $HOME
-    fd . hetzner --exclude node_modules --exclude ImageCache > $HOME/.config/hetzner.txt
-    sort $HOME/.config/hetzner.txt -o $HOME/.config/hetzner.txt
+    fd . hetzner --exclude node_modules --exclude ImageCache > $HOME/.config/sanand-scripts/hetzner.txt
+    sort $HOME/.config/sanand-scripts/hetzner.txt -o $HOME/.config/sanand-scripts/hetzner.txt
 end
 
 function pyrun --description "Write & run Python code to execute a task"
@@ -267,12 +270,6 @@ function with --description "Usage: with CMD,CMD ... ask LLM for fish code for a
     llm --extract --system "Write a fish command using $argv[1]" "$argv[2..]"
 end
 
-function pasteit --description "Paste from stdin into buffer. Usage: llm -t fish 'Write a one-line command to ...' | pasteit "
-    read -l buf
-    commandline -r -- $buf
-    commandline -f repaint
-end
-
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
@@ -297,5 +294,5 @@ type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source
 type -q starship; and starship init fish | source
 
-# Skip fnm env on startup because it is slow
-# type -q fnm; and fnm env | source
+# I store secrets in a .env file. But it's unsafe to source them in every shell. #TODO Use direnv
+# source "/c/Dropbox/scripts/.env"

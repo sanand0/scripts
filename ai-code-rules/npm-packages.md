@@ -19,10 +19,10 @@ Include these keys:
 - prettier: { printWidth: 120 }
 - files: [ "LICENSE", "README".md, "dist/" ]
 - browser: "dist/package-name.min.js" if meant for browsers
-- exports: "dist/package-name.min.js"
+- exports: "dist/package-name.min.js" or `{ ".": { "default": "./dist/package-name.min.js", "types": "./package-name.d.ts" } }`
 - bin: only for CLI apps
 - scripts: typically includes:
-  ```json
+  ```jsonc
   {
     "build": "npx -y esbuild package-name.js --bundle --format esm --minify --outfile=dist/package-name.min.js",
     "lint:oxlint": "npx -y oxlint@1 --fix",
@@ -31,6 +31,7 @@ Include these keys:
     "lint": "npm run lint:oxlint && npm run lint:js-md && npm run lint:html",
     "test": "npx -y vitest@3 run --globals",
     "prepublishOnly": "npm run lint && npm run build && npm test"
+    // docs, watch, pretest, ...
   }
   ```
 - dependencies: only if required
@@ -40,7 +41,7 @@ Include these keys:
 
 ## README.md
 
-Include these H2 headings:
+Include these H2 headings in order:
 
 - Begin with shields, followed by a 1-line description of the package. Shields include
   ```markdown
@@ -51,22 +52,40 @@ Include these H2 headings:
 - Installation. Typically:
 
   ````markdown
+  Add this to your script:
+
+  ```js
+  import { something } from "package-name";
+  ```
+
+  To use via CDN, add this to your HTML file:
+
+  ```html
+  <script type="importmap">
+  {
+    "imports": {
+      "package-name": "https://cdn.jsdelivr.net/npm/package-name@1"
+    }
+  }
+  </script>
+  ```
+
   To use locally, install via `npm`:
 
   ```bash
   npm install package-name
   ```
 
-  ... and add this to your script:
+  ... and add this to your HTML file:
 
-  ```js
-  import { something } from "./node_modules/package-name/dist/package-name.js";
-  ```
-
-  To use via CDN, add this to your script:
-
-  ```js
-  import { something } from "https://cdn.jsdelivr.net/npm/package-name@1";
+  ```html
+  <script type="importmap">
+  {
+    "imports": {
+      "package-name": ""./node_modules/package-name/dist/package-name.js""
+    }
+  }
+  </script>
   ```
   ````
 
@@ -87,6 +106,24 @@ Include these H2 headings:
 
 - Release notes. This is a list of `[x.y.z](https://npmjs.com/package/package-name/v/x.y.y): dd mmm yyyy: Description of the change`
 - License. Just mention `[MIT](LICENSE)`
+
+Follow these conventions:
+
+- Code blocks: add language hints (js, html, bash); keep lines ≤ 120 chars
+- Examples: minimal, copy-paste-able; inline comments sparingly
+- Links: prefer absolute repo URLs for cross-references
+
+## Coding style
+
+- Prefer named exports for utilities; default export for the primary function; avoid classes unless needed
+- Use JSDoc for params/returns and typedefs; ship `.d.ts` for public APIs where feasible
+
+## Testing style
+
+- Prefer Vitest with happy-dom for browser libraries
+- Playwright can be used for end-to-end and screenshot tests
+- File naming: `*.test.js` (or `*.spec.ts` for Playwright suites)
+- Style: BDD (`describe`/`it`), deterministic tests, small fixtures; mock network when applicable
 
 ## .gitignore
 
