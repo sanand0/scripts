@@ -19,6 +19,6 @@ for d in */; do
 
     # 2) Remote ahead/behind?
     elif [[ "$status" == *\[*\]* ]]; then
-        printf 'PUSH\t%s\n' "$dir"
+        printf 'SYNC\t%s\n' "$dir"
     fi
 done

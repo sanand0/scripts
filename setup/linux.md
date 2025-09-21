@@ -65,6 +65,7 @@ Here is the setup for my Linux laptops.
   - csvkit: `sudo apt install csvkit`
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
+  - ugrep: `sudo apt install ugrep` for [fuzzy search](https://github.com/Genivia/ugrep)
   - lynx: `sudo apt install lynx`
   - qpdf: `sudo apt install qpdf` to split pages
   - w3m: `sudo apt install w3m`
@@ -146,21 +147,43 @@ Here is the setup for my Linux laptops.
     ```bash
     sudo mkdir /mnt/hetzner
     sudo chown -R sanand:sanand /mnt/hetzner/
+    rclone config create hetzner
+      # type = sftp
+      # host = u452447.your-storagebox.de
+      # user = u452447
+      # shell_type = unix
     rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
 
     mount | grep rclone           # list rclone mounts
-    rclone rc mount/listmounts    # list mounts via rclone
-    umount /home/sanand/hetzner   # unmount - official process
+    umount /home/sanand/hetzner   # unmount
     ```
 
   - Set up s-anand.net rclone and mount
+
     ```bash
     sudo mkdir /mnt/s-anand.net
     sudo chown -R sanand:sanand /mnt/s-anand.net
-    rclone config create s-anand.net sftp host=s-anand.net user=sanand port=2222 key_file=~/.ssh/id_rsa
+    rclone config create s-anand.net
+      # type = sftp
+      # host = s-anand.net
+      # user = sanand
+      # port = 2222
+      # key_file = ~/.ssh/id_rsa
     rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
     ```
-  - ## Set up gdrive-straive rclone and mount
+
+  - Set up gdrive-straive rclone and mount
+
+    ```bash
+    sudo mkdir /mnt/gdrive-straive
+    sudo chown -R sanand:sanand /mnt/gdrive-straive
+    rclone config create gdrive-straive
+      # type = drive
+      # scope = drive
+      # client_id = 872568319651-9lppm3ho0b068ddq7n6333qqdu0jn960.apps.googleusercontent.com  # Desktop app: root.node@gmail.com
+    rclone mount gdrive-straive: /mnt/gdrive-straive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+    ```
+
   - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
   - Set (short) password: `sudo passwd sanand`. But default, Ubuntu requires long passwords, but this overrides it.
   - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)

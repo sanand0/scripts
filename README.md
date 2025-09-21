@@ -61,3 +61,23 @@ Here are the setup details for my laptops.
 - [generate/](generate/) has scripts to generate data.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
+- [ask](ask) records a short voice note, merges an optional `ask.md` system prompt, and sends it to `llm`.
+- [gmail](gmail) offers a `typer`-based Gmail search CLI using OAuth tokens from `google_oauth.py`.
+  - [google_oauth.py](google_oauth.py) refreshes and caches Google API tokens for the CLI utilities.
+- [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream.
+- [talkcode.sh](talkcode.sh) pipes spoken prompts through `ask`, generates code, and pastes it into the last active window.
+- [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
+- [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
+
+## Services
+
+`services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
+
+- `trending-repo-weekly.*`: Update trending GitHub repos
+- `update-files-daily.*`: Update local files
+- `update-files-weekly.*`: Update mounted files
+
+## Tests
+
+- `tests` stores regression checks
+  - `test_gmail.py` verifies the Gmail CLI’s happy path.

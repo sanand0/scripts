@@ -1,0 +1,8 @@
+[Unit]
+Description=Update file index weekly for less frequent (mounted) directories
+
+[Service]
+Type=oneshot
+ExecStart=/home/sanand/code/scripts/update-files hetzner
+WorkingDirectory=/home/sanand
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin

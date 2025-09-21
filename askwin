@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# A shortcut to convert voice to text and paste in previous window.
+#   - Press Ctrl+Alt+0
+#   - Speak
+#   - Press Q
+#   - Generated code is pasted in the most recent window
+
+# Setup: In Settings > Keyboard > Custom Shortcuts, add a shortcut:
+#   Name: Ask Paste
+#   Shortcut: Ctrl+Alt+0
+#   Command: bash -lc 'ACTIVE=$(xdotool getactivewindow); gnome-terminal --zoom=2 --geometry=80x10 --wait -- bash -lc "ACTIVE_WIN=$ACTIVE /home/sanand/code/scripts/askpaste.sh"'
+#
+# Why gnome-terminal? It's already installed and I did not research alternatives.
+
+set -euo pipefail
+
+# Activate mise since ask needs fzf which is mise-installed
+eval "$(mise activate bash)"
+# Add ask and llm to PATH
+PATH="/home/sanand/code/scripts/:/home/sanand/apps/llm/.venv/bin/:$PATH"
+
+# Copy speech to clipboard
+ask
+
+if [ -n "${ACTIVE_WIN:-}" ]; then
+  # Bring last window to foreground
+  # Why not autokey? xdotool keeps everything in one script
+  xdotool windowactivate --sync "$ACTIVE_WIN"
+  sleep 0.08
+  # Paste from clipboard
+  xdotool key --clearmodifiers ctrl+shift+v
+  xdotool key KP_Enter
+fi
+
+sleep 5

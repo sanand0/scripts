@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Speeds fzf search by caching files.
+# Output is used by rofi-files.sh.
+#
+# $ update-files $dir   # Caches /mnt/$dir files into $HOME/.cache/sanand-scripts/files.$dir.txt
+# $ update-files        # Caches $HOME     files into $HOME/.cache/sanand-scripts/files._home.txt
+#                       # and all recent   files into $HOME/.cache/sanand-scripts/files.__recent.txt
+
+set -euo pipefail
+
+# Set up directories
+TARGET="${1-}"  # empty => $HOME mode; non-empty => /mnt/$TARGET mode
+OUTDIR="$HOME/.cache/sanand-scripts"
+mkdir -p "$OUTDIR"
+
+if [ -z "$TARGET" ]; then
+    # No argument: search under $HOME
+    OUT="$OUTDIR/files._home.txt"
+    cd "$HOME"
+    fd --follow \
+      --exclude node_modules \
+      --exclude ImageCache \
+      --exclude google-cloud-sdk \
+      > "$OUT"
+    # Cache files updated in the last week
+    find "$HOME" \
+        \( -name '.*' -o -type d -name node_modules \) -prune -o \
+        -type f -mtime -7 -printf '%T@ %P\0' \
+      | sort -z -nr \
+      | awk -v RS='\0' '{ sub(/^[0-9.]+ /,""); print }' \
+      > "$OUTDIR/files.__recent.txt"
+else
+    # With argument: search under /mnt/$TARGET
+    OUT="$OUTDIR/files.$TARGET.txt"
+    cd /
+    # If the target it mounted, i.e. non-empty, update
+    if [ -d "/mnt/$TARGET" ] && find "/mnt/$TARGET" -mindepth 1 -print -quit | grep -q .; then
+        fd -a . "/mnt/$TARGET" --follow > "$OUT"
+    fi
+fi
+
+# Sort. -u avoids duplicates
+sort -u "$OUT" -o "$OUT"

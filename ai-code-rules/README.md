@@ -23,7 +23,7 @@ Automatically linked at:
   - In `~/.gemini/settings.json`
   - Add `"contextFileName": "/home/sanand/code/scripts/ai-code-rules/ai-code-rules.md",`
 - [Cline](https://docs.cline.bot/features/cline-rules): `~/Cline/Rules`
-- [OpenCode](https://opencode.ai/docs/config/?utm_source=chatgpt.com): `~/.config/opencode/mode/`
+- [OpenCode](https://opencode.ai/docs/config/): `~/.config/opencode/mode/`
 
 Manually update at:
 

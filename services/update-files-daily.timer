@@ -1,0 +1,15 @@
+[Unit]
+Description=Run update-files-daily with catch-up
+
+[Timer]
+# midnight local time
+OnCalendar=daily
+# run on next wake if missed
+Persistent=true
+# group wakeups to save power
+AccuracySec=5m
+# stagger a bit after wake
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

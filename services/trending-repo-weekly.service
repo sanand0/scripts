@@ -1,0 +1,8 @@
+[Unit]
+Description=Update trending GitHub repos weekly
+
+[Service]
+Type=oneshot
+ExecStart=/home/sanand/code/til/trending-repos.sh
+WorkingDirectory=/home/sanand
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin

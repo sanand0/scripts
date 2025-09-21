@@ -63,6 +63,9 @@ abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highligh
 abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
+# Replace grep with ug until I get the hang of it
+abbr --add grep ug
+
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | sort -nr \
@@ -232,16 +235,15 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function update-files --description 'Caches $HOME files into ~/.config/sanand-scripts/files.txt. Speeds fzf search'
-    cd $HOME
-    fd --follow --exclude node_modules --exclude ImageCache --exclude hetzner --exclude s-anand.net --exclude google-cloud-sdk > $HOME/.config/sanand-scripts/files.txt
-    sort $HOME/.config/sanand-scripts/files.txt -o $HOME/.config/sanand-scripts/files.txt
-end
-
-function update-hetzner --description 'Caches $HOME/hetzner/ files into ~/.config/sanand-scripts/hetzner.txt. Speeds fzf search'
-    cd $HOME
-    fd . hetzner --exclude node_modules --exclude ImageCache > $HOME/.config/sanand-scripts/hetzner.txt
-    sort $HOME/.config/sanand-scripts/hetzner.txt -o $HOME/.config/sanand-scripts/hetzner.txt
+function livesync --description "Update main from live branch. Create new live branch from main."
+    git checkout main
+    git merge --squash live
+    git diff --cached | llm -t gitcommit | git commit -F -
+    git push
+    git branch -D live
+    git push origin --delete live
+    git checkout -b live
+    git push -u origin live
 end
 
 function pyrun --description "Write & run Python code to execute a task"

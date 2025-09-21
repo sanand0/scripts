@@ -17,13 +17,29 @@ ffmpeg -hide_banner -v error \
   -compression_level 2 -application voip -frame_duration 60 \
   -y "$AUDIO"
 
-echo "Processing…" >&2
-
-# Read system prompt. Default to Transcription
-SYSTEM_TEXT='Transcribe this'
+CMD="$@"
+# Read system prompt from ./ask.md
 if [[ -f ./ask.md ]]; then
-  SYSTEM_TEXT="$(< ./ask.md)"
+  CMD="-s $(< ./ask.md) $CMD"
+# If CMD is empty, use fzf to select a prompt
+elif [[ -z "$CMD" ]]; then
+  CMD="$(echo 'Transcribe. Drop fillers (um, uh...), correct minimally.
+Answer with one-line fish code
+Answer with one-line bash code' | FZF_DEFAULT_OPTS= fzf --print-query | tail -n1)"
 fi
 
-# Why Gemini not OpenAI? As of 11 Sep 2025: No Opus, `llm` rejects -a with audio
-llm -a "$AUDIO" -m gemini-2.5-flash -s "$SYSTEM_TEXT" "$@"
+echo "$CMD" >&2
+
+# Why Gemini not OpenAI? As of 11 Sep 2025: `llm` rejects -a with audio
+llm -a "$AUDIO" -m gemini-2.5-flash "$CMD" \
+  | tee /dev/tty \
+  | {
+      if [[ $CMD =~ [Cc]ode ]]; then
+        # If CMD mentions "code", copy code block only
+        awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=buf $0 ORS} END{printf "%s", buf}'
+      else
+        # Copy everything
+        cat
+      fi
+    } \
+  | xclip -selection clipboard
