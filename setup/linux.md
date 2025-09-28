@@ -38,6 +38,7 @@ Here is the setup for my Linux laptops.
   - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
     ```bash
     mise use -g aws-cli
+    mise use -g btop
     mise use -g caddy
     mise use -g cloudflared
     mise use -g duckdb
@@ -62,6 +63,7 @@ Here is the setup for my Linux laptops.
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
   - sqlite3: `sudo apt install sqlite3`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
+  - plocate: `sudo apt install plocate && sudo updatedb` for fast file searches
   - csvkit: `sudo apt install csvkit`
   - tmux: `sudo snap install tmux`
   - ffmpeg: `sudo apt install ffmpeg`
@@ -69,7 +71,9 @@ Here is the setup for my Linux laptops.
   - lynx: `sudo apt install lynx`
   - qpdf: `sudo apt install qpdf` to split pages
   - w3m: `sudo apt install w3m`
+  - duf: `sudo apt install duf` for a better `df` disk usage
   - neomutt: `sudo apt install neomutt`
+  - flameshot: `sudo apt install flameshot` - Screenshot tool
   - glow: `sudo snap install glow` - Markdown rich text formatter
   - mtp-tools: `sudo apt install mtp-tools` to read Android MTP file system. Just installing it, connecting my Redmi via USB and enabling file transfer showed the files on Gnome
   - fdupes: `sudo apt install fdupes` to find duplicate files
@@ -77,10 +81,11 @@ Here is the setup for my Linux laptops.
   - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
   - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
     - expanso: Needs libwxbase which is no longer installed with Debian?
-  - rofi: `sudo apt install rofi` to switch windows.
+  - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
+  - codex: `npm install -g codex`
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - bat: `sudo apt install bat && sudo ln -s /usr/bin/batcat /usr/local/bin/bat` for color previews in fzf
@@ -128,14 +133,9 @@ Here is the setup for my Linux laptops.
   - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag`
   - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex gramex-enterprise; gramex setup --all`
 - Configurations
-
-  - Settings > Keyboard:
-    - Launchers > Home Folder - `Super+E`
-    - Custom Shortcuts:
-      - Picker: `Ctrl+Alt+F` runs `rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"` - doesn't work well on Wayland
-      - Warp: `Alt+F12` runs `warp://action/new_tab`
-      - SKIP: Pick: `Alt+F1` runs `guake --show -e "/home/sanand/code/scripts/pick"`
-      - SKIP: Guake: `Ctrl+F12` runs `guake`
+  - Run `dconf load /org/gnome/settings-daemon/plugins/media-keys/ < media-keys.dconf` to load custom shortcuts.
+    - Modify on UI at Settings > Keyboard > Custom Shortcuts
+    - Note: `rofi
   - `sudo apt install gnome-tweaks`
     - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
   - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
@@ -233,6 +233,7 @@ Things I skipped / dropped:
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 - wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
 - ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
+- [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - Migrated to `mise`:
   - aws: `sudo snap install --classic aws-cli`
   - caddy: `sudo apt install caddy`

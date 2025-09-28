@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-# Activate mise since ask needs fzf which is mise-installed
+# Activate mise since ask needs fzf which is mise-installed (~50ms)
 eval "$(mise activate bash)"
 # Add ask and llm to PATH
 PATH="/home/sanand/code/scripts/:/home/sanand/apps/llm/.venv/bin/:$PATH"

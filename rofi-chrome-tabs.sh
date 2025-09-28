@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Activate mise since we need jq which is mise-installed (~50ms)
+eval "$(mise activate bash)"
+
 # Fetch JSON list of targets from Edge (remote debugging must be enabled)
 TABS_JSON=$(curl -s http://localhost:9222/json | jq -r 'map(select(.type=="page") | {id: .id, title: .title, url: .url})')
 

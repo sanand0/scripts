@@ -68,10 +68,11 @@ async function fetchJSON(input, init) { const r = await fetch(input, init); if (
 const query = (params) => new URLSearchParams(params).toString();
 ```
 
-LLM models:: Prefer gpt-5-mini for balance, gpt-5-nano for cost, gpt-4.1-nano for speed.
+LLM models: Prefer gpt-5-mini for balance, gpt-5-nano for cost, gpt-4.1-nano for speed.
 OpenAI /chat/completions supports `{ response_format: { type: "json_schema", json_schema: { name: "...", schema: { ... } } } }`.
 
-Tools: Prefer `fd` over `find`, `rg` over `grep`, `uvx yt-dlp` for YouTube.
+Tools: Prefer `fd` over `find`, `rg` over `grep`, `uvx yt-dlp` for YouTube, `uvx markitdown` for PDF to Markdown
+Also: `jq`, `duckdb`, `gh`, `ffmpeg`, `magick`,
 
 Test with `npm test` and `uvx pytest` as appropriate.
 

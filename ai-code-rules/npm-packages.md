@@ -35,7 +35,7 @@ Include these keys:
   }
   ```
 - dependencies: only if required
-- devDependencies: only if required. Prefer `npx -y` in scripts over devDependencies. Used mainly if tests/utilities need packages, e.g. happy-dom, playwright, sharp
+- devDependencies: only if required. Prefer `npx -y` in scripts over devDependencies. Used mainly if tests/utilities need packages, e.g. jsdom, playwright, sharp
 - peerDepedencies: only if required. E.g. { "bootstrap": "^5.3.7" }
 - keywords: [ ... ]
 
@@ -120,7 +120,7 @@ Follow these conventions:
 
 ## Testing style
 
-- Prefer Vitest with happy-dom for browser libraries
+- Prefer Vitest with jsdom for browser libraries
 - Playwright can be used for end-to-end and screenshot tests
 - File naming: `*.test.js` (or `*.spec.ts` for Playwright suites)
 - Style: BDD (`describe`/`it`), deterministic tests, small fixtures; mock network when applicable

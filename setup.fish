@@ -35,36 +35,64 @@ export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
 
-# Mis-spellings
+# Basic commands
+# -----------------------------------------------
+
+# git mis-spellings
 abbr --add gt   git
 abbr --add gi   git
 abbr --add it   git
 abbr --add gitt git
 abbr --add giit git
 
-# Mail & calendar
+# Faster, better grep
+abbr --add grep ug
+
+# GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
 abbr --add mail cmdg
+
+# Google Calendar command line
 abbr --add gcalcli 'uvx gcalcli'
 abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
-# Utilities and configurations
-abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
-abbr --add clip 'xclip -selection clipboard'
-abbr --add codex 'npx -y @openai/codex'
-abbr --add claude 'npx -y @anthropic-ai/claude-code'
-abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
+# Color diffs
 abbr --add icdiff 'uvx --offline icdiff'
-abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
+
+# Jupyter Lab
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
-abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
-abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --no-highlight | xclip -sel clip -t text/html -i'
-abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
+
+# Convert PDF to text
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 
-# Replace grep with ug until I get the hang of it
-abbr --add grep ug
+# Clipboard Utilities
+# -----------------------------------------------
+
+# Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
+abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
+
+# Copy to clipboard. Typical usage: command | clip
+abbr --add clip 'xclip -selection clipboard'
+
+# Convert clipboard to Markdown rich text. Useful to copy Markdown and paste into GMail.
+abbr --add md2rtf 'xclip -sel clip -o | pandoc -f markdown -t html --syntax-highlighting=none | xclip -sel clip -t text/html -i'
+
+# Convert clipboard to Markdown HTML. Useful to copy Markdown and paste into code.
+abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript -t html --no-highlight --wrap=none | xclip -sel clip -i'
+
+# LLM Utilities
+# -----------------------------------------------
+
+# Run Claude Code
+abbr --add claude 'npx -y @anthropic-ai/claude-code'
+abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
+
+# File Utilities
+# -----------------------------------------------
+
+# List files, sorted by time, with git status and relative time
+abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
@@ -76,6 +104,9 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | xargs -I {} head -n 200 "{}" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
+
+# Audio/video
+# ----------------------------------------------
 
 # Audio record only
 # Stats
@@ -177,13 +208,17 @@ abbr --add videorecord '
     -b:a 24k \
     ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
 
+abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
+abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "FFmpegAudioConvertor:-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
+abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
+abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --extract-audio --audio-format mp3 --audio-quality 5'
+abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
+
+
+# List all JSON paths in a file. Usage: cat file.json | jqpaths
+abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
-abbr --add ws windsurf
-abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
-abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
-abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
-abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
@@ -268,16 +303,39 @@ import pandas as pd
     | uv run -
 end
 
-function with --description "Usage: with CMD,CMD ... ask LLM for fish code for a task ..."
-    llm --extract --system "Write a fish command using $argv[1]" "$argv[2..]"
+function with --description "Example: with gh,jq 'Find last 3 repos I committed to'"
+    llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" \
+    | tee /dev/tty \
+    | awk '
+        { all = all $0 ORS }                    # keep full text for fallback
+        /```/ {                                 # fence line? Only emit first block
+            if (!got) { f = !f; if (!f) got = 1 }
+            next
+        }
+        f && !got { buf = buf $0 ORS }          # collect lines inside first block
+        END { printf "%s", (got ? buf : all) }  # print first block if found, else full text
+        ' \
+    | xclip -selection clipboard
+end
+
+function secret --description "Extract secret from .env"
+    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
-function opus --description "opus file.mp4 converts it to file.opus"
+function opus --description "opus file.mp4 converts it to file.opus (voice quality)"
     ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+end
+
+# -b:a 48k is OK for many tracks. 64k works for all on earphones. 80-96k for electronic/classical music
+# -ac 2 is not required. Mono stays mono. 5.1 downmixes to 2 because Opus is max 2 channels
+# -ar 48000 is Opus' native sampling rate
+# -frame_duration 60 is more efficient for music than the default 20 or 40 ms
+function opusmusic --description "opus file.mp4 converts it to file.opus (music quality)"
+    ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
 end
 
 # webm-compress $input $width $frame_samples $output
@@ -291,6 +349,111 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         -c:v libvpx-vp9 -b:v 0 -crf 40 \
         $out
 end
+
+
+# Print Codex CLI session logs (from ~/.codex/sessions/yyyy/mm/dd/*.jsonl) as Markdown
+function codexlog
+    jq -r '
+    def h(t):        "\n\n## " + t + "\n\n";
+    def summary(t):  "<summary><strong>" + t + "</strong></summary>\n\n";
+    def code(l; s):  "```" + l + "\n" + (s // "") + "\n```\n";
+    def kv(k; v):    if v then "**" + k + ":** " + v + "\n" else "" end;
+
+    . as $e
+    | .payload.type as $t
+    | if ($t == "user_message" or $t == "agent_message") then
+        h($t) + ($e.payload.message // "")
+
+    elif $t == "agent_reasoning" then
+        "\n\n<details>"
+        + summary("agent reasoning")
+        + ($e.payload.text // $e.payload.message // "")
+        + "\n\n</details>"
+
+    elif $t == "function_call" then
+        ($e.payload.arguments? | fromjson? // {}) as $A
+        | "\n\n<details>"
+        + summary("tool: " + ($e.payload.name // ""))
+        + (if $A.command? then code("bash"; ($A.command | join(" "))) else "" end)
+        + "\n\n</details>"
+
+    elif $t == "function_call_output" then
+        ($e.payload.output? | fromjson? // {}) as $O
+        | "\n\n<details>"
+        + summary("tool output")
+        + (if $O.metadata? then
+            "**exit:** \($O.metadata.exit_code // "unknown") · **duration:** \($O.metadata.duration_seconds // "unknown")s\n"
+        else "" end)
+        + code("txt"; ($O.output // ""))
+        + "\n\n</details>"
+
+    else empty end
+    ' $argv[1]
+end
+
+# Print Claude Code session logs (from ~/.claude/projects/$path/*.jsonl) as Markdown
+
+function claudelog
+    jq -r '
+    def h(t):        "\n\n## " + t + "\n\n";
+    def code(l; s):  "```" + l + "\n" + (s // "") + "\n```\n";
+    def has_text($s): ($s | test("[^[:space:]]"));
+
+    def details($label; $body):
+        "\n\n<details><summary><strong>" + $label + "</strong></summary>\n\n"
+        + (if has_text($body) then $body + "\n\n" else "" end)
+        + "</details>";
+
+    def tool_use_line($owner; $item):
+        ($owner + ": tool: " + ($item.name // "")) as $label
+        | (if $item.input? then code("json"; ($item.input | tojson)) else "" end) as $body
+        | details($label; $body);
+
+    def tool_result_line($owner; $item):
+        ($owner + ": tool result" + (if $item.tool_use_id then ": " + $item.tool_use_id else "" end)) as $label
+        | (if ($item.content? // null) == null then ""
+           elif ($item.content | type) == "string" then
+               if ($item.content | test("[^[:space:]]")) then code("txt"; ($item.content // "")) else "" end
+           else code("json"; ($item.content | tojson))
+           end) as $body
+        | details($label; $body);
+
+    def render($owner; $content):
+        if ($content | type) == "string" then
+            {text: ($content // ""), extras: [], has_text: has_text($content // "")}
+        elif ($content | type) == "array" then
+            (reduce $content[] as $item (
+                {text:"", extras: []};
+                if $item.type == "text" then
+                    .text += (if has_text(.text) then "\n\n" else "" end) + ($item.text // "")
+                elif $item.type == "tool_use" then
+                    .extras += [tool_use_line($owner; $item)]
+                elif $item.type == "tool_result" then
+                    .extras += [tool_result_line($owner; $item)]
+                else .
+                end
+            )) as $acc
+            | $acc + {has_text: has_text($acc.text)}
+        else
+            {text:"", extras: [], has_text:false}
+        end;
+
+    . as $e
+    | .type as $owner
+    | if ($owner == "user" or $owner == "assistant" or $owner == "system") then
+        (render($owner; .message.content)) as $parts
+        | (if $parts.has_text then h($owner) + $parts.text else "" end)
+        + (if ($parts.extras | length) > 0 then
+            (if $parts.has_text then "\n\n" else "" end) + ($parts.extras | join("\n\n"))
+          else "" end)
+        + (if $owner == "user" and (.toolUseResult? != null) then
+            (if $parts.has_text or ($parts.extras | length) > 0 then "\n\n" else "" end)
+            + details("user: tool result: meta"; code("json"; (.toolUseResult | tojson)))
+          else "" end)
+    else empty end
+    ' $argv[1]
+end
+
 
 type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source
