@@ -9,13 +9,13 @@
 # Setup: In Settings > Keyboard > Custom Shortcuts, add a shortcut:
 #   Name: Ask Paste
 #   Shortcut: Ctrl+Alt+0
-#   Command: bash -lc 'ACTIVE=$(xdotool getactivewindow); gnome-terminal --zoom=2 --geometry=80x10 --wait -- bash -lc "ACTIVE_WIN=$ACTIVE /home/sanand/code/scripts/askpaste.sh"'
+#   Command: bash -lc 'ACTIVE=$(xdotool getactivewindow); gnome-terminal --zoom=2 --geometry=80x10 --wait -- bash -lc "ACTIVE_WIN=$ACTIVE /home/sanand/code/scripts/askwin"'
 #
 # Why gnome-terminal? It's already installed and I did not research alternatives.
 
 set -euo pipefail
 
-# Activate mise since ask needs fzf which is mise-installed
+# Activate mise since ask needs fzf which is mise-installed (~50ms)
 eval "$(mise activate bash)"
 # Add ask and llm to PATH
 PATH="/home/sanand/code/scripts/:/home/sanand/apps/llm/.venv/bin/:$PATH"

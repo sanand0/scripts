@@ -35,7 +35,7 @@ export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
 
-# Basic commands
+# Basic commands and aliases
 # -----------------------------------------------
 
 # git mis-spellings
@@ -65,6 +65,9 @@ abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 
 # Convert PDF to text
 abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
+
+# Run Python debugger on error
+abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 
 # Clipboard Utilities
 # -----------------------------------------------
@@ -104,7 +107,6 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | xargs -I {} head -n 200 "{}" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
-
 # Audio/video
 # ----------------------------------------------
 
@@ -214,9 +216,6 @@ abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-form
 abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --extract-audio --audio-format mp3 --audio-quality 5'
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
 
-
-# List all JSON paths in a file. Usage: cat file.json | jqpaths
-abbr --add jqpaths jq -r 'paths(scalars)|map(if type=="number" then "[]" else ".\(. )" end)|join("")|unique[]'
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
@@ -349,111 +348,6 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         -c:v libvpx-vp9 -b:v 0 -crf 40 \
         $out
 end
-
-
-# Print Codex CLI session logs (from ~/.codex/sessions/yyyy/mm/dd/*.jsonl) as Markdown
-function codexlog
-    jq -r '
-    def h(t):        "\n\n## " + t + "\n\n";
-    def summary(t):  "<summary><strong>" + t + "</strong></summary>\n\n";
-    def code(l; s):  "```" + l + "\n" + (s // "") + "\n```\n";
-    def kv(k; v):    if v then "**" + k + ":** " + v + "\n" else "" end;
-
-    . as $e
-    | .payload.type as $t
-    | if ($t == "user_message" or $t == "agent_message") then
-        h($t) + ($e.payload.message // "")
-
-    elif $t == "agent_reasoning" then
-        "\n\n<details>"
-        + summary("agent reasoning")
-        + ($e.payload.text // $e.payload.message // "")
-        + "\n\n</details>"
-
-    elif $t == "function_call" then
-        ($e.payload.arguments? | fromjson? // {}) as $A
-        | "\n\n<details>"
-        + summary("tool: " + ($e.payload.name // ""))
-        + (if $A.command? then code("bash"; ($A.command | join(" "))) else "" end)
-        + "\n\n</details>"
-
-    elif $t == "function_call_output" then
-        ($e.payload.output? | fromjson? // {}) as $O
-        | "\n\n<details>"
-        + summary("tool output")
-        + (if $O.metadata? then
-            "**exit:** \($O.metadata.exit_code // "unknown") · **duration:** \($O.metadata.duration_seconds // "unknown")s\n"
-        else "" end)
-        + code("txt"; ($O.output // ""))
-        + "\n\n</details>"
-
-    else empty end
-    ' $argv[1]
-end
-
-# Print Claude Code session logs (from ~/.claude/projects/$path/*.jsonl) as Markdown
-
-function claudelog
-    jq -r '
-    def h(t):        "\n\n## " + t + "\n\n";
-    def code(l; s):  "```" + l + "\n" + (s // "") + "\n```\n";
-    def has_text($s): ($s | test("[^[:space:]]"));
-
-    def details($label; $body):
-        "\n\n<details><summary><strong>" + $label + "</strong></summary>\n\n"
-        + (if has_text($body) then $body + "\n\n" else "" end)
-        + "</details>";
-
-    def tool_use_line($owner; $item):
-        ($owner + ": tool: " + ($item.name // "")) as $label
-        | (if $item.input? then code("json"; ($item.input | tojson)) else "" end) as $body
-        | details($label; $body);
-
-    def tool_result_line($owner; $item):
-        ($owner + ": tool result" + (if $item.tool_use_id then ": " + $item.tool_use_id else "" end)) as $label
-        | (if ($item.content? // null) == null then ""
-           elif ($item.content | type) == "string" then
-               if ($item.content | test("[^[:space:]]")) then code("txt"; ($item.content // "")) else "" end
-           else code("json"; ($item.content | tojson))
-           end) as $body
-        | details($label; $body);
-
-    def render($owner; $content):
-        if ($content | type) == "string" then
-            {text: ($content // ""), extras: [], has_text: has_text($content // "")}
-        elif ($content | type) == "array" then
-            (reduce $content[] as $item (
-                {text:"", extras: []};
-                if $item.type == "text" then
-                    .text += (if has_text(.text) then "\n\n" else "" end) + ($item.text // "")
-                elif $item.type == "tool_use" then
-                    .extras += [tool_use_line($owner; $item)]
-                elif $item.type == "tool_result" then
-                    .extras += [tool_result_line($owner; $item)]
-                else .
-                end
-            )) as $acc
-            | $acc + {has_text: has_text($acc.text)}
-        else
-            {text:"", extras: [], has_text:false}
-        end;
-
-    . as $e
-    | .type as $owner
-    | if ($owner == "user" or $owner == "assistant" or $owner == "system") then
-        (render($owner; .message.content)) as $parts
-        | (if $parts.has_text then h($owner) + $parts.text else "" end)
-        + (if ($parts.extras | length) > 0 then
-            (if $parts.has_text then "\n\n" else "" end) + ($parts.extras | join("\n\n"))
-          else "" end)
-        + (if $owner == "user" and (.toolUseResult? != null) then
-            (if $parts.has_text or ($parts.extras | length) > 0 then "\n\n" else "" end)
-            + details("user: tool result: meta"; code("json"; (.toolUseResult | tojson)))
-          else "" end)
-    else empty end
-    ' $argv[1]
-end
-
 
 type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source

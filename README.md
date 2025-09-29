@@ -47,27 +47,38 @@ and only add yourself with full permissions.
 Here are the setup details for my laptops.
 
 - [Linux](setup/linux.md)
+  - [Media Keys](setup/media-keys.dconf): Gnome keybindings
 - [Windows](setup/windows.md)
 - [Android](setup/android.md)
 - [Online tools](setup/online.md) replacing installed software
 
 # Scripts
 
+- [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
+- [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [chars](chars) lists non-ASCII characters in files.
-- [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
-- [rgb](rgb) converts RGB to hex and vice versa.
-- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
-- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
-- [generate/](generate/) has scripts to generate data.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
+- [gmail](gmail): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
+- [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
-- [ask](ask) records a short voice note, merges an optional `ask.md` system prompt, and sends it to `llm`.
-- [gmail](gmail) offers a `typer`-based Gmail search CLI using OAuth tokens from `google_oauth.py`.
-  - [google_oauth.py](google_oauth.py) refreshes and caches Google API tokens for the CLI utilities.
-- [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream.
-- [talkcode.sh](talkcode.sh) pipes spoken prompts through `ask`, generates code, and pastes it into the last active window.
+- [rgb](rgb) converts RGB to hex and vice versa.
+- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
 - [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
+- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
+
+## jq scripts
+
+- [codexlog.jq](codexlog.jq) converts Codex CLI session logs to Markdown (from ~/.codex/sessions/yyyy/mm/dd/session.jsonl)
+- [claudelog.jq](claudelog.jq) converts Claude Code session logs to Markdown (from ~/.claude/projects/$path/\*.jsonl)
+- [jqpaths.jq](jqpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
+- [whatsappthread.jq](whatsappthread.jq) converts https://tools.s-anand.net/whatsappscraper/ JSON into LLM-friendly JSONL + thread_id + urls[]
+
+## Others
+
+- [generate/](generate/) has scripts to generate data.
+- [pdbhook/](pdbhook/) runs Python debugger on error. Usage: `PYTHONPATH=~/code/scripts/pdbhook uv run script.py`
 
 ## Services
 

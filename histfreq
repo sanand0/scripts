@@ -1,9 +1,9 @@
 #!/usr/bin/env -S uv run --script
 
 """
-histfreq.py - rank the top N shell commands from a NUL-delimited stream.
+Rank the top N shell commands from a NUL-delimited stream.
 
-  history --null | uv run histfreq.py -n 40
+  history --null | histfreq -n 40
 """
 
 import argparse
