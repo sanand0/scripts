@@ -59,6 +59,7 @@ Here are the setup details for my laptops.
 - [chars](chars) lists non-ASCII characters in files.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
+- [githubscore.py](githubscore.py) evaluates GitHub developer quality
 - [gmail](gmail): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
 - [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`

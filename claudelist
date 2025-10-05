@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# List Claude Code session logs: filename, cwd, first user message.
+
+base="${HOME}/.claude/projects"
+[[ -d "$base" ]] || exit 0
+
+# Sort by modification time: newest sessions first.
+find "$base" -type f -name '*.jsonl' -printf '%T@:%p\0' \
+  | sort -zrn \
+  | while IFS= read -r -d '' entry; do
+      logfile="${entry#*:}"
+      FILE="$logfile" jq -nr --slurpfile rows "$logfile" '
+        def first_value(f):
+          ([ $rows[] | f ] | map(select(. != null and . != "")) | .[0] // "");
+
+        def indent_block(s):
+          "    " + ((s // "") | gsub("\n"; "\n    ")) + "\n";
+
+        def render_text:
+          if . == null then ""
+          elif (type) == "string" then .
+          elif (type) == "array" then
+            (.
+             | map(
+                 if (.type // "") == "text" then .text // ""
+                 else if (.type // "") == "tool_use" then "[tool: " + (.name // "") + "]"
+                 else if (.type // "") == "tool_result" then "[tool result]"
+                 else if (.text? != null) then (.text // "")
+                 else ""
+                 end end end end
+               )
+             | map(select(. != ""))
+             | join("\n\n"))
+          else
+            tojson
+          end;
+
+        def first_user_message:
+          first_value(
+            if (.type // "") == "user" and (.isMeta // false) != true then
+              (.message.content // .message // "") | render_text
+            else
+              ""
+            end
+          );
+
+        def block(file; cwd; message):
+          "# " + file + "\n"
+          + indent_block(cwd)
+          + indent_block(message);
+
+        block(
+          env.FILE;
+          first_value(.cwd // "");
+          first_user_message
+        )
+      '
+    done

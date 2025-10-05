@@ -85,7 +85,21 @@ Here is the setup for my Linux laptops.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
-  - codex: `npm install -g codex`
+  - codex: `npm install -g codex`. Include these settings in [`~/.codex/config.toml`](https://github.com/openai/codex/blob/main/docs/config.md)
+    ```ini
+    # By default, allow writing to the workspace
+    sandbox_mode    = "workspace-write"
+
+    [sandbox_workspace_write]
+    # allow internet access
+    network_access  = true
+    # Allow npm and uv to run
+    writable_roots = [
+      "/home/sanand/.npm/",
+      "/home/sanand/.cache/uv/",
+      "/home/sanand/.local/share/uv/",
+    ]
+    ```
   - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
   - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
   - bat: `sudo apt install bat && sudo ln -s /usr/bin/batcat /usr/local/bin/bat` for color previews in fzf

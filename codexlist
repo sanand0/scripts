@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# List Codex session logs: filename, cwd, first user message.
+
+# Sort by filename desc; session filenames encode recency.
+find "${HOME}/.codex/sessions" -type f -name '*.jsonl' -print0 \
+  | sort -rz \
+  | while IFS= read -r -d '' logfile; do
+      FILE="$logfile" jq -nr --slurpfile rows "$logfile" '
+        def first_value(f): ([ $rows[] | f ] | map(select(. != null)) | .[0] // "");
+
+        def indent_block(s):
+          "    " + (s | gsub("\n"; "\n    "));
+
+        def block(file; cwd; message):
+          "# " + file + "\n"
+          + indent_block(cwd) + "\n"
+          + indent_block(message) + "\n";
+
+        block(
+          env.FILE;
+          first_value(.payload.cwd // empty);
+          first_value(if .payload.type == "user_message" then .payload.message else empty end)
+        )
+      '
+    done

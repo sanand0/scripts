@@ -18,7 +18,7 @@ import { visit } from "npm:unist-util-visit";
 // args & paths
 const flags = Deno.args.filter((arg) => arg.startsWith("--"));
 let terms = Deno.args.filter((arg) => !arg.startsWith("--"));
-if (!terms.length) terms = ["llms.md", "til.md", "core-concepts", "oblique-strategies", "claude-code-uses"];
+if (!terms.length) terms = ["llms.md", "til.md", "core-concepts", "creative-ideas", "claude-code-uses"];
 const term = terms[Math.floor(Math.random() * terms.length)];
 const re = new RegExp(term, "i");
 

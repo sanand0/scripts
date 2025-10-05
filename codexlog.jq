@@ -13,9 +13,15 @@ def kv(k; v):    if v then "**" + k + ":** " + v + "\n" else "" end;
     h($t) + ($e.payload.message // "")
 
 elif $t == "agent_reasoning" then
-    "\n\n<details>"
+    "\n\n<details open>"
     + summary("agent reasoning")
     + ($e.payload.text // $e.payload.message // "")
+    + "\n\n</details>"
+
+elif $t == "reasoning" then
+    "\n\n<details open>"
+    + summary("reasoning")
+    + ($e.payload.summary[0].text // "")
     + "\n\n</details>"
 
 elif $t == "function_call" then
