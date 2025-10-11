@@ -33,4 +33,4 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     install -m 755 /root/.local/bin/uvx /usr/local/bin/uvx
 
 # Install Codex CLI via npm (ships native binary under @openai/codex).
-RUN npm install -g @openai/codex
+RUN npm install -g @openai/codex@latest
