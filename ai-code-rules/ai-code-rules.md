@@ -92,7 +92,7 @@ Test with `npm test` and `uvx pytest` as appropriate
 
 Lint with `npm run lint`. Else:
 
-- PY: `uvx ruff format --line-length 100`
+- PY: `uvx ruff check; uvx ruff format --line-length 100`
 - JS, MD: `npx -y prettier@3.5 --print-width=120 '**/*.js' '**/*.md'` (skip HTML)
 
 On completion, suggest further improvements
