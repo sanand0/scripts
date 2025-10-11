@@ -8,7 +8,7 @@ HOME_MOUNT="/codex-home"
 
 if [[ ${1-} == "--build" ]]; then
     shift || true
-    DOCKER_BUILDKIT=1 docker build \
+    DOCKER_BUILDKIT=1 docker build --no-cache \
         --file "$DOCKERFILE" \
         --tag "$IMAGE_TAG" \
         "$@" \
