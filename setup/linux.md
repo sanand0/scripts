@@ -76,7 +76,8 @@ Here is the setup for my Linux laptops.
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - psql: `sudo apt install -y postgresql-client`
   - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
-  - espanso: Needs libwxbase which is no longer installed with Debian?
+  - espanso: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb; sudo apt install ./espanso-debian-x11-amd64.deb`
+    Needs libwxbase which is no longer installed with Debian?
   - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
