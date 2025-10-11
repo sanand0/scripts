@@ -12,19 +12,19 @@
 
 matches:
   # Simple text replacement
-  - trigger: ":ceo "
+  - trigger: "-ceo "
     replace: |
       WhatsApp: +91 9741 552 552
       Mobile: +65 86462570
-  - trigger: ":trd "
+  - trigger: "-trd "
     replace: |
       Thanks & Regards,
       Anand
-  - trigger: ":ta "
+  - trigger: "-ta "
     replace: |
       Thanks
       Anand
-  - trigger: ":ra "
+  - trigger: "-ra "
     replace: |
       Regards
       Anand
