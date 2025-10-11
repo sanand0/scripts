@@ -2,8 +2,8 @@
 Description=Run update-files-weekly with catch-up
 
 [Timer]
-# midnight local time
-OnCalendar=weekly
+# 9am every Sunday local time
+OnCalendar=Sun 09:00
 # run on next wake if missed
 Persistent=true
 # group wakeups to save power

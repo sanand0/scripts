@@ -3,6 +3,6 @@ Description=Consolidate transcripts daily
 
 [Service]
 Type=oneshot
-ExecStart=/home/sanand/.local/bin/uv run consolidate.py "Insights" "What I missed" "Try out"
+ExecStart=/home/sanand/.local/bin/uv run /home/sanand/code/scripts/consolidate_transcripts.py
 WorkingDirectory=/home/sanand/Dropbox/notes/transcripts
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin

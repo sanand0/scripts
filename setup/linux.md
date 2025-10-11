@@ -22,11 +22,6 @@ Here is the setup for my Linux laptops.
 - Install VS Code: https://snapcraft.io/code
   - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
   - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
-- Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
-  - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
-  - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
-  - To update cursor, [download](https://www.cursor.com/downloads), shut down cursor, replace image at `/opt/cursor.appimage`, and restart cursor
-- Install [Windsurf](https://windsurf.com/editor/download-linux)
 - Software
   - Opera: From https://www.opera.com/download
   - git: `sudo apt install git git-lfs`
@@ -56,11 +51,13 @@ Here is the setup for my Linux laptops.
     mise use -g ubi:junegunn/fzf # Everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
     mise use -g ubi:mithrandie/csvq
     mise use -g xh
+    mise use -g yazi
     mise use -g zoxide
     ```
     - `mise unuse -g` to remove unused tools; `mise config ls` to list installed tools
     - See [registry](https://mise.jdx.dev/registry.html) for more
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
+  - dprint: `cd ~/.local/bin && curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip && cd -`
   - sqlite3: `sudo apt install sqlite3`
   - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - plocate: `sudo apt install plocate && sudo updatedb` for fast file searches
@@ -248,6 +245,11 @@ Things I skipped / dropped:
 - wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
 - ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
+- [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
+- Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
+  - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
+  - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
+  - To update cursor, [download](https://www.cursor.com/downloads), shut down cursor, replace image at `/opt/cursor.appimage`, and restart cursor
 - Migrated to `mise`:
   - aws: `sudo snap install --classic aws-cli`
   - caddy: `sudo apt install caddy`
@@ -282,4 +284,9 @@ Notes:
 
 - Use `fish_trace=1 fish` to debug fish startup or fish scripts.
 
-sudo apt install sox
+## Keyboard shortcuts
+
+Desktop
+
+- Ctrl + Alt + Left/Right Arrow: Switch desktops
+- Ctrl + Alt + Shift + Left/Right Arrow: Move app across desktops

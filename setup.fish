@@ -48,6 +48,9 @@ abbr --add giit git
 # Faster, better grep
 abbr --add grep ug
 
+# Better curl
+abbr --add http 'uvx httpie'
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
@@ -87,9 +90,9 @@ abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+brac
 # LLM Utilities
 # -----------------------------------------------
 
-# Run Claude Code
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
+abbr --add copilot 'npx -y @github/copilot'
 
 # File Utilities
 # -----------------------------------------------
@@ -137,7 +140,8 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
 #   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
 function record --description "record audio from mic + speakers into ~/Documents/calls"
-  read -l -P "Use HEADSET to avoid echo. Press ENTER: "
+  read -l -P "Use HEADSET to avoid echo. ENTER starts, Ctrl+C cancels: "
+  or return
   # Optional output filename; default to timestamped path
   if test (count $argv) -gt 0
     set out "$argv[1..]"
@@ -272,7 +276,12 @@ end
 function livesync --description "Update main from live branch. Create new live branch from main."
     git checkout main
     git merge --squash live
-    git diff --cached | llm -t gitcommit | git commit -F -
+    # Use llm to generate message based on diffs. Max 300 lines of diff per file
+    git diff --cached \
+        | awk '/^diff --git / {n=0} {if (n < 300) print} /^diff --git / {n++} {n++}' \
+        | llm -t gitcommit \
+        | fold -sw 72 \
+        | git commit -F -
     git push
     git branch -D live
     git push origin --delete live
@@ -347,6 +356,16 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         -filter_complex "select='not(mod(n\,$sampling))',scale=$width:-1" \
         -c:v libvpx-vp9 -b:v 0 -crf 40 \
         $out
+end
+
+# https://yazi-rs.github.io/docs/quick-start
+function y
+    set tmp (mktemp -t "yazi-cwd.XXXXXX")
+    yazi $argv --cwd-file="$tmp"
+    if read -z cwd < "$tmp"; and [ -n "$cwd" ]; and [ "$cwd" != "$PWD" ]
+        builtin cd -- "$cwd"
+    end
+    rm -f -- "$tmp"
 end
 
 type -q fzf; and fzf --fish | source

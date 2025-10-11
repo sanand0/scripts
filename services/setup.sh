@@ -33,11 +33,7 @@ for t in *.timer; do
 done
 
 # Print status of timers
-for t in *.timer; do
-  systemctl --user status "${t##*/}"
-done
+systemctl list-timers --user --all
 
-# Print logs of services
-for t in *.service; do
-  journalctl --user -u "${t##*/}" -n 5
-done
+# Log:
+# journalctl --user --since $(date -I  --date="1 week ago") -u $SERVICE
