@@ -29,7 +29,7 @@ Here is the setup for my Linux laptops.
   - curl: `sudo apt install curl`
   - micro: `cd ~/.local/bin; curl https://getmic.ro | bash`
   - fish: `sudo apt install fish; printf "/usr/bin/fish\n" | sudo tee -a /etc/shells;`
-  - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`. Update via `uv self update`
   - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
     ```bash
     mise use -g aws-cli
