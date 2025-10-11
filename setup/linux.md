@@ -78,7 +78,6 @@ Here is the setup for my Linux laptops.
   - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
   - espanso: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb; sudo apt install ./espanso-debian-x11-amd64.deb`
     - `espanso install actually-all-emojis`
-
   - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
