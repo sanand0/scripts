@@ -29,7 +29,7 @@ Here is the setup for my Linux laptops.
   - curl: `sudo apt install curl`
   - micro: `cd ~/.local/bin; curl https://getmic.ro | bash`
   - fish: `sudo apt install fish; printf "/usr/bin/fish\n" | sudo tee -a /etc/shells;`
-  - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`. Update via `uv self update`
   - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
     ```bash
     mise use -g aws-cli
@@ -76,8 +76,8 @@ Here is the setup for my Linux laptops.
   - fdupes: `sudo apt install fdupes` to find duplicate files
   - psql: `sudo apt install -y postgresql-client`
   - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
-  - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87)
-    - expanso: Needs libwxbase which is no longer installed with Debian?
+  - espanso: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb; sudo apt install ./espanso-debian-x11-amd64.deb`
+    - `espanso install actually-all-emojis`
   - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
@@ -244,6 +244,7 @@ Things I skipped / dropped:
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 - wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
 - ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
+- autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use expanso instead whose configuration can be git committed
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)

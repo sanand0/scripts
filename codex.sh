@@ -6,9 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="${SCRIPT_DIR}/codex.dockerfile"
 HOME_MOUNT="/codex-home"
 
+# `codex.sh --build` rebuilds WITHOUT cache
 if [[ ${1-} == "--build" ]]; then
     shift || true
-    DOCKER_BUILDKIT=1 docker build \
+    DOCKER_BUILDKIT=1 docker build --no-cache \
         --file "$DOCKERFILE" \
         --tag "$IMAGE_TAG" \
         "$@" \

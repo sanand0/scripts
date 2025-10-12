@@ -26,6 +26,7 @@ ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
 ln -s /c/Dropbox/scripts/.ssh ~/.ssh
 chmod og-r .ssh/*
 ln -s /c/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
+ln -s ~/code/scripts/espanso-match-base.yml ~/.config/espanso/match/base.yml
 printf '{"extends":["https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc", "/home/sanand/code/scripts/dprint.jsonc"]}' > ~/dprint.json
 ```
 
