@@ -5,9 +5,7 @@ description: ALWAYS use this style when coding Python / JavaScript
 
 Coding style
 
-- Functions over classes
 - Type hints and single-line docstrings
-- Use config.{json,toml} if config > 30 lines?
 
 Python style
 
@@ -21,7 +19,7 @@ Python style
   # ///
   ```
 
-Python libs:
+Prefer modern Python libs:
 
 `typer` over `argparse`
 `httpx` over `requests`
