@@ -31,14 +31,15 @@ module.exports = (fileInfo, { j }) => {
 
       const isBody = (child) => child === path.node; // helper
       if (
-        (j.IfStatement.check(parent) && isBody(parent.consequent)) ||
-        (j.ForStatement.check(parent) && isBody(parent.body)) ||
-        (j.ForInStatement.check(parent) && isBody(parent.body)) ||
-        (j.ForOfStatement.check(parent) && isBody(parent.body)) ||
-        (j.WhileStatement.check(parent) && isBody(parent.body)) ||
-        (j.DoWhileStatement.check(parent) && isBody(parent.body))
-      )
+        (j.IfStatement.check(parent) && isBody(parent.consequent))
+        || (j.ForStatement.check(parent) && isBody(parent.body))
+        || (j.ForInStatement.check(parent) && isBody(parent.body))
+        || (j.ForOfStatement.check(parent) && isBody(parent.body))
+        || (j.WhileStatement.check(parent) && isBody(parent.body))
+        || (j.DoWhileStatement.check(parent) && isBody(parent.body))
+      ) {
         j(path).replaceWith(stmt); // unwrap!;
+      }
     });
 
   return root.toSource({ quote: "single" });

@@ -1,3 +1,8 @@
+---
+name: npm-packages
+description: Conventions for package.json, README.md, coding & testing styles
+---
+
 - Name packages as single words ("smartart"), joined words ("saveform") or hyphenated ("bootstrap-llm-provider")
 - The main file name is package-name.js
 - Use ESM ("type": "module")

@@ -59,6 +59,7 @@ Here are the setup details for my laptops.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [chars](chars) lists non-ASCII characters in files.
+- [dev.sh](dev.sh) runs a development container for safer experimentation.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
@@ -76,7 +77,8 @@ Here are the setup details for my laptops.
 
 - [codexlog.jq](codexlog.jq) converts Codex CLI session logs to Markdown (from ~/.codex/sessions/yyyy/mm/dd/session.jsonl)
 - [claudelog.jq](claudelog.jq) converts Claude Code session logs to Markdown (from ~/.claude/projects/$path/\*.jsonl)
-- [jqpaths.jq](jqpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
+- [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)
+- [jsonpaths.jq](jsonpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
 - [whatsappthread.jq](whatsappthread.jq) converts https://tools.s-anand.net/whatsappscraper/ JSON into LLM-friendly JSONL + thread_id + urls[]
 
 ## Others

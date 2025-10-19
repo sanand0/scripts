@@ -1,5 +1,10 @@
-- Use [vitest](http://npmjs.com/package/vitest) and [happy-dom](https://www.npmjs.com/package/happy-dom) for front-end testing.
-- Avoid `vitest.config.*`; default ESM import works, launch via `"test": "npx -y vitest run"` in `package.json`. Add `happy-dom` as a `devDependency`. Add `npm test` to `prepublishOnly`
+---
+name: vitest-dom
+description: Fast, lightweight testing for front-end apps. Uses vitest + jsdom instead to avoid heavy playwright.
+---
+
+- Use [vitest](http://npmjs.com/package/vitest) and [jsdom](https://www.npmjs.com/package/jsdom) for front-end testing.
+- Avoid `vitest.config.*`; default ESM import works, launch via `"test": "npx -y vitest run"` in `package.json`. Add `jsdom` as a `devDependency`. Add `npm test` to `prepublishOnly`
 - Treat tests as lightweight integration, not unit. Load the full HTML + scripts and verify real DOM mutations; ensures refactors don't silently break UI wiring.
 - Share one `Browser` per test suite to cut startup time: `new Browser({console, settings})`. Log browser `console.*` output.
 - Mount local HTML. `settings.fetch.virtualServers = [{url:"https://test/", directory: <root>}]`. Use `page.goto("https://test/...")` to load files without a dev-server.

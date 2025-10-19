@@ -24,6 +24,7 @@ Here is the setup for my Linux laptops.
   - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
 - Software
   - Opera: From https://www.opera.com/download
+  - moreutils: `sudo apt install moreutils`
   - git: `sudo apt install git git-lfs`
   - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python.
   - curl: `sudo apt install curl`
@@ -33,37 +34,45 @@ Here is the setup for my Linux laptops.
   - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
     ```bash
     mise use -g aws-cli
-    mise use -g btop
+    mise use -g btop                # htop alternative
     mise use -g caddy
     mise use -g cloudflared
+    mise use -g csvq
     mise use -g duckdb
+    mise use -g fd                  # for fast file searches
     mise use -g gcloud
-    mise use -g glab # Then glab config set -g host code.gramener.com
+    mise use -g github-cli
+    mise use -g glab                # Then glab config set -g host code.gramener.com
     mise use -g jq
-    mise use -g lazygit # Video: https://youtu.be/CPLdltN7wgE
+    mise use -g lazygit             # Video: https://youtu.be/CPLdltN7wgE
     mise use -g node
-    mise use -g opentofu
-    mise use -g pandoc
-    mise use -g rclone
-    mise use -g ripgrep
+    mise use -g opentofu            # Terraform alternative
+    mise use -g pandoc              # convert md, pdf, docx, etc.
+    mise use -g rclone              # copy across cloud drives
+    mise use -g ripgrep             # grep alternative
     mise use -g starship
-    mise use -g ubi:ayoisaiah/f2
-    mise use -g ubi:junegunn/fzf # Everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
+    mise use -g ubi:ayoisaiah/f2    # file rename
+    mise use -g ubi:bootandy/dust   # du alternative
+    mise use -g ubi:Canop/broot     # file browser
+    mise use -g ubi:cantino/mcfly   # ctrl+r alternative
+    mise use -g ubi:dandavison/delta  # git diff. See .gitconfig for config
+    mise use -g ubi:junegunn/fzf    # everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
     mise use -g ubi:mithrandie/csvq
-    mise use -g xh
-    mise use -g yazi
-    mise use -g zoxide
+    mise use -g ubi:tealdeer-rs/tealdeer # tldr alternative
+    mise use -g xh                  # curl alternative
+    mise use -g yazi                # file browser
+    mise use -g zoxide              # smart cd (z)
     ```
     - `mise unuse -g` to remove unused tools; `mise config ls` to list installed tools
     - See [registry](https://mise.jdx.dev/registry.html) for more
   - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
   - dprint: `cd ~/.local/bin && curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip && cd -`
   - sqlite3: `sudo apt install sqlite3`
-  - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd` for fast file searches
   - plocate: `sudo apt install plocate && sudo updatedb` for fast file searches
   - csvkit: `sudo apt install csvkit`
   - tmux: `sudo snap install tmux`
-  - ffmpeg: `sudo apt install ffmpeg`
+  - ffmpeg: `sudo apt install ffmpeg` (mise ffmpeg requires compilation)
+  - cwebp: `sudo apt install webp`
   - ugrep: `sudo apt install ugrep` for [fuzzy search](https://github.com/Genivia/ugrep)
   - lynx: `sudo apt install lynx`
   - qpdf: `sudo apt install qpdf` to split pages
@@ -105,10 +114,6 @@ Here is the setup for my Linux laptops.
     - `sudo mv magick /usr/local/bin/magick`
     - `sudo chmod +x /usr/local/bin/magick`
   - xclip instead of clip: `sudo apt install xclip`
-  - gh cli:
-    - `curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg`
-    - `echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null`
-    - `sudo apt install gh`
   - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
     - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
   - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
@@ -136,12 +141,12 @@ Here is the setup for my Linux laptops.
 - uv tools
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
-    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin`
+    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
     - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
   - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo`
-  - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag`
+  - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag` - mp3tag equivalent
   - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex gramex-enterprise; gramex setup --all`
 - Configurations
   - Run `dconf load /org/gnome/settings-daemon/plugins/media-keys/ < media-keys.dconf` to load custom shortcuts.
@@ -264,9 +269,14 @@ Things I skipped / dropped:
   - csvq: `curl -L https://github.com/mithrandie/csvq/releases/download/v1.18.1/csvq-v1.18.1-linux-amd64.tar.gz | tar xzO csvq-v1.18.1-linux-amd64/csvq > ~/.local/bin/csvq && chmod +x ~/.local/bin/csvq`
   - duckdb: `curl https://install.duckdb.org | sh` (re-run to upgrade)
   - f2: [Download](https://github.com/ayoisaiah/f2/releases) and `sudo dpkg -i ...`
+  - fd: `sudo apt install fd-find && sudo ln -s /usr/bin/fdfind /usr/local/bin/fd`
   - fnm: `curl -fsSL https://fnm.vercel.app/install | bash; fnm install 24`
   - fzf: `mkdir -p ~/.local/bin && curl -L https://github.com/junegunn/fzf/releases/download/v0.60.3/fzf-0.60.3-linux_amd64.tar.gz | tar xz  -C ~/.local/bin/`.
   - gcloud: `curl https://sdk.cloud.google.com | bash`
+  - gh cli:
+    - `curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg`
+    - `echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null`
+    - `sudo apt install gh`
   - glab cli: `curl -LO https://gitlab.com/gitlab-org/cli/-/releases/v1.55.0/downloads/glab_1.55.0_linux_amd64.deb; sudo apt install ./glab_1.55.0_linux_amd64.deb`
   - jq: `sudo apt install jq`
   - lazygit: Download from [releases](https://github.com/jesseduffield/lazygit/releases) and unzip into `~/.local/bin/lazygit`.

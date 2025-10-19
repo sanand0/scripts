@@ -40,26 +40,26 @@ Columns (per user - render as a flat list in this order):
 - `login`: user login
 - `score`: see Score section below. Round to nearest integer
 - **From user details**: From `GET /users/{login}` get:
-   - `name:`
-   - `company`
-   - `location`
-   - `email`
-   - `hireable`
-   - `blog`
-   - `bio`
-   - `created_at`
-   - `followers`
-   - `public_repos`
+  - `name:`
+  - `company`
+  - `location`
+  - `email`
+  - `hireable`
+  - `blog`
+  - `bio`
+  - `created_at`
+  - `followers`
+  - `public_repos`
 - **From recent repos** `GET /users/{login}/repos?type=owner&sort=pushed&direction=desc&per_page=${maxRepos}`. Keep only repos `fork == false`, `archived == false`, `is_template == false`, `pushed_at` since `--since`.
-   - `recent_repos`: is the final count after filtering
-   - `stars`: Sum `stargazers_count` across these repos
-   - `readme`: # recent repos with README. `GET /repos/{o}/{r}/readme`
-   - `license`: # recent repos with a LICENSE. `GET /repos/{o}/{r}/license`
-   - `tests`: # recent repos with any Python / JS / ... testing paths/files.
-   - `tags`: # of recent repos with tags `GET /repos/{o}/{r}/tags`
-   - `semver` = # of recent repos with tags matching SemVer
-   - `releases`: # of recent repos with releases `GET /repos/{o}/{r}/releases`
-   - `ci`: # recent repos with CI. `GET /repos/{o}/{r}/actions/workflows` returns ≥1 workflow, **or** the default branch’s latest commit, `GET /repos/{o}/{r}/commits/{sha}/status` has any contexts/checks.
+  - `recent_repos`: is the final count after filtering
+  - `stars`: Sum `stargazers_count` across these repos
+  - `readme`: # recent repos with README. `GET /repos/{o}/{r}/readme`
+  - `license`: # recent repos with a LICENSE. `GET /repos/{o}/{r}/license`
+  - `tests`: # recent repos with any Python / JS / ... testing paths/files.
+  - `tags`: # of recent repos with tags `GET /repos/{o}/{r}/tags`
+  - `semver` = # of recent repos with tags matching SemVer
+  - `releases`: # of recent repos with releases `GET /repos/{o}/{r}/releases`
+  - `ci`: # recent repos with CI. `GET /repos/{o}/{r}/actions/workflows` returns ≥1 workflow, **or** the default branch’s latest commit, `GET /repos/{o}/{r}/commits/{sha}/status` has any contexts/checks.
 - `pr`: PRs opened in others' repos `GET /search/issues?q=is:pr+author:{login}+-user:{login}+created:>={since}&per_page=100`
 - `pr_merged`: `GET /search/issues?q=is:pr+is:merged+author:{login}+-user:{login}+merged:>={since}&per_page=100`
 - `issues`: Issues opened by the user: `GET /search/issues?q=author:{login}+type:issue+created:>={since}&per_page=100`

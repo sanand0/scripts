@@ -4,6 +4,9 @@
 # Install mise via `curl https://mise.run | sh`
 $HOME/.local/bin/mise activate fish | source
 
+# Skip fish greeting
+set -g fish_greeting ""
+
 # Migrate setup from ~/.config/fish/config.fish
 set -gx PATH $PATH $HOME/.lmstudio/bin
 
@@ -38,6 +41,9 @@ export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color
 # Basic commands and aliases
 # -----------------------------------------------
 
+# uv is Python
+abbr --add python 'uvx python'
+
 # git mis-spellings
 abbr --add gt   git
 abbr --add gi   git
@@ -55,6 +61,9 @@ abbr --add http 'uvx httpie'
 export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
 abbr --add mail cmdg
+
+# Delta pager for git diffs. Override default PAGER, avoid bat
+export DELTA_PAGER='less -R'
 
 # Google Calendar command line
 abbr --add gcalcli 'uvx gcalcli'
@@ -93,6 +102,7 @@ abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+brac
 abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
 abbr --add copilot 'npx -y @github/copilot'
+abbr --add opencode 'npx -y opencode-ai'
 
 # File Utilities
 # -----------------------------------------------
@@ -367,6 +377,9 @@ function y
     end
     rm -f -- "$tmp"
 end
+
+# https://github.com/cantino/mcfly
+mcfly init fish | source
 
 type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source

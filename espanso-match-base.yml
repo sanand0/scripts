@@ -22,12 +22,12 @@ matches:
     replace: |
       Thanks & Regards,
       Anand
-  - trigger: "-ta"
+  - trigger: "-td"
     word: true
     replace: |
       Thanks
       Anand
-  - trigger: "-ra"
+  - trigger: "-rd"
     word: true
     replace: |
       Regards

@@ -114,15 +114,6 @@
     find = "!git log --source --all -S "
     # git search xxx lists the diffs of all commits with the string xxx
     search = "!git log --source --all -p -S "
-    webui = !D:/Apps/git-webui/release/libexec/git-core/git-webui
-
-[instaweb]
-    # Download lighttpd and add it to the PATH
-    # Add GITWEB_CONFIG to system environment variables
-    local = true
-    httpd = lighttpd
-    port = 4321
-    browser = /c/Users/Anand/AppData/Local/Google/Chrome/Application/chrome.exe
 
 [color]
     ui = auto
@@ -161,9 +152,14 @@
     # Git 2.37 onwards makes git status more efficient
     fsmonitor = true
 
+    # Use delta for paging diffs
+    pager = delta
+
 [diff]
     # Allow git diff to do basic rename and copy detection:
     renames = copies
+    # Show moved lines within a file as well
+    colorMoved = default
 
 [push]
     # When pushing without giving a refspec, push the current branch to its
@@ -179,11 +175,10 @@
 [merge]
     # Always show a diffstat at the end of a merge
     stat = true
+    conflictStyle = zdiff3
 
 [help]
     autocorrect = 1
-[webui]
-    autoupdate = true
 [init]
     defaultBranch = main
 [credential "helperselector"]
@@ -202,5 +197,12 @@
     directory = /cygdrive/c/github/
     directory = ~/code/
 [credential "https://code.gramener.com"]
-	helper =
-	helper = !/usr/bin/glab auth git-credential
+    helper =
+    helper = !/usr/bin/glab auth git-credential
+[interactive]
+    diffFilter = delta --color-only
+[delta]
+    # Navigate between diff hunks with n and p
+    navigate = true
+    # Show side-by-side diffs
+    side-by-side = true

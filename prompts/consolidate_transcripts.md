@@ -40,6 +40,7 @@ Use the following pre-defined section headings (in order):
 - What they missed
 
 For each section:
+
 - The first-level bullets contain the file name (no path).
 - The second-level bullets are lines directly copied from the sub-bullets in that section.
 
