@@ -356,6 +356,12 @@ function opusmusic --description "opus file.mp4 converts it to file.opus (music 
     ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
 end
 
+function whisper --description "transcribe audio file using Whisper Ctranslate2"
+    source $HOME/whisper-ctranslate2/.venv/bin/activate.fish
+    whisper-ctranslate2 --device cuda --language en $argv[1..]
+    source $HOME/whisper-ctranslate2/.venv/bin/deactivate.fish
+end
+
 # webm-compress $input $width $frame_samples $output
 function webm-compress --description "webm-compress input.webm 500 (width) 8 (sampling) output.webm"
     set in $argv[1]
