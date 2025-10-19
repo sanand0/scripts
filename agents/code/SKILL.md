@@ -59,11 +59,11 @@ import * as d3 from "d3"; // @7/+esm for visualizations
 import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
 import { html, render } from "lit-html"; // @3/+esm for DOM updates
 import { unsafeHTML } from "lit-html@3/directives/unsafe-html.js";
-import { marked } from "marked@16/+esm"; // render Markdown
-import { parse } from "partial-json@0.1/+esm"; // parse streamed JSON. `const { key } = parse('{"key":"v')`
-import saveform from "saveform@1"; //  to persist form data. `saveform("#form-to-persist")`
+import { marked } from "marked"; // @16/+esm
+import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const { key } = parse('{"key":"v')`
+import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
 Test with `npm test` and `uvx pytest` as appropriate
 
-Lint with `npm run lint`. Else use `dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/main/dprint.jsonc`.
+Lint with `npm run lint`. Else use `dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc`.
