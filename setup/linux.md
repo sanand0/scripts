@@ -44,6 +44,7 @@ Here is the setup for my Linux laptops.
     mise use -g github-cli
     mise use -g glab                # Then glab config set -g host code.gramener.com
     mise use -g jq
+    mise use -g lazydocker
     mise use -g lazygit             # Video: https://youtu.be/CPLdltN7wgE
     mise use -g node
     mise use -g opentofu            # Terraform alternative
