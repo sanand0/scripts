@@ -357,9 +357,10 @@ function opusmusic --description "opus file.mp4 converts it to file.opus (music 
 end
 
 function whisper --description "transcribe audio file using Whisper Ctranslate2"
-    source $HOME/whisper-ctranslate2/.venv/bin/activate.fish
+    source $HOME/apps/whisper-ctranslate2/.venv/bin/activate.fish
+    export LD_LIBRARY_PATH="/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cublas/lib/:/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cudnn/lib/"
     whisper-ctranslate2 --device cuda --language en $argv[1..]
-    source $HOME/whisper-ctranslate2/.venv/bin/deactivate.fish
+    source $HOME/apps/whisper-ctranslate2/.venv/bin/deactivate.fish
 end
 
 # webm-compress $input $width $frame_samples $output
