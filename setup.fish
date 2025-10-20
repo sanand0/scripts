@@ -41,9 +41,6 @@ export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color
 # Basic commands and aliases
 # -----------------------------------------------
 
-# uv is Python
-abbr --add python 'uvx python'
-
 # git mis-spellings
 abbr --add gt   git
 abbr --add gi   git
