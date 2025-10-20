@@ -13,6 +13,7 @@
   "toml": {},
   "dockerfile": {},
   "ruff": {
+    "indentWidth": 4,
     "lineLength": 100
   },
   "malva": {},
