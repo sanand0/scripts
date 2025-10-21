@@ -23,6 +23,11 @@ set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
 set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
 set -gx PATH $PATH $HOME/apps/ruff/.venv/bin
 
+# uv configuration to allow Codex, etc. to use uv
+export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
+export UV_CACHE_DIR="$HOME/.cache/uv"
+export XDG_DATA_HOME="$HOME/.local/share"
+
 # Via Google Cloud SDK.
 if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
 
