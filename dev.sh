@@ -19,6 +19,7 @@ if [[ ${1-} == "--build" ]]; then
 fi
 
 docker run --rm -i -t \
+    --gpus all \
     -u 1000:1000 \
     -e HOME=/home/vscode \
     -v "$HOME/.codex:/home/vscode/.codex" \
