@@ -136,6 +136,11 @@ Here is the setup for my Linux laptops.
     - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
   - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
   - Docker (via CLI installation instructions)
+  - NVIDIA for Docker:
+    ```bash
+    sudo apt-get install -y nvidia-container-toolkit
+    sudo nvidia-ctk runtime configure --runtime=docker
+    ```
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - VLC
   - 7zip, Zoom, OBS
