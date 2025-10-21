@@ -146,7 +146,7 @@ Here is the setup for my Linux laptops.
     sudo apt-get install -y nvidia-container-toolkit
     sudo nvidia-ctk runtime configure --runtime=docker
     sudo systemctl restart docker
-    docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+    docker run --rm --gpus all ubuntu nvidia-smi
     ```
   - Beekeeper Studio instead of SQLiteStudio: Installed via app store
   - VLC
