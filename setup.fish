@@ -22,7 +22,6 @@ set -gx PATH $PATH $HOME/apps/llm/.venv/bin
 set -gx PATH $PATH $HOME/apps/marimo/.venv/bin
 set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
 set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
-set -gx PATH $PATH $HOME/apps/ruff/.venv/bin
 
 # uv configuration to allow Codex, etc. to use uv
 export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
