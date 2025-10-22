@@ -15,6 +15,7 @@ set -gx PATH $PATH $HOME/code/scripts
 # Some of my scripts are still on Dropbox. TODO: Migrate them
 set -gx PATH $PATH $HOME/Dropbox/scripts
 # Add specific virtualenv paths
+set -gx PATH $PATH $HOME/apps/global/.venv/bin
 set -gx PATH $PATH $HOME/apps/datasette/.venv/bin
 set -gx PATH $PATH $HOME/apps/gramex/.venv/bin
 set -gx PATH $PATH $HOME/apps/llm/.venv/bin
