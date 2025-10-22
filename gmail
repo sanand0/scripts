@@ -142,6 +142,7 @@ def main(
         ),
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON (items)."),
+    reauth: bool = typer.Option(False, "--reauth", help="Force login"),
 ):
     """Search Gmail and print messages in a clean table or JSON.
 
@@ -154,7 +155,7 @@ def main(
     if limit < 1:
         return
 
-    tok = ensure_token(scopes=GMAIL_SCOPES, token_file=GMAIL_TOKEN_FILE)
+    tok = ensure_token(scopes=GMAIL_SCOPES, token_file=GMAIL_TOKEN_FILE, force_auth=reauth)
     if not tok:
         return
     base = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}"

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-def ensure_token(*, scopes: List[str], token_file: Path) -> str:
+def ensure_token(*, scopes: List[str], token_file: Path, force_auth: bool = False) -> str:
     """Ensure OAuth creds via InstalledAppFlow; return access token."""
     # Lazy imports to avoid hard dependency unless actually used by a script.
     from google.oauth2.credentials import Credentials
@@ -36,12 +36,7 @@ def ensure_token(*, scopes: List[str], token_file: Path) -> str:
 
     token_file.parent.mkdir(parents=True, exist_ok=True)
 
-    creds: Optional[Credentials] = None
-    if token_file.exists():
-        creds = Credentials.from_authorized_user_file(str(token_file), scopes)
-
-    have_required_scopes = bool(creds and set(scopes).issubset(set(creds.scopes or [])))
-    client_config = {
+    config = {
         "installed": {
             "client_id": cid,
             "client_secret": csec,
@@ -50,19 +45,30 @@ def ensure_token(*, scopes: List[str], token_file: Path) -> str:
             "redirect_uris": ["http://localhost", "http://127.0.0.1"],
         }
     }
-    if not creds or not have_required_scopes:
-        flow = InstalledAppFlow.from_client_config(client_config, scopes)
-        creds = flow.run_local_server(port=0, open_browser=True)
+
+    def get_credentials(config, scopes):
+        """Get fresh credentials via OAuth flow, persisting in the token file"""
+        flow = InstalledAppFlow.from_client_config(config, scopes)
+        creds: Optional[Credentials] = flow.run_local_server(port=0, open_browser=True)
         token_file.write_text(creds.to_json())
+        return creds
+
+    creds: Optional[Credentials] = None
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), scopes)
+
+    have_required_scopes = bool(creds and set(scopes).issubset(set(creds.scopes or [])))
+
+    if not creds or not have_required_scopes or force_auth:
+        creds = get_credentials(config, scopes)
     elif not creds.valid:
         try:
             creds.refresh(Request())
             token_file.write_text(creds.to_json())
         except RefreshError:
             token_file.unlink(missing_ok=True)
-            flow = InstalledAppFlow.from_client_config(client_config, scopes)
-            creds = flow.run_local_server(port=0, open_browser=True)
-            token_file.write_text(creds.to_json())
+            creds = get_credentials(config, scopes)
+
     return creds.token if creds else ""
 
 
