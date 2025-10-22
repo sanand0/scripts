@@ -153,6 +153,7 @@ Here is the setup for my Linux laptops.
   - VLC
   - 7zip, Zoom, OBS
 - uv tools
+  - global: `mkdir -p ~/apps/global
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
     - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper`
