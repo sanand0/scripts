@@ -15,13 +15,14 @@ set -gx PATH $PATH $HOME/code/scripts
 # Some of my scripts are still on Dropbox. TODO: Migrate them
 set -gx PATH $PATH $HOME/Dropbox/scripts
 # Add specific virtualenv paths
-set -gx PATH $PATH $HOME/apps/global/.venv/bin
 set -gx PATH $PATH $HOME/apps/datasette/.venv/bin
 set -gx PATH $PATH $HOME/apps/gramex/.venv/bin
-set -gx PATH $PATH $HOME/apps/llm/.venv/bin
 set -gx PATH $PATH $HOME/apps/marimo/.venv/bin
 set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
 set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
+
+set -gx PATH $PATH $HOME/apps/global/.venv/bin
+source $HOME/apps/global/.venv/bin/activate.fish
 
 # uv configuration to allow Codex, etc. to use uv
 export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
