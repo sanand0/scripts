@@ -26,6 +26,7 @@ def ensure_token(*, scopes: List[str], token_file: Path) -> str:
     # Lazy imports to avoid hard dependency unless actually used by a script.
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
+    from google.auth.exceptions import RefreshError
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     cid = os.getenv("GOOGLE_DESKTOP_CLIENT_ID", "").strip()
@@ -40,22 +41,28 @@ def ensure_token(*, scopes: List[str], token_file: Path) -> str:
         creds = Credentials.from_authorized_user_file(str(token_file), scopes)
 
     have_required_scopes = bool(creds and set(scopes).issubset(set(creds.scopes or [])))
-    if not creds or not have_required_scopes:
-        client_config = {
-            "installed": {
-                "client_id": cid,
-                "client_secret": csec,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost", "http://127.0.0.1"],
-            }
+    client_config = {
+        "installed": {
+            "client_id": cid,
+            "client_secret": csec,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost", "http://127.0.0.1"],
         }
+    }
+    if not creds or not have_required_scopes:
         flow = InstalledAppFlow.from_client_config(client_config, scopes)
         creds = flow.run_local_server(port=0, open_browser=True)
         token_file.write_text(creds.to_json())
     elif not creds.valid:
-        creds.refresh(Request())
-        token_file.write_text(creds.to_json())
+        try:
+            creds.refresh(Request())
+            token_file.write_text(creds.to_json())
+        except RefreshError:
+            token_file.unlink(missing_ok=True)
+            flow = InstalledAppFlow.from_client_config(client_config, scopes)
+            creds = flow.run_local_server(port=0, open_browser=True)
+            token_file.write_text(creds.to_json())
     return creds.token if creds else ""
 
 
