@@ -153,12 +153,10 @@ Here is the setup for my Linux laptops.
   - VLC
   - 7zip, Zoom, OBS
 - uv tools
-  - global: `mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas`
-  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
-  - llm: `mkdir -p ~/apps/llm; cd ~/apps/llm; uv venv; source .venv/bin/activate.fish; uv pip install llm`
+  - global: `mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas ruff`
     - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
-    - `llm --system 'Write a one-line fish script to answer this' --save fish  # usage: llm -t fish "List all files" | copycode`
+  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - whisper-ctranslate2: `mkdir -p ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
   - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo`
