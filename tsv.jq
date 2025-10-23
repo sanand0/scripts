@@ -1,11 +1,10 @@
 #!/usr/bin/env -S jq --raw-output --from-file
 
-def to_tsv:
-  if type == "array" and length > 0 then
-    (.[0] | keys_unsorted | @tsv),
-    (.[] | [.[]] | @tsv)
-  else
-    empty
-  end;
+# Usage
+#   cat file.json | tsv.jq
+#   cat file.json | jq -r ".items" | tsv.jq
 
-(eval($ARGS.positional[0])) | to_tsv
+# Build a header from the union of keys (sorted), then print header and rows.
+($keys := (reduce .[] as $o ({}; . + $o) | keys))
+| ($keys | @tsv),
+  (.[] | [ $keys[] as $k | .[$k] // "" ] | @tsv)
