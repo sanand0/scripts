@@ -5,7 +5,8 @@
 #   "httpx>=0.27",
 #   "google-auth>=2.27",
 #   "google-auth-oauthlib>=1.2",
-#   "rich>=13.7"
+#   "rich>=13.7",
+#   "python-dotenv",
 # ]
 # ///
 
