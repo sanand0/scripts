@@ -23,7 +23,10 @@ from email.utils import parseaddr
 from rich.console import Console
 from pathlib import Path
 from google_oauth import ensure_token, api
+from dotenv import load_dotenv
 
+
+load_dotenv()
 HEADERS = ["Date", "From", "To", "Subject"]
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_TOKEN_FILE = Path("~/.config/sanand-scripts/token.gmail.json").expanduser()
