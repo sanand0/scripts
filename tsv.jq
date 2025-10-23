@@ -4,7 +4,5 @@
 #   cat file.json | tsv.jq
 #   cat file.json | jq -r ".items" | tsv.jq
 
-# Build a header from the union of keys (sorted), then print header and rows.
-($keys := (reduce .[] as $o ({}; . + $o) | keys))
-| ($keys | @tsv),
-  (.[] | [ $keys[] as $k | .[$k] // "" ] | @tsv)
+(.[0] | keys_unsorted | @tsv),
+(.[] | [.[]] | @tsv)
