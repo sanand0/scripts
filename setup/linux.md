@@ -315,3 +315,69 @@ Desktop
 
 - Ctrl + Alt + Left/Right Arrow: Switch desktops
 - Ctrl + Alt + Shift + Left/Right Arrow: Move app across desktops
+
+## Setup
+
+via [`fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
+
+- OS: Ubuntu 24.04.2 LTS (Noble Numbat) x86_64
+- Host: 21KWS69E00 (ThinkPad P1 Gen 7)
+- BIOS (UEFI): N48ET28W (1.15 ) (1.15)
+- Bootmgr: Ubuntu - shimx64.efi
+- Board: 21KWS69E00
+- Chassis: Notebook
+- Kernel: Linux 6.14.0-33-generic
+- Init System: systemd 255.4-1ubuntu8.10
+- Uptime: 2 days, 14 hours, 8 mins
+- Loadavg: 0.72, 0.83, 0.76
+- Processes: 503
+- Packages: 2061 (dpkg), 15 (flatpak), 25 (snap)
+- Shell: fish 3.7.0
+- Editor: micro 2.0.14
+- Display (CSW163F): 1920x1200 in 16", 60 Hz [Built-in]
+- Brightness (CSW163F): 21% [Built-in]
+- Monitor (CSW163F): 1920x1200 px @ 60.001 Hz - 344x215 mm (15.97 inches, 141.77 ppi)
+- LM: gdm-autologin 46.2 (X11)
+- DE: GNOME 46.0
+- WM: Mutter (X11)
+- WM Theme: Yaru-red-dark
+- Theme: Yaru-red-dark [GTK2/3/4]
+- Icons: Yaru-red [GTK2/3/4]
+- Font: Ubuntu Sans (11pt) [GTK2/3/4]
+- Cursor: Adwaita (24px)
+- Wallpaper: adwaita-timed.xml
+- Terminal: code 1.105.1
+- Terminal Size: 182 columns x 23 rows
+- CPU: Intel(R) Core(TM) Ultra 9 185H (12+8+2) @ 5.10 GHz - 47.0°C
+- CPU Cache (L1): 10x32.00 KiB (D), 16x64.00 KiB (I), 6x48.00 KiB (D)
+- CPU Cache (L2): 9x2.00 MiB (U)
+- CPU Cache (L3): 24.00 MiB (U)
+- CPU Usage: 27%
+- GPU 1: NVIDIA RTX 2000 Ada Generation Laptop GPU (3072) @ 3.10 GHz - 39.0°C (10.06 MiB / 7.75 GiB, 0%) [Discrete]
+- GPU 2: Intel Arc Graphics (128) @ 2.35 GHz [Integrated]
+- Memory: 10.78 GiB / 62.24 GiB (17%)
+- Swap (/swap.img): 0 B / 8.00 GiB (0%)
+- Disk (/): 399.95 GiB / 936.79 GiB (43%) - ext4
+- Battery (5B11M37552): 82% [Discharging]
+- Public IP: 58.182.162.67 (Singapore, SG)
+- Local IP (wlp9s0f0): 192.168.0.251/24 (5c:b4:7e:ad:ae:94) [1500] <UP,BROADCAST,RUNNING,MULTICAST,LOWER_UP>
+- DNS: 192.168.0.1
+- Wifi: Basalt - 5 GHz - WPA2 (60%)
+- Date & Time: 2025-10-24 23:13:59
+- Locale: en_US.UTF-8
+- Vulkan: 1.3.289 - Intel open-source Mesa driver [Mesa 24.2.8-1ubuntu1~24.04.1]
+- OpenGL: 4.6.0 NVIDIA 550.163.01
+- Users: sanand@login screen - login time 2025-10-22 09:06:06
+- Bluetooth Radio (graphene): Bluetooth 5.4 (Intel)
+- Sound: Meteor Lake-P HD Audio Controller Speaker + Headphones (75%)
+- Camera 1: Integrated Camera: Integrated C - sRGB (1920x1080 px)
+- Camera 2: Integrated Camera: Integrated I - sRGB (640x360 px)
+- Mouse 1: TPPS/2 Elan TrackPoint
+- Mouse 2: SNSL002D:00 2C2F:002D Mouse
+- Mouse 3: SNSL002D:00 2C2F:002D Touchpad
+- Keyboard: AT Translated Set 2 keyboard
+- Network IO (wlp9s0f0): 828 B/s (IN) - 270 B/s (OUT)
+- Disk IO (KBG6AZNV1T02 LA KIOXIA): 7.34 MiB/s (R) - 8.00 KiB/s (W)
+- Physical Disk (KBG6AZNV1T02 LA KIOXIA): 953.87 GiB [SSD, Fixed] - 33.9°C
+- TPM: 2.0
+- Version: fastfetch 2.54.0 (x86_64)
