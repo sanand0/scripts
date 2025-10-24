@@ -34,7 +34,7 @@ if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-
 
 # less should color files
 export LESS='-R'
-export LESSOPEN='|pygmentize -g -O style=github-dark %s'
+# export LESSOPEN='|pygmentize -g -O style=github-dark %s'
 
 # grep should color files
 export GREP_OPTIONS='--color=auto'
