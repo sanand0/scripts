@@ -83,6 +83,7 @@ Here are the setup details for my laptops.
   - [copilotlist](copilotlist) lists all sessions
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)
 - [jsonpaths.jq](jsonpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
+- [tsv.jq](tsv.jq) converts a JSON array of objects into TSV
 - [whatsappthread.jq](whatsappthread.jq) converts https://tools.s-anand.net/whatsappscraper/ JSON into LLM-friendly JSONL + thread_id + urls[]
 
 ## Others
@@ -98,8 +99,3 @@ Here are the setup details for my laptops.
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files
-
-## Tests
-
-- `tests` stores regression checks
-  - `test_gmail.py` verifies the Gmail CLI’s happy path.

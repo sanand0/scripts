@@ -13,48 +13,52 @@
 """Minimal, elegant Gmail search CLI."""
 
 import asyncio
-import httpx
 import json
 import typer
-from datetime import timezone
-from email.utils import parsedate_to_datetime
-from typing import Any, Dict, List, Optional, Sequence
-from email.utils import parseaddr
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
 from rich.console import Console
 from pathlib import Path
+from httpx import AsyncClient
 from google_oauth import ensure_token, api
+from email.utils import parseaddr, parsedate_to_datetime
 from dotenv import load_dotenv
+from datetime import timezone
+
+
+Message = Dict[str, Any]
+MessageRow = Dict[str, Any]
+Messages = AsyncIterator[Message]
 
 
 load_dotenv()
-HEADERS = ["Date", "From", "To", "Subject"]
+HEADERS = ("Date", "From", "To", "Subject")
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 GMAIL_TOKEN_FILE = Path("~/.config/sanand-scripts/token.gmail.json").expanduser()
 
 
-async def list_messages(
-    client: httpx.AsyncClient, q: str, page_size: int, limit: int
-) -> List[Dict[str, Any]]:
-    """List message refs up to limit with internal pagination."""
-    items: List[Dict[str, Any]] = []
+async def iter_message_refs(client: AsyncClient, q: str, page_size: int, limit: int) -> Messages:
+    """Yield message refs up to the requested limit."""
+    remaining = limit
     token: Optional[str] = None
-    while len(items) < limit:
-        take = min(page_size, limit - len(items))
-        params = {"q": q, "maxResults": take}
+    while remaining > 0:
+        params = {"q": q, "maxResults": min(page_size, remaining)}
         if token:
             params["pageToken"] = token
         data = await api(client, "GET", "/messages", params=params)
         msgs = data.get("messages", [])
         if not msgs:
-            return items
-        items += msgs
+            return
+        for msg in msgs:
+            yield msg
+            remaining -= 1
+            if remaining == 0:
+                return
         token = data.get("nextPageToken")
         if not token:
-            return items
-    return items
+            return
 
 
-async def get_metadata(client: httpx.AsyncClient, msg_id: str) -> Dict[str, Any]:
+async def get_metadata(client: AsyncClient, msg_id: str) -> Message:
     """Fetch per-message metadata only with selected headers."""
     params = {"format": "metadata"}
     for h in HEADERS:
@@ -62,17 +66,18 @@ async def get_metadata(client: httpx.AsyncClient, msg_id: str) -> Dict[str, Any]
     return await api(client, "GET", f"/messages/{msg_id}", params=params)
 
 
-async def gather_details(
-    client: httpx.AsyncClient, refs: Sequence[Dict[str, Any]], concurrency: int = 16
-) -> List[Dict[str, Any]]:
-    """Fetch details concurrently with a semaphore."""
-    sem = asyncio.Semaphore(concurrency)
-
-    async def one(ref: Dict[str, Any]) -> Dict[str, Any]:
-        async with sem:
-            return await get_metadata(client, ref["id"])
-
-    return await asyncio.gather(*[one(r) for r in refs])
+async def iter_details(client: AsyncClient, refs: Messages, concurrency: int = 16) -> Messages:
+    """Yield details with bounded concurrency by processing refs in chunks."""
+    chunk: List[Message] = []
+    async for ref in refs:
+        chunk.append(ref)
+        if len(chunk) == concurrency:
+            for item in await asyncio.gather(*[get_metadata(client, r["id"]) for r in chunk]):
+                yield item
+            chunk.clear()
+    if chunk:
+        for item in await asyncio.gather(*[get_metadata(client, r["id"]) for r in chunk]):
+            yield item
 
 
 def fmt_date(s: str) -> str:
@@ -85,6 +90,7 @@ def fmt_date(s: str) -> str:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M")
     except Exception:
+        # Gmail occasionally omits timezone metadata; returning the raw header keeps output usable.
         return s
 
 
@@ -101,39 +107,27 @@ FIELDS = {
 }
 
 
-def to_row(m: Dict[str, Any], fields: Sequence[str]) -> Dict[str, Any]:
+def to_row(m: Message, fields: Sequence[str]) -> MessageRow:
     """Convert Gmail message to selected fields."""
-    hdrs = m.get("payload", {}).get("headers", [])
-    hm = {h.get("name", "").lower(): h.get("value", "") for h in hdrs}
-    return {k: FIELDS[k](m, hm) for k in fields if k in FIELDS}
+    headers = {
+        h.get("name", "").lower(): h.get("value", "")
+        for h in m.get("payload", {}).get("headers", [])
+    }
+    return {field: FIELDS[field](m, headers) for field in fields if field in FIELDS}
 
 
-def print_tsv(rows: List[Dict[str, Any]], fields: Sequence[str]) -> None:
-    """Render TSV with header, colorized per column."""
-    con = Console(highlight=False)
-    con.print("\t".join(fields))
+def print_tsv(con: Console, row: Dict[str, Any], fields: Sequence[str]) -> None:
+    """Render a TSV row with colorized columns."""
     c = ["cyan", "magenta", "green", "white", "blue", "yellow"]
-    for r in rows:
-        v = [str(r.get(f, "")) for f in fields]
-        con.print("\t".join(f"[{c[i % len(c)]}]{x}[/{c[i % len(c)]}]" for i, x in enumerate(v)))
+    v = [str(row.get(f, "")) for f in fields]
+    con.print("\t".join(f"[{c[i % len(c)]}]{x}[/{c[i % len(c)]}]" for i, x in enumerate(v)))
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Search Gmail.")
 
 
-def parse_fields(values: List[str]) -> List[str]:
-    """Split --fields values by commas and/or whitespace."""
-    if not values:
-        return []
-    tokens: List[str] = []
-    for v in values:
-        for part in v.replace(",", " ").split():
-            tokens.append(part.strip())
-    return tokens
-
-
 @app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
-def main(
+async def main(
     q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
     user_id: str = typer.Option("me", "--user", help="Gmail user: 'me' or email."),
     limit: int = typer.Option(20, "-n", "--limit", min=1, help="Total results to print."),
@@ -145,44 +139,40 @@ def main(
             f"Valid: {', '.join(FIELDS.keys())}"
         ),
     ),
-    json_out: bool = typer.Option(False, "--json", help="Emit JSON (items)."),
+    jsonl: bool = typer.Option(False, "--jsonl", help="Emit JSONL (one object per line)."),
     reauth: bool = typer.Option(False, "--reauth", help="Force login"),
 ):
-    """Search Gmail and print messages in a clean table or JSON.
+    """Search Gmail and print messages in a clean table or JSONL.
 
     Examples:\n
     - gmail --limit 50 "from:example.com"  # list 50 recent inbox emails\n
     - gmail --fields date,email "subject:invoice"  # show date and only sender email\n
     - gmail --fields "date, from, subject" in:archive  # comma/space separated fields\n
-    - gmail --json --fields "email subject" "has:attachment newer_than:1y"  # JSON output\n
+    - gmail --jsonl --fields "email subject" "has:attachment newer_than:1y"  # JSONL output\n
     """
-    if limit < 1:
-        return
-
     tok = ensure_token(scopes=GMAIL_SCOPES, token_file=GMAIL_TOKEN_FILE, force_auth=reauth)
     if not tok:
         return
     base = f"https://gmail.googleapis.com/gmail/v1/users/{user_id}"
     headers_http = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
 
-    async def _run() -> None:
-        async with httpx.AsyncClient(base_url=base, headers=headers_http, timeout=30) as client:
-            page_size = limit if limit <= 500 else 500
-            refs = await list_messages(client=client, q=q, page_size=page_size, limit=limit)
-            if not refs:
-                if json_out:
-                    print(json.dumps({"items": []}))
-                return
+    async with AsyncClient(base_url=base, headers=headers_http, timeout=30) as client:
+        sel_fields = [part.strip() for value in fields for part in value.replace(",", " ").split()]
+        if not sel_fields:
+            return
 
-            details = await gather_details(client, refs)
-            sel_fields = parse_fields(fields)
-            rows = [to_row(m, sel_fields) for m in details]
-            if json_out:
-                print(json.dumps({"items": rows}, ensure_ascii=False))
-                return
-            print_tsv(rows, sel_fields)
+        if not jsonl:
+            con = Console(highlight=False)
+            con.print("\t".join(sel_fields))
 
-    asyncio.run(_run())
+        page_size = limit if limit <= 500 else 500
+        refs = iter_message_refs(client=client, q=q, page_size=page_size, limit=limit)
+        async for detail in iter_details(client, refs):
+            row = to_row(detail, sel_fields)
+            if jsonl:
+                print(json.dumps(row, ensure_ascii=False))
+                continue
+            print_tsv(con, row, sel_fields)
 
 
 if __name__ == "__main__":
