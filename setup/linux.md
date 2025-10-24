@@ -316,9 +316,9 @@ Desktop
 - Ctrl + Alt + Left/Right Arrow: Switch desktops
 - Ctrl + Alt + Shift + Left/Right Arrow: Move app across desktops
 
-## Setup
+## Configuration
 
-via [`fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
+24 Oct 2025: via [`fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
 
 - OS: Ubuntu 24.04.2 LTS (Noble Numbat) x86_64
 - Host: 21KWS69E00 (ThinkPad P1 Gen 7)
