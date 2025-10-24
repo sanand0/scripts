@@ -57,6 +57,9 @@ abbr --add giit git
 # Faster, better grep
 abbr --add grep ug
 
+# Faster, better less
+abbr --add less bat
+
 # Better curl
 abbr --add http 'uvx httpie'
 
