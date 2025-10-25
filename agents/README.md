@@ -8,9 +8,9 @@ This directory lists has an [AGENTS.md](AGENTS.md) for AI Code Agents.
 
 Link for:
 
-- [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.config/Code/User/agents.instructions.md`
+- [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.copilot/copilot-instructions.md`
   ```bash
-  printf "---\napplyTo: '**'\n---\n[See AGENTS.md](/home/sanand/code/scripts/agents/AGENTS.md)" > ~/.config/Code/User/agents.instructions.md
+  printf "---\napplyTo: '**'\n---\n[See AGENTS.md](/home/sanand/code/scripts/agents/AGENTS.md)" > ~/.copilot/copilot-instructions.md
   ```
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/memory): `~/.claude/CLAUDE.md`
   ```bash
