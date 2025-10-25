@@ -297,8 +297,8 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function trimdiff --description "Trim git diff to first N lines per file for llm input, adding a ... if trimmed"
-    awk "/^diff --git / {n=0} {if (n < $argv[1]) print} /^diff --git / {n++} {n++} END {if (n >= $argv[1]) print \"...\"}"
+function trimdiff --description "Trim git diff to first N lines per file for llm input,"
+    awk "/^diff --git / {n=0} {if (n < $argv[1]) print} /^diff --git / {n++} {n++}"
 end
 
 function livesync --description "Update main from live branch. Create new live branch from main."
