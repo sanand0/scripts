@@ -297,7 +297,7 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function trimdiff --description 'Filter git diff: first/last N lines per file; default N=100, MAXC=2000'
+function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 100 lines, max 2000 chars per line'
     set -l N $argv[1]; test -z "$N"; and set N 100
     set -l C $argv[2]; test -z "$C"; and set C 2000
     awk -v N="$N" -v MAXC="$C" '
