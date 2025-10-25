@@ -38,7 +38,9 @@ args=(
   -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip" # pip cache
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"   # uv cache
+  -v "$HOME/.claude:/home/vscode/.claude"       # Claude config
   -v "$HOME/.codex:/home/vscode/.codex"         # Codex config
+  -v "$HOME/.copilot:/home/vscode/.copilot"     # Copilot config
   -v "$HOME/.config/gh:/home/vscode/.config/gh" # gh config
   -v "$HOME/.gitconfig:/home/vscode/.gitconfig" # git config
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" # uv data
