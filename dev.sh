@@ -31,6 +31,8 @@ docker run --rm -i -t \
     -v "$HOME/.cache/uv:/home/vscode/.cache/uv" \
     -v "$HOME/.npm:/home/vscode/.npm" \
     -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" \
+    -v /etc/timezone:/etc/timezone:ro \
+    -v /etc/localtime:/etc/localtime:ro \
     -v "$PWD:$PWD" \
     -w "$PWD" \
     --entrypoint /bin/bash \
