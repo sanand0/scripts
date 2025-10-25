@@ -301,22 +301,23 @@ function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 1
     set -l N $argv[1]; test -z "$N"; and set N 100
     set -l C $argv[2]; test -z "$C"; and set C 2000
     awk -v N="$N" -v MAXC="$C" '
-      BEGIN{ H=N; T=N }
+      BEGIN { H = N+0 ? N : 100; T = H }
       function pr(s){ if(length(s)>MAXC) s=substr(s,1,MAXC-3)"..."; print s }
-      function flush( t,i){
-        if(!in) return
-        t = tot - head - tailn
-        if(t>0) pr("... (" t " lines trimmed)")
-        for(i=tailpos - tailn; i<tailpos; i++) pr(buf[i % T])
-        in=0
+      function flush( trimmed,i ){
+        if(!infile) return
+        trimmed = total - head - tailn
+        if(trimmed>0) pr("... (" trimmed " lines trimmed)")
+        for(i = tailpos - tailn; i < tailpos; i++) pr(buf[i % T])
+        infile = 0
       }
-      /^diff --/ { flush(); in=1; head=0; tot=0; tailpos=0; tailn=0; pr($0); next }
-      { if(!in){ pr($0); next }
-        tot++
-        if(head < H) pr($0), head++
+      /^diff --/ { flush(); infile=1; head=0; total=0; tailpos=0; tailn=0; pr($0); next }
+      {
+        if(!infile){ pr($0); next }
+        total++
+        if(head < H){ pr($0); head++ }
         else if(T>0){ buf[tailpos % T]=$0; tailpos++; if(tailn<T) tailn++ }
       }
-      END{ flush() }
+      END { flush() }
     '
 end
 
