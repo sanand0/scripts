@@ -35,11 +35,6 @@ ENV PATH="${HOME}/.local/bin:${PATH}"
 # Install mise and your toolchain for the vscode user
 RUN curl -fsSL https://mise.run | sh && \
     echo 'eval "$(mise activate bash)"' >> "${HOME}/.bashrc" && \
-    printf '%s\n' \
-      'shopt -s histappend' \
-      'export HISTSIZE=500000 HISTFILESIZE=1000000' \
-      'export PROMPT_COMMAND='\''history -a; history -n; $PROMPT_COMMAND'\''' \
-      >> /home/vscode/.bashrc && \
     bash -lc 'mise use -g fd uv node ripgrep duckdb codex pandoc rclone ubi:mithrandie/csvq github-cli'
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
