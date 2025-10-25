@@ -297,12 +297,16 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
+function trimdiff --description "Trim git diff to first N lines per file for llm input"
+    awk "/^diff --git / {n=0} {if (n < $argv[1]) print} /^diff --git / {n++} {n++}"
+end
+
 function livesync --description "Update main from live branch. Create new live branch from main."
     git checkout main
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
     git diff --cached \
-        | awk '/^diff --git / {n=0} {if (n < 300) print} /^diff --git / {n++} {n++}' \
+        | trimdiff 300 \
         | llm -t gitcommit \
         | fold -sw 72 \
         | git commit -F -
