@@ -42,7 +42,8 @@ args=(
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" # uv data
   -v "$HOME/.npm:/home/vscode/.npm"             # npm cache
   -v "$HOME/.ssh:/home/vscode/.ssh:ro"          # ssh keys (RO)
-  -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" # your agents
+  -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
+  -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
   -v /etc/localtime:/etc/localtime:ro           # timezone rules
   -v /etc/timezone:/etc/timezone:ro             # timezone name
   -v "$PWD:$PWD"                                # mount CWD at same path

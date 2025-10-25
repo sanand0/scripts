@@ -21,6 +21,9 @@ RUN apt-get update \
   && wget https://imagemagick.org/archive/binaries/magick -O /bin/magick \
   && chmod +x /bin/magick
 
+# Make /home/sanand point to /home/vscode (symlink; hard links for dirs aren’t supported)
+RUN ln -s /home/vscode /home/sanand
+
 # Work as the non-root user for mise + tools so files are owned by UID 1000
 USER vscode
 ENV HOME=/home/vscode
