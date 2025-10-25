@@ -298,7 +298,22 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
 end
 
 function trimdiff --description "Trim git diff to first N lines per file for llm input,"
-    awk "/^diff --git / {n=0} {if (n < $argv[1]) print} /^diff --git / {n++} {n++}"
+    awk -v H=10 -v T=10 '
+      /^diff --git /{
+        if (file) { for(i=1;i<=buflen;i++) print buf[(start+i-1)%T] }  # flush tail of previous file
+        file=1; head=0; buflen=0; start=1
+        print; next
+      }
+      {
+        if (head < H) { print; head++ }                   # print head portion
+        else {                                            # ring buffer for tail
+         buf[start%T]=$0; start++; if (buflen<T) buflen++
+        }
+      }
+      END{
+          if (file) for(i=1;i<=buflen;i++) print buf[(start+i-1)%T]
+      }'
+
 end
 
 function livesync --description "Update main from live branch. Create new live branch from main."
