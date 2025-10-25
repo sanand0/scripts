@@ -12,26 +12,26 @@ Coding style
 - Add failing tests first if tests exists (or in new code). Keep tests fast
 - Use type hints and single-line docstrings
 
-Python style
+Only use `uv run`. Not `python` or `python3`
 
-- Only use `uv run`. Not `python` or `python3`
-- Unless `pyproject.toml` is present, add dependencies to script
-  ```
-  #!/usr/bin/env -S uv run --script
-  # /// script
-  # requires-python = ">=3.12"
-  # dependencies = ["scipy>=1.10", "httpx"]
-  # ///
-  ```
+Unless `pyproject.toml` is present, add dependencies to script:
 
-Prefer modern Python libs:
+```py
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["scipy>=1.10", "httpx"]
+# ///
+```
 
-`typer` over `argparse`
-`httpx` over `requests`
-`orjson` over `json`
-`lxml` over `xml`
+Prefer:
+
+`typer` not `argparse`
+`httpx` not `requests`
+`orjson` not `json`
+`lxml` not `xml`
 `tenacity` for retries
-`pytest` for testing
+`pytest`
 
 HTML/CSS/JS style:
 
