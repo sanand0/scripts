@@ -29,6 +29,7 @@ docker run --rm -i -t \
     -e HOME=/home/vscode \
     -e TERM=${TERM:-xterm-256color} \
     -e COLORTERM=${COLORTERM:-truecolor} \
+    -e LANG=${LANG:-en_US.UTF-8} \
     -v "$HOME/.codex:/home/vscode/.codex" \
     -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" \
     -v "$HOME/.config/gh:/home/vscode/.config/gh" \
