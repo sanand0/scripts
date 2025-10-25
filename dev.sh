@@ -27,10 +27,10 @@ args=(
   --network host                # host networking (Linux only)
   -u 1000:1000                  # run as host user 1000:1000
   -e HOME=/home/vscode          # set HOME
-  -e TERM="${TERM:-xterm-256color}"             # terminal type for colors
-  -e COLORTERM="${COLORTERM:-truecolor}"        # 24-bit color hint
-  -e LANG="${LANG:-en_US.UTF-8}"                # UTF-8 locale
-  -e SSH_AUTH_SOCK=/ssh-agent
+  -e TERM="${TERM:-xterm-256color}"         # terminal type for colors
+  -e COLORTERM="${COLORTERM:-truecolor}"    # 24-bit color hint
+  -e LANG="${LANG:-en_US.UTF-8}"            # UTF-8 locale
+  -e SSH_AUTH_SOCK=/ssh-agent               # Forward ssh-agent
   --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
   -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface" \
   -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
