@@ -18,6 +18,35 @@ if [[ ${1-} == "--build" ]]; then
     exit 0
 fi
 
+args=(
+  --rm                          # auto-remove container on exit
+  -it                           # interactive TTY
+  --gpus all                    # expose all GPUs
+  --shm-size=2g                 # bigger /dev/shm for browsers, PyTorch
+  --ulimit nofile=1048576:1048576  # high FD limits
+  --network host                # host networking (Linux only)
+  -u 1000:1000                  # run as host user 1000:1000
+  -e HOME=/home/vscode          # set HOME
+  -e TERM="${TERM:-xterm-256color}"    # terminal type for colors
+  -e COLORTERM="${COLORTERM:-truecolor}" # 24-bit color hint
+  -e LANG="${LANG:-en_US.UTF-8}"        # UTF-8 locale
+  -v "$HOME/.codex:/home/vscode/.codex"     # Codex config
+  -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" # your agents
+  -v "$HOME/.config/gh:/home/vscode/.config/gh"  # gh config
+  -v "$HOME/.cache/pip:/home/vscode/.cache/pip"  # pip cache
+  -v "$HOME/.cache/uv:/home/vscode/.cache/uv"    # uv cache
+  -v "$HOME/.npm:/home/vscode/.npm"              # npm cache
+  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" # uv data
+  -v "$HOME/.gitconfig:/home/vscode/.gitconfig:ro" # git config (RO)
+  -v "$HOME/.ssh:/home/vscode/.ssh:ro"            # ssh keys (RO)
+  -v /etc/timezone:/etc/timezone:ro               # timezone name
+  -v /etc/localtime:/etc/localtime:ro             # timezone rules
+  -v "$PWD:$PWD"                                  # mount CWD at same path
+  -w "$PWD"                                       # start in CWD
+  --entrypoint /bin/bash                          # launch bash
+)
+
+
 docker run --rm -i -t \
     --gpus all \
     --shm-size=2g \
