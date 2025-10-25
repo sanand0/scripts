@@ -297,7 +297,7 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function trimdiff --description "Trim git diff to first N lines per file for llm input,"
+function trimdiff --description "Trim git diff to first & last N lines per file for llm input"
     awk -v H=10 -v T=10 '
       /^diff --git /{
         if (file) { for(i=1;i<=buflen;i++) print buf[(start+i-1)%T] }  # flush tail of previous file
