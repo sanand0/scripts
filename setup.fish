@@ -297,23 +297,28 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function trimdiff --description "Trim git diff to first & last N lines per file for llm input"
-    awk -v H=10 -v T=10 '
-      /^diff --git /{
-        if (file) { for(i=1;i<=buflen;i++) print buf[(start+i-1)%T] }  # flush tail of previous file
-        file=1; head=0; buflen=0; start=1
-        print; next
+function trimdiff --description 'Filter git diff: first/last N lines per file (default 100), cap lines at 2000 chars'
+    set -l N $argv[1]
+    test -z "$N"; and set N 100
+    awk -v N="$N" -v MAXC=2000 '
+      BEGIN { H = N ? N : 100; T = H }
+      function out(s){ if(length(s)>MAXC) s=substr(s,1,MAXC-3)"..."; print s }
+      function flush(  trimmed,i){
+        if(!infile) return
+        trimmed = total - head - tlen
+        if(trimmed>0) out("... (" trimmed " lines trimmed)")
+        for(i=tailpos - tlen; i<tailpos; i++) out(buf[i % T])
+        infile = 0
       }
+      /^diff --/ { flush(); infile=1; head=0; total=0; tailpos=0; tlen=0; out($0); next }
       {
-        if (head < H) { print; head++ }                   # print head portion
-        else {                                            # ring buffer for tail
-         buf[start%T]=$0; start++; if (buflen<T) buflen++
-        }
+        if(!infile){ out($0); next }
+        total++
+        if(head < H){ out($0); head++ }
+        else if(T>0){ buf[tailpos % T]=$0; tailpos++; if(tlen<T) tlen++ }
       }
-      END{
-          if (file) for(i=1;i<=buflen;i++) print buf[(start+i-1)%T]
-      }'
-
+      END { flush() }
+    '
 end
 
 function livesync --description "Update main from live branch. Create new live branch from main."
