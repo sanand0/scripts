@@ -34,10 +34,13 @@ docker run --rm -i -t \
     -v "$HOME/.gitconfig:/home/vscode/.gitconfig:ro" \
     -v "$HOME/.ssh:/home/vscode/.ssh:ro" \
     -v "$HOME/.local/share/dev-sh-bash-history:/home/vscode/.bash_history" \
+    -v "$HOME/.local/share/mise:/home/vscode/.local/share/mise" \
+    -v "$HOME/.config/mise:/home/vscode/.config/mise" \
     -v /etc/timezone:/etc/timezone:ro \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$PWD:$PWD" \
     -w "$PWD" \
+    --network=host \
     --entrypoint /bin/bash \
     "$IMAGE_TAG" \
     "$@"
