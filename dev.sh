@@ -34,7 +34,6 @@ docker run --rm -i -t \
     -v "$HOME/.config/gh:/home/vscode/.config/gh" \
     -v "$HOME/.gitconfig:/home/vscode/.gitconfig:ro" \
     -v "$HOME/.ssh:/home/vscode/.ssh:ro" \
-    -v "$HOME/.local/share/dev-sh-bash-history:/home/vscode/.bash_history" \
     -v /etc/timezone:/etc/timezone:ro \
     -v /etc/localtime:/etc/localtime:ro \
     -v "$PWD:$PWD" \
