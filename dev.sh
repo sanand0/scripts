@@ -24,8 +24,6 @@ docker run --rm -i -t \
     --gpus all \
     --shm-size=2g \
     --ulimit nofile=1048576:1048576 \
-    --sysctl fs.inotify.max_user_watches=524288 \
-    --sysctl fs.inotify.max_user_instances=1024 \
     --network host \
     -u 1000:1000 \
     -e HOME=/home/vscode \
