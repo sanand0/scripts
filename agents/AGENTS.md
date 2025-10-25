@@ -31,7 +31,7 @@ magick / cwebp / ffmpeg
 
 Read relevant SKILL.md under /home/sanand/code/scripts/agents as needed:
 
-- [code](code/SKILL.md): ALWAYS use this style when coding Python / JavaScript
+- [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
 - [npm-packages](npm-packages/SKILL.md): Conventions for package.json, README.md, coding & testing styles
 - [vitest-dom](vitest-dom/SKILL.md): Fast, lightweight testing for front-end apps. Uses vitest + jsdom instead to avoid heavy playwright.
 - [brainstorming](brainstorming/SKILL.md): Use when creating or developing anything, before writing code or implementation plans - refines rough ideas into fully-formed designs through structured Socratic questioning, alternative exploration, and incremental validation

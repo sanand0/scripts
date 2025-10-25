@@ -1,6 +1,6 @@
 ---
 name: code
-description: ALWAYS use this style when coding Python / JavaScript
+description: ALWAYS follow this style when writing Python / JavaScript code
 ---
 
 Coding style
@@ -28,6 +28,7 @@ Prefer modern Python libs:
 `orjson` over `json`
 `lxml` over `xml`
 `tenacity` for retries
+`pytest` for testing
 
 HTML/CSS/JS style:
 
@@ -63,6 +64,6 @@ import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const {
 import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
-Test with `npm test` and `uvx pytest` as appropriate
+Test with `npm test` as appropriate
 
 Lint with `npm run lint`. Else use `dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc`.
