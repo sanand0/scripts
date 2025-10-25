@@ -18,6 +18,8 @@ if [[ ${1-} == "--build" ]]; then
     exit 0
 fi
 
+echo "Use codex --dangerously-bypass-approvals-and-sandbox"
+
 docker run --rm -i -t \
     --gpus all \
     -u 1000:1000 \
