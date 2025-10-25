@@ -33,7 +33,7 @@ Preferred Python libs:
 `tenacity` for retries
 `pytest`
 
-Preferred HTML/CSS/JS style:
+Preferred JS style:
 
 - Bootstrap. Minimize custom CSS
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
@@ -52,19 +52,12 @@ import { html, render } from "lit-html"; // @3/+esm for DOM updates
 import { unsafeHTML } from "lit-html@3/directives/unsafe-html.js";
 import { marked } from "marked"; // @16/+esm
 import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
-
-import { network } from "@gramex/network"; // @2 for force-directed layouts
-import { dmy, mdy, wdmy, num, pc, ... } from "@gramex/ui@0.3/dist/format.js";
-import { asyncLLM } from "asyncllm"; // @2 streams LLM responses. `for await (const { content, error } of asyncLLM(baseURL, { method: "POST", body: JSON.stringify({...}), headers: { Authorization: `Bearer ${apiKey}` } }`
-import { bootstrapAlert } from "bootstrap-alert"; // @1 for notifications. `bootstrapAlert({ title: "Success", body: "Toast message", color: "success" })`
-import { openaiConfig } from "bootstrap-llm-provider"; // @1 LLM provider modal. `const { baseUrl, apiKey, models } = await openaiConfig()`
-import { csvFormat, csvParse } from "d3-dsv"; // @3/+esm parse CSV
 import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const { key } = parse('{"key":"v')`
+
+import { bootstrapAlert } from "bootstrap-alert"; // @1 for notifications. `bootstrapAlert({ title: "Success", body: "Toast message", color: "success" })`
 import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
+import { asyncLLM } from "asyncllm"; // @2 streams LLM responses. `for await (const { content, error } of asyncLLM(baseURL, { method: "POST", body: JSON.stringify({...}), headers: { Authorization: `Bearer ${apiKey}` } }`
+import { openaiConfig, geminiConfig } from "bootstrap-llm-provider"; // @1 LLM provider modal. `const { baseUrl, apiKey, models } = await openaiConfig()`
 ```
 
 Use `npm view package-name readme` for docs
-
-
-
-Lint with `npm run lint` and `npm test` if they exist.
