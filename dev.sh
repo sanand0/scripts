@@ -30,6 +30,8 @@ args=(
   -e TERM="${TERM:-xterm-256color}"             # terminal type for colors
   -e COLORTERM="${COLORTERM:-truecolor}"        # 24-bit color hint
   -e LANG="${LANG:-en_US.UTF-8}"                # UTF-8 locale
+  -e SSH_AUTH_SOCK=/ssh-agent
+  --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
   -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface" \
   -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip" # pip cache
@@ -48,4 +50,5 @@ args=(
   --entrypoint /bin/bash                        # launch bash
 )
 
+# exec: hands over to docker and end script
 exec docker run "${args[@]}" "$IMAGE_TAG" "$@"
