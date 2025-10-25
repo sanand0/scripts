@@ -6,6 +6,8 @@ description: ALWAYS use this style when coding Python / JavaScript
 Coding style
 
 - Type hints and single-line docstrings
+- Prefer libraries to writing code
+- Prefer popular, modern, minimal, fast libraries exist
 
 Python style
 
@@ -36,9 +38,6 @@ HTML/CSS/JS style:
 - Show loading status while awaiting fetch()
 - Trap errors at the top rather than every level. Render errors for user
 - Use helpers: `const $ = (s, el = document) => el.querySelector(s);`
-
-Prefer popular, modern, minimal, fast libraries
-Don't code when good libs exists
 
 JS libs:
 
