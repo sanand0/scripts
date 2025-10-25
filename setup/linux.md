@@ -38,7 +38,6 @@ Here is the setup for my Linux laptops.
     mise use -g btop                # htop alternative
     mise use -g caddy
     mise use -g cloudflared
-    mise use -g csvq
     mise use -g duckdb
     mise use -g fd                  # for fast file searches
     mise use -g gcloud
