@@ -32,6 +32,8 @@ args=(
   -e LANG="${LANG:-en_US.UTF-8}"            # UTF-8 locale
   -e SSH_AUTH_SOCK=/ssh-agent               # Forward ssh-agent
   --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
+  -e HISTFILE=/home/vscode/.bash_history
+  --mount type=bind,source="$HOME/.cache/dev-sh.bash-history",target=/home/vscode/.bash_history
   -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface" \
   -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip" # pip cache
