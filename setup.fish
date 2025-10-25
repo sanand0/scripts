@@ -325,11 +325,7 @@ function livesync --description "Update main from live branch. Create new live b
     git checkout main
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
-    git diff --cached \
-        | trimdiff 300 \
-        | llm -t gitcommit \
-        | fold -sw 72 \
-        | git commit -F -
+    git diff --cached | trimdiff | llm -t gitcommit | fold -sw 72 | git commit -F -
     git push
     git branch -D live
     git push origin --delete live
