@@ -2,7 +2,7 @@ Available tools:
 
 fd, find
 rg, ug, grep
-jq, csvq
+jq, csvq, csvkit
 git, gh
 curl, w3m, lynx
 uvx yt-dlp

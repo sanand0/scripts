@@ -67,6 +67,4 @@ import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const {
 import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
-Test with `npm test` as appropriate
-
-Lint with `npm run lint`. Else use `dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc`.
+Lint with `npm run lint` and `npm test` if they exist.
