@@ -24,20 +24,20 @@ docker run --rm -i -t \
     --gpus all \
     -u 1000:1000 \
     -e HOME=/home/vscode \
-    -v "$HOME/.codex:/home/vscode/.codex" \
-    -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" \
-    -v "$HOME/.config/gh:/home/vscode/.config/gh" \
     -v "$HOME/.cache/pip:/home/vscode/.cache/pip" \
     -v "$HOME/.cache/uv:/home/vscode/.cache/uv" \
-    -v "$HOME/.npm:/home/vscode/.npm" \
-    -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" \
+    -v "$HOME/.codex:/home/vscode/.codex" \
+    -v "$HOME/.config/gh:/home/vscode/.config/gh" \
+    -v "$HOME/.config/mise:/home/vscode/.config/mise" \
     -v "$HOME/.gitconfig:/home/vscode/.gitconfig:ro" \
-    -v "$HOME/.ssh:/home/vscode/.ssh:ro" \
     -v "$HOME/.local/share/dev-sh-bash-history:/home/vscode/.bash_history" \
     -v "$HOME/.local/share/mise:/home/vscode/.local/share/mise" \
-    -v "$HOME/.config/mise:/home/vscode/.config/mise" \
-    -v /etc/timezone:/etc/timezone:ro \
+    -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" \
+    -v "$HOME/.npm:/home/vscode/.npm" \
+    -v "$HOME/.ssh:/home/vscode/.ssh:ro" \
+    -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" \
     -v /etc/localtime:/etc/localtime:ro \
+    -v /etc/timezone:/etc/timezone:ro \
     -v "$PWD:$PWD" \
     -w "$PWD" \
     --network=host \
