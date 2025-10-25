@@ -10,7 +10,7 @@ Link for:
 
 - [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.copilot/copilot-instructions.md`
   ```bash
-  printf "---\napplyTo: '**'\n---\n[See AGENTS.md](/home/sanand/code/scripts/agents/AGENTS.md)" > ~/.copilot/copilot-instructions.md
+  ln -s ~/code/scripts/agents/AGENTS.md ~/.copilot/copilot-instructions.md
   ```
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/memory): `~/.claude/CLAUDE.md`
   ```bash
