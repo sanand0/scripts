@@ -126,6 +126,14 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | xargs -I {} head -n 200 "{}" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
+
+# Directories
+# ----------------------------------------------
+function mcd --description "mkdir DIR && cd DIR"
+    mkdir -p -- $argv[1]
+    and cd -- $argv[1]
+end
+
 # Audio/video
 # ----------------------------------------------
 
