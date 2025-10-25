@@ -1,31 +1,16 @@
-Write readable code
-Keep happy path linear and obvious
-Name readably
+Available tools:
 
-Keep code short
-Skip error handling unless required
-Use early returns
-
-Change existing code minimally
-Retain existing comments
-Follow existing style
-
-Add failing tests first if tests exists (or in new code)
-Keep tests fast
-
-Use available tools:
-
-fd / find
-rg / ug / grep
-jq / csvq
-git / gh
-curl / w3m / lynx
+fd, find
+rg, ug, grep
+jq, csvq
+git, gh
+curl, w3m, lynx
 uvx yt-dlp
 uvx markitdown (PDF to Markdown)
-qpdf / pandoc
+qpdf, pandoc
 rclone
-duckdb / sqlite3 / psql
-magick / cwebp / ffmpeg
+duckdb, sqlite3, psql
+magick, cwebp, ffmpeg
 
 <!-- skills -->
 

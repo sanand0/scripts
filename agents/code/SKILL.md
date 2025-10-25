@@ -5,9 +5,12 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 
 Coding style
 
-- Type hints and single-line docstrings
-- Prefer libraries to writing code
-- Prefer popular, modern, minimal, fast libraries exist
+- Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries exist
+- Write readable code. Keep happy path linear and obvious. Name readably
+- Keep code short. Skip error handling unless required. Use early returns
+- Change existing code minimally. Retain existing comments. Follow existing style
+- Add failing tests first if tests exists (or in new code). Keep tests fast
+- Use type hints and single-line docstrings
 
 Python style
 
