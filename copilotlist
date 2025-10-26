@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# List GitHub Copilot session logs: filename, project root, first user message.
+
+base="${HOME}/.copilot/session-state"
+[[ -d "$base" ]] || exit 0
+
+# Sort by modification time: newest sessions first.
+find "$base" -type f -name '*.jsonl' -printf '%T@:%p\0' \
+  | sort -zrn \
+  | while IFS= read -r -d '' entry; do
+      logfile="${entry#*:}"
+      FILE="$logfile" jq -nr --slurpfile rows "$logfile" '
+        def first_value(f):
+          ([ $rows[] | f ] | map(select(. != null and . != "")) | .[0] // "");
+
+        def indent_block(s):
+          "    " + ((s // "") | gsub("\n"; "\n    ")) + "\n";
+
+        def trim_path:
+          (. // "") as $raw
+          | if $raw == "" then ""
+            else
+              ($raw | sub("/+$"; "")) as $trim
+              | if ($raw | endswith("/")) then
+                  $trim
+                else
+                  ($trim | match("^(?<dir>.*)/[^/]+$")?.captures[0].string // $trim)
+                end
+            end;
+
+        def first_directory:
+          first_value(
+            if (.type // "") == "assistant.message" then
+              (.data.toolRequests[]? | .arguments.path // "")
+            elif (.type // "") == "tool.execution_start" then
+              (.data.arguments.path // "")
+            else ""
+            end
+          ) | trim_path;
+
+        def first_user_message:
+          first_value(
+            if (.type // "") == "user.message" then
+              (.data.content // "")
+            else ""
+            end
+          );
+
+        def block(file; path; message):
+          "# " + file + "\n"
+          + indent_block(path)
+          + indent_block(message);
+
+        block(env.FILE; first_directory; first_user_message)
+      '
+    done

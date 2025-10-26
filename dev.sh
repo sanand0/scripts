@@ -18,18 +18,49 @@ if [[ ${1-} == "--build" ]]; then
     exit 0
 fi
 
-docker run --rm -i -t \
-    -u 1000:1000 \
-    -e HOME=/home/vscode \
-    -v "$HOME/.codex:/home/vscode/.codex" \
-    -v "$HOME/code/scripts/agents:/home/sanand/code/scripts/agents" \
-    -v "$HOME/.config/gh:/home/vscode/.config/gh" \
-    -v "$HOME/.cache/pip:/home/vscode/.cache/pip" \
-    -v "$HOME/.cache/uv:/home/vscode/.cache/uv" \
-    -v "$HOME/.npm:/home/vscode/.npm" \
-    -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv" \
-    -v "$PWD:$PWD" \
-    -w "$PWD" \
-    --entrypoint /bin/bash \
-    "$IMAGE_TAG" \
-    "$@"
+args=(
+  --rm                          # auto-remove container on exit
+  -it                           # interactive TTY
+  --gpus all                    # expose all GPUs
+  --shm-size=2g                 # bigger /dev/shm for browsers, PyTorch
+  --ulimit nofile=1048576:1048576  # high FD limits
+  --network host                # host networking (Linux only)
+  -u 1000:1000                  # run as host user 1000:1000
+  -e HOME=/home/vscode
+  -e TERM="${TERM:-xterm-256color}"         # terminal type for colors
+  -e COLORTERM="${COLORTERM:-truecolor}"    # 24-bit color hint
+  -e LANG="${LANG:-en_US.UTF-8}"            # UTF-8 locale
+  # Timezone
+  -v /etc/localtime:/etc/localtime:ro
+  -v /etc/timezone:/etc/timezone:ro
+  # Caches
+  -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface" \
+  -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
+  -v "$HOME/.cache/pip:/home/vscode/.cache/pip"
+  -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
+  # Configs
+  -v "$HOME/.claude:/home/vscode/.claude"
+  -v "$HOME/.codex:/home/vscode/.codex"
+  -v "$HOME/.config/gh:/home/vscode/.config/gh"
+  -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
+  -v "$HOME/.config/opencode:/home/vscode/.config/opencode"
+  -v "$HOME/.config/rclone:/home/vscode/.config/rclone"
+  -v "$HOME/.copilot:/home/vscode/.copilot"
+  -v "$HOME/.gitconfig:/home/vscode/.gitconfig"
+  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  -v "$HOME/.npm:/home/vscode/.npm"
+  -v "$HOME/.ssh:/home/vscode/.ssh:ro"
+  -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
+  # System mounts
+  -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
+  -e SSH_AUTH_SOCK=/ssh-agent               # Forward ssh-agent
+  --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
+  -e HISTFILE=/home/vscode/.bash_history
+  --mount type=bind,source="$HOME/.cache/dev-sh.bash-history",target=/home/vscode/.bash_history
+  -v "$PWD:$PWD"                                # mount CWD at same path
+  -w "$PWD"                                     # start in CWD
+  --entrypoint /bin/bash                        # launch bash
+)
+
+# exec: hands over to docker and end script
+exec docker run "${args[@]}" "$IMAGE_TAG" "$@"

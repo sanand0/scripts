@@ -1,37 +1,22 @@
-Write readable code
-Keep happy path linear and obvious
-Name readably
+Available tools:
 
-Keep code short
-Skip error handling unless required
-Use early returns
-
-Change existing code minimally
-Retain existing comments
-Follow existing style
-
-Add failing tests first if tests exists (or in new code)
-Keep tests fast
-
-Use available tools:
-
-fd / find
-rg / ug / grep
-jq / csvq
-git / gh
-curl / w3m / lynx
+fd, find
+rg, ug, grep
+jq, csvq, csvkit
+git, gh
+curl, w3m, lynx
 uvx yt-dlp
 uvx markitdown (PDF to Markdown)
-qpdf / pandoc
+qpdf, pandoc
 rclone
-duckdb / sqlite3 / psql
-magick / cwebp / ffmpeg
+duckdb, sqlite3, psql
+magick, cwebp, ffmpeg
 
 <!-- skills -->
 
 Read relevant SKILL.md under /home/sanand/code/scripts/agents as needed:
 
-- [code](code/SKILL.md): ALWAYS use this style when coding Python / JavaScript
+- [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
 - [npm-packages](npm-packages/SKILL.md): Conventions for package.json, README.md, coding & testing styles
 - [vitest-dom](vitest-dom/SKILL.md): Fast, lightweight testing for front-end apps. Uses vitest + jsdom instead to avoid heavy playwright.
 - [brainstorming](brainstorming/SKILL.md): Use when creating or developing anything, before writing code or implementation plans - refines rough ideas into fully-formed designs through structured Socratic questioning, alternative exploration, and incremental validation

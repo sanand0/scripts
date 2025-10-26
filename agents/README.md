@@ -8,13 +8,13 @@ This directory lists has an [AGENTS.md](AGENTS.md) for AI Code Agents.
 
 Link for:
 
-- [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.config/Code/User/agents.instructions.md`
+- [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.copilot/copilot-instructions.md`
   ```bash
-  printf "---\napplyTo: '**'\n---\n[See AGENTS.md](/home/sanand/code/scripts/agents/AGENTS.md)" > ~/.config/Code/User/agents.instructions.md
+  ln -s ~/code/scripts/agents/AGENTS.md ~/.copilot/copilot-instructions.md
   ```
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/memory): `~/.claude/CLAUDE.md`
   ```bash
-  printf "@~/code/scripts/agents/AGENTS.md\n\nAlways follow instructions in AGENTS.md where present" > ~/.claude/CLAUDE.md
+  printf "@$HOME/code/scripts/agents/AGENTS.md\n\n@AGENTS.md" > ~/.claude/CLAUDE.md
   ln -s ~/code/scripts/agents ~/.claude/skills
   ```
 - [Codex CLI](https://github.com/openai/codex): `~/.codex/AGENTS.md`
@@ -23,11 +23,11 @@ Link for:
   ```
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/f21ff093897980a51a4ad1ea6ee167dee53416b6/docs/cli/configuration.md?plain=1#L40): `~/.gemini/settings.json`
   ```bash
-  jq '.contextFileName = "/home/sanand/code/scripts/agents/AGENTS.md"' ~/.gemini/settings.json | sponge ~/.gemini/settings.json
+  jq ".contextFileName = [\"$HOME/code/scripts/agents/AGENTS.md\", \"AGENTS.md\"]" ~/.gemini/settings.json | sponge ~/.gemini/settings.json
   ```
 - [OpenCode](https://opencode.ai/docs/config/): `~/.config/opencode/opencode.jsonc`
   ```bash
-  jq '.instructions = ["/home/sanand/code/scripts/agents/AGENTS.md"]' ~/.config/opencode/opencode.jsonc | sponge ~/.config/opencode/opencode.jsonc
+  jq ".instructions = [\"$HOME/code/scripts/agents/AGENTS.md\", \"AGENTS.md\"]" ~/.config/opencode/opencode.jsonc | sponge ~/.config/opencode/opencode.jsonc
   ```
 - [Cline](https://docs.cline.bot/features/cline-rules): `~/Cline/Rules`
 

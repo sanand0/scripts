@@ -17,18 +17,24 @@ set -gx PATH $PATH $HOME/Dropbox/scripts
 # Add specific virtualenv paths
 set -gx PATH $PATH $HOME/apps/datasette/.venv/bin
 set -gx PATH $PATH $HOME/apps/gramex/.venv/bin
-set -gx PATH $PATH $HOME/apps/llm/.venv/bin
 set -gx PATH $PATH $HOME/apps/marimo/.venv/bin
 set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
 set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
-set -gx PATH $PATH $HOME/apps/ruff/.venv/bin
+
+set -gx PATH $PATH $HOME/apps/global/.venv/bin
+source $HOME/apps/global/.venv/bin/activate.fish
+
+# uv configuration to allow Codex, etc. to use uv
+export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
+export UV_CACHE_DIR="$HOME/.cache/uv"
+export XDG_DATA_HOME="$HOME/.local/share"
 
 # Via Google Cloud SDK.
 if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
 
 # less should color files
 export LESS='-R'
-export LESSOPEN='|pygmentize -g -O style=github-dark %s'
+# export LESSOPEN='|pygmentize -g -O style=github-dark %s'
 
 # grep should color files
 export GREP_OPTIONS='--color=auto'
@@ -41,9 +47,6 @@ export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color
 # Basic commands and aliases
 # -----------------------------------------------
 
-# uv is Python
-abbr --add python 'uvx python'
-
 # git mis-spellings
 abbr --add gt   git
 abbr --add gi   git
@@ -53,6 +56,9 @@ abbr --add giit git
 
 # Faster, better grep
 abbr --add grep ug
+
+# Faster, better less
+abbr --add less bat
 
 # Better curl
 abbr --add http 'uvx httpie'
@@ -120,6 +126,14 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | xargs -I {} head -n 200 "{}" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
+
+# Directories
+# ----------------------------------------------
+function mcd --description "mkdir DIR && cd DIR"
+    mkdir -p -- $argv[1]
+    and cd -- $argv[1]
+end
+
 # Audio/video
 # ----------------------------------------------
 
@@ -283,15 +297,35 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
+function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 100 lines, max 2000 chars per line'
+    set -l N $argv[1]; test -z "$N"; and set N 100
+    set -l C $argv[2]; test -z "$C"; and set C 2000
+    awk -v N="$N" -v MAXC="$C" '
+      BEGIN { H = N+0 ? N : 100; T = H }
+      function pr(s){ if(length(s)>MAXC) s=substr(s,1,MAXC-3)"..."; print s }
+      function flush( trimmed,i ){
+        if(!infile) return
+        trimmed = total - head - tailn
+        if(trimmed>0) pr("... (" trimmed " lines trimmed)")
+        for(i = tailpos - tailn; i < tailpos; i++) pr(buf[i % T])
+        infile = 0
+      }
+      /^diff --/ { flush(); infile=1; head=0; total=0; tailpos=0; tailn=0; pr($0); next }
+      {
+        if(!infile){ pr($0); next }
+        total++
+        if(head < H){ pr($0); head++ }
+        else if(T>0){ buf[tailpos % T]=$0; tailpos++; if(tailn<T) tailn++ }
+      }
+      END { flush() }
+    '
+end
+
 function livesync --description "Update main from live branch. Create new live branch from main."
     git checkout main
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
-    git diff --cached \
-        | awk '/^diff --git / {n=0} {if (n < 300) print} /^diff --git / {n++} {n++}' \
-        | llm -t gitcommit \
-        | fold -sw 72 \
-        | git commit -F -
+    git diff --cached | trimdiff | llm -t gitcommit | fold -sw 72 | git commit -F -
     git push
     git branch -D live
     git push origin --delete live
@@ -338,6 +372,8 @@ end
 
 function secret --description "Extract secret from .env"
     awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env
+    # Slower version using python-dotenv
+    # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
@@ -354,6 +390,14 @@ end
 # -frame_duration 60 is more efficient for music than the default 20 or 40 ms
 function opusmusic --description "opus file.mp4 converts it to file.opus (music quality)"
     ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+end
+
+# whisper --output_format txt $inputfile
+function whisper --description "transcribe audio file using Whisper Ctranslate2"
+    source $HOME/apps/whisper-ctranslate2/.venv/bin/activate.fish
+    export LD_LIBRARY_PATH="/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cublas/lib/:/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cudnn/lib/"
+    whisper-ctranslate2 --device cuda --language en $argv[1..]
+    deactivate
 end
 
 # webm-compress $input $width $frame_samples $output

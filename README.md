@@ -59,12 +59,12 @@ Here are the setup details for my laptops.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [chars](chars) lists non-ASCII characters in files.
-- [dev.sh](dev.sh) runs a development container for safer experimentation.
+- [dev.sh](dev.sh) runs a development container for safer experimentation. [dev.dockerfile](dev.dockerfile) contains the image spec.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
 - [githubscore.py](githubscore.py) evaluates GitHub developer quality
-- [gmail](gmail): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
+- [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
 - [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [rgb](rgb) converts RGB to hex and vice versa.
@@ -76,9 +76,14 @@ Here are the setup details for my laptops.
 ## jq scripts
 
 - [codexlog.jq](codexlog.jq) converts Codex CLI session logs to Markdown (from ~/.codex/sessions/yyyy/mm/dd/session.jsonl)
+  - [codexlist](codexlist) lists all sessions
 - [claudelog.jq](claudelog.jq) converts Claude Code session logs to Markdown (from ~/.claude/projects/$path/\*.jsonl)
+  - [claudelist](claudelist) lists all sessions
+- [copilotlog.jq](copilotlog.jq) converts GitHub session logs to Markdown (from ~/.copilot/session-state/*.jsonl)
+  - [copilotlist](copilotlist) lists all sessions
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)
 - [jsonpaths.jq](jsonpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
+- [tsv.jq](tsv.jq) converts a JSON array of objects into TSV
 - [whatsappthread.jq](whatsappthread.jq) converts https://tools.s-anand.net/whatsappscraper/ JSON into LLM-friendly JSONL + thread_id + urls[]
 
 ## Others
@@ -94,8 +99,3 @@ Here are the setup details for my laptops.
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files
-
-## Tests
-
-- `tests` stores regression checks
-  - `test_gmail.py` verifies the Gmail CLI’s happy path.
