@@ -50,6 +50,7 @@ Here is the setup for my Linux laptops.
     mise use -g node
     mise use -g opentofu            # Terraform alternative
     mise use -g pandoc              # convert md, pdf, docx, etc.
+    # mise use -g pnpm                # npm alternative
     mise use -g rclone              # copy across cloud drives
     mise use -g ripgrep             # grep alternative
     mise use -g starship

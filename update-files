@@ -8,6 +8,9 @@
 
 set -euo pipefail
 
+# Activate mise since we need fd which is mise-installed (~50ms)
+eval "$(mise activate bash)"
+
 # Set up directories
 TARGET="${1-}"  # empty => $HOME mode; non-empty => /mnt/$TARGET mode
 OUTDIR="$HOME/.cache/sanand-scripts"
@@ -21,21 +24,21 @@ if [ -z "$TARGET" ]; then
       --exclude node_modules \
       --exclude ImageCache \
       --exclude google-cloud-sdk \
-      > "$OUT"
-    # Cache files updated in the last week
+      | sponge "$OUT"
+    # Cache files updated in the last week. Use find instead of fd to avoid an extra stat call
     find "$HOME" \
         \( -name '.*' -o -type d -name node_modules \) -prune -o \
         -type f -mtime -7 -printf '%T@ %P\0' \
       | sort -z -nr \
       | awk -v RS='\0' '{ sub(/^[0-9.]+ /,""); print }' \
-      > "$OUTDIR/files.__recent.txt"
+      | sponge "$OUTDIR/files.__recent.txt"
 else
     # With argument: search under /mnt/$TARGET
     OUT="$OUTDIR/files.$TARGET.txt"
     cd /
     # If the target it mounted, i.e. non-empty, update
     if [ -d "/mnt/$TARGET" ] && find "/mnt/$TARGET" -mindepth 1 -print -quit | grep -q .; then
-        fd -a . "/mnt/$TARGET" --follow > "$OUT"
+        fd -a . "/mnt/$TARGET" --follow | sponge "$OUT"
     fi
 fi
 

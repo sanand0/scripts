@@ -126,30 +126,14 @@ def print_tsv(con: Console, row: Dict[str, Any], fields: Sequence[str]) -> None:
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="Search Gmail.")
 
 
-@app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
-async def main(
-    q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
-    user_id: str = typer.Option("me", "--user", help="Gmail user: 'me' or email."),
-    limit: int = typer.Option(20, "-n", "--limit", min=1, help="Total results to print."),
-    fields: List[str] = typer.Option(
-        ["date", "from", "subject", "snippet"],
-        "--fields",
-        help=(
-            "Fields to print; repeat or separate with commas/spaces. "
-            f"Valid: {', '.join(FIELDS.keys())}"
-        ),
-    ),
-    jsonl: bool = typer.Option(False, "--jsonl", help="Emit JSONL (one object per line)."),
-    reauth: bool = typer.Option(False, "--reauth", help="Force login"),
-):
-    """Search Gmail and print messages in a clean table or JSONL.
-
-    Examples:\n
-    - gmail --limit 50 "from:example.com"  # list 50 recent inbox emails\n
-    - gmail --fields date,email "subject:invoice"  # show date and only sender email\n
-    - gmail --fields "date, from, subject" in:archive  # comma/space separated fields\n
-    - gmail --jsonl --fields "email subject" "has:attachment newer_than:1y"  # JSONL output\n
-    """
+async def search(
+    q: str,
+    user_id: str,
+    limit: int,
+    fields: Sequence[str],
+    jsonl: bool,
+    reauth: bool,
+) -> None:
     tok = ensure_token(scopes=GMAIL_SCOPES, token_file=GMAIL_TOKEN_FILE, force_auth=reauth)
     if not tok:
         return
@@ -173,6 +157,33 @@ async def main(
                 print(json.dumps(row, ensure_ascii=False))
                 continue
             print_tsv(con, row, sel_fields)
+
+
+@app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
+def main(
+    q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
+    user_id: str = typer.Option("me", "--user", help="Gmail user: 'me' or email."),
+    limit: int = typer.Option(20, "-n", "--limit", min=1, help="Total results to print."),
+    fields: List[str] = typer.Option(
+        ["date", "from", "subject", "snippet"],
+        "--fields",
+        help=(
+            "Fields to print; repeat or separate with commas/spaces. "
+            f"Valid: {', '.join(FIELDS.keys())}"
+        ),
+    ),
+    jsonl: bool = typer.Option(False, "--jsonl", help="Emit JSONL (one object per line)."),
+    reauth: bool = typer.Option(False, "--reauth", help="Force login"),
+) -> None:
+    """Search Gmail and print messages in a clean table or JSONL.
+
+    Examples:\n
+    - gmail --limit 50 "from:example.com"  # list 50 recent inbox emails\n
+    - gmail --fields date,email "subject:invoice"  # show date and only sender email\n
+    - gmail --fields "date, from, subject" in:archive  # comma/space separated fields\n
+    - gmail --jsonl --fields "email subject" "has:attachment newer_than:1y"  # JSONL output\n
+    """
+    asyncio.run(search(q, user_id, limit, fields, jsonl, reauth))
 
 
 if __name__ == "__main__":

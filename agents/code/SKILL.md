@@ -6,7 +6,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 Coding style
 
 - Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries exist
-- Write readable code. Keep happy path linear and obvious. Name readably
+- Write readable code. Keep happy path linear and obvious. Begin by writing the flow, then fill in code. Name intuitively
 - Keep code short. Skip error handling unless required. Use early returns
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Add failing tests first if tests exists (or in new code). Keep tests fast
@@ -61,3 +61,4 @@ import { openaiConfig, geminiConfig } from "bootstrap-llm-provider"; // @1 LLM p
 ```
 
 Use `npm view package-name readme` for docs
+Read https://context7.com/org/repo/llms.txt for docs about https://github.com/org/repo

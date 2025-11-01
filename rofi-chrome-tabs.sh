@@ -12,7 +12,7 @@ if [[ $# -eq 0 ]]; then
       (.url | capture("https?://(?<domain>[^/]+)") | .domain)
       + "\t" + .title + "\t🔑" + .id' | column -t -s $'\t'
 else
-    # rofi returns the after the 🔑
+    # rofi returns value the after the 🔑
     TAB_ID=$(echo -e "$*" | sed 's/.*🔑\(.*\)/\1/')
 
     # Activate the target via the HTTP endpoint.

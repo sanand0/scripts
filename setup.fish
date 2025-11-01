@@ -422,8 +422,14 @@ function y
     rm -f -- "$tmp"
 end
 
+# Completions
+# -----------------------------------------------
+
 # https://github.com/cantino/mcfly
 mcfly init fish | source
+
+# https://github.com/openai/codex/blob/main/docs/getting-started.md#shell-completions
+codex completion fish | source
 
 type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source

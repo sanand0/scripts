@@ -27,13 +27,15 @@ GITIGNORE = ROOT / ".gitignore"
 START, END = "<!-- skills -->", "<!-- /skills -->"
 
 REMOTE_SKILLS = [
-    "https://github.com/anthropics/skills/tree/main/skill-creator",
+    # "https://github.com/anthropics/skills/tree/main/skill-creator",
     "https://github.com/anthropics/skills/tree/main/webapp-testing",
     "https://github.com/anthropics/skills/tree/main/document-skills/pdf",
     "https://github.com/anthropics/skills/tree/main/document-skills/pptx",
     "https://github.com/anthropics/skills/tree/main/document-skills/xlsx",
-    "https://github.com/ComposioHQ/awesome-claude-skills/tree/master/changelog-generator",
-    "https://github.com/obra/superpowers/tree/main/skills/brainstorming",
+    # "https://github.com/ComposioHQ/awesome-claude-skills/tree/master/changelog-generator",
+
+    # Superpowers are not independently reusable. They rely on other superpowers.
+    # "https://github.com/obra/superpowers/tree/main/skills/brainstorming",
 ]
 
 
@@ -109,7 +111,7 @@ def build_index(skills):
         name, desc = parse_frontmatter(path)
         rel = path.parent.relative_to(ROOT)
         lines.append(f"- [{name}]({rel}/SKILL.md): {desc}")
-    header = f"Read relevant SKILL.md under {ROOT} as needed:\n\n"
+    header = f"Refer relevant SKILL.md under {ROOT}:\n\n"
     return f"{START}\n\n{header}" + "\n".join(lines) + f"\n\n{END}"
 
 
@@ -128,7 +130,7 @@ def main():
     # Refresh remote skills at most once per day
     fetch_remote_skills(targets, ttl=24 * 60 * 60)
 
-    # Sort local skills first, then remotes
+    # Get */SKILL.md sorted by local skills first, then remotes
     skills = sorted((p.parent in remotes, p) for p in ROOT.rglob("SKILL.md") if p.parent != ROOT)
 
     # Write into AGENTS.md
