@@ -152,7 +152,7 @@
     # Git 2.37 onwards makes git status more efficient
     fsmonitor = true
 
-    # Use delta for paging diffs
+    # Don't use delta for paging diffs - the split style is harder to read
     pager = delta
 
 [diff]
@@ -200,9 +200,13 @@
     helper =
     helper = !/usr/bin/glab auth git-credential
 [interactive]
-    diffFilter = delta --color-only
+    diffFilter = delta
 [delta]
     # Navigate between diff hunks with n and p
     navigate = true
-    # Show side-by-side diffs
-    side-by-side = true
+    # Line numbers aid context for long diffs
+    line-numbers = true
+    # diff-so-fancy has better colors
+    diff-so-fancy = true
+    # Avoid side-by-side diffs: reduces readable width too much
+    side-by-side = false

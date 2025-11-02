@@ -36,3 +36,11 @@ Manually update at:
 - [Cursor](https://docs.cursor.com/en/context/rules#user-rules): Copy-paste into Settings > Rules.
 - [ChatGPT Codex](https://chatgpt.com/codex): Codex Settings > Custom instructions
 - WindSurf: No documented global “rules” markdown
+
+# Prompts
+
+The `custom-prompts` directory has custom prompts for Codex, etc. Install via:
+
+```bash
+ln -s ~/code/scripts/agents/custom-prompts ~/.codex/prompts
+```

@@ -33,7 +33,6 @@ REMOTE_SKILLS = [
     "https://github.com/anthropics/skills/tree/main/document-skills/pptx",
     "https://github.com/anthropics/skills/tree/main/document-skills/xlsx",
     # "https://github.com/ComposioHQ/awesome-claude-skills/tree/master/changelog-generator",
-
     # Superpowers are not independently reusable. They rely on other superpowers.
     # "https://github.com/obra/superpowers/tree/main/skills/brainstorming",
 ]

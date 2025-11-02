@@ -143,5 +143,6 @@ def main(max_scan: int = typer.Option(300, help="Max lines to scan per file")) -
     with open(target, "w", encoding="utf-8") as f:
         f.write(render_transcripts(collected))
 
+
 if __name__ == "__main__":
     app()

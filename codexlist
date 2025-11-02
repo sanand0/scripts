@@ -3,25 +3,48 @@ set -euo pipefail
 
 # List Codex session logs: filename, cwd, first user message.
 
+filter="${1:-}"
+
 # Sort by filename desc; session filenames encode recency.
 find "${HOME}/.codex/sessions" -type f -name '*.jsonl' -print0 \
   | sort -rz \
   | while IFS= read -r -d '' logfile; do
-      FILE="$logfile" jq -nr --slurpfile rows "$logfile" '
+      FILE="$logfile" FILTER="$filter" jq -nr --slurpfile rows "$logfile" '
         def first_value(f): ([ $rows[] | f ] | map(select(. != null)) | .[0] // "");
 
         def indent_block(s):
           "    " + (s | gsub("\n"; "\n    "));
+
+        def truncate_middle:
+          (. // "") as $s
+          | ($s | explode) as $chars
+          | if ($chars | length) <= 500 then
+              $s
+            else
+              ($chars[:250] | implode)
+              + "...truncated..."
+              + ($chars[-250:] | implode)
+            end;
+
+        def matches_filter(cwd):
+          (env.FILTER // "") as $f
+          | if $f == "" then
+              true
+            else
+              (cwd // "") | contains($f)
+            end;
 
         def block(file; cwd; message):
           "# " + file + "\n"
           + indent_block(cwd) + "\n"
           + indent_block(message) + "\n";
 
-        block(
-          env.FILE;
-          first_value(.payload.cwd // empty);
-          first_value(if .payload.type == "user_message" then .payload.message else empty end)
-        )
+        first_value(.payload.cwd // empty) as $cwd
+        | (first_value(if .payload.type == "user_message" then .payload.message else empty end) | truncate_middle) as $msg
+        | if matches_filter($cwd) then
+            block(env.FILE; $cwd; $msg)
+          else
+            empty
+          end
       '
     done

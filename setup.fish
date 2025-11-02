@@ -68,7 +68,7 @@ export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
 abbr --add mail cmdg
 
-# Delta pager for git diffs. Override default PAGER, avoid bat
+# Allow delta to override the default PAGER (e.g. bat) which interferes with its output
 export DELTA_PAGER='less -R'
 
 # Google Calendar command line

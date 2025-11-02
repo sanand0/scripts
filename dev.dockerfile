@@ -14,6 +14,7 @@ RUN apt-get update \
     w3m \
     sqlite3 \
     moreutils \
+    csvkit \
     ffmpeg \
     webp \
     postgresql-client \

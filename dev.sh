@@ -64,3 +64,9 @@ args=(
 
 # exec: hands over to docker and end script
 exec docker run "${args[@]}" "$IMAGE_TAG" "$@"
+
+# Tools missing: csvkit, yt-dlp, markitdown.
+# gh auth status: fails; token for account sanand0 invalid.
+# llm models list: llm command not found.
+# docker --rm -it hello-world: fails (docker binary unavailable).
+# GPU: nvidia-smi fails with “Failed to initialize NVML: Unknown Error”; nvcc not found ⇒ CUDA programs can’t be run here.

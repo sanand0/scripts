@@ -48,16 +48,16 @@ Preferred JS libs:
 
 ```js
 import * as d3 from "d3"; // @7/+esm for visualizations
+import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
 import { html, render } from "lit-html"; // @3/+esm for DOM updates
 import { unsafeHTML } from "lit-html@3/directives/unsafe-html.js";
 import { marked } from "marked"; // @16/+esm
-import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
 import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const { key } = parse('{"key":"v')`
 
-import { bootstrapAlert } from "bootstrap-alert"; // @1 for notifications. `bootstrapAlert({ title: "Success", body: "Toast message", color: "success" })`
-import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 import { asyncLLM } from "asyncllm"; // @2 streams LLM responses. `for await (const { content, error } of asyncLLM(baseURL, { method: "POST", body: JSON.stringify({...}), headers: { Authorization: `Bearer ${apiKey}` } }`
-import { openaiConfig, geminiConfig } from "bootstrap-llm-provider"; // @1 LLM provider modal. `const { baseUrl, apiKey, models } = await openaiConfig()`
+import { bootstrapAlert } from "bootstrap-alert"; // @1 for notifications. `bootstrapAlert({ title: "Success", body: "Toast message", color: "success" })`
+import { geminiConfig, openaiConfig } from "bootstrap-llm-provider"; // @1 LLM provider modal. `const { baseUrl, apiKey, models } = await openaiConfig()`
+import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
 Use `npm view package-name readme` for docs

@@ -1,0 +1,78 @@
+# Use with either:
+#   pre-commit install && pre-commit run -a
+# or
+#   prek install && prek run -a
+
+ci:
+  autoupdate_schedule: monthly
+
+repos:
+  # Ruff: lint + format (lint fix runs before format, per Ruff docs)
+  # https://github.com/astral-sh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix", "--line-length=100"]
+      - id: ruff-format
+
+  # mypy (mirror)
+  # https://github.com/pre-commit/mirrors-mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.12.0
+    hooks:
+      - id: mypy
+        additional_dependencies: ["types-requests", "types-PyYAML"]
+
+  # gitleaks for secret scanning
+  # https://github.com/gitleaks/gitleaks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        args: ["detect", "--no-banner", "--redact"]
+        # You can place a .gitleaks.toml at repo root to fine-tune allowlists.
+
+  # ShellCheck (prebuilt binary wrapper recommended by pre-commit hooks page)
+  # https://github.com/shellcheck-py/shellcheck-py
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning"]
+
+  # hadolint for Dockerfile linting
+  # https://github.com/hadolint/hadolint
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint
+        files: (?i)^(?:.*/)?Dockerfile(?:\..*)?$
+
+  # yamllint
+  # https://yamllint.readthedocs.io (has pre-commit guidance)
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ["-s"]
+        types_or: [yaml]
+
+  # markdownlint (modern CLI v2)
+  # https://github.com/DavidAnson/markdownlint-cli2
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.14.0
+    hooks:
+      - id: markdownlint-cli2
+        additional_dependencies: ["markdownlint-rule-relative-links"]
+        # Optional: create .markdownlint-cli2.jsonc to tune rules
+
+  # OSV Scanner (vulnerability scan of dependency manifests)
+  # https://google.github.io/osv-scanner/usage/#pre-commit
+  - repo: local
+    hooks:
+      - id: osv-scanner
+        name: osv-scanner (docker)
+        language: docker_image
+        entry: ghcr.io/google/osv-scanner:latest
+        args: ["scan", "-r", "."]

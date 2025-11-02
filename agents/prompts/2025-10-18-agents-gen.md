@@ -7,9 +7,7 @@ name: Using Claude skills in codex
 >
 > 1. Read Claude's skill spec at https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview.
 >    Do the skills in this tree align with the spec? What are the good points of alignment and what are deviations?
->
 > 2. I want AGENTS.md to be manually editable but should have a section that lists the skills like this:
->
 >    ```markdown
 >    Consult this index and open the relevant SKILL.md under /home/sanand/code/scripts/agents/ under when needed:
 >
@@ -17,14 +15,11 @@ name: Using Claude skills in codex
 >    - [npm package style guide](npm-packages/SKILL.md): Conventions for package.json, README.md, coding & testing styles
 >    - [Vitest + DOM testing](vitest-dom/SKILL.md): Fast, lightweight testing for front-end apps. Uses vitest + jsdom instead to avoid heavy playwright.
 >    ```
->
 >    This section should be automatically generated from the **/SKILL.md in this directory by a simple script.
 >    The rest of AGENTS.md must be manually editable, so we need delimiters/markers in AGENTS.md within which this content will be inserted.
 >    The delimiters/markers should not take up too many tokens. They should not be jarring or confusing to a reader or coding agents.
->
 >    What language should I for minimal dependency, speed, small readable code? bash, Python or JS (Node/Deno)?
 >    Share a sample script in your chosen language (write it inside the same evaluation.md) and explain your design decisions.
->
 > 3. There are external public repos like https://github.com/anthropics/skills that contain skills in folders.
 >    Ideally, I would like to pick and choose folders from such repos and download them into this folder.
 >    How can I do that with a simple bash script using git or gh to download specific folders?

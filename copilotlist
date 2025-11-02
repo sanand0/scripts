@@ -6,12 +6,14 @@ set -euo pipefail
 base="${HOME}/.copilot/session-state"
 [[ -d "$base" ]] || exit 0
 
+filter="${1:-}"
+
 # Sort by modification time: newest sessions first.
 find "$base" -type f -name '*.jsonl' -printf '%T@:%p\0' \
   | sort -zrn \
   | while IFS= read -r -d '' entry; do
       logfile="${entry#*:}"
-      FILE="$logfile" jq -nr --slurpfile rows "$logfile" '
+      FILE="$logfile" FILTER="$filter" jq -nr --slurpfile rows "$logfile" '
         def first_value(f):
           ([ $rows[] | f ] | map(select(. != null and . != "")) | .[0] // "");
 
@@ -53,6 +55,31 @@ find "$base" -type f -name '*.jsonl' -printf '%T@:%p\0' \
           + indent_block(path)
           + indent_block(message);
 
-        block(env.FILE; first_directory; first_user_message)
+        def truncate_middle:
+          (. // "") as $s
+          | ($s | explode) as $chars
+          | if ($chars | length) <= 500 then
+              $s
+            else
+              ($chars[:250] | implode)
+              + "...truncated..."
+              + ($chars[-250:] | implode)
+            end;
+
+        def matches_filter(path):
+          (env.FILTER // "") as $f
+          | if $f == "" then
+              true
+            else
+              (path // "") | contains($f)
+            end;
+
+        first_directory as $path
+        | (first_user_message | truncate_middle) as $msg
+        | if matches_filter($path) then
+            block(env.FILE; $path; $msg)
+          else
+            empty
+          end
       '
     done
