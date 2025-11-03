@@ -11,6 +11,7 @@ Coding style
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Add failing tests first if tests exists (or in new code). Keep tests fast
 - Use type hints and single-line docstrings
+- Cache LLM/API/HTTP requests in .cache/ when looping
 
 Only use `uv run`. Not `python` or `python3`
 
