@@ -64,6 +64,7 @@ Here are the setup details for my laptops.
   - [dev.test.sh](dev.test.sh) tests the environment for tools.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [gitget.sh](gitget.sh) clones a git repository and copies specific paths to local directories.
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
 - [githubscore.py](githubscore.py) evaluates GitHub developer quality
 - [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
@@ -75,15 +76,19 @@ Here are the setup details for my laptops.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
 - [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
 
-## jq scripts
+## AI coding agent scripts
 
 - [codexlog.jq](codexlog.jq) converts Codex CLI session logs to Markdown (from ~/.codex/sessions/yyyy/mm/dd/session.jsonl)
   - [codexlist](codexlist) lists all sessions
+  - [codextools.py](codextools.py) lists tools used by Codex
 - [claudelog.jq](claudelog.jq) converts Claude Code session logs to Markdown (from ~/.claude/projects/$path/\*.jsonl)
   - [claudelist](claudelist) lists all sessions
 - [copilotlog.jq](copilotlog.jq) converts GitHub session logs to Markdown (from ~/.copilot/session-state/*.jsonl)
   - [copilotlist](copilotlist) lists all sessions
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)
+
+## jq scripts
+
 - [jsonpaths.jq](jsonpaths.jq) lists all unique JSON paths in a JSON/NDJSON file
 - [tsv.jq](tsv.jq) converts a JSON array of objects into TSV
 - [whatsappthread.jq](whatsappthread.jq) converts https://tools.s-anand.net/whatsappscraper/ JSON into LLM-friendly JSONL + thread_id + urls[]

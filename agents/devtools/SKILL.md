@@ -1,9 +1,9 @@
 ---
 name: devtools
-description: Test, debug, automate, using localhost:9222/json which runs CDP (Chrome Remote Debugging)
+description: Use CDP at localhost:9222 to test/debug web apps and automate browser tasks
 ---
 
-CDP at localhost:9222 can be used to:
+Use CDP at localhost:9222 to:
 
 - Debug/test using inspection (DOM, cookies, storage), screenshots, console logs, breakpoints, JS execution, network intercepts (modify headers, mock responses)
 - Automate (research, scrape, ...) using navigation, form-filling, print to PDF
@@ -15,3 +15,5 @@ CDP at localhost:9222 can be used to:
 - Harden via cookie audits, pen-testing
 - Parallelize using multiple tabs
 - Browse safely using separate profiles / incognito mode
+
+Tools: websocat, wscat, uv, node, puppeteer, playwright, cdp-cli, chrome-remote-interface, devtools-protocol

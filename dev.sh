@@ -50,11 +50,14 @@ args=(
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.npm:/home/vscode/.npm"
   -v "$HOME/.ssh:/home/vscode/.ssh:ro"
+  -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
+  -v "$HOME/Dropbox/scripts/llm.keys.json:/home/sanand/Dropbox/scripts/llm.keys.json"
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
   # System mounts
   -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
-  -e SSH_AUTH_SOCK=/ssh-agent               # Forward ssh-agent
+  -e SSH_AUTH_SOCK=/ssh-agent                   # Forward ssh-agent
   --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
+  -e GITHUB_TOKEN=$(awk -F= -v k="GITHUB_PERSONAL_ACCESS_TOKEN" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env)
   -e HISTFILE=/home/vscode/.bash_history
   --mount type=bind,source="$HOME/.cache/dev-sh.bash-history",target=/home/vscode/.bash_history
   -v "$PWD:$PWD"                                # mount CWD at same path
@@ -65,8 +68,4 @@ args=(
 # exec: hands over to docker and end script
 exec docker run "${args[@]}" "$IMAGE_TAG" "$@"
 
-# Tools missing: csvkit, yt-dlp, markitdown.
-# gh auth status: fails; token for account sanand0 invalid.
-# llm models list: llm command not found.
 # docker --rm -it hello-world: fails (docker binary unavailable).
-# GPU: nvidia-smi fails with “Failed to initialize NVML: Unknown Error”; nvcc not found ⇒ CUDA programs can’t be run here.

@@ -9,6 +9,7 @@ Here is the setup for my Linux laptops.
 - Create a user `sanand`
 - Install Dropbox: https://www.dropbox.com/install-linux
 - Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
+  - Install upgrades by downloading the latest stable Linux `.deb` and running `sudo apt install ./*.deb`
   - Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `~/.config/microsoft-edge/Default/HubApps`
 - Add Edge startup options: remote debugging. [Persist changes](https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c)
   ```bash
@@ -63,6 +64,7 @@ Here is the setup for my Linux laptops.
     mise use -g ubi:junegunn/fzf    # everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
     mise use -g ubi:mithrandie/csvq
     mise use -g ubi:tealdeer-rs/tealdeer # tldr alternative
+    mise use -g websocat            # Websocket client -- update to 4.0 later
     mise use -g xh                  # curl alternative
     mise use -g yazi                # file browser
     mise use -g yq                  # YAML query
@@ -96,6 +98,7 @@ Here is the setup for my Linux laptops.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
+  - wscat: `npm install -g wscat` for Codex CDP usage
   - codex: `npm install -g codex`. Include these settings in [`~/.codex/config.toml`](https://github.com/openai/codex/blob/main/docs/config.md)
     ```ini
     # By default, allow writing to the workspace
@@ -159,6 +162,7 @@ Here is the setup for my Linux laptops.
   - global: `mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas ruff`
     - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper`
     - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
+    - `ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json`
   - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
   - whisper-ctranslate2: `mkdir -p ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127`
   - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`

@@ -48,26 +48,15 @@ for var in "${required_env_vars[@]}"; do
 done
 
 # Verify the everyday CLI tools are on PATH so workflows do not break later.
-required_tools=(fd find rg ug grep git gh curl w3m lynx jq csvq csvjson uvx qpdf pandoc duckdb sqlite3 psql magick cwebp ffmpeg)
+required_tools=(fd find rg ug grep git gh curl w3m lynx jq csvq csvjson uvx qpdf pandoc duckdb sqlite3 psql magick cwebp ffmpeg dprint yt-dlp markitdown)
 for tool in "${required_tools[@]}"; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     fail "tool unavailable: $tool" "command -v $tool"
   fi
 done
 
-# Confirm uvx can launch yt-dlp and markitdown since they are provided via uvx.
-if command -v uvx >/dev/null 2>&1; then
-  if ! uvx yt-dlp --version >/dev/null 2>&1; then
-    fail "uvx yt-dlp unavailable" "uvx yt-dlp --version"
-  fi
-  # markitdown lacks a --version flag, so --help is the lightest successful command.
-  if ! uvx markitdown --help >/dev/null 2>&1; then
-    fail "uvx markitdown unavailable" "uvx markitdown --help"
-  fi
-fi
-
 # Check that GitHub CLI logins still work, otherwise repo automation fails.
-if ! gh auth status >/dev/null 2>&1; then
+if ! gh auth status --active >/dev/null 2>&1; then
   fail "gh auth status failed" "gh auth status"
 fi
 
@@ -116,7 +105,6 @@ if command -v npm >/dev/null 2>&1; then
   if [ -n "$tmp_npm" ]; then
     (
       cd "$tmp_npm" &&
-      npm init -y >/dev/null 2>&1 &&
       npm install lodash >/dev/null 2>&1
     ) || fail "npm install test failed" "cd $tmp_npm && npm install lodash"
   fi

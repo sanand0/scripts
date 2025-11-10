@@ -7,11 +7,15 @@ Coding style
 
 - Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries exist
 - Write readable code. Keep happy path linear and obvious. Begin by writing the flow, then fill in code. Name intuitively
-- Keep code short. Skip error handling unless required. Use early returns
+- Keep code short
+- Add static data (configs, prompts, schemas, ...) to existing config.{json|yaml|toml|...}. Create if config >= 30 lines
+- Skip defensive fallbacks. Prefer early returns. Fail fast
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Add failing tests first if tests exists (or in new code). Keep tests fast
 - Use type hints and single-line docstrings
 - Cache LLM/API/HTTP requests in .cache/ when looping
+
+## Python
 
 Only use `uv run`. Not `python` or `python3`
 
@@ -33,6 +37,8 @@ Preferred Python libs:
 `lxml` not `xml`
 `tenacity` for retries
 `pytest`
+
+## JavaScript
 
 Preferred JS style:
 
@@ -61,5 +67,26 @@ import { geminiConfig, openaiConfig } from "bootstrap-llm-provider"; // @1 LLM p
 import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
-Use `npm view package-name readme` for docs
-Read https://context7.com/org/repo/llms.txt for docs about https://github.com/org/repo
+## Git
+
+If committing, write a conventional commit message given a diff. Example:
+
+```
+doc: Readable code, shorter context
+
+**Readable code**. Standardize comments, add `method()` docstring in `path/file2.ext`. ...
+
+**Shorter context**. `get_context()` truncates files >10K + "..." in `path/file.ext`. ...
+```
+
+Title (<= 50 chars).
+
+Group into themes by impact
+Use imperative mood
+Explain what changed and WHY
+
+## Docs sources
+
+Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, ...
+
+For large/complex libraries, https://context7.com/org/repo/llms.txt has LLM-friendly docs for https://github.com/org/repo

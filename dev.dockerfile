@@ -14,7 +14,6 @@ RUN apt-get update \
     w3m \
     sqlite3 \
     moreutils \
-    csvkit \
     ffmpeg \
     webp \
     postgresql-client \
@@ -33,10 +32,23 @@ ENV SHELL=/bin/bash
 ENV PATH="${HOME}/.local/bin:${PATH}"
 
 # Pending: rclone, magick, cwebp
-# Install mise and your toolchain for the vscode user
-RUN curl -fsSL https://mise.run | sh && \
-    echo 'eval "$(mise activate bash)"' >> "${HOME}/.bashrc" && \
-    bash -lc 'mise use -g fd uv node ripgrep duckdb codex pandoc rclone ubi:mithrandie/csvq github-cli'
+# Install mise and set up shell
+RUN curl -fsSL https://mise.run | sh \
+ && echo 'eval "$(mise activate bash)"' >> "${HOME}/.bashrc" \
+ && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
+
+# Install mise tools
+RUN mise use -g fd uv node ripgrep duckdb pandoc rclone ubi:mithrandie/csvq github-cli
+
+# Install uv and npm tools
+RUN bash -lc 'eval "$(mise activate bash)"; \
+  mkdir -p ~/apps/global; \
+  cd ~/apps/global; \
+  uv venv; \
+  source .venv/bin/activate; \
+  uv pip install csvkit dprint yt-dlp markitdown httpx pandas ruff llm typer rich orjson lxml tenacity pytest; \
+  npm install -g @openai/codex@latest; \
+  '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
 USER root

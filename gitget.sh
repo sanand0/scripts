@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# https://claude.ai/share/60152de8-ece4-4b04-80d9-4366dba6ca13
+
+if [ $# -lt 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    cat << 'EOF'
+Usage: gitget REPO BRANCH path:target [path:target ...]
+
+Clone a git repository and copy specific paths to local directories.
+
+Example:
+  gitget https://github.com/anthropics/skills main \
+    document-skills/pdf:pdf \
+    document-skills/pptx:pptx
+
+Arguments:
+  REPO    Git repository URL
+  BRANCH  Branch name to checkout
+  path:target  Source path in repo and destination directory (repeat as needed)
+EOF
+    exit 1
+fi
+
+repo="$1"
+branch="$2"
+shift 2
+
+# Clone repo into temp directory
+tmpdir=$(mktemp -d)
+git clone --depth 1 --branch "$branch" "$repo" "$tmpdir"
+
+# Process each path:target pair
+for pair in "$@"; do
+    IFS=':' read -r src dst <<< "$pair"
+    mkdir -p "$dst"
+    cp -r "$tmpdir/$src/"* "$dst/"
+done
+
+rm -rf "$tmpdir"

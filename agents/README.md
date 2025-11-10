@@ -3,6 +3,7 @@
 This directory lists has an [AGENTS.md](AGENTS.md) for AI Code Agents.
 
 [AGENTS.md](AGENTS.md) is the entry point and has common instructions to refer to [skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) under this directory.
+[agents_gen.sh](agents_gen.sh) updates it from external skills.
 
 ## Usage
 
