@@ -21,3 +21,8 @@ Tools: websocat, wscat, uv, node, puppeteer, playwright, cdp-cli, chrome-remote-
 Tips:
 
 - Highlight relevant DOM elements, take a full-page screenshot, and use that for visual context.
+- Snapshot the accessibility tree and highlight nodes by role and name. Then pick targets by role (CSS can be brittle).
+- Draw intent on the page. Overlay labels on target elements, then capture a full-page screenshot. You get “what I planned vs what I clicked” proof in one image.
+- Capture a DOM “storyboard.” Take narrow, cropped screenshots of every element you will interact with in order. It becomes a visual plan the model can reason about.
+- Generate a selector bundle per element. Include role+name, text substring, stable attributes, and a fallback position. Try them in order and remember which one works.
+- Add a canary element on each page. Before doing anything, assert the canary exists. If not, you know you are on the wrong state and can recover.
