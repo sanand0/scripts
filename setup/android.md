@@ -1,79 +1,245 @@
 # Android apps
 
-- Auth
-  - [x] Google Authenticator
-  - [x] Microsoft Authenticator
-- Internet
-  - [x] Edge
-  - ChatGPT
-  - Wireless@SGx
-- Office
-  - [x] Dropbox
-  - [x] Outlook
-  - [x] Teams
-  - Microsoft 365
-  - Onedrive
-- Finance
-  - [x] PayTM
-  - PhonePe
-  - GooglePay
-  - iMobile Pay
-  - HDFC Bank
-  - HSBC India
-  - HSBC UK
-  - OCBC
-- Notes & TODO
-  - [x] IA Writer
-  - [x] Microsoft Todo
-  - Habits?
-- Travel
-  - [x] Gojek
-  - [x] Rapido
-  - Ola
-  - Uber
-  - Anywheel
-  - TADA
-  - Grab
-  - CDG Zig
-  - Lyft?
-- Read
-  - Playbook
-  - Readera
-  - Feedly
-  - GoodReads
-  - Blinkist?
-- Health
-  - Fitbit
-  - Pacer
-  - Practo?
-- Maps
-  - CityMapper
-  - SG BusLeh
-  - SG Bus Router
-  - Simply Go
-- Media
-  - Music Player
-  - NewPipe via F-Droid?
-- Government
-  - Digiyatra
-  - SingPass
-  - Digilocker
-  - SG Work Pass?
-  - MobilePass?
-- Phone
-  - [x] HiApp
-  - [x] Airtel
-  - Truecaller
-  - Link to Windows
-  - SP
-- Shopping
-  - Swiggy
-  - Fairprice
-  - Shopee
-  - Amazon?
-- Social
-  - LinkedIn
-  - Instagram?
-- Oblique Strategies
-- Physics Toolbox Suite?
-- Coursera?
+```js
+// On https://play.google.com/apps run this in devtools and deduplicate
+copy([...document.querySelectorAll("li")].map(d => {
+  const title = d.querySelector(".I8esDd")?.innerText;
+  const publisher = d.querySelector(".kPzRub")?.innerText;
+  const url = d.querySelector("a")?.href;
+  return `- [${title}](${url}) by ${publisher}`;
+}).join("\n"))
+```
+
+- 🟡 [Aarogya Setu](https://play.google.com/store/apps/details?id=nic.goi.aarogyasetu) by National Health Authority
+- 🔴 [Adobe Acrobat Reader: Edit PDF](https://play.google.com/store/apps/details?id=com.adobe.reader) by Adobe
+- 🟢 [Airtel Thanks: Recharge & Bank](https://play.google.com/store/apps/details?id=com.myairtelapp) by Airtel
+- 🟡 [Amazon India Shop, Pay, miniTV](https://play.google.com/store/apps/details?id=in.amazon.mShop.android.shopping) by Amazon Mobile LLC
+- ⚫ [Amazon Kindle](https://play.google.com/store/apps/details?id=com.amazon.kindle) by Amazon Mobile LLC
+- 🔴 [Amazon Shopping](https://play.google.com/store/apps/details?id=com.amazon.mShop.android.shopping) by Amazon Mobile LLC
+- ⚫ [Android Accessibility Suite](https://play.google.com/store/apps/details?id=com.google.android.marvin.talkback) by Google LLC
+- ⚫ [Android Auto](https://play.google.com/store/apps/details?id=com.google.android.projection.gearhead) by Google LLC
+- ⚫ [Android Switch](https://play.google.com/store/apps/details?id=com.google.android.apps.restore) by Google LLC
+- ⚫ [Android System Intelligence](https://play.google.com/store/apps/details?id=com.google.android.as) by Google LLC
+- ⚫ [Android System Key Verifier](https://play.google.com/store/apps/details?id=com.google.android.contactkeys) by Google LLC
+- ⚫ [Android System SafetyCore](https://play.google.com/store/apps/details?id=com.google.android.safetycore) by Google LLC
+- ⚫ [Android System WebView](https://play.google.com/store/apps/details?id=com.google.android.webview) by Google LLC
+- 🟢 [AntennaPod](https://play.google.com/store/apps/details?id=de.danoeh.antennapod) by AntennaPod Open Source Team
+- 🔴 [Any.do - To do list & Calendar](https://play.google.com/store/apps/details?id=com.anydo) by Any.do To-do list & Calendar
+- 🟡 [Anywheel](https://play.google.com/store/apps/details?id=com.ytyiot.ebike.anywheel) by Anywheel
+- 🔴 [App Vault](https://play.google.com/store/apps/details?id=com.mi.android.globalminusscreen) by Xiaomi Inc.
+- 🔴 [App Vault](https://play.google.com/store/apps/details?id=com.mi.globalminusscreen) by Xiaomi Inc.
+- 🔴 [Aramex Mobile](https://play.google.com/store/apps/details?id=net.aramex) by Aramex International LLC
+- 🟡 [Automate](https://play.google.com/store/apps/details?id=com.llamalab.automate) by LlamaLab
+- 🟡 [Badge Magic](https://play.google.com/store/apps/details?id=org.fossasia.badgemagic) by FOSSASIA
+- 🔴 [bbdaily: Online Milk & Grocery](https://play.google.com/store/apps/details?id=com.raincan.android.hybrid) by Bigbasket.com
+- 🟡 [Blinkist: Book Summaries Daily](https://play.google.com/store/apps/details?id=com.blinkslabs.blinkist.android) by Blinks Labs GmbH
+- 🟡 [Blinkit: Grocery in 10 minutes](https://play.google.com/store/apps/details?id=com.grofers.customerapp) by Blinkit
+- ⚫ [Bollywood Hungama](https://play.google.com/store/apps/details?id=com.bollywoodhungama) by Hungama Digital Media Entertainment Pvt. Ltd.
+- ⚫ [Botim - Video and Voice Call](https://play.google.com/store/apps/details?id=im.thebot.messenger) by Algento Cloud Computing Limited
+- 🟡 [Brave Browser & Search Engine](https://play.google.com/store/apps/details?id=com.brave.browser) by Brave Software
+- ⚫ [Call Logs Backup & Restore](https://play.google.com/store/apps/details?id=com.riteshsahu.CallLogBackupRestore) by SyncTech Pty Ltd
+- ⚫ [Carrier Services](https://play.google.com/store/apps/details?id=com.google.android.ims) by Google LLC
+- 🟢 [CDG Zig – Taxis & Cars](https://play.google.com/store/apps/details?id=com.codigo.comfort) by ComfortDelGro Corporation Limited
+- 🟢 [ChatGPT](https://play.google.com/store/apps/details?id=com.openai.chatgpt) by OpenAI
+- 🟡 [Citymapper](https://play.google.com/store/apps/details?id=com.citymapper.app.release) by Citymapper Limited
+- 🟢 [Claude by Anthropic](https://play.google.com/store/apps/details?id=com.anthropic.claude) by Anthropic PBC
+- 🟡 [Cleaner](https://play.google.com/store/apps/details?id=com.miui.cleaner) by Xiaomi Inc.
+- 🔴 [Cleartrip Hotels, Flights, Bus](https://play.google.com/store/apps/details?id=com.cleartrip.android) by Cleartrip - Flights, Hotels & Buses
+- ⚫ [Clubhouse](https://play.google.com/store/apps/details?id=com.clubhouse.app) by Alpha Exploration Co.
+- 🟢 [Contacts](https://play.google.com/store/apps/details?id=com.google.android.contacts) by Google LLC
+- 🟡 [Coursera: Grow your career](https://play.google.com/store/apps/details?id=org.coursera.android) by Coursera, Inc.
+- ⚫ [Currents](https://play.google.com/store/apps/details?id=com.google.android.apps.plus) by Google LLC
+- ⚫ [Cx File Explorer](https://play.google.com/store/apps/details?id=com.cxinventor.file.explorer) by Cx File Explorer
+- 🔴 [darwinbox](https://play.google.com/store/apps/details?id=com.darwinbox.darwinbox) by Darwinbox Digital Solutions Pvt. Ltd.
+- ⚫ [DAVx⁵ - Calendar+ CalDAV](https://play.google.com/store/apps/details?id=com.cozyla.davx) by Cozyla US
+- 🟢 [DBS digibank](https://play.google.com/store/apps/details?id=com.dbs.sg.dbsmbanking) by DBS Bank Ltd
+- ⚫ [Device Health Services](https://play.google.com/store/apps/details?id=com.google.android.apps.turbo) by Google LLC
+- 🟢 [Digi Yatra](https://play.google.com/store/apps/details?id=in.dataevolve.digiyatra) by Digi Yatra Foundation
+- 🟢 [Digi Yatra](https://play.google.com/store/apps/details?id=org.digiyatra.org) by Digi Yatra Foundation
+- 🟢 [DigiLocker](https://play.google.com/store/apps/details?id=com.digilocker.android) by National eGovernance Division, Government of India
+- ⚫ [Digital Wellbeing](https://play.google.com/store/apps/details?id=com.google.android.apps.wellbeing) by Google LLC
+- 🔴 [Dineout: Restaurant Offers](https://play.google.com/store/apps/details?id=com.dineout.book) by Swiggy
+- 🟡 [Discord – Talk, Play, Hang Out](https://play.google.com/store/apps/details?id=com.discord) by Discord Inc.
+- ⚫ [DiscourseHub](https://play.google.com/store/apps/details?id=com.discourse) by Civilized Discourse Construction Kit, Inc.
+- ⚫ [DroidCam Webcam & OBS Camera](https://play.google.com/store/apps/details?id=com.dev47apps.obsdroidcam) by Dev47Apps
+- 🔴 [Dropbox Paper](https://play.google.com/store/apps/details?id=com.dropbox.paper) by Dropbox, Inc.
+- 🟢 [Dropbox: Files & Cloud Storage](https://play.google.com/store/apps/details?id=com.dropbox.android) by Dropbox, Inc.
+- 🔴 [Dropsync: Autosync for Dropbox](https://play.google.com/store/apps/details?id=com.ttxapps.dropsync) by MetaCtrl
+- 🔴 [Email Aqua Mail - Fast, Secure](https://play.google.com/store/apps/details?id=org.kman.AquaMail) by Aqua Mail Inc
+- 🔴 [Email Blue Mail - Calendar](https://play.google.com/store/apps/details?id=me.bluemail.mail) by Blix Inc.
+- 🔴 [Email Client - Boomerang Mail](https://play.google.com/store/apps/details?id=com.baydin.boomerang) by Boomerang (Baydin Inc.)
+- ⚫ [Etar - OpenSource Calendar](https://play.google.com/store/apps/details?id=ws.xsoh.etar) by Suhail سهيل الكويليت
+- 🟡 [Facebook](https://play.google.com/store/apps/details?id=com.facebook.katana) by Meta Platforms, Inc.
+- 🔴 [FairEmail, privacy aware email](https://play.google.com/store/apps/details?id=eu.faircode.email) by Marcel Bokhorst, FairCode BV
+- 🟢 [FairPrice Group](https://play.google.com/store/apps/details?id=com.fairprice.mcomapp) by NTUC Enterprise
+- 🔴 [FBReader: Favorite Book Reader](https://play.google.com/store/apps/details?id=org.geometerplus.zlibrary.ui.android) by FBReader.ORG Limited
+- 🟢 [Feedly - Smarter News Reader](https://play.google.com/store/apps/details?id=com.devhd.feedly) by Feedly Team
+- 🔴 [File Manager](https://play.google.com/store/apps/details?id=com.mi.android.globalFileexplorer) by Xiaomi Inc.
+- 🟢 [Files by Google](https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files) by Google LLC
+- ⚫ [Finch: Self-Care Pet](https://play.google.com/store/apps/details?id=com.finch.finch) by Finch Care Public Benefit Corporation
+- 🟢 [Fitdays](https://play.google.com/store/apps/details?id=cn.fitdays.fitdays) by ICOMON
+- 🔴 [FlowCrypt Encrypted Email](https://play.google.com/store/apps/details?id=com.flowcrypt.email) by FlowCrypt a.s.
+- 🔴 [FolderSync](https://play.google.com/store/apps/details?id=dk.tacit.android.foldersync.lite) by Tacit Dynamics
+- ⚫ [FreshMenu - Food Ordering App](https://play.google.com/store/apps/details?id=com.freshmenu) by Admin Freshmenu
+- 🟢 [Gboard - the Google Keyboard](https://play.google.com/store/apps/details?id=com.google.android.inputmethod.latin) by Google LLC
+- ⚫ [Geopaparazzi](https://play.google.com/store/apps/details?id=eu.hydrologis.geopaparazzi) by HydroloGIS S.r.l.
+- 🟢 [GitHub](https://play.google.com/store/apps/details?id=com.github.android) by GitHub
+- 🔴 [GitJournal - Notes with Git](https://play.google.com/store/apps/details?id=io.gitjournal.gitjournal) by GitJournal
+- 🟢 [Gmail](https://play.google.com/store/apps/details?id=com.google.android.gm) by Google LLC
+- 🟢 [Gojek](https://play.google.com/store/apps/details?id=com.gojek.app) by PT. GoTo Gojek Tokopedia Tbk
+- 🟡 [Goodreads: Book Reviews](https://play.google.com/store/apps/details?id=com.goodreads) by Goodreads
+- 🟡 [Google](https://play.google.com/store/apps/details?id=com.google.android.googlequicksearchbox) by Google LLC
+- 🟢 [Google Assistant](https://play.google.com/store/apps/details?id=com.google.android.apps.googleassistant) by Google LLC
+- 🟢 [Google Authenticator](https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2) by Google LLC
+- 🟢 [Google Calendar](https://play.google.com/store/apps/details?id=com.google.android.calendar) by Google LLC
+- 🟢 [Google Chat](https://play.google.com/store/apps/details?id=com.google.android.apps.dynamite) by Google LLC
+- 🟡 [Google Chrome](https://play.google.com/store/apps/details?id=com.android.chrome) by Google LLC
+- 🟢 [Google Drive](https://play.google.com/store/apps/details?id=com.google.android.apps.docs) by Google LLC
+- 🟢 [Google Fit: Activity Tracking](https://play.google.com/store/apps/details?id=com.google.android.apps.fitness) by Google LLC
+- 🟢 [Google Gemini](https://play.google.com/store/apps/details?id=com.google.android.apps.bard) by Google LLC
+- 🟡 [Google Home](https://play.google.com/store/apps/details?id=com.google.android.apps.chromecast.app) by Google LLC
+- 🟢 [Google Keep - Notes and lists](https://play.google.com/store/apps/details?id=com.google.android.keep) by Google LLC
+- 🟢 [Google Lens](https://play.google.com/store/apps/details?id=com.google.ar.lens) by Google LLC
+- 🟢 [Google Maps](https://play.google.com/store/apps/details?id=com.google.android.apps.maps) by Google LLC
+- 🟢 [Google Meet](https://play.google.com/store/apps/details?id=com.google.android.apps.tachyon) by Google LLC
+- 🟢 [Google Messages](https://play.google.com/store/apps/details?id=com.google.android.apps.messaging) by Google LLC
+- ⚫ [Google News - Daily Headlines](https://play.google.com/store/apps/details?id=com.google.android.apps.magazines) by Google LLC
+- 🟡 [Google NotebookLM](https://play.google.com/store/apps/details?id=com.google.android.apps.labs.language.tailwind) by Google LLC
+- ⚫ [Google One](https://play.google.com/store/apps/details?id=com.google.android.apps.subscriptions.red) by Google LLC
+- ⚫ [Google Partner Setup](https://play.google.com/store/apps/details?id=com.google.android.partnersetup) by Google LLC
+- 🟢 [Google Pay](https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.paisa.user) by Google LLC
+- ⚫ [Google Photos](https://play.google.com/store/apps/details?id=com.google.android.apps.photos) by Google LLC
+- 🟢 [Google Play Books & Audiobooks](https://play.google.com/store/apps/details?id=com.google.android.apps.books) by Google LLC
+- ⚫ [Google Play Music](https://play.google.com/store/apps/details?id=com.google.android.music) by Google LLC
+- ⚫ [Google Play services](https://play.google.com/store/apps/details?id=com.google.android.gms) by Google LLC
+- ⚫ [Google Play Services for AR](https://play.google.com/store/apps/details?id=com.google.ar.core) by Google LLC
+- 🔴 [Google Podcasts](https://play.google.com/store/apps/details?id=com.google.android.apps.podcasts) by Google LLC
+- ⚫ [Google Street View](https://play.google.com/store/apps/details?id=com.google.android.street) by Google LLC
+- 🟢 [Google Tasks](https://play.google.com/store/apps/details?id=com.google.android.apps.tasks) by Google LLC
+- ⚫ [Google TV](https://play.google.com/store/apps/details?id=com.google.android.videos) by Google LLC
+- ⚫ [Google Wallet](https://play.google.com/store/apps/details?id=com.google.android.apps.walletnfcrel) by Google LLC
+- ⚫ [GPS Status & Toolbox](https://play.google.com/store/apps/details?id=com.eclipsim.gpsstatus2) by MobiWIA Kft.
+- 🟢 [Grab - Taxi & Food Delivery](https://play.google.com/store/apps/details?id=com.grabtaxi.passenger) by Grab Holdings
+- 🟢 [HDFC Bank MobileBanking App](https://play.google.com/store/apps/details?id=com.snapwork.hdfc) by HDFC BANK
+- ⚫ [Headout: Travel Experiences](https://play.google.com/store/apps/details?id=com.tourlandish.chronos) by Headout
+- 🟢 [Health Connect](https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata) by Google LLC
+- 🟡 [HelloRide](https://play.google.com/store/apps/details?id=com.hellobike.anole) by HelloRide
+- ⚫ [Home Workout - No Equipment](https://play.google.com/store/apps/details?id=homeworkout.homeworkouts.noequipment) by Leap Fitness Group
+- 🟢 [Howden MediHub](https://play.google.com/store/apps/details?id=com.skubbs.medihub) by Howden Asia
+- 🟢 [HSBC India](https://play.google.com/store/apps/details?id=in.hsbc.hsbcindia) by HSBC
+- 🟢 [HSBC UK Mobile Banking](https://play.google.com/store/apps/details?id=uk.co.hsbc.hsbcukmobilebanking) by HSBC
+- ⚫ [i-Invest iPru](https://play.google.com/store/apps/details?id=com.iPruAMC) by ICICI Prudential AMC
+- 🟡 [iA Writer: Focused Writing](https://play.google.com/store/apps/details?id=net.ia.iawriter.x) by iA Inc.
+- 🟢 [iMobile: Loan, Cards & Banking](https://play.google.com/store/apps/details?id=com.csam.icici.bank.imobile) by ICICI Bank Ltd.
+- 🔴 [India Today - English News](https://play.google.com/store/apps/details?id=com.indiatoday) by TV Today Network Limited
+- 🔴 [Inoreader: News & RSS reader](https://play.google.com/store/apps/details?id=com.innologica.inoreader) by Innologica
+- 🟡 [Instagram](https://play.google.com/store/apps/details?id=com.instagram.android) by Instagram
+- ⚫ [Jetpack – Website Builder](https://play.google.com/store/apps/details?id=com.jetpack.android) by Automattic, Inc
+- ⚫ [Joplin](https://play.google.com/store/apps/details?id=net.cozic.joplin) by Laurent Cozic
+- ⚫ [Journable — AI Calorie Counter](https://play.google.com/store/apps/details?id=com.journable.app) by Journable
+- ⚫ [K-9 Mail](https://play.google.com/store/apps/details?id=com.fsck.k9) by Mozilla Thunderbird
+- 🔴 [Keka HR](https://play.google.com/store/apps/details?id=com.keka.xhr) by Keka Inc
+- ⚫ [LifeSG](https://play.google.com/store/apps/details?id=sg.gov.app.mol) by Government Technology Agency
+- 🟡 [Link to Windows](https://play.google.com/store/apps/details?id=com.microsoft.appmanager) by Microsoft Corporation
+- 🟢 [LinkedIn: Jobs & Business News](https://play.google.com/store/apps/details?id=com.linkedin.android) by LinkedIn
+- ⚫ [Loop Habit Tracker](https://play.google.com/store/apps/details?id=org.isoron.uhabits) by Álinson S Xavier
+- ⚫ [LUUP](https://play.google.com/store/apps/details?id=sc.luup.luup) by Luup, inc.
+- 🟡 [Lyft](https://play.google.com/store/apps/details?id=me.lyft.android) by Lyft, Inc.
+- ⚫ [MakeMyTrip - Flights & Hotels](https://play.google.com/store/apps/details?id=com.makemytrip) by MakeMyTrip—Hotel, Flight, IRCTC Authorised Partner
+- ⚫ [Mi Calendar](https://play.google.com/store/apps/details?id=com.xiaomi.calendar) by Xiaomi Inc.
+- ⚫ [Mi Music](https://play.google.com/store/apps/details?id=com.miui.player) by Mi Music
+- ⚫ [Mi Store](https://play.google.com/store/apps/details?id=com.mi.global.shop) by Xiaomi
+- ⚫ [Microsoft 365 Copilot](https://play.google.com/store/apps/details?id=com.microsoft.office.officehubrow) by Microsoft Corporation
+- 🟡 [Microsoft Authenticator](https://play.google.com/store/apps/details?id=com.azure.authenticator) by Microsoft Corporation
+- ⚫ [Microsoft Copilot AI Assistant](https://play.google.com/store/apps/details?id=com.microsoft.copilot) by Microsoft Corporation
+- 🟢 [Microsoft Edge: AI browser](https://play.google.com/store/apps/details?id=com.microsoft.emmx) by Microsoft Corporation
+- 🟡 [Microsoft Excel: Spreadsheets](https://play.google.com/store/apps/details?id=com.microsoft.office.excel) by Microsoft Corporation
+- 🟡 [Microsoft OneDrive](https://play.google.com/store/apps/details?id=com.microsoft.skydrive) by Microsoft Corporation
+- 🟡 [Microsoft Outlook](https://play.google.com/store/apps/details?id=com.microsoft.office.outlook) by Microsoft Corporation
+- 🟢 [Microsoft Teams](https://play.google.com/store/apps/details?id=com.microsoft.teams) by Microsoft Corporation
+- 🟡 [Microsoft To Do: Lists & Tasks](https://play.google.com/store/apps/details?id=com.microsoft.todos) by Microsoft Corporation
+- ⚫ [Moovit: Bus & Rail Timetables](https://play.google.com/store/apps/details?id=com.tranzmate) by Moovit
+- ⚫ [myENV](https://play.google.com/store/apps/details?id=sg.gov.nea) by National Environment Agency
+- ⚫ [MyTransport.SG](https://play.google.com/store/apps/details?id=sg.gov.lta.mytransportsg) by Land Transport Authority
+- ⚫ [Namma Yatri - Ride Booking App](https://play.google.com/store/apps/details?id=in.juspay.nammayatri) by Moving Tech
+- 🔴 [NDTV Cricket - Live Scores](https://play.google.com/store/apps/details?id=com.robo.ndtv.cricket) by NDTV Apps
+- 🟢 [NETS App](https://play.google.com/store/apps/details?id=com.mls.nets.reader) by Network for Electronic Transfers (SG) Pte Ltd.
+- ⚫ [neutriNote: open source notes](https://play.google.com/store/apps/details?id=com.appmindlab.nano) by AppML
+- ⚫ [NJ TRANSIT Mobile App](https://play.google.com/store/apps/details?id=com.njtransit.njtapp) by NJ TRANSIT
+- ⚫ [Oblique Strategies](https://play.google.com/store/apps/details?id=com.monoloco.obliquestrategies) by Scallop Projects
+- ⚫ [Obsidian](https://play.google.com/store/apps/details?id=md.obsidian) by Dynalist Inc.
+- 🟢 [OCBC Singapore](https://play.google.com/store/apps/details?id=com.ocbc.mobile) by Oversea-Chinese Banking Corporation Limited
+- 🟡 [Ola: Book Cab, Auto, Bike Taxi](https://play.google.com/store/apps/details?id=com.olacabs.customer) by Ola (ANI TECHNOLOGIES PRIVATE LIMITED)
+- ⚫ [OneMap](https://play.google.com/store/apps/details?id=sg.onemap.android.onemap2) by Singapore Land Authority
+- ⚫ [Opensignal - 5G, 4G Speed Test](https://play.google.com/store/apps/details?id=com.staircase3.opensignal) by Opensignal.com
+- ⚫ [Pacer Pedometer & Step Counter](https://play.google.com/store/apps/details?id=cc.pacer.androidapp) by Pacer Health
+- 🟢 [Paytm: Secure UPI Payments](https://play.google.com/store/apps/details?id=net.one97.paytm) by Paytm - One97 Communications Ltd.
+- ⚫ [Perplexity - Ask Anything](https://play.google.com/store/apps/details?id=ai.perplexity.app.android) by PerplexityAI
+- ⚫ [Personal Safety](https://play.google.com/store/apps/details?id=com.google.android.apps.safetyhub) by Google LLC
+- 🟢 [Phone by Google](https://play.google.com/store/apps/details?id=com.google.android.dialer) by Google LLC
+- 🟡 [PhonePe UPI, Payment, Recharge](https://play.google.com/store/apps/details?id=com.phonepe.app) by PhonePe
+- ⚫ [Photo Tool](https://play.google.com/store/apps/details?id=larry.zou.colorfullife) by COLIFER LAB
+- ⚫ [Physics Toolbox Sensor Suite](https://play.google.com/store/apps/details?id=com.chrystianvieyra.physicstoolboxsuite) by Vieyra Software
+- 🟢 [PlayBook Lite Audiobook Player](https://play.google.com/store/apps/details?id=com.goodwy.audiobooklite) by Goodwy
+- 🔴 [Pocket Casts - Podcast App](https://play.google.com/store/apps/details?id=au.com.shiftyjelly.pocketcasts) by Automattic, Inc
+- 🟡 [Practo: Doctor Appointment App](https://play.google.com/store/apps/details?id=com.practo.fabric) by Doctor Appointment, Consultation, Meds, Tests&more
+- ⚫ [Private Compute Services](https://play.google.com/store/apps/details?id=com.google.android.as.oss) by Google LLC
+- 🟢 [Rapido: Bike-Taxi, Auto & Cabs](https://play.google.com/store/apps/details?id=com.rapido.passenger) by Rapido Bike Taxi
+- 🟢 [ReadEra – book reader pdf epub](https://play.google.com/store/apps/details?id=org.readera) by READERA LLC
+- ⚫ [Recharge using All Wallets](https://play.google.com/store/apps/details?id=com.threegsimplified.planhound) by Cheeni Labs
+- ⚫ [Replit: Vibe Code Apps](https://play.google.com/store/apps/details?id=com.replit.app) by Replit
+- ⚫ [Saavn Music & Radio](https://play.google.com/store/apps/details?id=com.saavn.android) by Saavn Media Limited
+- ⚫ [SafeNet MobilePASS](https://play.google.com/store/apps/details?id=securecomputing.devices.android.controller) by Thales DIS France SAS
+- ⚫ [ScanBizCards Lite - Business C](https://play.google.com/store/apps/details?id=com.scanbizcards) by ScanBiz Mobile Solutions LLC
+- ⚫ [Sensor Test Box](https://play.google.com/store/apps/details?id=com.exatools.sensors) by CA40
+- ⚫ [SG BusLeh: Award Winning](https://play.google.com/store/apps/details?id=originally.us.buses) by OriginallyUS.SG - Award Winning App Consultancy
+- ⚫ [SGWorkPass](https://play.google.com/store/apps/details?id=sg.gov.mom.sgworkpass) by Ministry of Manpower
+- 🟢 [Share to Clipboard](https://play.google.com/store/apps/details?id=me.thomasvt.sharetoclipboard) by Thomas van Tilburg
+- 🔴 [ShareMe: File sharing](https://play.google.com/store/apps/details?id=com.xiaomi.midrop) by Xiaomi Inc.
+- ⚫ [Shopee 11.11 Big Savings](https://play.google.com/store/apps/details?id=com.shopee.sg) by Shopee
+- 🟢 [Simple Music Player](https://play.google.com/store/apps/details?id=com.github.anrimian.musicplayer) by Anrimian
+- 🔴 [Simple Text - w Dropbox sync](https://play.google.com/store/apps/details?id=simple.text.dropbox) by Time Tools
+- 🔴 [Simplenote](https://play.google.com/store/apps/details?id=com.automattic.simplenote) by Automattic, Inc
+- 🟡 [SimplyGo](https://play.google.com/store/apps/details?id=sg.com.transitlink) by SimplyGo Pte. Ltd.
+- 🟢 [Singpass](https://play.google.com/store/apps/details?id=sg.ndi.sp) by Government Technology Agency
+- 🟢 [Singtel Prepaid hi!App](https://play.google.com/store/apps/details?id=com.singtel.hiaccount) by Singtel Idea Factory Pte Ltd
+- 🔴 [Skype](https://play.google.com/store/apps/details?id=com.skype.raider) by Skype
+- 🟡 [Slack](https://play.google.com/store/apps/details?id=com.Slack) by SLACK TECHNOLOGIES L.L.C.
+- ⚫ [Sleep as Android: Smart alarm](https://play.google.com/store/apps/details?id=com.urbandroid.sleep) by Petr Nálevka (Urbandroid)
+- ⚫ [Sound Decibel Meter](https://play.google.com/store/apps/details?id=com.splendapps.decibel) by Splend Apps
+- ⚫ [SP: Utilities & EV Charging](https://play.google.com/store/apps/details?id=sg.com.singaporepower.spservices) by Singapore Power Limited
+- ⚫ [Spectral Audio Analyzer](https://play.google.com/store/apps/details?id=radonsoft.net.spectralview) by RadonSoft
+- ⚫ [Speech Recognition & Synthesis](https://play.google.com/store/apps/details?id=com.google.android.tts) by Google LLC
+- 🔴 [Spotify: Music and Podcasts](https://play.google.com/store/apps/details?id=com.spotify.music) by Spotify AB
+- ⚫ [Standard Notes](https://play.google.com/store/apps/details?id=com.standardnotes) by Standard Notes
+- 🔴 [StarHub App](https://play.google.com/store/apps/details?id=com.starhub.csselfhelp) by StarHub Ltd
+- 🟡 [StarHub Prepaid App](https://play.google.com/store/apps/details?id=com.starhub.happy) by StarHub Ltd
+- ⚫ [Super Productivity: To-Do List](https://play.google.com/store/apps/details?id=com.superproductivity.superproductivity) by The Front End
+- 🟡 [Swiggy: Food Instamart Dineout](https://play.google.com/store/apps/details?id=in.swiggy.android) by Swiggy
+- 🟡 [TADA - Taxi, Cab, Ride Hailing](https://play.google.com/store/apps/details?id=io.mvlchain.tada) by MVL
+- 🔴 [Tasks.org: to-do list & tasks](https://play.google.com/store/apps/details?id=org.tasks) by Tasks.org, LLC
+- 🟡 [Telegram](https://play.google.com/store/apps/details?id=org.telegram.messenger) by Telegram FZ-LLC
+- ⚫ [TGSRTC Gamyam](https://play.google.com/store/apps/details?id=com.tsrtc) by TGSRTC
+- ⚫ [TraceTogether](https://play.google.com/store/apps/details?id=sg.gov.tech.bluetrace) by Government Technology Agency
+- 🟡 [Truecaller: Spam Call Blocker](https://play.google.com/store/apps/details?id=com.truecaller) by Truecaller
+- 🟢 [Uber - Request a ride](https://play.google.com/store/apps/details?id=com.ubercab) by Uber Technologies, Inc.
+- ⚫ [United Airlines](https://play.google.com/store/apps/details?id=com.united.mobile.android) by United Airlines
+- 🔴 [UWCSEA in Singapore](https://play.google.com/store/apps/details?id=com.finalsite.uwcseaedusg) by Finalsite
+- ⚫ [Video Editor & Maker - InShot](https://play.google.com/store/apps/details?id=com.camerasideas.instashot) by InShot Video Editor
+- ⚫ [Vipassana Meditation](https://play.google.com/store/apps/details?id=com.vipassanameditation) by Vipassana Research Institute
+- 🟡 [VLC for Android](https://play.google.com/store/apps/details?id=org.videolan.vlc) by Videolabs
+- ⚫ [Voice Search](https://play.google.com/store/apps/details?id=com.google.android.voicesearch) by Google LLC
+- 🟡 [Weather - By Xiaomi](https://play.google.com/store/apps/details?id=com.miui.weather2) by Xiaomi Inc.
+- ⚫ [WhatsApp Business](https://play.google.com/store/apps/details?id=com.whatsapp.w4b) by WhatsApp LLC
+- 🟢 [WhatsApp Messenger](https://play.google.com/store/apps/details?id=com.whatsapp) by WhatsApp LLC
+- 🔴 [Whisper Android](https://play.google.com/store/apps/details?id=com.signalmaster.asr) by Vilas
+- ⚫ [WordPress – Website Builder](https://play.google.com/store/apps/details?id=org.wordpress.android) by Automattic, Inc
+- 🟢 [X](https://play.google.com/store/apps/details?id=com.twitter.android) by X Corp.
+- 🟢 [YouTube](https://play.google.com/store/apps/details?id=com.google.android.youtube) by Google LLC
+- 🟢 [YouTube Music](https://play.google.com/store/apps/details?id=com.google.android.apps.youtube.music) by Google LLC
+- ⚫ [YouTube Studio](https://play.google.com/store/apps/details?id=com.google.android.apps.youtube.creator) by Google LLC
+- ⚫ [Zomato: Food Delivery & Dining](https://play.google.com/store/apps/details?id=com.application.zomato) by Zomato
+- 🟢 [Zoom Workplace](https://play.google.com/store/apps/details?id=us.zoom.videomeetings) by zoom.com
+- ⚫ [µTorrent® - Torrent Downloader](https://play.google.com/store/apps/details?id=com.utorrent.client) by Rainberry, Inc.
+- Wireless@SGx
+- NewPipe via F-Droid?

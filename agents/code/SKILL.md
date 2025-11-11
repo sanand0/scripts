@@ -13,7 +13,8 @@ Coding style
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Add failing tests first if tests exists (or in new code). Keep tests fast
 - Use type hints and single-line docstrings
-- Cache LLM/API/HTTP requests in .cache/ when looping
+- Cache LLM/API/HTTP requests when looping
+- Show status & progress for long tasks (>5s)
 
 ## Python
 
@@ -33,8 +34,8 @@ Preferred Python libs:
 
 `typer` not `argparse`
 `httpx` not `requests`
-`orjson` not `json`
 `lxml` not `xml`
+`orjson` over `json` if speed/datetime matters
 `tenacity` for retries
 `pytest`
 
