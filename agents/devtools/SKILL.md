@@ -17,3 +17,7 @@ Use CDP at localhost:9222 to:
 - Browse safely using separate profiles / incognito mode
 
 Tools: websocat, wscat, uv, node, puppeteer, playwright, cdp-cli, chrome-remote-interface, devtools-protocol
+
+Tips:
+
+- Highlight relevant DOM elements, take a full-page screenshot, and use that for visual context.
