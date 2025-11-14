@@ -271,7 +271,7 @@ Things I skipped / dropped:
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 - wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
 - ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
-- autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use expanso instead whose configuration can be git committed
+- autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use espanso instead whose configuration can be git committed
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
