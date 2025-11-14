@@ -9,7 +9,7 @@ uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff|yt-dlp|markitdown|...
 qpdf, pandoc
 duckdb, sqlite3, psql
-magick, cwebp, ffmpeg
+magick, pdftoppm, cwebp, ffmpeg
 
 <!-- skills -->
 
