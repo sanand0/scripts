@@ -94,9 +94,11 @@ Here is the setup for my Linux laptops.
   - psql: `sudo apt install -y postgresql-client`
   - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
   - espanso: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb; sudo apt install ./espanso-debian-x11-amd64.deb`
-    - `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-wayland-amd64.deb; sudo apt install ./espanso-debian-wayland-amd64.deb`
+    - Wayland: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-wayland-amd64.deb; sudo apt install ./espanso-debian-wayland-amd64.deb`
     - `espanso install actually-all-emojis`
-  - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
+    - `espanso service register`
+    - `espanso start`
+  - rofi: `sudo apt install rofi` to switch windows. Note: Did not work on Wayland. 14 Nov 2025: Seems fine.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
