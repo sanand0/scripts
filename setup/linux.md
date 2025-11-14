@@ -98,7 +98,7 @@ Here is the setup for my Linux laptops.
     - `espanso install actually-all-emojis`
     - `espanso service register`
     - `espanso start`
-  - rofi: `sudo apt install rofi` to switch windows. Note: Did not work on Wayland. 14 Nov 2025: Seems fine.
+  - rofi: `sudo apt install rofi` to switch windows. Note: Did not work on Wayland. 14 Nov 2025: Seems fine on Wayland.
     - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
     - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
   - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
