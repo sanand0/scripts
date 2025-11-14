@@ -233,7 +233,7 @@ Here is the setup for my Linux laptops.
   - Settings > System > Formats > United Kingdom
   - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
   - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - Wayland enables smooth scrolling and touch gestures. But it has problems with autokey, rofi, etc.
+  - Wayland enables smooth scrolling and touch gestures. But it has problems with autokey, maybe rofi.
     - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
     - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
     - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
