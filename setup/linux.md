@@ -60,7 +60,8 @@ Here is the setup for my Linux laptops.
     mise use -g ubi:bootandy/dust   # du alternative
     mise use -g ubi:Canop/broot     # file browser
     mise use -g ubi:cantino/mcfly   # ctrl+r alternative for history
-    mise use -g ubi:dandavison/delta  # git diff. Add code.pager = delta in .gitconfig
+    mise use -g ubi:dandavison/delta    # git diff. Add code.pager = delta in .gitconfig
+    mise use -g ubi:danielgatis/imgcat  # display images in terminal
     mise use -g ubi:01mf02/jaq      # jq alternative
     mise use -g ubi:junegunn/fzf    # everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
     mise use -g ubi:mithrandie/csvq
