@@ -167,6 +167,7 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 
 flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
 flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
+flatpak install -y flathub org.onlyoffice.desktopeditors    # ONLYOFFICE - Office suite compatible with MS Office formats
 
 # Install espanso - Text expander
 if test "$XDG_SESSION_TYPE" = "wayland"
