@@ -14,14 +14,15 @@ set -gx PATH $PATH $HOME/.lmstudio/bin
 set -gx PATH $PATH $HOME/code/scripts
 # Some of my scripts are still on Dropbox. TODO: Migrate them
 set -gx PATH $PATH $HOME/Dropbox/scripts
-# Add specific virtualenv paths
-set -gx PATH $PATH $HOME/apps/datasette/.venv/bin
-set -gx PATH $PATH $HOME/apps/gramex/.venv/bin
-set -gx PATH $PATH $HOME/apps/marimo/.venv/bin
-set -gx PATH $PATH $HOME/apps/openwebui/.venv/bin
-set -gx PATH $PATH $HOME/apps/puddletag/.venv/bin  # mp3tag equivalent
 
-set -gx PATH $PATH $HOME/apps/global/.venv/bin
+# For each .venv/bin in $HOME/apps/*, add to PATH
+for app in $HOME/apps/*
+    if test -d "$app/.venv/bin"
+        set -gx PATH $PATH "$app/.venv/bin"
+    end
+end
+
+# Source global uv environment
 source $HOME/apps/global/.venv/bin/activate.fish
 
 # uv configuration to allow Codex, etc. to use uv
@@ -150,7 +151,7 @@ end
 #     highpass=f=100             # Cuts frequencies below 100 Hz to remove rumble and handling noise
 #     lowpass=f=12000            # Attenuates above 12 kHz to reduce hiss and harshness
 #     afftdn=nf=-30              # FFT denoiser with noise floor at -30 dB (-20 dB = stronger NR; -40 dB = gentler)
-#     volume=6                   # *4 dB boost on the mic path before mixing (volume=4 => +12 dB)
+#     volume=2                   # dB boost on the mic path before mixing (+3 dB per volume level)
 #     [m]                        # Labels this processed mic stream as "[m]"
 #   [1:a]pan=mono|c0=FR[s]       # Collapses speaker stream to mono, maps it to the Front Right channel, labels "[s]" (pan filter)
 #   [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]
@@ -176,7 +177,7 @@ function record --description "record audio from mic + speakers into ~/Documents
   -f pulse -i default \
   -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
   -filter_complex "\
-    [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=7[m]; \
+    [0:a]highpass=f=100,lowpass=f=12000,afftdn=nf=-30,volume=2[m]; \
     [1:a]pan=mono|c0=FR[s]; \
     [m][s]amerge, loudnorm=I=-16:LRA=7:tp=-1[a]" \
   -map "[a]" \

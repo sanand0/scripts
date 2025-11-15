@@ -18,6 +18,9 @@ if [[ ${1-} == "--build" ]]; then
     exit 0
 fi
 
+# Create history file if missing
+touch $HOME/.cache/dev-sh.bash-history
+
 args=(
   --rm                          # auto-remove container on exit
   -it                           # interactive TTY
