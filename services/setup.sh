@@ -59,4 +59,5 @@ fi
 
 # Re-enable services by unmasking them
 # systemctl --user unmask $SERVICE
+# systemctl --user enable $SERVICE
 # systemctl --user start $SERVICE
