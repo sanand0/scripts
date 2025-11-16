@@ -135,7 +135,7 @@ sudo apt install -y gnome-shell-extension-manager # gnome-shell-extension-manage
 sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings
 sudo apt install -y lynx                          # lynx - Text-based web browser
 sudo apt install -y mtp-tools                     # mtp-tools - Access Android devices via MTP | Just installing enables MTP in Gnome
-sudo apt install -y neomutt                       # neomutt - Terminal email client
+sudo apt install -y neomutt                       # neomutt - Terminal email client (mbox, etc.)
 sudo apt install -y plocate                       # plocate - Fast file locator using database
 sudo apt install -y postgresql-client             # postgresql-client - Command-line client for PostgreSQL (psql)
 sudo apt install -y rofi                          # rofi - Window switcher, run dialog, and dmenu replacement. Might not work on Wayland
