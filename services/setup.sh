@@ -53,7 +53,9 @@ fi
 # journalctl --user --since $(date -I  --date="1 week ago") -u $SERVICE
 
 # Disable services by masking them
-# SERVICE=... systemctl --user stop $SERVICE; systemctl --user disable $SERVICE; systemctl --user mask $SERVICE
+# systemctl --user stop $SERVICE
+# systemctl --user disable $SERVICE
+# systemctl --user mask $SERVICE
 
 # Re-enable services by unmasking them
 # systemctl --user unmask $SERVICE
