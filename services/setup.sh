@@ -55,9 +55,3 @@ fi
 # Disable services by masking them
 # systemctl --user stop $SERVICE
 # systemctl --user disable $SERVICE
-# systemctl --user mask $SERVICE
-
-# Re-enable services by unmasking them
-# systemctl --user unmask $SERVICE
-# systemctl --user enable $SERVICE
-# systemctl --user start $SERVICE
