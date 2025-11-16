@@ -4,12 +4,12 @@ fd, find
 rg, ug, grep
 git, gh
 curl, w3m, lynx, websocat, wscat
-jq, csvq, csvkit
+jaq (faster than jq), csvq, csvkit
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff|yt-dlp|markitdown|...
 qpdf, pandoc
 duckdb, sqlite3, psql
-magick, cwebp, ffmpeg
+magick, pdftoppm, imgcat, cwebp, ffmpeg
 
 <!-- skills -->
 

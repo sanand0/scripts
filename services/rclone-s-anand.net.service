@@ -1,0 +1,11 @@
+[Unit]
+Description=RClone: s-anand.net
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/home/sanand/.local/bin/mise exec rclone -- rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

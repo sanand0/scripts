@@ -1,0 +1,11 @@
+[Unit]
+Description=RClone: Straive Google Drive
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/home/sanand/.local/bin/mise exec rclone -- rclone mount gdrive-straive: /mnt/gdrive-straive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

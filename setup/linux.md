@@ -6,273 +6,378 @@ Here is the setup for my Linux laptops.
 
 [Lenovo ThinkPad X11](https://pcsupport.lenovo.com/sg/en/products/laptops-and-netbooks/thinkpad-p-series-laptops/thinkpad-p15s-gen-2-type-20w6-20w7/20w7/20w7s0gd00/pf2t55qf) running Ubuntu 24.04 LTS.
 
-- Create a user `sanand`
-- Install Dropbox: https://www.dropbox.com/install-linux
-- Install Edge: https://www.microsoft.com/en-us/edge/business/download (Scroll down to "Looking for an older version of Edge?"). Set as default browser
-  - Install upgrades by downloading the latest stable Linux `.deb` and running `sudo apt install ./*.deb`
-  - Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `~/.config/microsoft-edge/Default/HubApps`
-- Add Edge startup options: remote debugging. [Persist changes](https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c)
-  ```bash
-  mkdir -p ~/.local/share/applications
-  desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop \
-    --set-key=Exec \
-      # For Wayland, add --enable-features=UseOzonePlatform --ozone-platform=wayland
-    --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 %U'
-  update-desktop-database ~/.local/share/applications   # refresh caches
-  ```
-- Install VS Code: https://snapcraft.io/code
-  - `xdg-mime default code.desktop text/markdown` or right-click in Nautilus and select "Open with ..." to set the binding
-  - Set GitHub Copilot code generation instructions to [ai-code-rules.md](ai-code-rules.md): `"github.copilot.chat.codeGeneration.instructions": [{"file": "/home/sanand/code/scripts/ai-code-rules.md"}]`
-- Software
-  - Opera: From https://www.opera.com/download
-  - moreutils: `sudo apt install moreutils`
-  - git: `sudo apt install git git-lfs`
-  - System Python: `sudo apt install python3 python3-pip` since some tools _require_ a system python.
-  - curl: `sudo apt install curl`
-  - micro: `cd ~/.local/bin; curl https://getmic.ro | bash`
-  - fish: `sudo apt install fish; printf "/usr/bin/fish\n" | sudo tee -a /etc/shells;`
-  - uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`. Update via `uv self update`
-    - `uv python install 3.13 --default`
-  - mise: `curl https://mise.run | sh; echo '$HOME/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish` for tool management (instead of nfm, nvm, etc.)
-    ```bash
-    mise use -g aws-cli
-    mise use -g btop                # htop alternative
-    mise use -g caddy
-    mise use -g cloudflared
-    mise use -g dasel               # JSON/TOML/YAML/XML/CSV query
-    mise use -g duckdb
-    mise use -g fd                  # for fast file searches
-    mise use -g gcloud
-    mise use -g github-cli
-    mise use -g glab                # Then glab config set -g host code.gramener.com
-    mise use -g jq
-    mise use -g lazydocker
-    mise use -g lazygit             # Video: https://youtu.be/CPLdltN7wgE
-    mise use -g node
-    mise use -g opentofu            # Terraform alternative
-    mise use -g pandoc              # convert md, pdf, docx, etc.
-    # mise use -g pnpm                # npm alternative
-    mise use -g prek                # pre-commit alternative
-    mise use -g rclone              # copy across cloud drives
-    mise use -g ripgrep             # grep alternative
-    mise use -g starship
-    mise use -g ubi:ayoisaiah/f2    # file rename
-    mise use -g ubi:bootandy/dust   # du alternative
-    mise use -g ubi:Canop/broot     # file browser
-    mise use -g ubi:cantino/mcfly   # ctrl+r alternative for history
-    mise use -g ubi:dandavison/delta  # git diff. Add code.pager = delta in .gitconfig
-    mise use -g ubi:junegunn/fzf    # everything alternative. Video: https://youtu.be/F8dgIPYjvH8. Press Ctrl+T to open fzf when typing a command.
-    mise use -g ubi:mithrandie/csvq
-    mise use -g ubi:tealdeer-rs/tealdeer # tldr alternative
-    mise use -g websocat            # Websocket client -- update to 4.0 later
-    mise use -g xh                  # curl alternative
-    mise use -g yazi                # file browser
-    mise use -g yq                  # YAML query
-    mise use -g zoxide              # smart cd (z)
-    ```
-    - `mise unuse -g` to remove unused tools; `mise config ls` to list installed tools
-    - See [registry](https://mise.jdx.dev/registry.html) for more
-  - deno: `curl -fsSL https://deno.land/install.sh | sh` - which auto-installed to `~/.deno/bin/deno` and configured `~/.config/fish/conf.d/deno.fish` and `~/.bashrc`
-  - dprint: `cd ~/.local/bin && curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip && cd -`
-  - sqlite3: `sudo apt install sqlite3`
-  - plocate: `sudo apt install plocate && sudo updatedb` for fast file searches
-  - csvkit: `sudo apt install csvkit`
-  - tmux: `sudo snap install tmux`
-  - ffmpeg: `sudo apt install ffmpeg` (mise ffmpeg requires compilation)
-  - cwebp: `sudo apt install webp`
-  - ugrep: `sudo apt install ugrep` for [fuzzy search](https://github.com/Genivia/ugrep)
-  - lynx: `sudo apt install lynx`
-  - qpdf: `sudo apt install qpdf` to split pages
-  - w3m: `sudo apt install w3m`
-  - duf: `sudo apt install duf` for a better `df` disk usage
-  - neomutt: `sudo apt install neomutt`
-  - flameshot: `sudo apt install flameshot` - Screenshot tool
-  - glow: `sudo snap install glow` - Markdown rich text formatter
-  - mtp-tools: `sudo apt install mtp-tools` to read Android MTP file system. Just installing it, connecting my Redmi via USB and enabling file transfer showed the files on Gnome
-  - fdupes: `sudo apt install fdupes` to find duplicate files
-  - psql: `sudo apt install -y postgresql-client`
-  - xdotool: `sudo apt install xdotool` for keyboard / mouse automation for X11
-  - espanso: `curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb; sudo apt install ./espanso-debian-x11-amd64.deb`
-    - `espanso install actually-all-emojis`
-  - rofi: `sudo apt install rofi` to switch windows. Note: Does not work on Wayland
-    - `rofi-theme-selector` - pick Monokai, android_notification, or gruvbox-hard-dark
-    - In `~/.config/rofi/config.rasi`, add `window { height: 80%; }`
-  - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web
-  - wscat: `npm install -g wscat` for Codex CDP usage
-  - codex: `npm install -g codex`. Include these settings in [`~/.codex/config.toml`](https://github.com/openai/codex/blob/main/docs/config.md)
-    ```ini
-    # By default, allow writing to the workspace
-    sandbox_mode    = "workspace-write"
+Ubuntu Desktop 24.04 Setup:
 
-    [sandbox_workspace_write]
-    # allow internet access
-    network_access  = true
-    # Allow npm and uv to run
-    writable_roots = [
-      "/home/sanand/.npm/",
-      "/home/sanand/.cache/uv/",
-      "/home/sanand/.local/share/uv/",
-    ]
-    ```
-  - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`
-  - FiraCode Nerd Font: `mkdir -p ~/.local/share/fonts && curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz && tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts && fc-cache -fv ~/.local/share/fonts`
-  - bat: `sudo apt install bat && sudo ln -s /usr/bin/batcat /usr/local/bin/bat` for color previews in fzf
-  - ImageMagick:
-    - `wget https://imagemagick.org/archive/binaries/magick`
-    - `sudo mv magick /usr/local/bin/magick`
-    - `sudo chmod +x /usr/local/bin/magick`
-  - xclip instead of clip: `sudo apt install xclip`
-  - cmdg: Download from [releases](https://github.com/ThomasHabets/cmdg/releases/tag/cmdg-1.05) into `~/.local/bin/cmdg`
-    - Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
-  - Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
-    - `sudo apt install nvidia-modprobe`
-    - `sudo nvidia-modprobe -u`
-    - `sudo service ollama restart`
-    - `ollama pull qwen3 gemma3 phi4-mini`
-  - Audacity via "Software"
-  - [TouchEgg](https://github.com/JoseExposito/touchegg) for touch gestures
-    - `sudo add-apt-repository ppa:touchegg/stable; sudo apt update; sudo apt install touchegg`
-  - Flatpak: `sudo apt install flatpak`
-    - `sudo apt install gnome-software-plugin-flatpak`
-    - `flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
-    - [Meld](https://flathub.org/apps/org.gnome.meld) instead of Beyond Compare
-    - [Touche](https://github.com/JoseExposito/touche)
-    - Note: [Foliate](https://flathub.org/apps/com.github.johnfactotum.Foliate) fails
-  - Foliate: via "App Center"
-    - User stylesheet at `~/snap/foliate/current/.config/com.github.johnfactotum.Foliate/user-stylesheet.css` has `p { line-height: 1.8 !important; }`
-    - `sudo /usr/lib/snapd/snap-discard-ns foliate` to get it to work in Wayland [Ref](https://github.com/johnfactotum/foliate/issues/1102#issuecomment-1790332362)
-  - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`
-  - Docker (via CLI installation instructions)
-  - NVIDIA for Docker:
-    ```bash
-    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-      sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-      sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-    sudo apt-get update
-    sudo apt-get install -y nvidia-container-toolkit
-    sudo nvidia-ctk runtime configure --runtime=docker
-    sudo systemctl restart docker
-    docker run --rm --gpus all ubuntu nvidia-smi
-    ```
-  - Beekeeper Studio instead of SQLiteStudio: Installed via app store
-  - VLC
-  - 7zip, Zoom, OBS
-- uv tools
-  - global: `mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas ruff`
-    - `llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper`
-    - `llm models default openrouter/deepseek/deepseek-chat-v3-0324:free` or `llm models default openrouter/google/gemini-2.5-pro-exp-03-25:free`
-    - `ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json`
-  - datasette: `mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette`
-  - whisper-ctranslate2: `mkdir -p ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127`
-  - openwebui: `mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui`
-  - marimo: `mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo`
-  - puddletag: `mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag` - mp3tag equivalent
-  - gramex: `mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex gramex-enterprise; gramex setup --all`
-- Configurations
-  - Run `dconf load /org/gnome/settings-daemon/plugins/media-keys/ < media-keys.dconf` to load custom shortcuts.
-    - Modify on UI at Settings > Keyboard > Custom Shortcuts
-    - Note: `rofi
-  - `sudo apt install gnome-tweaks`
-    - [Focus follows mouse](https://askubuntu.com/a/978404/601330)
-  - `sudo apt gnome-shell-extension-manager` and then run Extension Manager to install
-    - [dash-to-panel](https://github.com/home-sweet-gnome/dash-to-panel)
-    - Clipboard History - Win+Shift+V
-    - Emoji Copy - Win+.
-  - Set up hetzner storage box on rclone and mount: `mkdir -p ~/hetzner && rclone mount hetzner:/ /home/sanand/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon`
+- Select: English US (same as laptop)
+- Select: Connect to a Wi-Fi network
+- Select: Interactive installation (not Automated installation with autoinstall.yaml)
+- Select: Default selection (not Extended selection of apps -- I'll pick what I want later)
+- Enable: Install third-party software for graphics and Wi-Fi hardware
+- Enable: Download and install support for additional media formats
+- Select: Erase disk and install Ubuntu (data is backed up)
+  - No LVM. I don't re-size partitions often.
+- Create your account:
+  - Your name: Anand
+  - Your computer's name: graphene
+  - Username: sanand
+  - Password: (pick short password)
+  - Require my password to log in: No
+- Additional settings:
+  - Skip Ubuntu Pro
+  - Yes, share system data with the Ubuntu team
 
-    ```bash
-    sudo mkdir /mnt/hetzner
-    sudo chown -R sanand:sanand /mnt/hetzner/
-    rclone config create hetzner
-      # type = sftp
-      # host = u452447.your-storagebox.de
-      # user = u452447
-      # shell_type = unix
-    rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+## Install editor, browser, cloud storage
 
-    mount | grep rclone           # list rclone mounts
-    umount /home/sanand/hetzner   # unmount
-    ```
+```bash
+# Disable sudo password for common actions
+echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/systemctl" | sudo tee /etc/sudoers.d/$USER
 
-  - Set up s-anand.net rclone and mount
+# FUSE2 - Required for AppImages
+sudo apt-get install -y libfuse2
 
-    ```bash
-    sudo mkdir /mnt/s-anand.net
-    sudo chown -R sanand:sanand /mnt/s-anand.net
-    rclone config create s-anand.net
-      # type = sftp
-      # host = s-anand.net
-      # user = sanand
-      # port = 2222
-      # key_file = ~/.ssh/id_rsa
-    rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
-    ```
+# VS Code - Code editor | Install via APT repo for faster startup than snap
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/packages.microsoft.gpg ? > /dev/null
+sudo sh -c 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+sudo apt update && sudo apt install -y code
 
-  - Set up gdrive-straive rclone and mount
+# Microsoft Edge - Web browser with Copilot. https://www.microsoft.com/en-us/edge/business/download
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/microsoft-edge.gpg > /dev/null
+sudo sh -c 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list'
+sudo apt update && sudo apt install -y microsoft-edge-stable
 
-    ```bash
-    sudo mkdir /mnt/gdrive-straive
-    sudo chown -R sanand:sanand /mnt/gdrive-straive
-    rclone config create gdrive-straive
-      # type = drive
-      # scope = drive
-      # client_id = 872568319651-9lppm3ho0b068ddq7n6333qqdu0jn960.apps.googleusercontent.com  # Desktop app: root.node@gmail.com
-    rclone mount gdrive-straive: /mnt/gdrive-straive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
-    ```
+# Dropbox - Cloud storage sync | Direct .deb is most reliable. https://www.dropbox.com/install-linux
+wget -O /tmp/dropbox.deb "https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb"
+sudo apt install -y /tmp/dropbox.deb
+rm /tmp/dropbox.deb
 
-  - Disable sudo password: `echo "$USER ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/$USER`
-  - Set (short) password: `sudo passwd sanand`. But default, Ubuntu requires long passwords, but this overrides it.
-  - Disable Ctrl+Alt+Arrow keys: `gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']" && gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"` [Ref](https://unix.stackexchange.com/a/673065)
-  - Disable quiet spash for boot logs: `sudo sed -i 's/quiet splash//' /etc/default/grub; sudo update-grub`
-  - Settings > Apps > Default Apps > Web > Microsoft Edge
-  - Settings > System > Formats > United Kingdom
-  - Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
-  - Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
-  - Wayland enables smooth scrolling and touch gestures. But it has problems with autokey, rofi, etc.
-    - `sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3` [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
-    - Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
-    - Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
-  - On Touche, set up these gestures:
-    - Global Gestures (Application: All)
-      - Swipe Up with 4 fingers: Execute command `amixer sset Master 5%+` (Volume up). Repeat command.
-      - Swipe Down with 4 fingers: Execute command `amixer sset Master 5%-` (Volume down). Repeat command.
-      - Swipe Left/Right with 4 fingers: Execute command `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause` (Play/Pause VLC) on gesture begin. You can also explore these:
-        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next`
-        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous`
-        - `dbus-send --print-reply --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play`
-      - Tap with 2 fingers: Right mouse click (Button 3) on gesture begin.
-      - Tap with 3 fingers: Middle mouse click (Button 2) on gesture begin.
-      - Pinch Out with 4 fingers: Show Desktop (Animated).
-      - Pinch In with 4 fingers: Send keys `Super_L + A` on gesture begin.
-    - Application: microsoft-edge
-      - Pinch Out with 2 fingers: Send keys `Control_L + equal` (Zoom In). Repeat keys.
-      - Pinch In with 2 fingers: Send keys `Control_L + minus` (Zoom Out). Repeat keys.
-      - Swipe Left with 3 fingers: Send keys `Alt_L + Left` (Back) on gesture begin.
-      - Swipe Right with 3 fingers: Send keys `Alt_L + Right` (Forward) on gesture begin.
-  - #TODO: Always on top
-  - #TODO: CLI for alarm
+# Opera - Alternative web browser | Install via APT repo. https://www.opera.com/download
+wget -qO- https://deb.opera.com/archive.key | gpg --dearmor | sudo tee /usr/share/keyrings/opera-browser.gpg > /dev/null
+sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/opera-browser.gpg] https://deb.opera.com/opera-stable/ stable non-free" > /etc/apt/sources.list.d/opera-stable.list'
+sudo apt update && sudo apt install -y opera-stable
+```
 
-- Notes
-  - `xrandr --output eDP-1 --brightness 0.5 --gamma 0.9` sets the SOFTWARE brightness and gamma.
-  - Connecting to the Hyderabad airport wifi failed. I set the Identity > Mac Address to the default and Cloned Address to Random.
-  - Shortcuts:
-    - Fn+L = Low power mode. Fn+M = Medium power mode. Fn+H = High power mode.
-    - Fn+S = Screenshot. PrtSc = Screenshot area.
-    - Fn+4 = Sleep mode.
-  - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
-  - Audio setting: Pulse/ALSA is available, PipeWire is missing.
+Upgrade via `sudo apt update && sudo apt upgrade -y`
 
-Things I skipped / dropped:
+Then sync settings.
+
+```bash
+# Or right-click in Nautilus and select "Open with ..." to set the binding
+xdg-mime default code.desktop text/markdown
+```
+
+## Install tools
+
+```bash
+sudo apt install -y curl                # curl - Transfer data with URLs
+sudo apt install -y fish                # fish - Friendly interactive shell
+sudo apt install -y git git-lfs         # git - Version control system
+sudo apt install -y moreutils           # moreutils - Collection of useful Unix utilities (sponge, vidir, ts, etc.)
+sudo apt install -y python3 python3-pip # System Python - Required by some system tools despite using uv for projects
+sudo apt install -y vlc                 # VLC - Multimedia player
+sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
+
+# mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
+curl https://mise.run | sh
+eval "$( $HOME/.local/bin/mise activate bash )"
+
+# Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
+mise use -g aws-cli                  # AWS CLI - Amazon Web Services command-line interface
+mise use -g bat                      # bat - cat clone with syntax highlighting
+mise use -g btop                     # btop - Resource monitor (better htop)
+mise use -g caddy                    # Caddy - Web server with automatic HTTPS
+mise use -g cloudflared              # cloudflared - Cloudflare Tunnel client
+mise use -g dasel                    # dasel - Query and modify JSON/YAML/TOML/XML/CSV
+mise use -g deno                     # Deno - Secure JavaScript and TypeScript runtime
+mise use -g duckdb                   # DuckDB - In-process SQL OLAP database
+mise use -g duf                      # duf - Disk usage utility with better formatting than df
+mise use -g eza                      # Better ls (replaces exa)
+mise use -g fd                       # fd - Fast file finder (find alternative)
+mise use -g gcloud                   # gcloud - Google Cloud CLI
+mise use -g gdu                      # gdu - ncdu alternative for disk usage
+mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
+mise use -g glab                     # GitLab CLI - Official GitLab command-line tool
+mise use -g glow                     # glow - Render markdown in the terminal
+mise use -g jq                       # jq - JSON processor
+mise use -g lazydocker               # lazydocker - Terminal UI for Docker
+mise use -g lazygit                  # lazygit - Terminal UI for git
+mise use -g node@latest              # Node.js - JavaScript runtime
+mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC)
+mise use -g pandoc                   # pandoc - Universal document converter (md, pdf, docx, etc.)
+mise use -g pnpm                     # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
+mise use -g prek                     # prek - pre-commit alternative
+mise use -g rclone                   # rclone - Sync files to/from cloud storage
+mise use -g ripgrep                  # ripgrep - Fast grep alternative
+mise use -g starship                 # starship - Fast, customizable shell prompt
+mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
+mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
+mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
+mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
+mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
+mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
+mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
+mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tldr COMMAND
+mise use -g websocat                 # websocat - WebSocket client (will be v4.0 when released)
+mise use -g xh                       # xh - Friendly HTTP client (curl/httpie alternative)
+mise use -g yazi                     # yazi - Terminal file manager
+mise use -g yq                       # yq - YAML processor (like jq for YAML)
+mise use -g zoxide                   # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
+
+npm install -g codex                 # codex - AI code assistant CLI
+npm install -g wscat                 # wscat - WebSocket client (for Codex CDP usage)
+
+# Install tools that cannot be set up with mise without compilation (Nov 2025)
+sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
+sudo apt install -y fdupes                        # fdupes - Find duplicate files
+sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
+sudo apt install -y flameshot                     # flameshot - Screenshot tool with annotation
+sudo apt install -y gnome-shell-extension-manager # gnome-shell-extension-manager - Install GNOME extensions
+sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings
+sudo apt install -y lynx                          # lynx - Text-based web browser
+sudo apt install -y mtp-tools                     # mtp-tools - Access Android devices via MTP | Just installing enables MTP in Gnome
+sudo apt install -y neomutt                       # neomutt - Terminal email client
+sudo apt install -y plocate                       # plocate - Fast file locator using database
+sudo apt install -y postgresql-client             # postgresql-client - Command-line client for PostgreSQL (psql)
+sudo apt install -y rofi                          # rofi - Window switcher, run dialog, and dmenu replacement. Might not work on Wayland
+sudo apt install -y sqlite3                       # sqlite3 - Command-line interface for SQLite
+sudo apt install -y tmux                          # tmux - Terminal multiplexer
+sudo apt install -y ugrep                         # ugrep - Ultra fast grep with fuzzy search
+sudo apt install -y w3m                           # w3m - Text-based web browser with image support
+sudo apt install -y webp                          # webp - Image format tools (cwebp, dwebp)
+sudo apt install -y xclip                         # xclip - Command-line clipboard access | Use: echo "text" | xclip -selection clipboard
+sudo apt install -y xdotool                       # xdotool - Automate keyboard/mouse for X11 (doesn't work on Wayland)
+
+# Set up plocate database
+sudo updatedb
+
+# Install TouchEgg for touch gestures. https://github.com/JoseExposito/touchegg
+sudo add-apt-repository ppa:touchegg/stable
+sudo apt update
+sudo apt install -y touchegg
+sudo systemctl enable touchegg.service
+sudo systemctl start touchegg.service
+
+# uv - Extremely fast Python package installer and resolver | Update: uv self update
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Set up uv environments and llm (after setting up fish)
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas ruff llm
+mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
+mkdir -p ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127
+mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
+mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
+mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag
+mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
+
+# Install other tools
+cd ~/.local/bin; curl https://getmic.ro | bash    # micro - Terminal-based text editor
+cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
+cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magick && chmod +x magick   # ImageMagick - Image processing tool
+cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/cmdg-1.05/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
+# Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
+
+# Install .deb tools
+wget -O /tmp/zoom.deb "https://zoom.us/client/latest/zoom_amd64.deb"; sudo apt install -y /tmp/zoom.deb; rm /tmp/zoom.deb   # Zoom does not support apt/flatpak
+
+# Prefer Flatpak for GUI apps. Update: flatpak update
+sudo apt install -y flatpak gnome-software-plugin-flatpak
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
+flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
+flatpak install -y flathub org.onlyoffice.desktopeditors    # ONLYOFFICE - Office suite compatible with MS Office formats
+
+# Install espanso - Text expander
+if test "$XDG_SESSION_TYPE" = "wayland"
+    curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-wayland-amd64.deb
+    sudo apt install -y ./espanso-debian-wayland-amd64.deb
+elif test "$XDG_SESSION_TYPE" = "x11"
+    curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb
+    sudo apt install -y ./espanso-debian-x11-amd64.deb
+end
+espanso install actually-all-emojis
+espanso service register
+espanso start
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# NVIDIA Container Toolkit - GPU support in Docker
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+# Test via:
+docker run --rm --gpus all ubuntu nvidia-smi
+```
+
+
+## Settings
+
+```bash
+echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
+echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
+
+# Treat /c as symlink to $HOME (e.g. for bash setup that work on Windows + Linux via /c/Dropbox)
+ln -s $HOME /c
+
+# Create symlinks for versioned config files
+ln -s ~/code/scripts/.gitconfig ~/.gitconfig
+ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
+ln -s ~/Dropbox/scripts/.ssh ~/.ssh
+chmod og-r ~/.ssh/*
+printf '{"extends":["https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc", "/home/sanand/code/scripts/dprint.jsonc"]}' > ~/dprint.json
+
+ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
+ln -s ~/code/scripts/espanso-match-base.yml ~/.config/espanso/match/base.yml
+
+# Gnome Tweaks: Focus follows mouse: https://askubuntu.com/a/978404/601330
+gsettings set org.gnome.desktop.wm.preferences focus-mode mouse
+# Settings > Privacy and Security > Screen Lock > Automatic Screen Lock > False
+gsettings set org.gnome.desktop.screensaver lock-enabled false
+# Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
+gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false
+# Settings > System > Formats > United Kingdom. Set the formats (LC_TIME, LC_NUMERIC, etc.) to UK
+gsettings set org.gnome.system.locale region 'en_GB.UTF-8'
+# Disable Ctrl+Alt+Arrow keys to avoid conflict with VS Code multi-line selection. https://unix.stackexchange.com/a/673065
+gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "['']"
+gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "['']"
+# Win + Arrow keys for window management
+gsettings set org.gnome.desktop.wm.keybindings maximize "['<Super>Up']"
+gsettings set org.gnome.desktop.wm.keybindings unmaximize "['<Super>Down']"
+gsettings set org.gnome.mutter.keybindings toggle-tiled-left "['<Super>Left']"
+gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
+# Disable primary paste (middle-click paste) to avoid accidental pastes
+gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
+# Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
+sudo update-grub
+# Settings > Apps > Default Apps > Web > Microsoft Edge
+xdg-settings set default-web-browser microsoft-edge.desktop
+
+# Load custom media keys
+dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
+
+# Customize Foliate line height
+mkdir -p ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/
+cat > ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/user-stylesheet.css << 'EOF'
+p { line-height: 1.8 !important; }
+EOF
+
+# Configure rofi. Note
+mkdir -p ~/.config/rofi; cat > ~/.config/rofi/config.rasi << 'EOF'
+@theme "/usr/share/rofi/themes/Monokai.rasi"
+p { line-height: 1.8 !important; }
+EOF
+
+# Configure rofi
+printf "@theme \"/usr/share/rofi/themes/Monokai.rasi\"\nwindow { height: 80%; }\m" >>
+
+# Install Fira Code font
+mkdir -p ~/.local/share/fonts
+curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz
+tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts
+fc-cache -fv ~/.local/share/fonts
+
+# Configure llm
+llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper
+llm models default gpt-5-mini
+ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
+
+# Copy Touchegg gestures config. You may need to run Touche before AND after the command.
+cp ~/code/scripts/setup/touchegg.conf ~/.config/touchegg/touchegg.conf
+
+# Set up rclone
+sudo mkdir -p /mnt/hetzner
+sudo chown -R sanand:sanand /mnt/hetzner/
+rclone config create hetzner
+  # type = sftp
+  # host = u452447.your-storagebox.de
+  # user = u452447
+  # shell_type = unix
+# Test: rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+
+sudo mkdir -p /mnt/s-anand.net
+sudo chown -R sanand:sanand /mnt/s-anand.net
+rclone config create s-anand.net
+  # type = sftp
+  # host = s-anand.net
+  # user = sanand
+  # port = 2222
+  # key_file = ~/.ssh/id_rsa
+# Test: rclone mount s-anand.net:~ /mnt/s-anand.net --sftp-key-exchange "diffie-hellman-group-exchange-sha256" --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+
+sudo mkdir -p /mnt/gdrive-straive
+sudo chown -R sanand:sanand /mnt/gdrive-straive
+rclone config create gdrive-straive
+  # type = drive
+  # scope = drive
+  # client_id = 872568319651-9lppm3ho0b068ddq7n6333qqdu0jn960.apps.googleusercontent.com  # Desktop app: root.node@gmail.com
+# Test: rclone mount gdrive-straive: /mnt/gdrive-straive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
+
+# Enable Edge CDP (remote debugging): https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c
+# For Wayland, add --enable-features=UseOzonePlatform --ozone-platform=wayland
+mkdir -p ~/.local/share/applications
+desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop \
+  --set-key=Exec \
+  --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 --remote-allow-origins="*" %U'
+update-desktop-database ~/.local/share/applications   # refresh caches
+```
+
+- Install Gnome extensions via Extension Manager:
+  - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
+  - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V
+  - [Emoji Copy](https://extensions.gnome.org/extension/6242/emoji-copy/) - Win+.
+
+Wayland enables smooth scrolling and touch gestures. (But it has problems with autokey, maybe rofi.) To enable:
+
+```bash
+# [Ref](https://askubuntu.com/a/1258280/601330) [Usage](https://help.ubuntu.com/lts/ubuntu-help/touchscreen-gestures.html)
+sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3
+```
+
+Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
+Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
+
+Notes
+
+- `xrandr --output eDP-1 --brightness 0.5 --gamma 0.9` sets the SOFTWARE brightness and gamma.
+- Connecting to the Hyderabad airport wifi failed. I set the Identity > Mac Address to the default and Cloned Address to Random.
+- Shortcuts:
+  - Fn+L = Low power mode. Fn+M = Medium power mode. Fn+H = High power mode.
+  - Fn+S = Screenshot. PrtSc = Screenshot area.
+  - Fn+4 = Sleep mode.
+- To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
+- Audio setting: Pulse/ALSA is available, PipeWire is missing.
+
+## Deprecations
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
 - Guake. `sudo apt install guake`. VS Code terminal was good enough and I wasn't using it.
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.
 - wireguard (VPN): `sudo apt install -y wireguard-tools`. Don't really use a VPN.
 - ngrok: `sudo snap install ngrok`. Use `npx -y ngrok` instead.
-- autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use expanso instead whose configuration can be git committed
+- autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use espanso instead whose configuration can be git committed
+- Audacity: `flatpak install -y flathub org.audacityteam.Audacity`. But I prefer ffmpeg
+- Meld (visual diff & merge): `flatpak install -y flathub org.gnome.meld`. But I prefer VS Code
+- OBS: `flatpak install -y flathub com.obsproject.Studio` - I use ffmpeg
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
+- [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
+- Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `reHubApps`. This no longer works (Nov 2025)
+- ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
+- supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
+- Ollama: `curl -fsSL https://ollama.ccmdgom/install.sh | sh`. But I don't use it
+  - `sudo apt install nvidia-modprobe`
+  - `sudo nvidia-modprobe -u`
+  - `sudo service ollama restart`f
+  - `ollama pull qwen3 gemma3 phi4-mini`
+- Beekeeper Studio instead of SQLiteStudio: Installed via app store
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
   - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
   - In Preferences > Open Keyboard Shortcuts, change "Add Cursor Above" to Ctrl+Alt+UpArrow and "Add Cursor Below" to Ctrl+Alt+DownArrow
@@ -325,7 +430,7 @@ Desktop
 
 ## Configuration
 
-24 Oct 2025: via [`fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
+24 Oct 2025: via [`mise exec fastfetch -- fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
 
 - OS: Ubuntu 24.04.2 LTS (Noble Numbat) x86_64
 - Host: 21KWS69E00 (ThinkPad P1 Gen 7)

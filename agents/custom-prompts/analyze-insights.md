@@ -3,20 +3,39 @@ description: Analyze structured / unstructured data for insights
 source: https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
 ---
 
-Analyze the data systematically for insights as follows:
+Analyze data like an investigative journalist hunting for stories that make smart readers lean forward and say "wait, really?"
 
-1. **About the data**. Identify dimensions & measures, types, granularity, ranges, completeness, distribution, trends. List extractable features/metadata, derived metrics, ...
-2. **What matters**. List audiences, problems that matter, and what's actionable
-3. **What stands out**. Analyze extreme/unexpected distributions, breaks in patterns, surprising correlations, ...
-4. **Segments**. Cluster/classify/segment. Find unusual, extreme, high-variance groups, ...
-5. **Actions**. Hypothesize small changes yielding big effects. Look for underutilization, phase transitions, tipping points, ...
-6. **Surprises**. List insights that would surprise domain experts, contradicting assumptions, revealing hidden patterns in space, time, or interactions, ...
-7. **Checks**. Check for errors/bias using provenance, definitions, methodology, control for confounders, uncertainty, base rates, triangulation (via The Data Detective).
+1. Understand the Data: Identify dimensions & measures, types, granularity, ranges, completeness, distribution, trends. Map extractable features, derived metrics, and what sophisticated analyses might serve the story (statistical, geospatial, network, NLP, time series, cohort analysis, etc.).
+2. Define What Matters: List audiences and their key questions. What problems matter? What's actually actionable? What would contradict conventional wisdom or reveal hidden patterns?
+3. Hunt for Signal: Analyze extreme/unexpected distributions, breaks in patterns, surprising correlations. Look for stories that either confirm something suspected but never proven, or overturn something everyone assumes is true. Connect dots that seem unrelated at first glance.
+4. Segment & Discover: Cluster/classify/segment to find unusual, extreme, high-variance groups. Where are the hidden populations? What patterns emerge when you slice the data differently?
+5. Find Leverage Points: Hypothesize small changes yielding big effects. Look for underutilization, phase transitions, tipping points. What actions would move the needle?
+6. Verify & Stress-Test:
+  - **Cross-check externally**: Find evidence from the outside world that supports, refines, or contradicts your findings
+  - **Test robustness**: Alternative model specs, thresholds, sub-samples, placebo tests
+  - **Check for errors/bias**: Examine provenance, definitions, methodology; control for confounders, base rates, uncertainty (The Data Detective lens)
+  - **Consider limitations**: Data coverage, biases, ambiguities, and what cannot be concluded
+7. Prioritize & Package: Select insights that are:
+  - **High-impact** (not incremental) - meaningful effect sizes vs. base rates
+  - **Actionable** (not impractical) - specific, implementable
+  - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
+  - **Defensible** (statistically sound) - robust under scrutiny
 
-Synthesize the findings with confidence, evidence (data, quotes), impact (effect size, base rate), what's surprising, actions, confounders.
+Output:
 
-Prioritize by high-impact (not incremental), actionable (not impractical), surprising (not obvious), specific (not generic) insights.
-
-Summarize into a 5-liner for the audience with the top 3 insights, impact and actions.
-
-Save the analysis as a markdown report with any required charts, tables, code snippets, or references.
+1. **Executive Summary**: 5-liner with top 3 insights, their impact, and recommended actions
+2. **Full Actionable Report**: Markdown document with:
+   - Compelling narrative arc (build tension, find the business angle, make abstract concrete)
+   - Supporting evidence (data, quotes, cross-references)
+   - Beautiful, intuitive, revelatory visualizations
+   - Confidence levels and caveats
+   - Code/methods appendix where relevant
+3. **Narrative-driven data story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
+  - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
+  - **Story arc**: Build the narrative through discovery, revealing insights progressively
+  - **Integrated visualizations**: Beautiful, interactive charts/maps that are revelatory and advance the story (not decorative)
+  - **Concrete examples**: Make abstract patterns tangible through specific cases
+  - **Evidence woven in**: Data points, statistics, and supporting details flow naturally within the prose
+  - **"Wait, really?" moments**: Position surprising findings for maximum impact
+  - **So what?**: Clear implications and actions embedded in the narrative
+  - **Honest caveats**: Acknowledge limitations without undermining the story

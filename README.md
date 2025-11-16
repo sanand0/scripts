@@ -18,18 +18,6 @@ echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 
 See [`ai-code-rules/`](ai-code-rules/README.md) for setting up AI code editors.
 
-## Linux Setup
-
-```bash
-ln -s ~/code/scripts/.gitconfig ~/.gitconfig
-ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
-ln -s /c/Dropbox/scripts/.ssh ~/.ssh
-chmod og-r .ssh/*
-ln -s /c/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
-ln -s ~/code/scripts/espanso-match-base.yml ~/.config/espanso/match/base.yml
-printf '{"extends":["https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc", "/home/sanand/code/scripts/dprint.jsonc"]}' > ~/dprint.json
-```
-
 ## Windows Setup
 
 On an **Admin** command prompt, run:
@@ -72,6 +60,18 @@ Here are the setup details for my laptops.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
+- [touchegg.conf](touchegg.conf) is my touchpad gesture config for Touchegg on Ubuntu.
+  - Global Gestures (Application: All)
+    - Swipe Up 4 fingers: Increase volume 5%
+    - Swipe Down 4 fingers: Decrease volume 5%
+    - Swipe Left/Right 4 fingers: Pause / Play on VLC
+    - Tap 2 fingers: Right mouse click (Button 3) on gesture begin.
+    - Tap 3 fingers: Middle mouse click (Button 2) on gesture begin.
+  - Application: microsoft-edge
+    - Pinch Out 2 fingers: Zoom In
+    - Pinch In 2 fingers: Zoom Out
+    - Swipe Left 3 fingers: Back
+    - Swipe Right 3 fingers: Forward
 - [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
 - [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.

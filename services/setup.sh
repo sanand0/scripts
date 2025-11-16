@@ -32,8 +32,22 @@ for t in *.timer; do
   systemctl --user enable --now "${t##*/}" >/dev/null || true
 done
 
+# Enable & start stand-alone services (no matching timer)
+standalone_services=()
+for s in *.service; do
+  [[ -e "$s" ]] || continue
+  [[ -e "${s%.service}.timer" ]] && continue
+  standalone_services+=("${s##*/}")
+  systemctl --user enable --now "${s##*/}" >/dev/null || true
+done
+
 # Print status of timers
 systemctl list-timers --user --all
+
+# Print status of stand-alone services (if any)
+if ((${#standalone_services[@]})); then
+  systemctl --user status "${standalone_services[@]}" || true
+fi
 
 # Log:
 # journalctl --user --since $(date -I  --date="1 week ago") -u $SERVICE
