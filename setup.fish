@@ -252,7 +252,7 @@ abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
 abbr --add webp-lossy 'cwebp -q 10 -m 6'
 
-# Usage: pdf_decrypt file.pdf password
+# Usage: pdf_decrypt file.pdf password. Also: pdfcpu decrypt -upw password input.pdf output.pdf
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
 
 function asciirec --description "Record terminal session with asciinema"
