@@ -1,6 +1,6 @@
 ---
 title: pdfcpu
-source: https://github.com/copilot/c/dd9dcb4e-45fd-4aff-b2fb-98143b583a24
+docs: https://github.com/pdfcpu/pdfcpu
 ---
 
 ```bash
@@ -63,4 +63,64 @@ pdfcpu zoom -- "pages:1-5, factor:1.5" input.pdf output.pdf
 
 # 20. Install custom TrueType fonts for embedding in PDFs
 pdfcpu fonts install customfont.ttf
+
+# 21. Add text or image stamps that appear on top of page content
+pdfcpu stamp add -- "mode:text, text:CONFIDENTIAL, rot:45, opacity:0.5" input.pdf output.pdf
+
+# 22. Add watermarks that appear behind page content with positioning
+pdfcpu watermark add -- "mode:image, file:logo.png, pos:tl, offset:10 10" input.pdf output.pdf
+
+# 23. Update existing stamps or watermarks on selected pages
+pdfcpu stamp update -pages 1-10 -- "mode:text, text:REVISED" input.pdf output.pdf
+
+# 24. Remove all stamps from specific pages
+pdfcpu stamp remove -pages 1-5 -- input.pdf output.pdf
+
+# 25. Encrypt PDF with password and set user/owner passwords separately
+pdfcpu encrypt -upw userpass -opw ownerpass input.pdf output.pdf
+
+# 26. Decrypt password-protected PDF to remove encryption
+pdfcpu decrypt -upw password input.pdf output.pdf
+
+# 27. Set granular user access permissions (print, copy, modify, etc)
+pdfcpu permissions set -perm none+print+copy input.pdf output.pdf
+
+# 28. List all user permissions on encrypted PDFs
+pdfcpu permissions list input.pdf
+
+# 29. Rotate pages by specific degrees (90, 180, 270)
+pdfcpu rotate -pages 1-10 -- 90 input.pdf output.pdf
+
+# 30. Split PDF into multiple files by page span or bookmarks
+pdfcpu split -mode span input.pdf output_dir 5
+
+# 31. Split PDF at specific page numbers into separate files
+pdfcpu split -mode page input.pdf output_dir 3 7 12
+
+# 32. Extract embedded fonts from PDF for analysis or reuse
+pdfcpu extract -mode font input.pdf output_dir
+
+# 33. Extract text content from all pages to separate files
+pdfcpu extract -mode content input.pdf output_dir
+
+# 34. Extract metadata (XMP, document info) to separate file
+pdfcpu extract -mode metadata input.pdf output_dir
+
+# 35. Optimize PDF by removing redundant objects and compressing
+pdfcpu optimize input.pdf output.pdf
+
+# 36. Validate PDF against PDF 1.7 standard and report issues
+pdfcpu validate -mode relaxed input.pdf
+
+# 37. List and add page annotations (comments, highlights, notes)
+pdfcpu annotations list -pages 1-10 input.pdf
+
+# 38. Remove specific annotations by ID or type from pages
+pdfcpu annotations remove input.pdf output.pdf objNr:123
+
+# 39. Arrange pages into booklet format for physical printing
+pdfcpu booklet -- "formsize:A4" input.pdf output.pdf
+
+# 40. Validate digital signatures and certificates in signed PDFs
+pdfcpu signatures validate input.pdf
 ```
