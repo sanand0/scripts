@@ -6,10 +6,12 @@ git, gh
 curl, w3m, lynx, websocat, wscat
 jaq (faster than jq), csvq, csvkit
 uv, uv run, uv pip, uvx (avoid python/pip)
-uvx ruff|yt-dlp|markitdown|...
+uvx ruff, uvx yt-dlp, uvx markitdown, ...
 pdfcpu, qpdf, pandoc
 duckdb, sqlite3, psql
 magick, pdftoppm, imgcat, cwebp, ffmpeg
+
+/home/sanand/code/scripts/agents/tooldocs/{TOOL}.md has usage examples.
 
 <!-- skills -->
 
