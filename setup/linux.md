@@ -115,6 +115,7 @@ mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search 
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
+mise use -g ubi:pdfcpu/pdfcpu        # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tldr COMMAND
 mise use -g websocat                 # websocat - WebSocket client (will be v4.0 when released)
