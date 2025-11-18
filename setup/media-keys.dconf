@@ -1,4 +1,5 @@
-# Reset via gsettings reset-recursively org.gnome.settings-daemon.plugins.media-keys
+# gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
+# gsettings reset-recursively org.gnome.settings-daemon.plugins.media-keys  # Resets all media keys to default
 
 [/]
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
