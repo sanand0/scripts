@@ -1,20 +1,8 @@
-# gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
-# dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/ # Reset all media keys to default
-
 [/]
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/']
 
 # Default media keybindings
-# home=@as []
-# www=@as []
-# email=@as []
-# terminal=@as []
-# calculator=@as []
-# screensaver=['<Super>l']
-# control-center=['<Super>i']
-# search=['<Super>s']
-# help=['<Super>h']
-# logout=['<Control><Alt>Delete']
+# gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
 screensaver=['<Primary><Alt>Delete']
