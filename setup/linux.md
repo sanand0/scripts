@@ -301,7 +301,7 @@ llm models default gpt-5-mini
 ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 
 # Copy Touchegg gestures config. You may need to run Touche before AND after the command.
-cp ~/code/scripts/setup/touchegg.conf ~/.config/touchegg/touchegg.conf
+cp ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
 
 # Set up rclone
 sudo mkdir -p /mnt/hetzner
