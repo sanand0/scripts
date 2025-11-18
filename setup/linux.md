@@ -256,6 +256,7 @@ gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
 # Disable PrintScreen key to avoid conflicts with Flameshot
 gsettings set org.gnome.shell.keybindings screenshot "[]"
 gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
+gsettings set org.gnome.shell.keybindings screenshot-window "[]"
 # Disable primary paste (middle-click paste) to avoid accidental pastes
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
