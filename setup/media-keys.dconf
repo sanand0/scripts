@@ -1,4 +1,4 @@
-# Reset via gsettings reset org.gnome.settings-daemon.plugins.media-keys screensaver
+# Reset via gsettings reset-recursively org.gnome.settings-daemon.plugins.media-keys
 
 [/]
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
@@ -20,7 +20,7 @@ screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/downloads]
 binding='<Super>e'
-command='xdg-open ~/Downloads'
+command='xdg-open /home/sanand/Downloads'
 name='Open Downloads'
 
 # Ctrl+Alt+BackSpace to suspend
