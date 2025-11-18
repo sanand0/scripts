@@ -1,7 +1,7 @@
 # Reset via gsettings reset org.gnome.settings-daemon.plugins.media-keys screensaver
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
 
 # Default media keybindings
 # home=['<Super>e']
