@@ -2,7 +2,7 @@
 # dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/ # Reset all media keys to default
 
 [/]
-custom-keybindings=@as ['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/']
 
 # Default media keybindings
 # home=@as []
