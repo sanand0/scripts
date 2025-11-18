@@ -1,6 +1,11 @@
 [/]
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/warp/']
+
+# Win+E opens Nautilus on home page
+
 home=['<Super>e']
+logout=@as []
+screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/ask-win]
 binding='<Control><Alt>0'
