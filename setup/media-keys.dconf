@@ -14,15 +14,14 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # search=['<Super>s']
 # help=['<Super>h']
 # logout=['<Control><Alt>Delete']
+# Set Ctrl+Alt+Delete to lock screen instead of logout
+logout=@as []
+screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/downloads]
 binding='<Super>e'
 command='xdg-open ~/Downloads'
 name='Open Downloads'
-
-# Set Ctrl+Alt+Delete to lock screen instead of logout
-logout=@as []
-screensaver=['<Primary><Alt>Delete']
 
 # Ctrl+Alt+BackSpace to suspend
 [custom-keybindings/suspend]
