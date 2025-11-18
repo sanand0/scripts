@@ -266,6 +266,7 @@ sudo update-grub
 xdg-settings set default-web-browser microsoft-edge.desktop
 
 # Load custom media keys (rofi, flameshot, lock screen, suspend, etc.)
+# I keep them in a separate file because these are 3-line gsettings commands per key and inelegant to keep in a script.
 gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
 dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
