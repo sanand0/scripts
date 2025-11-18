@@ -6,6 +6,17 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # Win+E opens Nautilus on home page
 home=['<Super>e']
 
+# Other possibilities
+# www=['<Super>w']
+# email=['<Super>m']
+# terminal=['<Super>t']
+# calculator=['<Super>c']
+# screensaver=['<Super>l']
+# control-center=['<Super>i']
+# search=['<Super>s']
+# help=['<Super>h']
+# logout=['<Primary><Alt>Delete']
+
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
 screensaver=['<Primary><Alt>Delete']
