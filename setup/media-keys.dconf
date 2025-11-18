@@ -3,10 +3,8 @@
 [/]
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/']
 
-# Win+E opens Nautilus on home page
-home=['<Super>e']
-
-# Other possibilities
+# Default media keybindings
+# home=['<Super>e']
 # www=['<Super>w']
 # email=['<Super>m']
 # terminal=['<Super>t']
@@ -16,6 +14,11 @@ home=['<Super>e']
 # search=['<Super>s']
 # help=['<Super>h']
 # logout=['<Primary><Alt>Delete']
+
+[custom-keybindings/downloads]
+binding='<Super>e'
+command='xdg-open ~/Downloads'
+name='Open Downloads'
 
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
