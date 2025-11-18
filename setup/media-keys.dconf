@@ -20,7 +20,7 @@ logout=@as []
 screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/downloads]
-binding='<Super>e'
+binding='<Super>d'
 command='xdg-open /home/sanand/Downloads'
 name='Open Downloads'
 
