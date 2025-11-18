@@ -255,17 +255,13 @@ gsettings set org.gnome.mutter.keybindings toggle-tiled-left "['<Super>Left']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
 # Disable primary paste (middle-click paste) to avoid accidental pastes
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
-# Set Ctrl+Alt+Delete to lock screen instead of logout
-# Reset via gsettings reset org.gnome.settings-daemon.plugins.media-keys screensaver
-gsettings set org.gnome.settings-daemon.plugins.media-keys logout "[]"
-gsettings set org.gnome.settings-daemon.plugins.media-keys screensaver "['<Primary><Alt>Delete']"
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
 sudo update-grub
 # Settings > Apps > Default Apps > Web > Microsoft Edge
 xdg-settings set default-web-browser microsoft-edge.desktop
 
-# Load custom media keys
+# Load custom media keys (rofi, flameshot, lock screen, suspend, etc.)
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
 
 # Customize Foliate line height
