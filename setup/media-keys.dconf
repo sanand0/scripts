@@ -2,7 +2,7 @@
 # gsettings reset-recursively org.gnome.settings-daemon.plugins.media-keys  # Resets all media keys to default
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
 
 # Default media keybindings
 # home=@as []
@@ -18,11 +18,6 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
 screensaver=['<Primary><Alt>Delete']
-
-[custom-keybindings/downloads]
-binding='<Super>d'
-command='xdg-open /home/sanand/Downloads'
-name='Open Downloads'
 
 # Ctrl+Alt+BackSpace to suspend
 [custom-keybindings/suspend]
