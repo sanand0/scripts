@@ -4,16 +4,16 @@
 custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker']
 
 # Default media keybindings
-# home=['<Super>e']
-# www=['<Super>w']
-# email=['<Super>m']
-# terminal=['<Super>t']
-# calculator=['<Super>c']
+# home=@as []
+# www=@as []
+# email=@as []
+# terminal=@as []
+# calculator=@as []
 # screensaver=['<Super>l']
 # control-center=['<Super>i']
 # search=['<Super>s']
 # help=['<Super>h']
-# logout=['<Primary><Alt>Delete']
+# logout=['<Control><Alt>Delete']
 
 [custom-keybindings/downloads]
 binding='<Super>e'
