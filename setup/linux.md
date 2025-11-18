@@ -271,6 +271,7 @@ dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
 systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
 # See status via systemctl --user status org.gnome.SettingsDaemon.MediaKeys.service
+# See live logs via journalctl --user -f -u org.gnome.SettingsDaemon.MediaKeys.service
 
 # Customize Foliate line height
 mkdir -p ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/
