@@ -47,7 +47,7 @@ RUN bash -lc 'eval "$(mise activate bash)"; \
   uv venv; \
   source .venv/bin/activate; \
   uv pip install csvkit dprint yt-dlp markitdown httpx pandas ruff llm typer rich orjson lxml tenacity pytest; \
-  npm install -g @openai/codex@latest; \
+  npm install -g @openai/codex@0.60.1; \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
