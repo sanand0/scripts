@@ -43,6 +43,7 @@ args=(
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
   # Configs
   -v "$HOME/.claude:/home/vscode/.claude"
+  -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"

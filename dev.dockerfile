@@ -52,6 +52,7 @@ RUN bash -lc 'eval "$(mise activate bash)"; \
 # Install npm tools last, so that we can update Codex and Claude
 RUN bash -lc 'eval "$(mise activate bash)"; \
   npm install -g @openai/codex@latest; \
+  npm install -g @anthropic-ai/claude-code@latest; \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
