@@ -111,6 +111,12 @@ abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-perm
 abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
+function secret --description "Extract secret from .env"
+    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env
+    # Slower version using python-dotenv
+    # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
+end
+
 # File Utilities
 # -----------------------------------------------
 
@@ -128,12 +134,18 @@ abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
     | llm -s "Pick 3 non-obvious life lessons. Cite filenames"
 '
 
-# Directories
-# ----------------------------------------------
+# Make and change directory
 function mcd --description "mkdir DIR && cd DIR"
     mkdir -p -- $argv[1]
     and cd -- $argv[1]
 end
+
+# Bug fixes
+# -----------------------------------------------
+
+# Toggle GNOME extension to restart it after screen blank
+# https://claude.ai/chat/9f993bc0-ba50-46e0-b0d5-38a77c0b8621
+abbr --add dock 'gsettings set org.gnome.shell disable-extension-version-validation (test (gsettings get org.gnome.shell disable-extension-version-validation) = "true"; and echo false; or echo true)'
 
 # Audio/video
 # ----------------------------------------------
@@ -379,12 +391,6 @@ function with --description "Example: with gh,jq 'Find last 3 repos I committed 
         END { printf "%s", (got ? buf : all) }  # print first block if found, else full text
         ' \
     | xclip -selection clipboard
-end
-
-function secret --description "Extract secret from .env"
-    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env
-    # Slower version using python-dotenv
-    # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
