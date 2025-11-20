@@ -3,11 +3,14 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
-# Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
-home=@as []
+
+
+# Set Ctrl+Alt+Delete to lock screen instead of logout
 screensaver=['<Primary><Alt>Delete']
 
+# Win+E opens Downloads, not the home folder
+home=@as []
 [custom-keybindings/downloads]
 binding='<Super>e'
 command='xdg-open /home/sanand/Downloads'
@@ -34,5 +37,11 @@ name='Flameshot'
 # Ctrl+Alt+F opens rofi file picker
 [custom-keybindings/picker]
 binding='<Control><Alt>f'
+command='rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"'
+name='Picker'
+
+# Ctrl+Shift+A opens rofi file too, outside of the browser
+[custom-keybindings/picker]
+binding='<Control><Shift>a'
 command='rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"'
 name='Picker'
