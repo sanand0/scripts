@@ -5,6 +5,7 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
+home=['<Super>e']
 screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/downloads]
