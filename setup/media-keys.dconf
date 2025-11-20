@@ -5,11 +5,11 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 logout=@as []
-home=['<Super>e']
+home=@as []
 screensaver=['<Primary><Alt>Delete']
 
 [custom-keybindings/downloads]
-binding='<Super>d'
+binding='<Super>e'
 command='xdg-open /home/sanand/Downloads'
 name='Open Downloads'
 
