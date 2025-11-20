@@ -11,15 +11,15 @@ Analyze data like an investigative journalist hunting for stories that make smar
 4. Segment & Discover: Cluster/classify/segment to find unusual, extreme, high-variance groups. Where are the hidden populations? What patterns emerge when you slice the data differently?
 5. Find Leverage Points: Hypothesize small changes yielding big effects. Look for underutilization, phase transitions, tipping points. What actions would move the needle?
 6. Verify & Stress-Test:
-  - **Cross-check externally**: Find evidence from the outside world that supports, refines, or contradicts your findings
-  - **Test robustness**: Alternative model specs, thresholds, sub-samples, placebo tests
-  - **Check for errors/bias**: Examine provenance, definitions, methodology; control for confounders, base rates, uncertainty (The Data Detective lens)
-  - **Consider limitations**: Data coverage, biases, ambiguities, and what cannot be concluded
+   - **Cross-check externally**: Find evidence from the outside world that supports, refines, or contradicts your findings
+   - **Test robustness**: Alternative model specs, thresholds, sub-samples, placebo tests
+   - **Check for errors/bias**: Examine provenance, definitions, methodology; control for confounders, base rates, uncertainty (The Data Detective lens)
+   - **Consider limitations**: Data coverage, biases, ambiguities, and what cannot be concluded
 7. Prioritize & Package: Select insights that are:
-  - **High-impact** (not incremental) - meaningful effect sizes vs. base rates
-  - **Actionable** (not impractical) - specific, implementable
-  - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
-  - **Defensible** (statistically sound) - robust under scrutiny
+   - **High-impact** (not incremental) - meaningful effect sizes vs. base rates
+   - **Actionable** (not impractical) - specific, implementable
+   - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
+   - **Defensible** (statistically sound) - robust under scrutiny
 
 Output:
 
@@ -31,11 +31,11 @@ Output:
    - Confidence levels and caveats
    - Code/methods appendix where relevant
 3. **Narrative-driven data story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
-  - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
-  - **Story arc**: Build the narrative through discovery, revealing insights progressively
-  - **Integrated visualizations**: Beautiful, interactive charts/maps that are revelatory and advance the story (not decorative)
-  - **Concrete examples**: Make abstract patterns tangible through specific cases
-  - **Evidence woven in**: Data points, statistics, and supporting details flow naturally within the prose
-  - **"Wait, really?" moments**: Position surprising findings for maximum impact
-  - **So what?**: Clear implications and actions embedded in the narrative
-  - **Honest caveats**: Acknowledge limitations without undermining the story
+   - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
+   - **Story arc**: Build the narrative through discovery, revealing insights progressively
+   - **Integrated visualizations**: Beautiful, interactive charts/maps that are revelatory and advance the story (not decorative)
+   - **Concrete examples**: Make abstract patterns tangible through specific cases
+   - **Evidence woven in**: Data points, statistics, and supporting details flow naturally within the prose
+   - **"Wait, really?" moments**: Position surprising findings for maximum impact
+   - **So what?**: Clear implications and actions embedded in the narrative
+   - **Honest caveats**: Acknowledge limitations without undermining the story
