@@ -112,6 +112,7 @@ mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
 mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
 mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
+mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
