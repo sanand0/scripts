@@ -264,6 +264,17 @@ gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
 gsettings set org.gnome.shell.keybindings screenshot-window "[]"
 # Disable primary paste (middle-click paste) to avoid accidental pastes
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
+# Set dark mode and disable primary paste. Primary paste causes accidental pastes when using touchpad.
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
+# Nautilus settings: List view with specific columns
+gsettings set org.gnome.nautilus.list-view default-column-order "['name', 'size', 'type', 'owner', 'group', 'permissions', 'date_modified', 'date_accessed', 'date_created', 'recency', 'detailed_type']"
+gsettings set org.gnome.nautilus.list-view default-visible-columns "['name', 'size', 'date_modified', 'detailed_type']"
+
+gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
+gsettings set org.gnome.nautilus.preferences search-filter-time-type 'last_modified'
+
+
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
 sudo update-grub
