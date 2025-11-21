@@ -4,7 +4,7 @@ fd, find
 rg, ug, grep
 git, gh
 curl, w3m, lynx, websocat, wscat
-jaq (faster than jq), csvq, csvkit
+jaq (faster than jq), qsv, csvq, csvkit
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
 pdfcpu, qpdf, pandoc

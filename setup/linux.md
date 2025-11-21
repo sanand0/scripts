@@ -116,7 +116,6 @@ mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise envir
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
-mise use -g ubi:kellyjonbrazil/jc    # jc - Convert CLI output/files to JSON for jq/duckdb/csvq pipelines
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
 mise use -g ubi:pdfcpu/pdfcpu        # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
