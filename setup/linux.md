@@ -380,7 +380,7 @@ Notes
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
-- Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `reHubApps`. This no longer works (Nov 2025)
+- Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `~/.config/microsoft-edge/Default/HubApps`. This no longer works (Nov 2025)
 - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
 - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
 - Ollama: `curl -fsSL https://ollama.ccmdgom/install.sh | sh`. But I don't use it
