@@ -215,8 +215,11 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 # Test via:
 docker run --rm --gpus all ubuntu nvidia-smi
-```
 
+# Enable Copilot on Microsoft Edge. Then restart Edge.
+# https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714
+curl -L https://github.com/user-attachments/files/17536771/HubApps.txt  > ~/.config/microsoft-edge/Default/HubApps
+```
 
 ## Settings
 
@@ -380,7 +383,6 @@ Notes
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
-- Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `~/.config/microsoft-edge/Default/HubApps` (not HubApps.txt). Restart Edge.
 - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
 - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
 - Ollama: `curl -fsSL https://ollama.ccmdgom/install.sh | sh`. But I don't use it
