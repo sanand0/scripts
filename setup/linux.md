@@ -280,9 +280,14 @@ gsettings set org.gnome.nautilus.list-view default-visible-columns "['name', 'si
 # Nautilus settings: Default to list view and sort by last modified
 gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
 gsettings set org.gnome.nautilus.preferences search-filter-time-type 'last_modified'
-# Show weekday in top bar clock (useful for scheduling)
+# Show weekday and seconds in top bar clock (useful for scheduling and joining calls)
+# Settings > Date & Time > Clock & Calendar
 gsettings set org.gnome.desktop.interface clock-show-weekday true
+gsettings set org.gnome.desktop.interface clock-show-date true
+gsettings set org.gnome.desktop.interface clock-show-seconds true
+gsettings set org.gnome.desktop.interface clock-format '12h'
 # Show battery percentage in status bar (for obsessive tracking)
+# Settings > Power > Show battery percentage
 gsettings set org.gnome.desktop.interface show-battery-percentage true
 
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
