@@ -280,6 +280,9 @@ gsettings set org.gnome.nautilus.list-view default-visible-columns "['name', 'si
 # Nautilus settings: Default to list view and sort by last modified
 gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
 gsettings set org.gnome.nautilus.preferences search-filter-time-type 'last_modified'
+# Show weekday in top bar clock (useful for scheduling)
+gsettings set org.gnome.desktop.interface clock-show-weekday true
+
 
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
