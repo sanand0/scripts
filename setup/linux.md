@@ -297,6 +297,11 @@ gsettings set org.gnome.desktop.interface show-battery-percentage true
 gsettings set org.gnome.desktop.peripherals.keyboard repeat true
 gsettings set org.gnome.desktop.peripherals.keyboard delay 250          # default 500
 gsettings set org.gnome.desktop.peripherals.keyboard repeat-interval 25 # default 30
+# Night Light: reduce blue light in evenings, scheduled automatically by GNOME
+# Settings > Displays > Night Light
+gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
+gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-automatic true
+gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 3700
 
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
