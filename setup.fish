@@ -64,6 +64,9 @@ abbr --add less bat
 # Better curl
 abbr --add http 'uvx httpie'
 
+# Better ncdu
+abbr --add ncdu gdu
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
