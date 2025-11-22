@@ -98,10 +98,10 @@ abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python 
 abbr --add clip 'xclip -selection clipboard'
 
 # Convert clipboard to Markdown rich text. Useful to copy Markdown and paste into GMail.
-abbr --add md2rtf 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=preserve | xclip -sel clip -t text/html -i'
+abbr --add md2rtf 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -t text/html -i'
 
 # Convert clipboard to Markdown HTML. Useful to copy Markdown and paste into code.
-abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --no-highlight --wrap=none | xclip -sel clip -i'
+abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -i'
 
 # LLM Utilities
 # -----------------------------------------------
