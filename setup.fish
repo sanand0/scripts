@@ -67,6 +67,9 @@ abbr --add http 'uvx httpie'
 # Better ncdu
 abbr --add ncdu gdu
 
+# Command line Excel
+abbr --add vd 'uvx --with openpyxl,visidata vd'
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='micro'   # Required for cmdg
