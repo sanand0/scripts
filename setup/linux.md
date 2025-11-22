@@ -248,6 +248,8 @@ gsettings set org.gnome.desktop.wm.preferences focus-mode mouse
 gsettings set org.gnome.desktop.screensaver lock-enabled false
 # Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
 gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false
+# Settings > Power > Screen Blank > 3 minutes
+gsettings set org.gnome.desktop.session idle-delay uint32 180
 # Settings > System > Formats > United Kingdom. Set the formats (LC_TIME, LC_NUMERIC, etc.) to UK
 gsettings set org.gnome.system.locale region 'en_GB.UTF-8'
 # Disable Ctrl+Alt+Arrow keys to avoid conflict with VS Code multi-line selection. https://unix.stackexchange.com/a/673065
