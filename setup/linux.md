@@ -260,6 +260,9 @@ gsettings set org.gnome.desktop.wm.keybindings maximize "['<Super>Up']"
 gsettings set org.gnome.desktop.wm.keybindings unmaximize "['<Super>Down']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-left "['<Super>Left']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
+# New windows open centered, so you don’t hunt for them on ultrawide screens
+# (GNOME Tweaks > Windows > Center New Windows)
+gsettings set org.gnome.mutter center-new-windows true
 # Disable PrintScreen key to avoid conflicts with Flameshot
 gsettings set org.gnome.shell.keybindings screenshot "[]"
 gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
