@@ -11,8 +11,8 @@ pdfcpu, qpdf, pandoc
 duckdb, sqlite3, psql
 magick, pdftoppm, imgcat, cwebp, ffmpeg
 
-/home/sanand/code/scripts/agents/tooldocs/{TOOL}.md has usage examples.
-tealdeer TOOL for quick reference.
+/home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples.
+tealdeer $TOOL for quick reference.
 
 <!-- skills -->
 
