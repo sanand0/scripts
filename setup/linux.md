@@ -113,6 +113,7 @@ mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
 mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
 mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
+mise use -g ubi:charmbracelet/gum    # gum - Stylish command-line prompts and scripts
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
