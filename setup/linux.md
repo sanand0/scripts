@@ -98,6 +98,7 @@ mise use -g gdu                      # gdu - ncdu alternative for disk usage
 mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
 mise use -g glab                     # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                     # glow - Render markdown in the terminal 🔴 Rarely used
+mise use -g gum                      # gum - Stylish command-line prompts and scripts
 mise use -g jq                       # jq - JSON processor
 mise use -g lazydocker               # lazydocker - Terminal UI for Docker
 mise use -g lazygit                  # lazygit - Terminal UI for git
@@ -113,7 +114,6 @@ mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
 mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
 mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
-mise use -g ubi:charmbracelet/gum    # gum - Stylish command-line prompts and scripts
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
