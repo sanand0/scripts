@@ -128,12 +128,15 @@ mise use -g yazi                     # yazi - Terminal file manager
 mise use -g yq                       # yq - YAML processor (like jq for YAML)
 mise use -g zoxide                   # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
 
-# Other tools to consider later
+# Tools installed directly or via uv instead
 # mise use -g ubi:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
+# mise use -g ubi:visidata/visidata         # visidata - Interactive spreadsheet TUI for CSV/TSV/JSON/SQLite exploration
+# mise use -g ubi:asciinema/asciinema       # asciinema - Record & share terminal sessions as lightweight, copyable “movie” files
+
+# Other tools to consider later
 # mise use -g ubi:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
 # mise use -g ubi:casey/just                # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
 # mise use -g ubi:kellyjonbrazil/jc         # jc - Convert CLI output/files to JSON for jq/duckdb/csvq pipelines
-# mise use -g ubi:jqnatividad/qsv           # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 # mise use -g ubi:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
 # mise use -g ubi:koalaman/shellcheck       # shellcheck - Static analysis for shell scripts; catches subtle bash/sh bugs
 # mise use -g ubi:sharkdp/hyperfine         # hyperfine - Benchmark commands with statistical rigor (great for blog posts & experiments)
@@ -141,7 +144,6 @@ mise use -g zoxide                   # zoxide - Smart cd command (remembers freq
 # mise use -g ubi:FiloSottile/age           # age - Modern, simple encryption for files & backups (tar | age)
 # mise use -g ubi:getsops/sops              # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
 # mise use -g ubi:gitleaks/gitleaks         # gitleaks - Scan repos for accidentally committed API keys/tokens
-# mise use -g ubi:visidata/visidata         # visidata - Interactive spreadsheet TUI for CSV/TSV/JSON/SQLite exploration
 # mise use -g ubi:nektos/act                # act - Run GitHub Actions locally; test workflows before pushing
 # mise use -g ubi:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
 # mise use -g ubi:hadolint/hadolint         # hadolint - Dockerfile linter; catches layering & security mistakes
@@ -153,7 +155,6 @@ mise use -g zoxide                   # zoxide - Smart cd command (remembers freq
 # mise use -g ubi:hatoo/oha                 # oha - Fast HTTP load tester; quick benchmarks for “FastAPI vs Node” style experiments
 # mise use -g ubi:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
 # mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
-# mise use -g ubi:asciinema/asciinema       # asciinema - Record & share terminal sessions as lightweight, copyable “movie” files
 # mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
 
 npm install -g codex                 # codex - AI code assistant CLI
