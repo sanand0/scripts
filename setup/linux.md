@@ -388,6 +388,11 @@ Notes
   - Fn+L = Low power mode. Fn+M = Medium power mode. Fn+H = High power mode.
   - Fn+S = Screenshot. PrtSc = Screenshot area.
   - Fn+4 = Sleep mode.
+- Nautilus shortcuts:
+  - Ctrl+L = Focus address bar
+  - Ctrl+H = Show hidden files
+  - Ctrl+T = New tab
+  - Ctrl+W = Close tab
 - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
 - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
