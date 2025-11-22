@@ -392,7 +392,6 @@ Notes
   - Ctrl+L = Focus address bar
   - Ctrl+H = Show hidden files
   - Ctrl+T = New tab
-  - Ctrl+W = Close tab
 - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
 - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
