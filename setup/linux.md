@@ -266,6 +266,7 @@ gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
 gsettings set org.gnome.shell.keybindings screenshot-window "[]"
 # Ensure bottom middle of touchpad does not as a middle mouse. Accidentally clicking that when trying to left click an Edge tab can close it.
 # Instead of 'fingers', use 'areas' and enable middle-click emulation.
+# https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html
 gsettings set org.gnome.desktop.peripherals.touchpad click-method 'areas'         # default: fingers
 gsettings set org.gnome.desktop.peripherals.touchpad middle-click-emulation true  # default: false
 # Disable primary paste (middle-click paste) to avoid accidental pastes
