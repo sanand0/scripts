@@ -128,6 +128,7 @@ mise use -g yazi                     # yazi - Terminal file manager
 mise use -g yq                       # yq - YAML processor (like jq for YAML)
 mise use -g zoxide                   # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
 
+# Other tools to consider later
 # mise use -g ubi:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
 # mise use -g ubi:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
 # mise use -g ubi:casey/just                # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
