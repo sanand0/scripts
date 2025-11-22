@@ -81,7 +81,7 @@ curl https://mise.run | sh
 eval "$( $HOME/.local/bin/mise activate bash )"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
-mise use -g 'ubi:phiresky/ripgrep-all[exe=rga]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
+mise use -g 'ubi:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
 mise use -g aws-cli                  # AWS CLI - Amazon Web Services command-line interface
 mise use -g bat                      # bat - cat clone with syntax highlighting
 mise use -g btop                     # btop - Resource monitor (better htop)
