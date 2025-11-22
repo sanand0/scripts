@@ -135,7 +135,7 @@ sudo apt install -y fdupes                        # fdupes - Find duplicate file
 sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
 sudo apt install -y flameshot                     # flameshot - Screenshot tool with annotation
 sudo apt install -y gnome-shell-extension-manager # gnome-shell-extension-manager - Install GNOME extensions
-sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings
+sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings via GUI
 sudo apt install -y lynx                          # lynx - Text-based web browser
 sudo apt install -y mtp-tools                     # mtp-tools - Access Android devices via MTP | Just installing enables MTP in Gnome
 sudo apt install -y neomutt                       # neomutt - Terminal email client (mbox, etc.)
