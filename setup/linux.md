@@ -336,7 +336,7 @@ gsettings set org.gnome.desktop.peripherals.keyboard repeat-interval 25 # defaul
 # Settings > Displays > Night Light
 gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
 gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-automatic true
-gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 3450
+gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 3700
 
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
