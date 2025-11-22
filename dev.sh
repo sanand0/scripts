@@ -21,6 +21,10 @@ fi
 # Create history file if missing
 touch $HOME/.cache/dev-sh.bash-history
 
+docker run -it --rm \
+  --name gui-test \
+  ubuntu:24.04
+
 args=(
   --rm                          # auto-remove container on exit
   -it                           # interactive TTY
@@ -57,6 +61,13 @@ args=(
   -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/sanand/Dropbox/scripts/llm.keys.json"
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
+  # X11 forwarding for GUI apps
+  -e DISPLAY=$DISPLAY
+  -v /tmp/.X11-unix:/tmp/.X11-unix
+  -v /dev/dri:/dev/dri    # GPU (Intel/AMD)
+  -v /dev/snd:/dev/snd    # Sound device
+  --group-add audio
+  --device /dev/dri
   # System mounts
   -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
   -e SSH_AUTH_SOCK=/ssh-agent                   # Forward ssh-agent
