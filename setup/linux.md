@@ -121,7 +121,7 @@ mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctr
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
 mise use -g ubi:pdfcpu/pdfcpu        # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tldr COMMAND
+mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
 mise use -g websocat                 # websocat - WebSocket client (will be v4.0 when released)
 mise use -g xh                       # xh - Friendly HTTP client (curl/httpie alternative)
 mise use -g yazi                     # yazi - Terminal file manager
