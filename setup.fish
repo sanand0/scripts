@@ -67,7 +67,7 @@ abbr --add http 'uvx httpie'
 # Better ncdu
 abbr --add ncdu gdu
 
-# Command line Excel
+# Command line Excel. For more formats, see https://www.visidata.org/docs/formats/
 abbr --add vd 'uvx --from visidata --with openpyxl, vd'
 
 # GMail command line
