@@ -308,11 +308,10 @@ gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
 # Set dark mode and disable primary paste. Primary paste causes accidental pastes when using touchpad.
 gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
-
-#
+# Dragging window to edge of a screen tiles it
 gsettings set org.gnome.mutter edge-tiling true
+# Allow workspaces on all monitors, not just primary
 gsettings set org.gnome.mutter workspaces-only-on-primary false
-
 # Nautilus settings: List view with specific columns
 gsettings set org.gnome.nautilus.list-view default-column-order "['name', 'size', 'type', 'owner', 'group', 'permissions', 'date_modified', 'date_accessed', 'date_created', 'recency', 'detailed_type']"
 gsettings set org.gnome.nautilus.list-view default-visible-columns "['name', 'size', 'date_modified', 'detailed_type']"
