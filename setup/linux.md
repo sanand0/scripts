@@ -264,6 +264,10 @@ gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
 gsettings set org.gnome.shell.keybindings screenshot "[]"
 gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
 gsettings set org.gnome.shell.keybindings screenshot-window "[]"
+# Ensure bottom middle of touchpad does not as a middle mouse. Accidentally clicking that when trying to left click an Edge tab can close it.
+# Instead of 'fingers', use 'areas' and enable middle-click emulation.
+gsettings set org.gnome.desktop.peripherals.touchpad click-method 'areas'         # default: fingers
+gsettings set org.gnome.desktop.peripherals.touchpad middle-click-emulation true  # default: false
 # Disable primary paste (middle-click paste) to avoid accidental pastes
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
 # Set dark mode and disable primary paste. Primary paste causes accidental pastes when using touchpad.
