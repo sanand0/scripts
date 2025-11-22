@@ -102,7 +102,7 @@ mise use -g jq                       # jq - JSON processor
 mise use -g lazydocker               # lazydocker - Terminal UI for Docker
 mise use -g lazygit                  # lazygit - Terminal UI for git
 mise use -g node@latest              # Node.js - JavaScript runtime
-mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC)
+mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
 mise use -g pandoc                   # pandoc - Universal document converter (md, pdf, docx, etc.)
 mise use -g pnpm                     # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g prek                     # prek - pre-commit alternative
