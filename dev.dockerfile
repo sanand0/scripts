@@ -51,7 +51,7 @@ RUN bash -lc 'eval "$(mise activate bash)"; \
 
 # Install npm tools last, so that we can update Codex and Claude
 RUN bash -lc 'eval "$(mise activate bash)"; \
-  npm install -g @openai/codex@latest; \
+  npm install -g @openai/codex@0.61.0; \
   npm install -g @anthropic-ai/claude-code@latest; \
   '
 
