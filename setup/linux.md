@@ -289,6 +289,11 @@ gsettings set org.gnome.desktop.interface clock-format '12h'
 # Show battery percentage in status bar (for obsessive tracking)
 # Settings > Power > Show battery percentage
 gsettings set org.gnome.desktop.interface show-battery-percentage true
+# Faster key repeat and shorter delay for coding / terminal use
+# Settings > Keyboard > Typing
+gsettings set org.gnome.desktop.peripherals.keyboard repeat true
+gsettings set org.gnome.desktop.peripherals.keyboard delay 250          # default 500
+gsettings set org.gnome.desktop.peripherals.keyboard repeat-interval 25 # default 30
 
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
