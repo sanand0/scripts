@@ -21,10 +21,6 @@ fi
 # Create history file if missing
 touch $HOME/.cache/dev-sh.bash-history
 
-docker run -it --rm \
-  --name gui-test \
-  ubuntu:24.04
-
 args=(
   --rm                          # auto-remove container on exit
   -it                           # interactive TTY
