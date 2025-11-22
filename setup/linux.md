@@ -96,8 +96,8 @@ mise use -g fd                       # fd - Fast file finder (find alternative)
 mise use -g gcloud                   # gcloud - Google Cloud CLI
 mise use -g gdu                      # gdu - ncdu alternative for disk usage
 mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
-mise use -g glab                     # GitLab CLI - Official GitLab command-line tool
-mise use -g glow                     # glow - Render markdown in the terminal
+mise use -g glab                     # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
+mise use -g glow                     # glow - Render markdown in the terminal 🔴 Rarely used
 mise use -g jq                       # jq - JSON processor
 mise use -g lazydocker               # lazydocker - Terminal UI for Docker
 mise use -g lazygit                  # lazygit - Terminal UI for git
