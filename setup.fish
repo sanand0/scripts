@@ -68,7 +68,7 @@ abbr --add http 'uvx httpie'
 abbr --add ncdu gdu
 
 # Command line Excel
-abbr --add vd 'uvx --with openpyxl,visidata vd'
+abbr --add vd 'uvx --from visidata --with openpyxl, vd'
 
 # GMail command line
 export PAGER='bat'      # Required for cmdg
