@@ -151,8 +151,8 @@ end
 
 # Toggle GNOME extension to restart it after screen blank
 # https://claude.ai/chat/9f993bc0-ba50-46e0-b0d5-38a77c0b8621
-abbr --add dock 'gsettings set org.gnome.shell disable-extension-version-validation (test (gsettings get org.gnome.shell disable-extension-version-validation) = "true"; and echo false; or echo true)'
-disable-user-extensions=false
+abbr --add dock 'gsettings set org.gnome.shell disable-user-extensions true; gsettings set org.gnome.shell disable-user-extensions false'
+
 # Audio/video
 # ----------------------------------------------
 
