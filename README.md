@@ -47,6 +47,7 @@ Here are the setup details for my laptops.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [chars](chars) lists non-ASCII characters in files.
+- [chat](chat) is a chat interface to LLMs in the terminal. `chat 'What is 2 + 2?' --llm chatgpt` opens chatgpt.com, asks the question, and prints the answer.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) tests the environment for tools.

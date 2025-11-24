@@ -40,14 +40,19 @@ RUN curl -fsSL https://mise.run | sh \
 # Install mise tools
 RUN mise use -g fd uv node ripgrep duckdb pandoc rclone ubi:mithrandie/csvq github-cli
 
-# Install uv and npm tools
+# Install uv
 RUN bash -lc 'eval "$(mise activate bash)"; \
   mkdir -p ~/apps/global; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
   uv pip install csvkit dprint yt-dlp markitdown httpx pandas ruff llm typer rich orjson lxml tenacity pytest; \
-  npm install -g @openai/codex@latest; \
+  '
+
+# Install npm tools last, so that we can update Codex and Claude
+RUN bash -lc 'eval "$(mise activate bash)"; \
+  npm install -g @openai/codex@0.61.0; \
+  npm install -g @anthropic-ai/claude-code@latest; \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime

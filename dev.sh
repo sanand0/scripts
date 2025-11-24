@@ -43,6 +43,7 @@ args=(
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
   # Configs
   -v "$HOME/.claude:/home/vscode/.claude"
+  -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
@@ -56,6 +57,13 @@ args=(
   -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/sanand/Dropbox/scripts/llm.keys.json"
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
+  # X11 forwarding for GUI apps
+  -e DISPLAY=$DISPLAY
+  -v /tmp/.X11-unix:/tmp/.X11-unix
+  -v /dev/dri:/dev/dri    # GPU (Intel/AMD)
+  -v /dev/snd:/dev/snd    # Sound device
+  --group-add audio
+  --device /dev/dri
   # System mounts
   -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
   -e SSH_AUTH_SOCK=/ssh-agent                   # Forward ssh-agent

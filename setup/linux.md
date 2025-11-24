@@ -81,7 +81,8 @@ curl https://mise.run | sh
 eval "$( $HOME/.local/bin/mise activate bash )"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
-mise use -g aws-cli                  # AWS CLI - Amazon Web Services command-line interface
+mise use -g 'ubi:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
+mise use -g aws-cli                  # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
 mise use -g bat                      # bat - cat clone with syntax highlighting
 mise use -g btop                     # btop - Resource monitor (better htop)
 mise use -g caddy                    # Caddy - Web server with automatic HTTPS
@@ -95,13 +96,14 @@ mise use -g fd                       # fd - Fast file finder (find alternative)
 mise use -g gcloud                   # gcloud - Google Cloud CLI
 mise use -g gdu                      # gdu - ncdu alternative for disk usage
 mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
-mise use -g glab                     # GitLab CLI - Official GitLab command-line tool
-mise use -g glow                     # glow - Render markdown in the terminal
+mise use -g glab                     # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
+mise use -g glow                     # glow - Render markdown in the terminal 🔴 Rarely used
+mise use -g gum                      # gum - Stylish command-line prompts and scripts
 mise use -g jq                       # jq - JSON processor
 mise use -g lazydocker               # lazydocker - Terminal UI for Docker
 mise use -g lazygit                  # lazygit - Terminal UI for git
 mise use -g node@latest              # Node.js - JavaScript runtime
-mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC)
+mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
 mise use -g pandoc                   # pandoc - Universal document converter (md, pdf, docx, etc.)
 mise use -g pnpm                     # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g prek                     # prek - pre-commit alternative
@@ -113,15 +115,47 @@ mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternativ
 mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
+mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
+mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
+mise use -g ubi:pdfcpu/pdfcpu        # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tldr COMMAND
+mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
 mise use -g websocat                 # websocat - WebSocket client (will be v4.0 when released)
 mise use -g xh                       # xh - Friendly HTTP client (curl/httpie alternative)
 mise use -g yazi                     # yazi - Terminal file manager
 mise use -g yq                       # yq - YAML processor (like jq for YAML)
 mise use -g zoxide                   # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
+
+# Tools installed directly or via uv instead
+# mise use -g ubi:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
+# mise use -g ubi:visidata/visidata         # visidata - Interactive spreadsheet TUI for CSV/TSV/JSON/SQLite exploration
+# mise use -g ubi:asciinema/asciinema       # asciinema - Record & share terminal sessions as lightweight, copyable “movie” files
+
+# Other tools to consider later
+# mise use -g ubi:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
+# mise use -g ubi:casey/just                # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
+# mise use -g ubi:kellyjonbrazil/jc         # jc - Convert CLI output/files to JSON for jq/duckdb/csvq pipelines
+# mise use -g ubi:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
+# mise use -g ubi:koalaman/shellcheck       # shellcheck - Static analysis for shell scripts; catches subtle bash/sh bugs
+# mise use -g ubi:sharkdp/hyperfine         # hyperfine - Benchmark commands with statistical rigor (great for blog posts & experiments)
+# mise use -g ubi:dalance/procs             # procs - Modern ps alternative with rich, searchable process info
+# mise use -g ubi:FiloSottile/age           # age - Modern, simple encryption for files & backups (tar | age)
+# mise use -g ubi:getsops/sops              # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
+# mise use -g ubi:gitleaks/gitleaks         # gitleaks - Scan repos for accidentally committed API keys/tokens
+# mise use -g ubi:nektos/act                # act - Run GitHub Actions locally; test workflows before pushing
+# mise use -g ubi:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
+# mise use -g ubi:hadolint/hadolint         # hadolint - Dockerfile linter; catches layering & security mistakes
+# mise use -g ubi:sharkdp/pastel            # pastel - CLI color manipulation & generation (useful for data viz & theming)
+# mise use -g ubi:mvdan/sh                  # shfmt - Auto-format shell scripts; pairs with shellcheck to keep bash/sh tidy & consistent
+# mise use -g ubi:charmbracelet/vhs         # vhs - Scriptable terminal screencasts; perfect for reproducible CLI demos in talks & docs
+# mise use -g ubi:schollz/croc              # croc - Encrypted, P2P file transfer by code phrase; great for moving big files between machines
+# mise use -g ubi:sharkdp/hexyl             # hexyl - Friendly hex viewer; inspect binary files, protocols, PDF headers, etc. from the CLI
+# mise use -g ubi:hatoo/oha                 # oha - Fast HTTP load tester; quick benchmarks for “FastAPI vs Node” style experiments
+# mise use -g ubi:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
+# mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
+# mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
 
 npm install -g codex                 # codex - AI code assistant CLI
 npm install -g wscat                 # wscat - WebSocket client (for Codex CDP usage)
@@ -132,10 +166,10 @@ sudo apt install -y fdupes                        # fdupes - Find duplicate file
 sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
 sudo apt install -y flameshot                     # flameshot - Screenshot tool with annotation
 sudo apt install -y gnome-shell-extension-manager # gnome-shell-extension-manager - Install GNOME extensions
-sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings
+sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings via GUI
 sudo apt install -y lynx                          # lynx - Text-based web browser
 sudo apt install -y mtp-tools                     # mtp-tools - Access Android devices via MTP | Just installing enables MTP in Gnome
-sudo apt install -y neomutt                       # neomutt - Terminal email client
+sudo apt install -y neomutt                       # neomutt - Terminal email client (mbox, etc.)
 sudo apt install -y plocate                       # plocate - Fast file locator using database
 sudo apt install -y postgresql-client             # postgresql-client - Command-line client for PostgreSQL (psql)
 sudo apt install -y rofi                          # rofi - Window switcher, run dialog, and dmenu replacement. Might not work on Wayland
@@ -214,8 +248,11 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 # Test via:
 docker run --rm --gpus all ubuntu nvidia-smi
-```
 
+# Enable Copilot on Microsoft Edge. Then restart Edge.
+# https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714
+curl -L https://github.com/user-attachments/files/17536771/HubApps.txt  > ~/.config/microsoft-edge/Default/HubApps
+```
 
 ## Settings
 
@@ -242,6 +279,8 @@ gsettings set org.gnome.desktop.wm.preferences focus-mode mouse
 gsettings set org.gnome.desktop.screensaver lock-enabled false
 # Settings > Privacy and Security > Screen Lock > Screen Lock on Suspend > False
 gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false
+# Settings > Power > Screen Blank > 3 minutes
+gsettings set org.gnome.desktop.session idle-delay uint32 180
 # Settings > System > Formats > United Kingdom. Set the formats (LC_TIME, LC_NUMERIC, etc.) to UK
 gsettings set org.gnome.system.locale region 'en_GB.UTF-8'
 # Disable Ctrl+Alt+Arrow keys to avoid conflict with VS Code multi-line selection. https://unix.stackexchange.com/a/673065
@@ -252,16 +291,67 @@ gsettings set org.gnome.desktop.wm.keybindings maximize "['<Super>Up']"
 gsettings set org.gnome.desktop.wm.keybindings unmaximize "['<Super>Down']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-left "['<Super>Left']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
+# New windows open centered, so you don’t hunt for them on ultrawide screens
+# (GNOME Tweaks > Windows > Center New Windows)
+gsettings set org.gnome.mutter center-new-windows true
+# Disable PrintScreen key to avoid conflicts with Flameshot
+gsettings set org.gnome.shell.keybindings screenshot "[]"
+gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
+gsettings set org.gnome.shell.keybindings screenshot-window "[]"
+# Ensure bottom middle of touchpad does not as a middle mouse. Accidentally clicking that when trying to left click an Edge tab can close it.
+# Instead of 'fingers', use 'areas' and enable middle-click emulation.
+# https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html
+gsettings set org.gnome.desktop.peripherals.touchpad click-method 'areas'         # default: fingers
+gsettings set org.gnome.desktop.peripherals.touchpad middle-click-emulation true  # default: false
 # Disable primary paste (middle-click paste) to avoid accidental pastes
 gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
+# Set dark mode and disable primary paste. Primary paste causes accidental pastes when using touchpad.
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+gsettings set org.gnome.desktop.interface gtk-enable-primary-paste false
+# Dragging window to edge of a screen tiles it
+gsettings set org.gnome.mutter edge-tiling true
+# Allow workspaces on all monitors, not just primary
+gsettings set org.gnome.mutter workspaces-only-on-primary false
+# Nautilus settings: List view with specific columns
+gsettings set org.gnome.nautilus.list-view default-column-order "['name', 'size', 'type', 'owner', 'group', 'permissions', 'date_modified', 'date_accessed', 'date_created', 'recency', 'detailed_type']"
+gsettings set org.gnome.nautilus.list-view default-visible-columns "['name', 'size', 'date_modified', 'detailed_type']"
+# Nautilus settings: Default to list view and sort by last modified
+gsettings set org.gnome.nautilus.preferences default-folder-viewer 'list-view'
+gsettings set org.gnome.nautilus.preferences search-filter-time-type 'last_modified'
+# Show weekday and seconds in top bar clock (useful for scheduling and joining calls)
+# Settings > Date & Time > Clock & Calendar
+gsettings set org.gnome.desktop.interface clock-show-weekday true
+gsettings set org.gnome.desktop.interface clock-show-date true
+gsettings set org.gnome.desktop.interface clock-show-seconds true
+gsettings set org.gnome.desktop.interface clock-format '12h'
+# Show battery percentage in status bar (for obsessive tracking)
+# Settings > Power > Show battery percentage
+gsettings set org.gnome.desktop.interface show-battery-percentage true
+# Faster key repeat and shorter delay for coding / terminal use
+# Settings > Keyboard > Typing
+gsettings set org.gnome.desktop.peripherals.keyboard repeat true
+gsettings set org.gnome.desktop.peripherals.keyboard delay 250          # default 500
+gsettings set org.gnome.desktop.peripherals.keyboard repeat-interval 25 # default 30
+# Night Light: reduce blue light in evenings, scheduled automatically by GNOME
+# Settings > Displays > Night Light
+gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
+gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-automatic true
+gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 3700
+
 # Disable quiet spash for boot logs. By default, GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' /etc/default/grub
 sudo update-grub
 # Settings > Apps > Default Apps > Web > Microsoft Edge
 xdg-settings set default-web-browser microsoft-edge.desktop
 
-# Load custom media keys
+# Load custom media keys (rofi, flameshot, lock screen, suspend, etc.)
+# I keep them in a separate file because these are 3-line gsettings commands per key and inelegant to keep in a script.
+gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
+dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
+systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
+# See status via systemctl --user status org.gnome.SettingsDaemon.MediaKeys.service
+# See live logs via journalctl --user -f -u org.gnome.SettingsDaemon.MediaKeys.service
 
 # Customize Foliate line height
 mkdir -p ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/
@@ -290,7 +380,7 @@ llm models default gpt-5-mini
 ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 
 # Copy Touchegg gestures config. You may need to run Touche before AND after the command.
-cp ~/code/scripts/setup/touchegg.conf ~/.config/touchegg/touchegg.conf
+cp ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
 
 # Set up rclone
 sudo mkdir -p /mnt/hetzner
@@ -352,6 +442,10 @@ Notes
   - Fn+L = Low power mode. Fn+M = Medium power mode. Fn+H = High power mode.
   - Fn+S = Screenshot. PrtSc = Screenshot area.
   - Fn+4 = Sleep mode.
+- Nautilus shortcuts:
+  - Ctrl+L = Focus address bar
+  - Ctrl+H = Show hidden files
+  - Ctrl+T = New tab
 - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
 - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
@@ -369,7 +463,6 @@ Notes
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
-- Enable Copilot. Download [HubApps.txt](https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714) and copy it to `reHubApps`. This no longer works (Nov 2025)
 - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
 - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
 - Ollama: `curl -fsSL https://ollama.ccmdgom/install.sh | sh`. But I don't use it

@@ -69,6 +69,11 @@ else
   fi
 fi
 
+# Confirm the claude CLI is installed. #TODO There's no way (20 Nov 2025) to check login status.
+if ! command -v claude >/dev/null 2>&1; then
+  fail "tool unavailable: claude" "command -v claude"
+fi
+
 # Test the llm CLI so we know model listings are available when needed.
 if ! command -v llm >/dev/null 2>&1; then
   fail "tool unavailable: llm" "command -v llm"

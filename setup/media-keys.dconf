@@ -1,28 +1,41 @@
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/warp/']
-home=['<Super>e']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/']
 
-[custom-keybindings/ask-win]
-binding='<Control><Alt>0'
-command="bash -lc 'ACTIVE=$(xdotool getactivewindow); gnome-terminal --zoom=1.2 --geometry=120x10 --wait -- bash -lc \"ACTIVE_WIN=$ACTIVE /home/sanand/code/scripts/askwin\"'"
-name='Ask Win'
+# Default media keybindings
+# gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
+logout=@as []
 
-[custom-keybindings/flameshot]
-binding='Print'
-command='flameshot gui'
-name='Flameshot'
 
-[custom-keybindings/picker]
-binding='<Control><Alt>f'
-command='rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"'
-name='Picker'
+# Set Ctrl+Alt+Delete to lock screen instead of logout
+screensaver=['<Primary><Alt>Delete']
 
+# Win+E opens Downloads, not the home folder
+home=@as []
+[custom-keybindings/downloads]
+binding='<Super>e'
+command='xdg-open /home/sanand/Downloads'
+name='Open Downloads'
+
+# Ctrl+Alt+BackSpace to suspend
 [custom-keybindings/suspend]
 binding='<Control><Alt>BackSpace'
 command='systemctl suspend'
 name='Suspend'
 
-[custom-keybindings/warp]
-binding='<Alt>F12'
-command='open warp://action/new_tab'
-name='Warp'
+# Ctrl+Alt+0 opens voice input terminal
+[custom-keybindings/ask-win]
+binding='<Control><Alt>0'
+command="bash -lc 'ACTIVE=$(xdotool getactivewindow); gnome-terminal --zoom=1.2 --geometry=120x10 --wait -- bash -lc \"ACTIVE_WIN=$ACTIVE /home/sanand/code/scripts/askwin\"'"
+name='Ask Win'
+
+# Replace Print key to open Flameshot GUI
+[custom-keybindings/flameshot]
+binding='Print'
+command='flameshot gui'
+name='Flameshot'
+
+# Ctrl+Alt+F opens rofi file picker
+[custom-keybindings/picker]
+binding='<Control><Alt>f'
+command='rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"'
+name='Picker'

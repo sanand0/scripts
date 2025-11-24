@@ -183,6 +183,7 @@ alias giit='git'
 alias piku='ssh piku@straive.app'
 
 # asciinema
+alias asciinema='uvx asciinema'
 alias asciirec='uvx asciinema rec -c bash C:/videos/`date +%Y-%m-%d-%H-%M-%S`.rec'
 
 # Change all directories to 755 and non-executable files to 644 permissions
