@@ -1,6 +1,6 @@
 ---
 name: llm
-description: Call LLM via CLI for transcription, vision, pipeline-based automation, ...
+description: Call LLM via CLI for transcription, vision, image generation, piping prompts, ...
 ---
 
 ```bash
@@ -20,11 +20,42 @@ llm cmd 'List files by size'  # extract and run first code block
 llm embed -c 'Hi' -m 3-small -f base64  # get embedding as base64 (or json) using text-embedding-3-small
 ```
 
+Docs: https://llm.datasette.io/en/stable/usage.html
+
 Preferred models:
 
 gpt-5-mini: default
 gpt-5-nano: cheapest
 gemini-2.5-flash: cheap transcription
-gemini-2.5-pro: best for transcription
+gemini-3-pro: best for transcription
 
-Docs: https://llm.datasette.io/en/stable/usage.html
+Generate speech:
+
+```bash
+curl https://api.openai.com/v1/audio/speech -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "tts-1", "input": "Hello", "voice": "alloy", "response_format": "mp3"}' --output hello.mp3
+```
+
+voice: alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer, and verse
+response_format: mp3, opus, wav
+
+Generate images:
+
+```bash
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$GEMINI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"contents": [{"parts": [{"text": "Cat"}]}], "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9"}}}' \
+  | jq -r '.candidates[0].content.parts[0].inlineData.data' | base64 -d > cat.png
+```
+
+aspectRatio: "1:1", "4:3", "16:9", "3:4", "9:16", "3:2", "2:3", "5:4", "4:5", "21:9"
+
+Edit images:
+
+```bash
+IMG=$(base64 -w0 cat.png)
+echo '{"contents": [{"parts": [{"text": "Edit image: add bold caption `CAT`"}, {"inline_data": {"mime_type": "image/png", "data": "'"$IMG"'"}}]}], "generationConfig": {"responseModalities": ["IMAGE"]}}' > payload.json
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$GEMINI_API_KEY" \
+  -H "Content-Type: application/json" -d @payload.json \
+  | jq -r '.candidates[0].content.parts[0].inlineData.data' | base64 -d > captioned.png
+```

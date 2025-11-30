@@ -38,10 +38,10 @@ RUN curl -fsSL https://mise.run | sh \
  && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
 
 # Install mise tools
-RUN mise use -g fd uv node ripgrep duckdb pandoc rclone ubi:mithrandie/csvq github-cli
+RUN mise use -g fd uv node deno ripgrep duckdb pandoc rclone ubi:mithrandie/csvq github-cli websocat
 
 # Install uv
-RUN bash -lc 'eval "$(mise activate bash)"; \
+RUN bash -lc 'eval "$(mise env -s bash)"; \
   mkdir -p ~/apps/global; \
   cd ~/apps/global; \
   uv venv; \
@@ -50,9 +50,10 @@ RUN bash -lc 'eval "$(mise activate bash)"; \
   '
 
 # Install npm tools last, so that we can update Codex and Claude
-RUN bash -lc 'eval "$(mise activate bash)"; \
-  npm install -g @openai/codex@0.61.0; \
+RUN bash -lc 'eval "$(mise env -s bash)"; \
+  npm install -g @openai/codex@0.63.0; \
   npm install -g @anthropic-ai/claude-code@latest; \
+  npm install -g @github/copilot@latest; \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime

@@ -1,10 +1,9 @@
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
 logout=@as []
-
 
 # Set Ctrl+Alt+Delete to lock screen instead of logout
 screensaver=['<Primary><Alt>Delete']
@@ -37,5 +36,11 @@ name='Flameshot'
 # Ctrl+Alt+F opens rofi file picker
 [custom-keybindings/picker]
 binding='<Control><Alt>f'
-command='rofi -show-icons -show combi -modes combi -combi-modes "window,tab:/home/sanand/code/scripts/rofi-chrome-tabs.sh,file:/home/sanand/code/scripts/rofi-files.sh"'
+command='rofi -show-icons -show combi -modes combi -combi-modes "window,🌍:/home/sanand/code/scripts/rofi-chrome-tabs.sh,📝:/home/sanand/code/scripts/rofi-files.sh" -kb-accept-alt "" -kb-accept-custom "" -kb-accept-custom-alt "" -kb-custom-1 "Shift+Return" -kb-custom-2 "Control+Return" -kb-custom-3 "Control+Shift+Return"'
 name='Picker'
+
+# Ctrl+Alt+C to convert clipboard rich text to markdown
+[custom-keybindings/copy-to-markdown]
+binding='<Control><Alt>c'
+command='/home/sanand/code/scripts/copy-to-markdown.sh'
+name='Copy to Markdown'

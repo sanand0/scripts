@@ -52,6 +52,7 @@ args=(
   -v "$HOME/.copilot:/home/vscode/.copilot"
   -v "$HOME/.gitconfig:/home/vscode/.gitconfig"
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  -v "$HOME/.local/share/mise:/home/vscode/.local/share/mise"
   -v "$HOME/.npm:/home/vscode/.npm"
   -v "$HOME/.ssh:/home/vscode/.ssh:ro"
   -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"

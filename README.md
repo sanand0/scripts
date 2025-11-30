@@ -47,17 +47,19 @@ Here are the setup details for my laptops.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [chars](chars) lists non-ASCII characters in files.
-- [chat](chat) is a chat interface to LLMs in the terminal. `chat 'What is 2 + 2?' --llm chatgpt` opens chatgpt.com, asks the question, and prints the answer.
+- [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) tests the environment for tools.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
-- [gitget.sh](gitget.sh) clones a git repository and copies specific paths to local directories.
+- [discourse.py](discourse.py) extracts recent posts from a Discourse category or topic.
+- [gitget](gitget) clones a git repository and copies specific paths to local directories.
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
 - [githubscore.py](githubscore.py) evaluates GitHub developer quality
 - [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
 - [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`
+- [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.

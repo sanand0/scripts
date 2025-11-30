@@ -75,10 +75,11 @@ sudo apt install -y moreutils           # moreutils - Collection of useful Unix 
 sudo apt install -y python3 python3-pip # System Python - Required by some system tools despite using uv for projects
 sudo apt install -y vlc                 # VLC - Multimedia player
 sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
+sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
-eval "$( $HOME/.local/bin/mise activate bash )"
+eval "$($HOME/.local/bin/mise env -s bash)"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
 mise use -g 'ubi:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
@@ -99,6 +100,7 @@ mise use -g github-cli               # GitHub CLI - Official GitHub command-line
 mise use -g glab                     # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                     # glow - Render markdown in the terminal 🔴 Rarely used
 mise use -g gum                      # gum - Stylish command-line prompts and scripts
+mise use -g jaq                      # jaq - jq alternative with JIT compilation
 mise use -g jq                       # jq - JSON processor
 mise use -g lazydocker               # lazydocker - Terminal UI for Docker
 mise use -g lazygit                  # lazygit - Terminal UI for git
@@ -116,6 +118,8 @@ mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
 mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
+mise use -g ubi:iffse/pay-respects   # pay-respects - thefuck alternative. Run `f` to correct previous command
+mise use -g ubi:imsnif/bandwhich     # bandwhich - Terminal network bandwidth utilization tool
 mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
@@ -157,8 +161,9 @@ mise use -g zoxide                   # zoxide - Smart cd command (remembers freq
 # mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
 # mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
 
-npm install -g codex                 # codex - AI code assistant CLI
-npm install -g wscat                 # wscat - WebSocket client (for Codex CDP usage)
+npm install -g codex@latest               # codex - AI code assistant CLI
+npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
+npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 
 # Install tools that cannot be set up with mise without compilation (Nov 2025)
 sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
@@ -194,10 +199,13 @@ sudo systemctl start touchegg.service
 # uv - Extremely fast Python package installer and resolver | Update: uv self update
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Set up uv environments and llm (after setting up fish)
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install httpx pandas ruff llm
+# Set up uv environments
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
-mkdir -p ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127
+mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
+mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
+  uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12  # for faster-whisper
+  UV_TORCH_BACKEND=auto uv pip install torch torchaudio   # for whisper_streaming
 mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
 mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
 mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag
@@ -229,7 +237,7 @@ elif test "$XDG_SESSION_TYPE" = "x11"
     curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-x11-amd64.deb
     sudo apt install -y ./espanso-debian-x11-amd64.deb
 end
-espanso install actually-all-emojis
+# espanso install actually-all-emojis
 espanso service register
 espanso start
 
@@ -356,17 +364,15 @@ systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
 # Customize Foliate line height
 mkdir -p ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/
 cat > ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/user-stylesheet.css << 'EOF'
-p { line-height: 1.8 !important; }
-EOF
-
-# Configure rofi. Note
-mkdir -p ~/.config/rofi; cat > ~/.config/rofi/config.rasi << 'EOF'
-@theme "/usr/share/rofi/themes/Monokai.rasi"
+body { font-size: 125% !important; }
 p { line-height: 1.8 !important; }
 EOF
 
 # Configure rofi
-printf "@theme \"/usr/share/rofi/themes/Monokai.rasi\"\nwindow { height: 80%; }\m" >>
+mkdir -p ~/.config/rofi; cat > ~/.config/rofi/config.rasi << 'EOF'
+@theme "/usr/share/rofi/themes/Monokai.rasi"
+window { height: 80%; }
+EOF
 
 # Install Fira Code font
 mkdir -p ~/.local/share/fonts
@@ -417,6 +423,20 @@ desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applicatio
   --set-key=Exec \
   --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 --remote-allow-origins="*" %U'
 update-desktop-database ~/.local/share/applications   # refresh caches
+
+# If `journalctl --user-unit espanso | tail` reports several `get_active_window reported an error`
+# this happens when pressing Win for the Gnome overview. Limit espanso logs and redirect to files:
+# https://chatgpt.com/c/6925a81f-a928-8320-9aac-2c4a70daf7bf
+mkdir -p ~/.config/systemd/user/espanso.service.d
+cat > ~/.config/systemd/user/espanso.service.d/lograte.conf <<'EOF'
+[Service]
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=5
+StandardOutput=append:%h/.cache/espanso/stdout.log
+StandardError=append:%h/.cache/espanso/stderr.log
+EOF
+systemctl --user daemon-reload
+systemctl --user restart espanso
 ```
 
 - Install Gnome extensions via Extension Manager:
@@ -450,6 +470,14 @@ Notes
 - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
 ## Deprecations
+
+MISE deprecations:
+
+```bash
+mise use -g usql                     # Prefer DuckDB
+```
+
+Other deprecations:
 
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
 - Guake. `sudo apt install guake`. VS Code terminal was good enough and I wasn't using it.

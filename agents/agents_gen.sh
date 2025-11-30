@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get latest external skills
-gitget.sh https://github.com/anthropics/skills main \
+gitget https://github.com/anthropics/skills main \
   webapp-testing:webapp-testing \
   document-skills/pdf:pdf
 

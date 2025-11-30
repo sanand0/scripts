@@ -1,6 +1,8 @@
 ---
 description: Analyze structured / unstructured data for insights
-source: https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
+source:
+   - https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
+   - https://claude.ai/share/38fefabe-bcd6-4375-b144-25f028b1f09f
 ---
 
 Analyze data like an investigative journalist hunting for stories that make smart readers lean forward and say "wait, really?"
@@ -14,6 +16,7 @@ Analyze data like an investigative journalist hunting for stories that make smar
    - **Cross-check externally**: Find evidence from the outside world that supports, refines, or contradicts your findings
    - **Test robustness**: Alternative model specs, thresholds, sub-samples, placebo tests
    - **Check for errors/bias**: Examine provenance, definitions, methodology; control for confounders, base rates, uncertainty (The Data Detective lens)
+   - **Check for fallacies**: Correlation vs. causation, selection/survivorship Bias (what is missing?), incentives & Goodhart’s Law (is the metric gamed?), Simpson's paradox (segmentation flips trend), Occam’s Razor (simpler is more likely), inversion (try to disprove) regression to mean (extreme values naturally revert), second-order effects (beyond immediate impact), ...
    - **Consider limitations**: Data coverage, biases, ambiguities, and what cannot be concluded
 7. Prioritize & Package: Select insights that are:
    - **High-impact** (not incremental) - meaningful effect sizes vs. base rates

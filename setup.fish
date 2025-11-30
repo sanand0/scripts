@@ -70,8 +70,11 @@ abbr --add http 'uvx httpie'
 # Better ncdu
 abbr --add ncdu gdu
 
+# Bandwhich requires sudo and is behind mise, so use full path
+abbr --add bandwhich 'sudo $(which bandwhich)'
+
 # Command line Excel. For more formats, see https://www.visidata.org/docs/formats/
-abbr --add vd 'uvx --from visidata --with openpyxl, vd'
+abbr --add vd 'uvx --from visidata --with openpyxl vd'
 
 # GMail command line
 export PAGER='bat'      # Required for cmdg
@@ -121,16 +124,23 @@ abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
 function secret --description "Extract secret from .env"
-    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env
+    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env | string trim -c '"'
     # Slower version using python-dotenv
     # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
 end
+
+# SaaS utilities
+# -----------------------------------------------
+abbr --add hs 'npx -y --package @hubspot/cli hs'
 
 # File Utilities
 # -----------------------------------------------
 
 # List files, sorted by time, with git status and relative time
 abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
+
+# rm moves to trash
+abbr --add rm trash
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
@@ -387,8 +397,9 @@ function prompt --description "Example: llm --system \"(prompt core-concepts)\" 
     end
 end
 
+# This is a very useful function. Ask for a command on the CLI and you get it. Paste and run.
 function with --description "Example: with gh,jq 'Find last 3 repos I committed to'"
-    llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" \
+    llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" -o reasoning_effort minimal \
     | tee /dev/tty \
     | awk '
         { all = all $0 ORS }                    # keep full text for fallback
@@ -456,6 +467,9 @@ mcfly init fish | source
 
 # https://github.com/openai/codex/blob/main/docs/getting-started.md#shell-completions
 codex completion fish | source
+
+# https://github.com/iffse/pay-respects
+pay-respects fish --alias | source
 
 type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source

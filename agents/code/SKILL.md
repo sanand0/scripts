@@ -3,18 +3,23 @@ name: code
 description: ALWAYS follow this style when writing Python / JavaScript code
 ---
 
-Coding style
+Coding guidelines
 
-- Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries exist
-- Write readable code. Keep happy path linear and obvious. Begin by writing the flow, then fill in code. Name intuitively
+- Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries
+- Write readable code. Keep happy path linear and obvious. Write flow first, then fill in code. Name intuitively
 - Keep code short
-- Add static data (configs, prompts, schemas, ...) to existing config.{json|yaml|toml|...}. Create if config >= 30 lines
-- Skip defensive fallbacks. Prefer early returns. Fail fast
+  - Data over code: Structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
+  - DRY: Helpers for repeated logic, precompute shared intermediates
+  - Single expression: Skip intermediate variables when clear
+  - Early returns fail fast and reduce nesting. Skip defensive fallbacks
+  - YAGNI: Skip unused imports, variables, and code
 - Change existing code minimally. Retain existing comments. Follow existing style
-- Add failing tests first if tests exists (or in new code). Keep tests fast
+- If tests exists (or in new code), add failing tests first. Keep tests fast
 - Use type hints and single-line docstrings
-- Cache LLM/API/HTTP requests when looping
 - Show status & progress for long tasks (>5s)
+- Make re-runs efficient for long tasks (>1min). Cache & flush data, LLM/API/HTTP requests
+- Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, ...
+- For large/complex libraries, https://context7.com/$ORG/$REPO/llms.txt has docs for https://github.com/$ORG/$REPO
 
 ## Python
 
@@ -32,12 +37,14 @@ Unless `pyproject.toml` is present, add dependencies to script:
 
 Preferred Python libs:
 
-`typer` not `argparse`
+`typer`/`click` not `argparse`
 `httpx` not `requests`
 `lxml` not `xml`
+`pandas` not `csv`
 `orjson` over `json` if speed/datetime matters
 `tenacity` for retries
 `pytest`
+`python-dotenv`
 
 ## JavaScript
 
@@ -47,9 +54,10 @@ Preferred JS style:
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
 - ESM2022+. No TypeScript. But enable `// @ts-check`
 - Modern browser APIs
+- Modern JS features: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
-- Helpers: `const $ = (s, el = document) => el.querySelector(s); $("#id")...`
+- Helpers: `const $ = (s, el = document) => el.querySelector(s); $('#id')...`
 - Import maps: `<script type="importmap">{ "imports": { "package-name": "https://cdn.jsdelivr.net/npm/package-name@version" } }</script>`
 
 Preferred JS libs:
@@ -68,26 +76,22 @@ import { geminiConfig, openaiConfig } from "bootstrap-llm-provider"; // @1 LLM p
 import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
 ```
 
-## Git
+Test front-end apps with Playwright (prefer CDP on localhost:9222) using .evaluate(), view_image / read tool for screenshots.
 
-If committing, write a conventional commit message given a diff. Example:
+## Tmux
 
+Use tmux outside the sandbox for interactive REPLs, TUIs; long running commands (servers, codex, sub-agents); persistent tasks
+
+```bash
+tmux new-session -d -s $SESSION 'uv run --with pandas,httpx,lxml python -iqu'
+tmux pipe-pane -t $SESSION -o "cat >> /tmp/$LOG"
+tmux send-keys -t $SESSION 'print(1 + 2)' C-m
+cat /tmp/$LOG
+tmux capture-pane -p -t $SESSION -S -5
 ```
-doc: Readable code, shorter context
 
-**Readable code**. Standardize comments, add `method()` docstring in `path/file2.ext`. ...
+## References
 
-**Shorter context**. `get_context()` truncates files >10K + "..." in `path/file.ext`. ...
-```
+Under ../custom-prompts/
 
-Title (<= 50 chars).
-
-Group into themes by impact
-Use imperative mood
-Explain what changed and WHY
-
-## Docs sources
-
-Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, ...
-
-For large/complex libraries, https://context7.com/org/repo/llms.txt has LLM-friendly docs for https://github.com/org/repo
+- git-commit.md: commit guidelines
