@@ -19,6 +19,7 @@ tealdeer $TOOL for quick reference.
 Refer relevant SKILL.md under /home/sanand/code/scripts/agents:
 
 - [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
+- [design](design/SKILL.md): ALWAYS follow this design guide for any front-end work
 - [devtools](devtools/SKILL.md): Use CDP at localhost:9222 to test/debug websites, automate browser tasks
 - [llm](llm/SKILL.md): Call LLM via CLI for transcription, vision, image generation, piping prompts, ...
 - [npm-packages](npm-packages/SKILL.md): Conventions for package.json, README.md, coding & testing styles
