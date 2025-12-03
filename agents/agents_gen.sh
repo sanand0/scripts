@@ -7,7 +7,7 @@ gitget https://github.com/anthropics/skills main \
 
 {
   sed '/<!-- skills -->/q' AGENTS.md
-  printf "\nRefer relevant SKILL.md under /home/sanand/code/scripts/agents:\n\n"
+  printf "\nRefer relevant SKILL.md under $HOME/code/scripts/agents:\n\n"
   find . -maxdepth 2 -name SKILL.md | sort | xargs -I {} awk '
     /^---$/         { if (++count == 2) exit }
     /^name:/        { name = $2 }

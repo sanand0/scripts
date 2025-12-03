@@ -1,6 +1,6 @@
 ---
 name: llm
-description: Call LLM via CLI for transcription, vision, image generation, piping prompts, ...
+description: Call LLM via CLI for transcription, vision, speech/image generation, piping prompts, sub-agents, ...
 ---
 
 ```bash
@@ -38,6 +38,7 @@ curl https://api.openai.com/v1/audio/speech -H "Authorization: Bearer $OPENAI_AP
 
 voice: alloy, ash, ballad, coral, echo, fable, onyx, nova, sage, shimmer, and verse
 response_format: mp3, opus, wav
+Add "instructions": with style / tone
 
 Generate images:
 
@@ -49,13 +50,22 @@ curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-i
 ```
 
 aspectRatio: "1:1", "4:3", "16:9", "3:4", "9:16", "3:2", "2:3", "5:4", "4:5", "21:9"
+Specify style, layout, font, scene, lighting, ... clearly
 
-Edit images:
+Edit images / provide reference images:
 
 ```bash
 IMG=$(base64 -w0 cat.png)
-echo '{"contents": [{"parts": [{"text": "Edit image: add bold caption `CAT`"}, {"inline_data": {"mime_type": "image/png", "data": "'"$IMG"'"}}]}], "generationConfig": {"responseModalities": ["IMAGE"]}}' > payload.json
+echo '{"contents": [{"parts": [{"text": "Edit image: add bold caption `CAT`"}, {"inlineData": {"mime_type": "image/png", "data": "'"$IMG"'"}}]}], "generationConfig": {"responseModalities": ["IMAGE"]}}' > payload.json
 curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$GEMINI_API_KEY" \
   -H "Content-Type: application/json" -d @payload.json \
   | jq -r '.candidates[0].content.parts[0].inlineData.data' | base64 -d > captioned.png
+```
+
+To write/run tasks as a sub-agent (e.g., code review, code generation), use either Codex or Claude Code:
+
+```bash
+codex exec 'Review uncommitted changes for errors and style'
+codex exec --image screenshot.png 'Compare code with UI and suggest improvements'
+npx -y @anthropic-ai/claude-code -p 'Write a web app ...'
 ```

@@ -38,7 +38,21 @@ RUN curl -fsSL https://mise.run | sh \
  && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
 
 # Install mise tools
-RUN mise use -g fd uv node deno ripgrep duckdb pandoc rclone ubi:mithrandie/csvq github-cli websocat
+RUN mise use -g \
+  deno \
+  duckdb \
+  fd \
+  github-cli \
+  jaq \
+  node \
+  pandoc \
+  rclone \
+  ripgrep \
+  ubi:jqnatividad/qsv \
+  ubi:mithrandie/csvq \
+  ubi:pdfcpu/pdfcpu \
+  uv \
+  websocat
 
 # Install uv
 RUN bash -lc 'eval "$(mise env -s bash)"; \
@@ -51,6 +65,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 
 # Install npm tools last, so that we can update Codex and Claude
 RUN bash -lc 'eval "$(mise env -s bash)"; \
+  npm install -g wscat@latest; \
   npm install -g @openai/codex@0.63.0; \
   npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \

@@ -21,8 +21,7 @@ Include these keys:
 - license: "MIT"
 - author: typically "Anand S <root.node@gmail.com>"
 - type: "module"
-- prettier: { printWidth: 120 }
-- files: [ "LICENSE", "README".md, "dist/" ]
+- files: [ "LICENSE", "README.md", "dist/" ]
 - browser: "dist/package-name.min.js" if meant for browsers
 - exports: "dist/package-name.min.js" or `{ ".": { "default": "./dist/package-name.min.js", "types": "./package-name.d.ts" } }`
 - bin: only for CLI apps
@@ -30,10 +29,7 @@ Include these keys:
   ```jsonc
   {
     "build": "npx -y esbuild package-name.js --bundle --format esm --minify --outfile=dist/package-name.min.js",
-    "lint:oxlint": "npx -y oxlint@1 --fix",
-    "lint:js-md": "npx -y prettier@3.5 --print-width 120 --write '**/*.js' '!**/*.min.js' '!dist/**' '**/*.md'",
-    "lint:html": "npx -y js-beautify@1 '**/*.html' --type html --replace --indent-size 2 --max-preserve-newlines 1 --end-with-newline",
-    "lint": "npm run lint:oxlint && npm run lint:js-md && npm run lint:html",
+    "lint": "dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/main/dprint.jsonc && npx -y oxlint --fix",
     "test": "npx -y vitest@3 run --globals",
     "prepublishOnly": "npm run lint && npm run build && npm test"
     // docs, watch, pretest, ...
@@ -41,7 +37,7 @@ Include these keys:
   ```
 - dependencies: only if required
 - devDependencies: only if required. Prefer `npx -y` in scripts over devDependencies. Used mainly if tests/utilities need packages, e.g. jsdom, playwright, sharp
-- peerDepedencies: only if required. E.g. { "bootstrap": "^5.3.7" }
+- peerDependencies: only if required. E.g. { "bootstrap": "^5.3.7" }
 - keywords: [ ... ]
 
 ## README.md
@@ -87,7 +83,7 @@ Include these H2 headings in order:
   <script type="importmap">
   {
     "imports": {
-      "package-name": ""./node_modules/package-name/dist/package-name.js""
+      "package-name": "./node_modules/package-name/dist/package-name.js"
     }
   }
   </script>
@@ -128,7 +124,7 @@ Follow these conventions:
 - Prefer Vitest with jsdom for browser libraries
 - Playwright can be used for end-to-end and screenshot tests
 - File naming: `*.test.js` (or `*.spec.ts` for Playwright suites)
-- Style: BDD (`describe`/`it`), deterministic tests, small fixtures; mock network when applicable
+- Style: BDD (`describe`, `it`), deterministic tests, small fixtures; mock network when applicable
 
 ## .gitignore
 

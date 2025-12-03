@@ -1,0 +1,31 @@
+{
+  "demos": [
+    {
+      "icon": "bi bi-code-square",
+      "title": "Write Code",
+      "body": "Generate code snippets",
+      "prompt": "Generate 3 Python code snippets as JSON: {snippets: [{code,explanation}, ...]}",
+      "schema": {
+        "properties": {
+          "snippets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "description": "Valid Python code" },
+                "explanation": { "type": "string", "description": "Explanation of the code snippet" }
+              },
+              "required": ["code", "explanation"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["snippets"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "defaults": {
+    "model": "gpt-5-nano"
+  }
+}

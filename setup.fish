@@ -33,6 +33,10 @@ export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
 export UV_CACHE_DIR="$HOME/.cache/uv"
 export XDG_DATA_HOME="$HOME/.local/share"
 
+# fx environment variables. https://fx.wtf/configuration
+export FX_LINE_NUMBERS=true
+export FX_SHOW_SIZE=true
+
 # Via Google Cloud SDK.
 if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
 

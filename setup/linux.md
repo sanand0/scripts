@@ -94,6 +94,7 @@ mise use -g duckdb                   # DuckDB - In-process SQL OLAP database
 mise use -g duf                      # duf - Disk usage utility with better formatting than df
 mise use -g eza                      # Better ls (replaces exa)
 mise use -g fd                       # fd - Fast file finder (find alternative)
+mise use -g fx                       # fx - Fast JSON viewer
 mise use -g gcloud                   # gcloud - Google Cloud CLI
 mise use -g gdu                      # gdu - ncdu alternative for disk usage
 mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
@@ -111,6 +112,7 @@ mise use -g pnpm                     # pnpm - Fast, disk space efficient package
 mise use -g prek                     # prek - pre-commit alternative
 mise use -g rclone                   # rclone - Sync files to/from cloud storage
 mise use -g ripgrep                  # ripgrep - Fast grep alternative
+mise use -g shfmt                    # shfmt - Shell script formatter
 mise use -g starship                 # starship - Fast, customizable shell prompt
 mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
 mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
