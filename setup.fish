@@ -300,6 +300,7 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
+# mdq is an alternative
 function mdgrep -d "Grep markdown by top-level bullet blocks"
     awk -v pat="$argv[1]" '
         /^[-*] [^ ]/ { if(b && m) print b; b=$0; m=0; next }
