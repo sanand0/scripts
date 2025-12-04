@@ -300,6 +300,16 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
+function mdgrep -d "Grep markdown by top-level bullet blocks"
+    awk -v pat="$argv[1]" '
+        /^[-*] [^ ]/ { if(b && m) print b; b=$0; m=0; next }
+        { b=b ORS $0 }
+        $0 ~ pat { m=1 }
+        END { if(b && m) print b }
+    ' $argv[2..-1]
+end
+
+
 function meeting --description "Create a new meeting transcript file"
     set date $(date -Idate)
     set title "$date $argv[1..]"
