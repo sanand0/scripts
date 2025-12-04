@@ -25,6 +25,7 @@ Guidelines:
   - Use lit-html for DOM updates
   - Always show a spinner while awaiting network call
   - Always stream LLM responses. Stream JSON with partial-json. Render LLM output with marked. Highlight code blocks
+  - #TODO Output style, readability, etc.
 
 Code style:
 
