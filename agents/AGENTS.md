@@ -11,7 +11,7 @@ duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pandoc
 magick, cwebp, ffmpeg
 
-$HOME/code/scripts/agents/tooldocs/$TOOL.md has usage examples.
+/home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples.
 tealdeer $TOOL for quick reference.
 
 Avoid tools:
@@ -20,7 +20,7 @@ imgcat: prefer view_image / read tool
 
 <!-- skills -->
 
-Refer relevant SKILL.md under $HOME/code/scripts/agents:
+Refer relevant SKILL.md under /home/sanand/code/scripts/agents:
 
 - [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
 - [demos](demos/SKILL.md): Use when creating demos or POCs
