@@ -256,7 +256,7 @@ abbr --add videorecord '
     -f pulse -i default \
     -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
     -f x11grab \
-    -video_size 1920x1080 \
+    -video_size 1920x1200 \
     -framerate 5 \
     -i $DISPLAY+0,0 \
     -filter_complex "\
