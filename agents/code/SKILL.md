@@ -48,13 +48,12 @@ Preferred JS style:
 
 - Bootstrap. Minimize custom CSS
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
-- Use ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
+- Use modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
-- Modern browser APIs
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
 - Helpers: `const $ = (s, el = document) => el.querySelector(s); $('#id')...`
-- Prefer vitest + jsdom for unit tests
+- Prefer vitest + jsdom for unit tests, Playwright for end-to-end tests
 - Import maps: `<script type="importmap">{ "imports": { "package-name": "https://cdn.jsdelivr.net/npm/package-name@version" } }</script>`
 
 Preferred libs:
