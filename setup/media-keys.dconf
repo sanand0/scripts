@@ -5,8 +5,8 @@ custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
 logout=@as []
 
-# Set Ctrl+Alt+Delete to lock screen instead of logout
-screensaver=['<Primary><Alt>Delete']
+# Set Win+L to lock screen. Same as Windows
+screensaver=['<Super>l']
 
 # Win+E opens Downloads, not the home folder
 home=@as []

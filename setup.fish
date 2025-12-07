@@ -256,7 +256,7 @@ abbr --add videorecord '
     -f pulse -i default \
     -f pulse -i alsa_output.pci-0000_00_1f.3.analog-stereo.monitor \
     -f x11grab \
-    -video_size 1920x1080 \
+    -video_size 1920x1200 \
     -framerate 5 \
     -i $DISPLAY+0,0 \
     -filter_complex "\
@@ -299,6 +299,17 @@ function mcd --description "mkdir DIR && cd DIR"
     mkdir -p -- $argv[1]
     and cd -- $argv[1]
 end
+
+# mdq is an alternative
+function mdgrep -d "Grep markdown by top-level bullet blocks"
+    awk -v pat="$argv[1]" '
+        /^[-*] [^ ]/ { if(b && m) print b; b=$0; m=0; next }
+        { b=b ORS $0 }
+        $0 ~ pat { m=1 }
+        END { if(b && m) print b }
+    ' $argv[2..-1]
+end
+
 
 function meeting --description "Create a new meeting transcript file"
     set date $(date -Idate)

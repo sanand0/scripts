@@ -15,6 +15,7 @@ Guidelines:
 
 - Prefer pure-front-end apps that can be deployed on GitHub pages.
 - Make it easy to demo.
+  - Begin with a 1-3 para functional description of what the app does and how to use it
   - Include cards from config.json to run a demo with one click
   - Include synthetic sample datasets as CSV/JSON each <= 1MB, total <= 5MB
 - Make it self-serve
@@ -25,6 +26,7 @@ Guidelines:
   - Use lit-html for DOM updates
   - Always show a spinner while awaiting network call
   - Always stream LLM responses. Stream JSON with partial-json. Render LLM output with marked. Highlight code blocks
+  - #TODO Output style, readability, etc.
 
 Code style:
 

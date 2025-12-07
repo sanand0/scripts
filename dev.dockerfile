@@ -66,7 +66,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install npm tools last, so that we can update Codex and Claude
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g wscat@latest; \
-  npm install -g @openai/codex@0.63.0; \
+  npm install -g @openai/codex@0.65.0; \
   npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \
   '
