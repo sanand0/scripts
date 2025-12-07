@@ -9,14 +9,10 @@ uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pandoc
-magick, cwebp, ffmpeg
+magick, cwebp, ffmpeg (avoid imgcat, prefer view_image / read tool)
 
 /home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples.
 tealdeer $TOOL for quick reference.
-
-Avoid tools:
-
-imgcat: prefer view_image / read tool
 
 <!-- skills -->
 
