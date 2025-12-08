@@ -285,7 +285,10 @@ abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc.
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
-abbr --add webp-lossy 'cwebp -q 10 -m 6'
+
+function webp-lossy --description "Convert images to lossy WebP with very high compression"
+    cwebp -q 10 -m 6 $argv[1] -o (string replace -r '\.[^.]+$' '.webp' $argv[1])
+end
 
 # Usage: pdf_decrypt file.pdf password. Also: pdfcpu decrypt -upw password input.pdf output.pdf
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
