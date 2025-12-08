@@ -286,7 +286,7 @@ abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
 
-function webp-lossy --description "Convert images to lossy WebP with very high compression"
+function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts into file1.webp file2.webp with lossy compression"
     cwebp -q 10 -m 6 $argv[1] -o (string replace -r '\.[^.]+$' '.webp' $argv[1])
 end
 
