@@ -445,46 +445,17 @@ function opusmusic --description "opus file.mp4 converts it to file.opus (music 
 end
 
 function ffsplit --description "ffsplit 12:00 34:00 45:00 ... input.opus - splits input.opus at given timestamps and creates input-1.opus, input-2.opus, ..."
-    # Check if we have at least 2 arguments (one timestamp + input file)
-    if test (count $argv) -lt 2
-        echo "Usage: ffsplit TIMESTAMP1 [TIMESTAMP2 ...] INPUTFILE"
-        echo "Example: ffsplit 12:00 34:00 45:00 input.opus"
-        return 1
-    end
-
-    # Last argument is the input file
-    set input $argv[-1]
-    
-    # Check if input file exists
-    if not test -f $input
-        echo "Error: Input file '$input' not found"
-        return 1
-    end
-
-    # All other arguments are timestamps
+    set in $argv[-1]
     set timestamps $argv[1..-2]
-    
-    # Get base name without extension
-    set base (string replace -r '\.[^.]+$' '' $input)
-    set ext (string replace -r '.*(\.[^.]+)$' '$1' $input)
-    
-    # Start time for first segment
-    set start "00:00"
-    set segment 1
-    
-    # Process each timestamp
-    for end in $timestamps
-        set output "$base-$segment$ext"
-        echo "Creating segment $segment: $start to $end -> $output"
-        ffmpeg -hide_banner -v warning -i $input -ss $start -to $end -c copy $output
-        set start $end
-        set segment (math $segment + 1)
+    set prev 0
+    set i 1
+    for ts in $timestamps
+        ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -to $ts -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
+        set prev $ts
+        set i (math $i + 1)
     end
-    
-    # Create final segment from last timestamp to end
-    set output "$base-$segment$ext"
-    echo "Creating segment $segment: $start to end -> $output"
-    ffmpeg -hide_banner -v warning -i $input -ss $start -c copy $output
+    # Last segment
+    ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
 end
 
 # whisper --output_format txt $inputfile
