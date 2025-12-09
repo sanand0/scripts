@@ -4,17 +4,15 @@ description: Run a post-mortem analysis
 
 Review our entire conversation and extract lessons learned. This is blameless: focus on system, process, and instruction improvements.
 
-## CONTEXT GATHERING (do this first)
+## 1. CONTEXT GATHERING
 
-Before analyzing, actively check:
+Check:
 
-- What actually changed vs. what we discussed? E.g. via git status/diff/log
 - Terminal output - what commands failed or behaved unexpectedly?
+- What actually changed vs. what we discussed? E.g. via git status/diff/log
 - Test/lint/typecheck results - what's currently broken?
 
 If any source is unavailable, note it and proceed with what you have.
-
----
 
 ## 2. TURNING POINTS TIMELINE
 
@@ -61,47 +59,13 @@ Capture successful patterns worth repeating:
 
 Transform insights into specific, copy-paste-ready rules for AGENTS.md / CLAUDE.md:
 
-```
-# Learned from session [date/topic]
-
-## When [specific situation]
-DO: [exact action]
-BECAUSE: [what went wrong when we didn't]
-
-## NEVER
-- [anti-pattern] - causes [consequence we experienced]
-
-## Commands that work in this repo
-- [exact syntax that worked]
-```
-
 Each rule must trace back to a failure mode from Section 3.
 
-## 7. NEXT SESSION PLAYBOOK
-
-A compact checklist to paste at the start of the next session:
-
-**Before coding:**
-
-- [ ] [specific thing to investigate first]
-- [ ] [context to gather]
-
-**During:**
-
-- [ ] [verification step after doing X]
-- [ ] [check to run before committing]
-
-**Stop conditions** (pause and ask me when):
-
-- [situation that went badly when you proceeded autonomously]
-
-## 8. FUTURE SELF WARNING
+## 7. FUTURE SELF WARNING
 
 One paragraph: If you could send a message back to yourself at the start of this session, what would it say?
 
----
-
-## STYLE CONSTRAINTS
+## STYLE
 
 - No vague improvements ("be more careful", "check thoroughly")
 - Every prevention must be a concrete system change
