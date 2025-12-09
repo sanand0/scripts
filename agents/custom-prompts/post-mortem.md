@@ -27,7 +27,7 @@ In 5-8 bullets:
 
 ## 2. TURNING POINTS TIMELINE
 
-List the 5-8 key moments where direction changed. For each:
+List every key moment where direction changed. For each:
 
 - **Signal**: What we observed
 - **Hypothesis**: What you assumed was happening
