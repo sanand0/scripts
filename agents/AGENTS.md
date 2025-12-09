@@ -18,8 +18,7 @@ tealdeer $TOOL for quick reference.
 
 Refer relevant SKILL.md under /home/sanand/code/scripts/agents:
 
-- [code](code/SKILL.md): To deploy a Python app as a Cloudflare Python Worker
-- [cloudflare](cloudflare/SKILL.md): Guidelines when working with CloudFlare
+- [cloudflare](cloudflare/SKILL.md): For CloudFlare development, deployment, e.g. Python CloudFlare Workers
 - [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
 - [demos](demos/SKILL.md): Use when creating demos or POCs
 - [design](design/SKILL.md): ALWAYS follow this design guide for any front-end work
