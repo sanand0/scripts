@@ -62,9 +62,9 @@ Capture successful patterns worth repeating:
 - Prompting or communication patterns that helped
 - Moments where checking something first saved time
 
-## 6. ACTIONABLE RULES FOR CLAUDE.md
+## 6. ACTIONABLE RULES
 
-Transform insights into specific, copy-paste-ready rules:
+Transform insights into specific, copy-paste-ready rules for AGENTS.md / CLAUDE.md:
 
 ```
 # Learned from session [date/topic]
