@@ -29,9 +29,13 @@ Mark which hypothesis was _wrong_ - that's usually where the lesson lives.
 
 ## 3. FAILURE MODE CATALOG
 
-| Symptom       | Root Cause (5 Whys) | Detection Gap                         | Prevention Rule        | Frequency              |
-| ------------- | ------------------- | ------------------------------------- | ---------------------- | ---------------------- |
-| What happened | Why (dig deep)      | What should have caught this earlier? | Specific system change | How often this session |
+For each failure mode, document:
+
+- Symptom: What happened
+- Root Cause (5 Whys): Why (dig deep)
+- Detection Gap: What should have caught this earlier?
+- Prevention Rule: Specific system change
+- Frequency: How often this session
 
 "Detection Gap" is critical: what test, lint rule, type check, or verification step _should_ have caught this before it became a problem?
 
