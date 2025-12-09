@@ -18,14 +18,17 @@ tealdeer $TOOL for quick reference.
 
 Refer relevant SKILL.md under /home/sanand/code/scripts/agents:
 
+- [code](code/SKILL.md): To deploy a Python app as a Cloudflare Python Worker
+- [cloudflare](cloudflare/SKILL.md): Guidelines when working with CloudFlare
 - [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
-- [demos](demos/SKILL.md): Use when creating demos or POCs
+- [demos](demos/SKILL.md): Use when creating demos or POCs
 - [design](design/SKILL.md): ALWAYS follow this design guide for any front-end work
 - [devtools](devtools/SKILL.md): Use CDP at localhost:9222 to test/debug websites, automate browser tasks
-- [llm](llm/SKILL.md): Call LLM via CLI for transcription, vision, image generation, piping prompts, ...
+- [llm](llm/SKILL.md): Call LLM via CLI for transcription, vision, speech/image generation, piping prompts, sub-agents, ...
 - [npm-packages](npm-packages/SKILL.md): Conventions for package.json, README.md, coding & testing styles
-- [plan](plan/SKILL.md): How to plan & break down large, complex tasks
 - [pdf](pdf/SKILL.md): Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.
+- [plan](plan/SKILL.md): How to plan & break down large, complex tasks
+- [vitest-dom](vitest-dom/SKILL.md): Use vitest + jsdom for fast, lightweight unit tests for front-end apps
 - [webapp-testing](webapp-testing/SKILL.md): Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.
 
 <!-- /skills -->
