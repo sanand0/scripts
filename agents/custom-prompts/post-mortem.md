@@ -8,10 +8,11 @@ Review our entire conversation and extract lessons learned. This is blameless: f
 
 Before analyzing, actively check:
 
-- `git status` and `git diff` — what actually changed vs. what we discussed?
-- Recent terminal output — what commands failed or behaved unexpectedly?
-- Test/lint/typecheck results — what's currently broken?
-  If any source is unavailable, note it and proceed with what you have.
+- What actually changed vs. what we discussed? E.g. via git status/diff/log
+- Terminal output - what commands failed or behaved unexpectedly?
+- Test/lint/typecheck results - what's currently broken?
+
+If any source is unavailable, note it and proceed with what you have.
 
 ---
 
@@ -33,7 +34,7 @@ List the 5-8 key moments where direction changed. For each:
 - **Action**: What you tried
 - **Outcome**: What actually happened
 
-Mark which hypothesis was _wrong_ — that's usually where the lesson lives.
+Mark which hypothesis was _wrong_ - that's usually where the lesson lives.
 
 ## 3. FAILURE MODE CATALOG
 
@@ -73,7 +74,7 @@ DO: [exact action]
 BECAUSE: [what went wrong when we didn't]
 
 ## NEVER
-- [anti-pattern] — causes [consequence we experienced]
+- [anti-pattern] - causes [consequence we experienced]
 
 ## Commands that work in this repo
 - [exact syntax that worked]
