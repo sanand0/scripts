@@ -168,7 +168,8 @@ npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 
-# Install tools that cannot be set up with mise without compilation (Nov 2025)
+# Install tools that cannot be set up with mise without compilation (Dec 2025)
+sudo apt install -y antigravity                   # Google agentic code editor
 sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
 sudo apt install -y fdupes                        # fdupes - Find duplicate files
 sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
