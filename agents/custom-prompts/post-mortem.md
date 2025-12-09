@@ -16,15 +16,6 @@ If any source is unavailable, note it and proceed with what you have.
 
 ---
 
-## 1. EXECUTIVE SUMMARY
-
-In 5-8 bullets:
-
-- What we set out to do
-- Top 3 things that went wrong
-- Top 3 interventions that fixed things
-- Current state (working / partially working / technical debt)
-
 ## 2. TURNING POINTS TIMELINE
 
 List every key moment where direction changed. For each:
