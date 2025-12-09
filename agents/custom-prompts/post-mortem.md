@@ -30,10 +30,10 @@ Mark which hypothesis was _wrong_ - that's usually where the lesson lives.
 For each failure mode, document:
 
 - **Symptom**: What happened
+- **Frequency**: How often this session
 - **Root Cause (5 Whys)**: Why (dig deep)
 - **Detection Gap**: What should have caught this earlier?
 - **Prevention Rule**: Specific system change
-- **Frequency**: How often this session
 
 "Detection Gap" is critical: what test, lint rule, type check, or verification step _should_ have caught this before it became a problem?
 
