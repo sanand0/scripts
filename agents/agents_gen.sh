@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # Get latest external skills
-gitget https://github.com/anthropics/skills main \
-  webapp-testing:webapp-testing \
-  document-skills/pdf:pdf
+gitget https://github.com/anthropics/skills main skills/webapp-testing:webapp-testing skills/pdf:pdf
 
 {
   sed '/<!-- skills -->/q' AGENTS.md

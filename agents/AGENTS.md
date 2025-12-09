@@ -21,7 +21,7 @@ Refer relevant SKILL.md under /home/sanand/code/scripts/agents:
 - [code](code/SKILL.md): To deploy a Python app as a Cloudflare Python Worker
 - [cloudflare](cloudflare/SKILL.md): Guidelines when working with CloudFlare
 - [code](code/SKILL.md): ALWAYS follow this style when writing Python / JavaScript code
-- [demos](demos/SKILL.md): Use when creating demos or POCs
+- [demos](demos/SKILL.md): Use when creating demos or POCs
 - [design](design/SKILL.md): ALWAYS follow this design guide for any front-end work
 - [devtools](devtools/SKILL.md): Use CDP at localhost:9222 to test/debug websites, automate browser tasks
 - [llm](llm/SKILL.md): Call LLM via CLI for transcription, vision, speech/image generation, piping prompts, sub-agents, ...
