@@ -446,6 +446,7 @@ systemctl --user restart espanso
   - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V
   - [Emoji Copy](https://extensions.gnome.org/extension/6242/emoji-copy/) - Win+.
+  - [Vitals](https://extensions.gnome.org/extension/1460/vitals/) - System monitoring
 
 Wayland enables smooth scrolling and touch gestures. (But it has problems with autokey, maybe rofi.) To enable:
 
