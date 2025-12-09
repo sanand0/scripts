@@ -4,6 +4,13 @@ description: Run a post-mortem analysis
 
 Review our entire conversation and extract lessons learned. This is blameless: focus on system, process, and instruction improvements.
 
+STYLE:
+
+- No vague improvements ("be more careful", "check thoroughly")
+- Every prevention must be a concrete system change
+- Prefer preventative fixes over mitigative ones
+- If uncertain, say so and propose how to validate
+
 ## 1. CONTEXT GATHERING
 
 Check:
@@ -64,10 +71,3 @@ Each rule must trace back to a failure mode from Section 3.
 ## 7. FUTURE SELF WARNING
 
 One paragraph: If you could send a message back to yourself at the start of this session, what would it say?
-
-## STYLE
-
-- No vague improvements ("be more careful", "check thoroughly")
-- Every prevention must be a concrete system change
-- Prefer preventative fixes over mitigative ones
-- If uncertain, say so and propose how to validate
