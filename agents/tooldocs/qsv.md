@@ -105,6 +105,9 @@ qsv sniff data.csv
 # Infer field, type, basic (sum, min, max, ...) and advanced stats (cv, nullcount, max_precision, sparsity, ...)
 qsv stats data.csv
 
+# Show per-column frequency tables
+qsv frequency data.csv
+
 # Print first five rows
 qsv slice -l 5 data.csv | qsv table
 
@@ -118,18 +121,18 @@ qsv select ColA,ColC-/ColD/,6-,!10-11
 
 # Sort by ColA, then ColB, in numeric, natural order, descending, ignoring case
 qsv sort --select ColA,ColB --numeric --natural --reverse --ignore-case data.csv
-
-# Show per-column frequency tables
-qsv frequency data.csv
-
-# Deduplicate on a column
-qsv dedup -s "Email" data.csv
+# Deduplicate based on ColA, ColB, in numeric, ignoring case
+qsv dedup --select ColA,ColB --numeric --ignore-case data.csv
 
 # Regex replace to drop text
 qsv apply operations regex_replace --comparand "PATTERN" --replacement "<NULL>" -c cleaned_col "Original Column" data.csv
 
 # Join two CSVs (note: column is repeated)
 qsv join "Email" a.csv "Email" b.csv
+
+# JSONL to CSV and back
+qsv tojsonl data.csv --output data.jsonl
+qsv jsonl data.jsonl --output data.csv
 ```
 
 - There is no `--limit` parameter.
