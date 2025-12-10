@@ -23,9 +23,9 @@ Check:
 
 If any source is unavailable, note it and proceed with what you have.
 
-## 2. TURNING POINTS TIMELINE
+## 2. HYPOTHESES TIMELINE
 
-List every key moment where direction changed. For each:
+List every hypothesis / choice you made. For each:
 
 - **Signal**: What we observed
 - **Hypothesis**: What you assumed was happening
