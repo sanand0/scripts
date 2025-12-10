@@ -11,8 +11,7 @@ duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pandoc
 magick, cwebp, ffmpeg (avoid imgcat, prefer view_image / read tool)
 
-/home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples.
-tealdeer $TOOL for quick reference.
+/home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples - especially qsv, pdfcpu.
 
 <!-- skills -->
 
