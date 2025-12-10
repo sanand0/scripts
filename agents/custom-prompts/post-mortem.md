@@ -25,14 +25,13 @@ If any source is unavailable, note it and proceed with what you have.
 
 ## 2. HYPOTHESES TIMELINE
 
-List every hypothesis / choice you made. For each:
+List every non-obvious hypothesis / choice / guess / choice you made, both right or wrong. For each:
 
-- **Signal**: What we observed
-- **Hypothesis**: What you assumed was happening
+- **Hypothesis**: What you assumed and why
 - **Action**: What you tried
 - **Outcome**: What actually happened
 
-Mark which hypothesis was _wrong_ - that's usually where the lesson lives.
+Hypotheses that failed are usually where the learning lives.
 
 ## 3. FAILURE MODE CATALOG
 
