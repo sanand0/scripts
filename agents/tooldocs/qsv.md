@@ -31,7 +31,6 @@ fixlengths  Makes all records have same length
 flatten     Show one field per line
 fmt         Format CSV output (change field delimiter)
 foreach     Loop over a CSV file to execute bash commands
-frequency   Show frequency tables
 geocode     Geocodes a location against the Geonames cities database.
 geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
 help        Show this usage message
@@ -82,6 +81,9 @@ qsv slice -l 5 data.csv | qsv table
 # Stats on 10 random rows
 qsv sample -n 10 data.csv | qsv stats
 
+# Show per-column frequency tables
+qsv frequency data.csv
+
 # Deduplicate on a column
 qsv dedup -s "Email" data.csv
 
@@ -92,4 +94,5 @@ qsv apply operations regex_replace --comparand "PATTERN" --replacement "<NULL>" 
 qsv join "Email" a.csv "Email" b.csv
 ```
 
-There is no `--limit` parameter.
+- There is no `--limit` parameter.
+- Set delimiter via `--delimiter`, or `QSV_DEFAULT_DELIMITER`, or auto-detect with `QSV_SNIFF_DELIMITER` (not for stdin)
