@@ -116,6 +116,9 @@ qsv select 1,3-5
 # Select columns ColA, ColC to anything matching ColD, column 6 onwards, not columns 10-11
 qsv select ColA,ColC-/ColD/,6-,!10-11
 
+# Sort by ColA (lexical), ColB (numeric, natural order), descending, ignore case
+qsv sort --select ColA,ColB --reverse --ignore-case --numeric --natural data.csv
+
 # Show per-column frequency tables
 qsv frequency data.csv
 
