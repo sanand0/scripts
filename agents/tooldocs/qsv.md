@@ -133,6 +133,12 @@ qsv join "Email" a.csv "Email" b.csv
 # JSONL to CSV and back
 qsv tojsonl data.csv --output data.jsonl
 qsv jsonl data.jsonl --output data.csv
+qsv to postgres output.sql data.csv
+qsv to sqlite output.db data.csv
+qsv to xlsx output.xlsx data.csv
+qsv to ods output.ods data.csv
+qsv to parquet output.parquet data.csv
+qsv to datapackage output.json data.csv
 ```
 
 - There is no `--limit` parameter.
