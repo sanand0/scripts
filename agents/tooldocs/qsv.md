@@ -8,11 +8,17 @@ Installed commands (63):
 sniff       Quickly sniff CSV metadata. Infer delimiter/header/preamble/quote char, record counts, MIME-type detector
 schema      Generate JSON Schema from CSV data
 stats       Infer data types and compute summary statistics
+count       Count records
+
+select      Select, re-order, duplicate or drop columns
+sample      Randomly sample CSV data
+slice       Slice records from CSV
+
+index       Create CSV index for faster access
 
 apply       Apply series of transformations to a column
 behead      Drop header from CSV file
 cat         Concatenate by row or column
-count       Count records
 datefmt     Format date/datetime strings
 dedup       Remove redundant rows
 describegpt Infer extended metadata using a LLM
@@ -36,7 +42,6 @@ geocode     Geocodes a location against the Geonames cities database.
 geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
 headers     Show header names
 help        Show this usage message
-index       Create CSV index for faster access
 input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
 join        Join CSV files
 joinp       Join CSV files using the Pola.rs engine
@@ -53,11 +58,8 @@ rename      Rename the columns of CSV data efficiently
 replace     Replace patterns in CSV data
 reverse     Reverse rows of CSV data
 safenames   Modify a CSV's header names to db-safe names
-sample      Randomly sample CSV data
 search      Search CSV data with a regex
 searchset   Search CSV data with a regex set
-select      Select, re-order, duplicate or drop columns
-slice       Slice records from CSV
 snappy      Compress/decompress data using the Snappy algorithm
 sort        Sort CSV data in alphabetical, numerical, reverse or random order
 sortcheck   Check if a CSV is sorted
