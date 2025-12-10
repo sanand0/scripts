@@ -7,8 +7,6 @@ docs: https://github.com/dathere/qsv
 Commands:
 
 select      Select, re-order, duplicate or drop columns
-sample      Randomly sample CSV data
-slice       Slice records from CSV
 
 index       Create CSV index for faster access
 
@@ -81,11 +79,8 @@ qsv stats data.csv
 # Print first five rows
 qsv slice -l 5 data.csv | qsv table
 
-# Stats on first five rows
-qsv slice -l 5 data.csv | qsv stats
-
-# Random sample
-qsv sample -n 10 data.csv
+# Stats on 10 random rows
+qsv sample -n 10 data.csv | qsv stats
 
 # Deduplicate on a column
 qsv dedup -s "Email" data.csv
