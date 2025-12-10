@@ -6,6 +6,36 @@ docs: https://github.com/dathere/qsv
 ```
 Commands:
 
+
+qsv select
+qsv stats
+qsv sort
+qsv search
+qsv count
+qsv table
+qsv frequency
+qsv sample
+qsv slice
+qsv headers
+qsv sniff
+qsv dedup
+qsv join
+qsv split
+qsv schema
+qsv validate
+qsv tojsonl
+qsv jsonl
+qsv to
+qsv rename
+qsv replace
+qsv apply
+qsv index
+qsv sqlp
+qsv pivotp
+qsv joinp
+qsv extsort
+qsv extdedup
+
 select      Select, re-order, duplicate or drop columns
 
 index       Create CSV index for faster access
@@ -80,6 +110,11 @@ qsv slice -l 5 data.csv | qsv table
 
 # Stats on 10 random rows
 qsv sample -n 10 data.csv | qsv stats
+
+# Select columns 1, 3, 4, 5
+qsv select 1,3-5
+# Select columns ColA, ColC to anything matching ColD, column 6 onwards, not columns 10-11
+qsv select ColA,ColC-/ColD/,6-,!10-11
 
 # Show per-column frequency tables
 qsv frequency data.csv
