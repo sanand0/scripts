@@ -4,6 +4,8 @@ description: Run a post-mortem analysis
 
 Review our entire conversation and extract lessons learned. This is blameless: focus on system, process, and instruction improvements.
 
+Save this as `post-mortem.md`.
+
 STYLE:
 
 - No vague improvements ("be more careful", "check thoroughly")
