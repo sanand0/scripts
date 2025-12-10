@@ -5,8 +5,6 @@ docs: https://github.com/dathere/qsv
 
 ```
 Commands:
-sniff       Quickly sniff CSV metadata. Infer delimiter/header/preamble/quote char, record counts, MIME-type detector
-stats       Infer field, type, basic (sum, min, max, ...) and advanced stats (cv, nullcount, max_precision, sparsity, ...)
 
 select      Select, re-order, duplicate or drop columns
 sample      Randomly sample CSV data
@@ -74,11 +72,14 @@ validate    Validate CSV data for RFC4180-compliance or with JSON Schema
 # Command help
 qsv $COMMAND --help
 
+# Infer delimiter/header/preamble/quote char, record counts, MIME-type detector
+qsv sniff data.csv
+
+# Infer field, type, basic (sum, min, max, ...) and advanced stats (cv, nullcount, max_precision, sparsity, ...)
+qsv stats data.csv
+
 # Print first five rows
 qsv slice -l 5 data.csv | qsv table
-
-# Summary statistics (NOT qsv stat)
-qsv stats data.csv
 
 # Stats on first five rows
 qsv slice -l 5 data.csv | qsv stats
