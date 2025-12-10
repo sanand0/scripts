@@ -4,11 +4,9 @@ docs: https://github.com/dathere/qsv
 ---
 
 ```
-Installed commands (63):
+Commands:
 sniff       Quickly sniff CSV metadata. Infer delimiter/header/preamble/quote char, record counts, MIME-type detector
-schema      Generate JSON Schema from CSV data
-stats       Infer data types and compute summary statistics
-count       Count records
+stats       Infer field, type, basic (sum, min, max, ...) and advanced stats (cv, nullcount, max_precision, sparsity, ...)
 
 select      Select, re-order, duplicate or drop columns
 sample      Randomly sample CSV data
@@ -40,7 +38,6 @@ foreach     Loop over a CSV file to execute bash commands
 frequency   Show frequency tables
 geocode     Geocodes a location against the Geonames cities database.
 geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
-headers     Show header names
 help        Show this usage message
 input       Read CSVs w/ special quoting, skipping, trimming & transcoding rules
 join        Join CSV files
