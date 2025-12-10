@@ -274,11 +274,11 @@ abbr --add videorecord '
     -b:a 24k \
     ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
 
-abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
-abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "FFmpegAudioConvertor:-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
-abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
-abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --extract-audio --audio-format mp3 --audio-quality 5'
-abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
+abbr --add youtube-dl 'uvx --with mutagen yt-dlp --remote-components ejs:github'
+abbr --add youtube-opus 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "FFmpegAudioConvertor:-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
+abbr --add youtube-audio 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format opus --embed-thumbnail'
+abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format mp3 --audio-quality 5'
+abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
@@ -434,7 +434,7 @@ function with --description "Example: with gh,jq 'Find last 3 repos I committed 
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
-    curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
+    curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
 function opus --description "opus file.mp4 converts it to file.opus (voice quality)"
