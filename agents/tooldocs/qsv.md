@@ -5,6 +5,10 @@ docs: https://github.com/dathere/qsv
 
 ```
 Installed commands (63):
+sniff       Quickly sniff CSV metadata. Infer delimiter/header/preamble/quote char, record counts, MIME-type detector
+schema      Generate JSON Schema from CSV data
+stats       Infer data types and compute summary statistics
+
 apply       Apply series of transformations to a column
 behead      Drop header from CSV file
 cat         Concatenate by row or column
@@ -50,18 +54,15 @@ replace     Replace patterns in CSV data
 reverse     Reverse rows of CSV data
 safenames   Modify a CSV's header names to db-safe names
 sample      Randomly sample CSV data
-schema      Generate JSON Schema from CSV data
 search      Search CSV data with a regex
 searchset   Search CSV data with a regex set
 select      Select, re-order, duplicate or drop columns
 slice       Slice records from CSV
 snappy      Compress/decompress data using the Snappy algorithm
-sniff       Quickly sniff CSV metadata
 sort        Sort CSV data in alphabetical, numerical, reverse or random order
 sortcheck   Check if a CSV is sorted
 split       Split CSV data into many files
 sqlp        Run a SQL query against several CSVs using the Pola.rs engine
-stats       Infer data types and compute summary statistics
 table       Align CSV data into columns
 template    Render templates using CSV data
 tojsonl     Convert CSV to newline-delimited JSON
