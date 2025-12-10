@@ -41,9 +41,9 @@ qsv to parquet output.parquet data.csv
 qsv to datapackage output.json data.csv
 ```
 
-- There is no `--limit` parameter.
+- Set delimiter via `--delimiter`
 - Save to file via `--output`.
-- Set delimiter via `--delimiter`, or `QSV_DEFAULT_DELIMITER`, or auto-detect with `QSV_SNIFF_DELIMITER` (not for stdin)
+- There is no `--limit` parameter.
 
 More commands. Run `qsv $COMMAND --help` for details:
 
