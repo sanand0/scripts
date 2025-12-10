@@ -13,11 +13,9 @@ qsv stats data.csv
 # Print first five rows
 qsv slice -l 5 data.csv | qsv table
 
-# Stats on 10 random rows
-qsv sample -n 10 data.csv | qsv stats
+# Get 10 random rows. Pick columns 1, 3, 4, 5
+qsv sample -n 10 data.csv | qsv select 1,3-5
 
-# Select columns 1, 3, 4, 5
-qsv select 1,3-5
 # Select columns ColA, ColC to anything matching ColD, column 6 onwards, not columns 10-11
 qsv select ColA,ColC-/ColD/,6-,!10-11
 
@@ -32,7 +30,7 @@ qsv apply operations regex_replace --comparand "PATTERN" --replacement "<NULL>" 
 # Join two CSVs (note: column is repeated)
 qsv join "Email" a.csv "Email" b.csv
 
-# JSONL to CSV and back
+# Convert file formats
 qsv tojsonl data.csv --output data.jsonl
 qsv jsonl data.jsonl --output data.csv
 qsv to postgres output.sql data.csv
@@ -44,6 +42,7 @@ qsv to datapackage output.json data.csv
 ```
 
 - There is no `--limit` parameter.
+- Save to file via `--output`.
 - Set delimiter via `--delimiter`, or `QSV_DEFAULT_DELIMITER`, or auto-detect with `QSV_SNIFF_DELIMITER` (not for stdin)
 
 More commands. Run `qsv $COMMAND --help` for details:
