@@ -19,6 +19,7 @@ Guidelines:
   - Include cards from config.json to run a demo with one click
   - Include synthetic sample datasets as CSV/JSON each <= 1MB, total <= 5MB
   - Support deep-linkable demo state via URL params / hash
+  - Provide one-click downloads for generated artifacts / outputs
 - Make it self-serve
   - Allow users to upload their own data
   - Include a collapsible settings form to edit prompts, models, schema, ... with defaults from config.json.
