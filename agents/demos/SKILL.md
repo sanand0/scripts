@@ -24,7 +24,7 @@ Guidelines:
   - Persist settings with https://www.npmjs.com/package/saveform allowing reset
 - Provide a responsive UX
   - Use lit-html for DOM updates
-  - Always show a spinner while awaiting network call
+  - Always show a spinner while awaiting network call. Show progress bars for batch/iterative work
   - Always stream LLM responses. Stream JSON with partial-json. Render LLM output with marked. Highlight code blocks
   - #TODO Output style, readability, etc.
 
