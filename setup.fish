@@ -64,6 +64,7 @@ abbr --add giit git
 
 # Faster, better grep
 abbr --add grep ug
+abbr --add search ug -i --smart-case --bool -Q
 
 # Faster, better less
 abbr --add less bat
@@ -140,11 +141,13 @@ abbr --add hs 'npx -y --package @hubspot/cli hs'
 # File Utilities
 # -----------------------------------------------
 
-# List files, sorted by time, with git status and relative time
-abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
-
 # rm moves to trash
 abbr --add rm trash
+
+# List files, sorted by time, with git status and relative time
+function l
+    eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size $argv
+end
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
