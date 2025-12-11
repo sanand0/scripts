@@ -13,14 +13,16 @@ const db = new duckdb.AsyncDuckDB(logger, worker);
 await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
 const conn = await db.connect();
-await conn.query(`CREATE TABLE posts (post_id INTEGER, username VARCHAR, timestamp TIMESTAMP, comments JSON);`);
-await db.registerFileText("rows.json", JSON.stringify({
-
-}));
+await conn.query(`CREATE TABLE posts (id INTEGER, name VARCHAR, timestamp TIMESTAMP, comments JSON);`);
+await db.registerFileText("rows.json", JSON.stringify([
+  { id: 1, name: "Post 1", timestamp: "2024-01-01T10:00:00Z", comments: [{ user: "alice", text: "Great post!" }] },
+  { id: 2, name: "Post 2", timestamp: "2024-02-15T12:30:00Z", comments: [{ user: "bob", text: "Very informative." }] },
+]));
 await conn.insertJSONFromPath("rows.json", { name: "rows" });
-await conn.query(`INSERT INTO posts SELECT post_id, username, timestamp, comments FROM rows;`);
+await conn.query(`INSERT INTO posts SELECT id, name, timestamp, comments FROM rows;`);
 await conn.query("INSTALL json; LOAD json;");
 
 const response = await conn.query('SELECT * FROM posts');
 await conn.close();
 const result = response.toArray().map((row) => row.toJSON());
+console.log(result);
