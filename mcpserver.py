@@ -6,7 +6,7 @@
 # ///
 
 # Usage: uv run mcpserver.py
-#   Exposes an MCP server on port 8000 that runs bash commands remotely.
+#   Exposes an MCP server on localhost:8000 that lets LLMs run bash commands.
 #   curl localhost:8000/sse to test
 # npx -y ngrok@latest http --host-header=rewrite 8000
 #   Exposes the server to the internet via ngrok. (Use with caution!)
