@@ -62,7 +62,12 @@ $("#demo-cards").addEventListener("click", async (e) => {
 
   render(html`<div class="my-5 text-center">${loading}</div>`, $("#output"));
 
-  const { baseUrl, apiKey } = await openaiConfig();
+  const { baseUrl, apiKey } = await openaiConfig({ defaultBaseUrls: [
+    "https://api.openai.com/v1",
+    "https://openrouter.ai/api/v1/",
+    "https://llmfoundry.straivedemo.com/openai/v1",
+    "https://llmfoundry.straive.com/openai/v1",
+  ]});
   const body = {
     model: $("#model").value || config.defaults.model,
     reasoning_effort: "minimal",
