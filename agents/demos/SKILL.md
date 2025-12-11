@@ -45,5 +45,5 @@ Code style:
 GitHub:
 
 - Add a brief description. Tags: optional
-- Deploy on GitHub Pages #TODO
+- Deploy on GitHub Pages: `gh api repos/:owner/:repo/pages -F 'source[branch]=main' -F 'source[path]=/'`
 - Ensure that the "About" section is linked to the GitHub Pages URL
