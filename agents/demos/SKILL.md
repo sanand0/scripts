@@ -30,6 +30,8 @@ Guidelines:
   - Always show a spinner while awaiting network call. Show progress bars for batch/iterative work
     - Disable primary buttons while running; re-enable on completion/failure.
   - Always stream LLM responses. Stream JSON with partial-json. Render LLM output with marked. Highlight code blocks
+  - Use modals for drill-down without cluttering the main UI
+  - Support keyboard navigation, e.g. arrow keys, tab, for fast review
   - #TODO Output style, readability, etc.
 
 Code style:
