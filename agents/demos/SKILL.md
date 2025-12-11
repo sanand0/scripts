@@ -47,7 +47,7 @@ Code style:
   pyodideWorker.postMessage({ id, code, data, context: { } });
   pyodideWorker.removeEventListener("message", listener);
   ```
-- If running DuckDB WASM for SQL, use t
+- If running DuckDB WASM for SQL, use ./assets/duckdb.js.
 
 GitHub:
 
