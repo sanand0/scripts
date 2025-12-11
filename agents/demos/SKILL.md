@@ -40,7 +40,14 @@ Code style:
 - Lint with dprint and oxlint
   - dprint fmt -c https://raw.githubusercontent.com/sanand0/scripts/refs/heads/main/dprint.jsonc
   - npx -y oxlint --fix
-- #TODO Pyodide / DuckDB WASM to run code / analysis
+- If using pyodide, use ./assets/pyworker.js as follows:
+  ```js
+  const pyodideWorker = new Worker("./pyworker.js", { type: "module" });
+  pyodideWorker.addEventListener("message", listener);
+  pyodideWorker.postMessage({ id, code, data, context: { } });
+  pyodideWorker.removeEventListener("message", listener);
+  ```
+ Pyodide / DuckDB WASM to run code / analysis
 
 GitHub:
 
