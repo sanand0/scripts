@@ -18,6 +18,7 @@ Guidelines:
   - Begin with a 1-3 para functional description of what the app does and how to use it
   - Include cards from config.json to run a demo with one click
   - Include synthetic sample datasets as CSV/JSON each <= 1MB, total <= 5MB
+  - Support deep-linkable demo state via URL params / hash
 - Make it self-serve
   - Allow users to upload their own data
   - Include a collapsible settings form to edit prompts, models, schema, ... with defaults from config.json.
@@ -25,6 +26,7 @@ Guidelines:
 - Provide a responsive UX
   - Use lit-html for DOM updates
   - Always show a spinner while awaiting network call. Show progress bars for batch/iterative work
+    - Disable primary buttons while running; re-enable on completion/failure.
   - Always stream LLM responses. Stream JSON with partial-json. Render LLM output with marked. Highlight code blocks
   - #TODO Output style, readability, etc.
 
