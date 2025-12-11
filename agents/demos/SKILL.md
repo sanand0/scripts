@@ -10,12 +10,13 @@ Scaffold files from ./assets/:
 - config.json: optional configs for demos, dataset, prompt, model, schema, ...
   - Use config.js instead when template literals and minimal JS expressions are needed
 - README.md: Explains what the app does (functionally), how to run locally/deploy
+- LICENSE: MIT
 
 Guidelines:
 
 - Prefer pure-front-end apps that can be deployed on GitHub pages.
 - Make it easy to demo.
-  - Begin with a 1-3 para functional description of what the app does and how to use it
+  - Begin with a 1-3 para functional descriptionof what the app does and how to use it. Include lightweight `.webp` screenshot
   - Include cards from config.json to run a demo with one click
   - Include synthetic sample datasets as CSV/JSON each <= 1MB, total <= 5MB
   - Support deep-linkable demo state via URL params / hash
