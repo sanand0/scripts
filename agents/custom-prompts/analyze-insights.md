@@ -1,8 +1,8 @@
 ---
 description: Analyze structured / unstructured data for insights
 source:
-   - https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
-   - https://claude.ai/share/38fefabe-bcd6-4375-b144-25f028b1f09f
+  - https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
+  - https://claude.ai/share/38fefabe-bcd6-4375-b144-25f028b1f09f
 ---
 
 Analyze data like an investigative journalist hunting for stories that make smart readers lean forward and say "wait, really?"
@@ -24,21 +24,23 @@ Analyze data like an investigative journalist hunting for stories that make smar
   - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
   - **Defensible** (statistically sound) - robust under scrutiny
 
-Output:
+Write as a **narrative-driven data story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
 
-- **Executive Summary**: 5-liner with top 3 insights, their impact, and recommended actions
-- **Full Actionable Report**: Markdown document with:
-  - Compelling narrative arc (build tension, find the business angle, make abstract concrete)
-  - Supporting evidence (data, quotes, cross-references)
-  - Beautiful, intuitive, revelatory visualizations
-  - Confidence levels and caveats
-  - Code/methods appendix where relevant
-- **Narrative-driven data story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
-  - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
-  - **Story arc**: Build the narrative through discovery, revealing insights progressively
-  - **Integrated visualizations**: Beautiful, interactive charts/maps that are revelatory and advance the story (not decorative)
-  - **Concrete examples**: Make abstract patterns tangible through specific cases
-  - **Evidence woven in**: Data points, statistics, and supporting details flow naturally within the prose
-  - **"Wait, really?" moments**: Position surprising findings for maximum impact
-  - **So what?**: Clear implications and actions embedded in the narrative
-  - **Honest caveats**: Acknowledge limitations without undermining the story
+- **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
+- **Story arc**: Build the narrative through discovery, revealing insights progressively
+- **Integrated visualizations**: Beautiful, interactive charts/maps that are revelatory and advance the story (not decorative)
+- **Concrete examples**: Make abstract patterns tangible through specific cases
+- **Evidence woven in**: Data points, statistics, and supporting details flow naturally within the prose
+- **"Wait, really?" moments**: Position surprising findings for maximum impact
+- **So what?**: Clear implications and actions embedded in the narrative
+- **Honest caveats**: Acknowledge limitations without undermining the story
+
+Generate an **executive Summary**: 5-liner with top 3 insights, their impact, and recommended actions
+
+Generate a **full Actionable Report**: Markdown document with:
+
+- Compelling narrative arc (build tension, find the business angle, make abstract concrete)
+- Supporting evidence (data, quotes, cross-references)
+- Beautiful, intuitive, revelatory visualizations
+- Confidence levels and caveats
+- Code/methods appendix where relevant

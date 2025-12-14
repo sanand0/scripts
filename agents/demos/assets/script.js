@@ -62,7 +62,19 @@ $("#demo-cards").addEventListener("click", async (e) => {
 
   render(html`<div class="my-5 text-center">${loading}</div>`, $("#output"));
 
-  const { baseUrl, apiKey } = await openaiConfig();
+  const { baseUrl, apiKey } = await openaiConfig({ defaultBaseUrls: [
+    // Use relevant LLM provider endpoints
+    // OpenAI endpoints, for chat completions / Responses API
+    "https://api.openai.com/v1",
+    "https://aipipe.org/openai/v1",
+    "https://llmfoundry.straivedemo.com/openai/v1",
+    "https://llmfoundry.straive.com/openai/v1",
+    // OpenRouter endpoints, which have a slightly different API
+    "https://openrouter.ai/api/v1",
+    "https://aipipe.org/openrouter/v1",
+    "https://llmfoundry.straivedemo.com/openrouter/v1",
+    "https://llmfoundry.straive.com/openrouter/v1",
+  ]});
   const body = {
     model: $("#model").value || config.defaults.model,
     reasoning_effort: "minimal",

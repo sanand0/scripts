@@ -64,6 +64,7 @@ abbr --add giit git
 
 # Faster, better grep
 abbr --add grep ug
+abbr --add search ug -i --smart-case --bool -Q
 
 # Faster, better less
 abbr --add less bat
@@ -140,11 +141,13 @@ abbr --add hs 'npx -y --package @hubspot/cli hs'
 # File Utilities
 # -----------------------------------------------
 
-# List files, sorted by time, with git status and relative time
-abbr --add l 'eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size'
-
 # rm moves to trash
 abbr --add rm trash
+
+# List files, sorted by time, with git status and relative time
+function l
+    eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size $argv
+end
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
 abbr --add lesson 'find ~/Dropbox/notes -type f -printf "%T@ %p\n" \
@@ -274,18 +277,23 @@ abbr --add videorecord '
     -b:a 24k \
     ~/Downloads/videorecord-(date "+%Y-%m-%d-%H-%M-%S").mkv'
 
-abbr --add youtube-dl 'uvx --with mutagen yt-dlp'
-abbr --add youtube-opus 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "FFmpegAudioConvertor:-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
-abbr --add youtube-audio 'uvx --with mutagen yt-dlp --extract-audio --audio-format opus --embed-thumbnail'
-abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --extract-audio --audio-format mp3 --audio-quality 5'
-abbr --add yt-dlp 'uvx --with mutagen yt-dlp'
+abbr --add youtube-dl 'uvx --with mutagen yt-dlp --remote-components ejs:github'
+abbr --add youtube-opus 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format opus --embed-thumbnail --postprocessor-args "FFmpegAudioConvertor:-c:a libopus -b:a 12k -ac 1 -application voip -vbr off -ar 8000 -cutoff 4000 -frame_duration 60 -compression_level 10"'
+abbr --add youtube-audio 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format opus --embed-thumbnail'
+abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format mp3 --audio-quality 5'
+abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
-abbr --add webp-lossy 'cwebp -q 10 -m 6'
+
+function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts into file1.webp file2.webp with lossy compression"
+    for file in $argv
+        cwebp -q 10 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
+    end
+end
 
 # Usage: pdf_decrypt file.pdf password. Also: pdfcpu decrypt -upw password input.pdf output.pdf
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
@@ -429,7 +437,7 @@ function with --description "Example: with gh,jq 'Find last 3 repos I committed 
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
-    curl -s "$(yt-dlp -q --skip-download --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
+    curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
 function opus --description "opus file.mp4 converts it to file.opus (voice quality)"
@@ -442,6 +450,20 @@ end
 # -frame_duration 60 is more efficient for music than the default 20 or 40 ms
 function opusmusic --description "opus file.mp4 converts it to file.opus (music quality)"
     ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+end
+
+function ffsplit --description "ffsplit 12:00 34:00 45:00 ... input.opus - splits input.opus at given timestamps and creates input-1.opus, input-2.opus, ..."
+    set in $argv[-1]
+    set timestamps $argv[1..-2]
+    set prev 0
+    set i 1
+    for ts in $timestamps
+        ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -to $ts -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
+        set prev $ts
+        set i (math $i + 1)
+    end
+    # Last segment
+    ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
 end
 
 # whisper --output_format txt $inputfile

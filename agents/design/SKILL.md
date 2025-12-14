@@ -1,7 +1,9 @@
 ---
 name: design
 description: ALWAYS follow this design guide for any front-end work
-source: https://www.claude.com/blog/improving-frontend-design-through-skills
+source:
+  - https://www.claude.com/blog/improving-frontend-design-through-skills
+  - https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md
 ---
 
 Prefer creative, distinctive frontends that surprise and delight, not generic, "on distribution" outputs.

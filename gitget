@@ -9,9 +9,7 @@ Usage: gitget REPO BRANCH path:target [path:target ...]
 Clone a git repository and copy specific paths to local directories.
 
 Example:
-  gitget https://github.com/anthropics/skills main \
-    document-skills/pdf:pdf \
-    document-skills/pptx:pptx
+  gitget https://github.com/anthropics/skills main pdf:pdf pptx:pptx
 
 Arguments:
   REPO    Git repository URL

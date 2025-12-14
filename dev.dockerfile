@@ -51,6 +51,7 @@ RUN mise use -g \
   ubi:jqnatividad/qsv \
   ubi:mithrandie/csvq \
   ubi:pdfcpu/pdfcpu \
+  ubi:tealdeer-rs/tealdeer \
   uv \
   websocat
 
@@ -65,8 +66,9 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 
 # Install npm tools last, so that we can update Codex and Claude
 RUN bash -lc 'eval "$(mise env -s bash)"; \
+  npm install -g npm@latest; \
   npm install -g wscat@latest; \
-  npm install -g @openai/codex@0.65.0; \
+  npm install -g @openai/codex@0.72.0; \
   npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \
   '

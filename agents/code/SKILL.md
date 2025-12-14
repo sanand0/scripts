@@ -8,7 +8,6 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Keep code short
   - Data over code: Structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
   - DRY: Helpers for repeated logic, precompute shared intermediates
-  - Single expression: Skip intermediate variables when clear
   - Early returns fail fast and reduce nesting. Skip defensive fallbacks
   - YAGNI: Skip unused imports, variables, and code
 - Change existing code minimally. Retain existing comments. Follow existing style
@@ -16,8 +15,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Use type hints and single-line docstrings
 - Show status & progress for long tasks (>5s)
 - Make re-runs efficient for long tasks (>1min). Restarting should resume. Log state, cache & flush data and LLM/API/HTTP requests, etc.
-- Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, ...
-- For large/complex libraries, https://context7.com/$ORG/$REPO/llms.txt has docs for https://github.com/$ORG/$REPO
+- Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, https://context7.com/$ORG/$REPO/llms.txt, ...
 
 ## Python
 
@@ -50,13 +48,12 @@ Preferred JS style:
 
 - Bootstrap. Minimize custom CSS
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
-- Use ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
+- Use modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
-- Modern browser APIs
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
 - Helpers: `const $ = (s, el = document) => el.querySelector(s); $('#id')...`
-- Prefer vitest + jsdom for unit tests
+- Prefer vitest + jsdom for unit tests, Playwright for end-to-end tests
 - Import maps: `<script type="importmap">{ "imports": { "package-name": "https://cdn.jsdelivr.net/npm/package-name@version" } }</script>`
 
 Preferred libs:

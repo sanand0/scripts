@@ -168,7 +168,8 @@ npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 
-# Install tools that cannot be set up with mise without compilation (Nov 2025)
+# Install tools that cannot be set up with mise without compilation (Dec 2025)
+sudo apt install -y antigravity                   # Google agentic code editor
 sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
 sudo apt install -y fdupes                        # fdupes - Find duplicate files
 sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
@@ -203,7 +204,7 @@ sudo systemctl start touchegg.service
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Set up uv environments
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
@@ -446,6 +447,7 @@ systemctl --user restart espanso
   - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V
   - [Emoji Copy](https://extensions.gnome.org/extension/6242/emoji-copy/) - Win+.
+  - [Vitals](https://extensions.gnome.org/extension/1460/vitals/) - System monitoring
 
 Wayland enables smooth scrolling and touch gestures. (But it has problems with autokey, maybe rofi.) To enable:
 
