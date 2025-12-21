@@ -17,6 +17,7 @@ RUN apt-get update \
     ffmpeg \
     webp \
     postgresql-client \
+    poppler-utils \
   && rm -rf /var/lib/apt/lists/* \
   && wget https://imagemagick.org/archive/binaries/magick -O /bin/magick \
   && chmod +x /bin/magick
@@ -39,6 +40,7 @@ RUN curl -fsSL https://mise.run | sh \
 
 # Install mise tools
 RUN mise use -g \
+  ast-grep \
   deno \
   duckdb \
   fd \
@@ -64,11 +66,12 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   uv pip install csvkit dprint yt-dlp markitdown httpx pandas ruff llm typer rich orjson lxml tenacity pytest; \
   '
 
-# Install npm tools last, so that we can update Codex and Claude
+# Install npm tools last, so that we can update Codex and Claude.
+# Note: `codex` actually runs the host system codex.
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
-  npm install -g @openai/codex@0.72.0; \
+  npm install -g @openai/codex@latest; \
   npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \
   '

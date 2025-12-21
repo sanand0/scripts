@@ -76,6 +76,7 @@ sudo apt install -y python3 python3-pip # System Python - Required by some syste
 sudo apt install -y vlc                 # VLC - Multimedia player
 sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
 sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
+sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
@@ -83,57 +84,61 @@ eval "$($HOME/.local/bin/mise env -s bash)"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
 mise use -g 'ubi:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
-mise use -g aws-cli                  # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
-mise use -g bat                      # bat - cat clone with syntax highlighting
-mise use -g btop                     # btop - Resource monitor (better htop)
-mise use -g caddy                    # Caddy - Web server with automatic HTTPS
-mise use -g cloudflared              # cloudflared - Cloudflare Tunnel client
-mise use -g dasel                    # dasel - Query and modify JSON/YAML/TOML/XML/CSV
-mise use -g deno                     # Deno - Secure JavaScript and TypeScript runtime
-mise use -g duckdb                   # DuckDB - In-process SQL OLAP database
-mise use -g duf                      # duf - Disk usage utility with better formatting than df
-mise use -g eza                      # Better ls (replaces exa)
-mise use -g fd                       # fd - Fast file finder (find alternative)
-mise use -g fx                       # fx - Fast JSON viewer
-mise use -g gcloud                   # gcloud - Google Cloud CLI
-mise use -g gdu                      # gdu - ncdu alternative for disk usage
-mise use -g github-cli               # GitHub CLI - Official GitHub command-line tool
-mise use -g glab                     # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
-mise use -g glow                     # glow - Render markdown in the terminal 🔴 Rarely used
-mise use -g gum                      # gum - Stylish command-line prompts and scripts
-mise use -g jaq                      # jaq - jq alternative with JIT compilation
-mise use -g jq                       # jq - JSON processor
-mise use -g lazydocker               # lazydocker - Terminal UI for Docker
-mise use -g lazygit                  # lazygit - Terminal UI for git
-mise use -g node@latest              # Node.js - JavaScript runtime
-mise use -g opentofu                 # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
-mise use -g pandoc                   # pandoc - Universal document converter (md, pdf, docx, etc.)
-mise use -g pnpm                     # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
-mise use -g prek                     # prek - pre-commit alternative
-mise use -g rclone                   # rclone - Sync files to/from cloud storage
-mise use -g ripgrep                  # ripgrep - Fast grep alternative
-mise use -g shfmt                    # shfmt - Shell script formatter
-mise use -g starship                 # starship - Fast, customizable shell prompt
-mise use -g ubi:ayoisaiah/f2         # f2 - File renaming tool
-mise use -g ubi:bootandy/dust        # dust - Disk usage analyzer (du alternative)
-mise use -g ubi:Canop/broot          # broot - File browser with fuzzy search
-mise use -g ubi:cantino/mcfly        # mcfly - Intelligent shell history search (Ctrl+R replacement)
-mise use -g ubi:dandavison/delta     # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
-mise use -g ubi:direnv/direnv        # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
-mise use -g ubi:iffse/pay-respects   # pay-respects - thefuck alternative. Run `f` to correct previous command
-mise use -g ubi:imsnif/bandwhich     # bandwhich - Terminal network bandwidth utilization tool
-mise use -g ubi:jqnatividad/qsv      # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
-mise use -g ubi:junegunn/fzf         # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
-mise use -g ubi:mithrandie/csvq      # csvq - SQL-like query tool for CSV
-mise use -g ubi:pdfcpu/pdfcpu        # pdfcpu - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:qpdf/qpdf            # qpdf - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
-mise use -g ubi:yshavit/mdq          # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
-mise use -g websocat                 # websocat - WebSocket client (will be v4.0 when released)
-mise use -g xh                       # xh - Friendly HTTP client (curl/httpie alternative)
-mise use -g yazi                     # yazi - Terminal file manager
-mise use -g yq                       # yq - YAML processor (like jq for YAML)
-mise use -g zoxide                   # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
+mise use -g ast-grep                  # ast-grep - AST-based code search and rewriting tool
+mise use -g aws-cli                   # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
+mise use -g bat                       # bat - cat clone with syntax highlighting
+mise use -g btop                      # btop - Resource monitor (better htop)
+mise use -g caddy                     # Caddy - Web server with automatic HTTPS
+mise use -g cloudflared               # cloudflared - Cloudflare Tunnel client
+mise use -g dasel                     # dasel - Query and modify JSON/YAML/TOML/XML/CSV
+mise use -g deno                      # Deno - Secure JavaScript and TypeScript runtime
+mise use -g difftastic                # difftastic - Syntax-aware diff tool for code and prose
+mise use -g duckdb                    # DuckDB - In-process SQL OLAP database
+mise use -g duf                       # duf - Disk usage utility with better formatting than df
+mise use -g eza                       # Better ls (replaces exa)
+mise use -g fd                        # fd - Fast file finder (find alternative)
+mise use -g fx                        # fx - Fast JSON viewer
+mise use -g gcloud                    # gcloud - Google Cloud CLI
+mise use -g gdu                       # gdu - ncdu alternative for disk usage
+mise use -g github-cli                # GitHub CLI - Official GitHub command-line tool
+mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
+mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used
+mise use -g gum                       # gum - Stylish command-line prompts and scripts
+mise use -g jaq                       # jaq - jq alternative with JIT compilation
+mise use -g jq                        # jq - JSON processor
+mise use -g lazydocker                # lazydocker - Terminal UI for Docker
+mise use -g lazygit                   # lazygit - Terminal UI for git
+mise use -g lnav                      # lnav - Log file navigator and analyzer
+mise use -g node@latest               # Node.js - JavaScript runtime
+mise use -g opentofu                  # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
+mise use -g pandoc                    # pandoc - Universal document converter (md, pdf, docx, etc.)
+mise use -g pnpm                      # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
+mise use -g prek                      # prek - pre-commit alternative
+mise use -g rclone                    # rclone - Sync files to/from cloud storage
+mise use -g ripgrep                   # ripgrep - Fast grep alternative
+mise use -g shfmt                     # shfmt - Shell script formatter
+mise use -g starship                  # starship - Fast, customizable shell prompt
+mise use -g ubi:ayoisaiah/f2          # f2 - File renaming tool
+mise use -g ubi:bootandy/dust         # dust - Disk usage analyzer (du alternative)
+mise use -g ubi:Canop/broot           # broot - File browser with fuzzy search
+mise use -g ubi:cantino/mcfly         # mcfly - Intelligent shell history search (Ctrl+R replacement)
+mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
+mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
+mise use -g ubi:iffse/pay-respects    # pay-respects - thefuck alternative. Run `f` to correct previous command
+mise use -g ubi:imsnif/bandwhich      # bandwhich - Terminal network bandwidth utilization tool
+mise use -g ubi:jqnatividad/qsv       # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
+mise use -g ubi:junegunn/fzf          # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
+mise use -g ubi:milisp/codexia        # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
+mise use -g ubi:mithrandie/csvq       # csvq - SQL-like query tool for CSV
+mise use -g ubi:pdfcpu/pdfcpu         # pdfcpu - PDF manipulation (split, merge, encrypt)
+mise use -g ubi:qpdf/qpdf             # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g ubi:tealdeer-rs/tealdeer  # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
+mise use -g ubi:yshavit/mdq           # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
+mise use -g websocat                  # websocat - WebSocket client (will be v4.0 when released)
+mise use -g xh                        # xh - Friendly HTTP client (curl/httpie alternative)
+mise use -g yazi                      # yazi - Terminal file manager
+mise use -g yq                        # yq - YAML processor (like jq for YAML)
+mise use -g zoxide                    # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
 
 # Tools installed directly or via uv instead
 # mise use -g ubi:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
@@ -204,7 +209,7 @@ sudo systemctl start touchegg.service
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Set up uv environments
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer pdfplumber pypdf reportlab
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
@@ -212,7 +217,7 @@ mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --py
   UV_TORCH_BACKEND=auto uv pip install torch torchaudio   # for whisper_streaming
 mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
 mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
-mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag
+mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag   # MP3 music metadata tag editor
 mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
 
 # Install other tools
@@ -402,6 +407,18 @@ rclone config create hetzner
   # shell_type = unix
 # Test: rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
 
+mkdir -p ~/r2
+# API Key: https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/api-tokens
+# R2 Account Token: Admin Read & Write
+rclone config create r2 s3 \
+  provider=Cloudflare \
+  endpoint=https://2c483e1dd66869c9554c6949a2d17d96.r2.cloudflarestorage.com \
+  acl=private \
+  access_key_id=$R2_ACCESS_KEY_ID \
+  secret_access_key=$R2_SECRET_ACCESS_KEY
+# Test: rclone tree r2:
+# Sync: rclone sync ~/r2/files r2:files --progress
+
 sudo mkdir -p /mnt/s-anand.net
 sudo chown -R sanand:sanand /mnt/s-anand.net
 rclone config create s-anand.net
@@ -556,7 +573,7 @@ Desktop
 
 ## Configuration
 
-24 Oct 2025: via [`mise exec fastfetch -- fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
+24 Oct 2025: via [`mise x fastfetch -- fastfetch -c all.jsonc`](https://github.com/fastfetch-cli/fastfetch/)
 
 - OS: Ubuntu 24.04.2 LTS (Noble Numbat) x86_64
 - Host: 21KWS69E00 (ThinkPad P1 Gen 7)

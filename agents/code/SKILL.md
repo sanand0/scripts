@@ -8,11 +8,13 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Keep code short
   - Data over code: Structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
   - DRY: Helpers for repeated logic, precompute shared intermediates
-  - Early returns fail fast and reduce nesting. Skip defensive fallbacks
+  - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
   - YAGNI: Skip unused imports, variables, and code
 - Change existing code minimally. Retain existing comments. Follow existing style
+- Use type hints and docstrings (document contracts and surprises, not mechanics)
+- Don't comment readable code. If commenting, only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
 - When tests exists, or writing new code, add tests first. Keep tests fast
-- Use type hints and single-line docstrings
+- Replace PII in committed code, tests, docs with similar REALISTIC dummy data
 - Show status & progress for long tasks (>5s)
 - Make re-runs efficient for long tasks (>1min). Restarting should resume. Log state, cache & flush data and LLM/API/HTTP requests, etc.
 - Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, https://context7.com/$ORG/$REPO/llms.txt, ...
@@ -42,17 +44,25 @@ Preferred libs:
 `pytest`
 `python-dotenv`
 
+Use one of these for exception tracebacks with locals:
+
+```python
+from rich.traceback import install; install(show_locals=True)
+from loguru import logger; logger.add(sink=lambda m: print(m, end=""), diagnose=True, backtrace=True)
+```
+
 ## JavaScript
 
 Preferred JS style:
 
-- Bootstrap. Minimize custom CSS
+- Bootstrap. Minimize custom CSS. Prefer declarative data-* patterns
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
 - Use modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
 - Helpers: `const $ = (s, el = document) => el.querySelector(s); $('#id')...`
+- Prefer lit-html > .insertAdjacentHTML / .innerHTML >> .createElement + setting attributes
 - Prefer vitest + jsdom for unit tests, Playwright for end-to-end tests
 - Import maps: `<script type="importmap">{ "imports": { "package-name": "https://cdn.jsdelivr.net/npm/package-name@version" } }</script>`
 
@@ -85,9 +95,3 @@ tmux send-keys -t $SESSION 'print(1 + 2)' C-m
 cat /tmp/$LOG
 tmux capture-pane -p -t $SESSION -S -5
 ```
-
-## References
-
-Under ../custom-prompts/
-
-- git-commit.md: commit guidelines

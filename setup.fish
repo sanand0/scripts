@@ -105,6 +105,10 @@ abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
 # Run Python debugger on error
 abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 
+# Sync files to Cloudflare R2 public files bucket deployed at files.s-anand.net/
+abbr --add r2sync rclone sync ~/r2/files r2:files --progress
+# Via view rclone tree r2:
+
 # Clipboard Utilities
 # -----------------------------------------------
 

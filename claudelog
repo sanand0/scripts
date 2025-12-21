@@ -1,0 +1,880 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12"]
+# ///
+"""
+Inspect Claude Code JSONL logs and render session Markdown.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime as dt
+import json
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable, Iterator, Optional
+
+import typer
+
+app = typer.Typer(add_completion=False)
+
+# Non-obvious log structure notes (observed in ~/.claude/projects):
+# - A sessionId may span multiple files: `<sessionId>.jsonl` and `agent-<agentId>.jsonl`.
+# - Some `.jsonl` files are 0 bytes, or contain only `{type:"summary"}` (no `sessionId`).
+# - `message.content` may be a string or an array of blocks:
+#     [{"type":"text","text":"..."}, {"type":"tool_use",...}, {"type":"tool_result",...}]
+
+TS_MIN = "0001-01-01T00:00:00.000Z"
+TS_MAX = "9999-12-31T23:59:59.999Z"
+
+
+@dataclasses.dataclass
+class Stats:
+    """Scan counters for debugging."""
+
+    files_scanned: int = 0
+    files_empty: int = 0
+    files_summary_only: int = 0
+    read_errors: int = 0
+    invalid_json_lines: int = 0
+    events_scanned: int = 0
+    events_matched: int = 0
+
+
+@dataclasses.dataclass(frozen=True)
+class SourcePos:
+    """Deterministic tiebreaker when timestamps collide."""
+
+    file_path: str
+    line_no: int
+
+
+@dataclasses.dataclass(frozen=True)
+class NormalizedEvent:
+    """One parsed JSONL line, annotated with its file position."""
+
+    session_id: str
+    is_sidechain: bool
+    agent_id: str
+    timestamp: str
+    source: SourcePos
+    raw: dict[str, Any]
+
+
+@dataclasses.dataclass
+class SessionSummary:
+    """Aggregated view of a sessionId for listing."""
+
+    session_id: str
+    is_sidechain: bool
+    cwd: str = ""
+    start_ts: Optional[str] = None
+    end_ts: Optional[str] = None
+    first_prompt: str = ""
+    files: set[str] = dataclasses.field(default_factory=set)
+    event_counts: Counter[str] = dataclasses.field(default_factory=Counter)
+
+
+@dataclasses.dataclass
+class AppConfig:
+    """Per-command config (kept explicit to match the CLI spec)."""
+
+    root: Path
+    project_filter: str
+    strict: bool
+    print_stats: bool
+
+
+def _eprint(*args: Any) -> None:
+    print(*args, file=sys.stderr)
+
+
+def _parse_iso8601(ts: Any) -> Optional[dt.datetime]:
+    """Parse timestamps like '2025-11-22T03:10:55.105Z'."""
+
+    if not isinstance(ts, str) or not ts:
+        return None
+    try:
+        if ts.endswith("Z"):
+            ts = ts[:-1] + "+00:00"
+        return dt.datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _ts_key(ts: Any) -> tuple[int, str]:
+    """Return a stable sort key for timestamps."""
+    # Sort unknown timestamps last so they don't interleave the narrative.
+    parsed = _parse_iso8601(ts)
+    if parsed is None:
+        return (1, TS_MAX)
+    return (0, parsed.isoformat())
+
+
+def _event_type(e: dict[str, Any]) -> str:
+    t = e.get("type")
+    return t if isinstance(t, str) and t else "unknown"
+
+
+def _event_session_id(e: dict[str, Any]) -> Optional[str]:
+    sid = e.get("sessionId")
+    return sid if isinstance(sid, str) and sid else None
+
+
+def _event_timestamp(e: dict[str, Any]) -> Optional[str]:
+    ts = e.get("timestamp")
+    return ts if isinstance(ts, str) and ts else None
+
+
+def _event_cwd(e: dict[str, Any]) -> Optional[str]:
+    cwd = e.get("cwd")
+    return cwd if isinstance(cwd, str) and cwd else None
+
+
+def _event_is_sidechain(e: dict[str, Any]) -> bool:
+    return bool(e.get("isSidechain") is True)
+
+
+def _message_content(e: dict[str, Any]) -> Any:
+    msg = e.get("message")
+    if isinstance(msg, dict):
+        return msg.get("content")
+    return None
+
+
+def _json_pretty(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _read_jsonl(file_path: Path, *, strict: bool, stats: Stats) -> Iterator[tuple[int, dict[str, Any]]]:
+    """Yield (line_no, event_dict) from a JSONL file."""
+    # Logs are append-only and can be truncated mid-write; default to best-effort parsing.
+    try:
+        with file_path.open("r", encoding="utf-8") as f:
+            for line_no, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    stats.invalid_json_lines += 1
+                    if strict:
+                        raise
+                    continue
+                if not isinstance(obj, dict):
+                    stats.invalid_json_lines += 1
+                    if strict:
+                        raise ValueError(f"Non-object JSON on {file_path}:{line_no}")
+                    continue
+                yield line_no, obj
+    except Exception:
+        stats.read_errors += 1
+        if strict:
+            raise
+
+
+def _project_dirs(root: Path, project_filter: str) -> list[Path]:
+    """List project directories under root (optionally substring-filtered)."""
+
+    if not root.exists():
+        return []
+    dirs: list[Path] = []
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        if project_filter and project_filter not in entry.name:
+            continue
+        dirs.append(entry)
+    return sorted(dirs)
+
+
+def _iter_jsonl_files(root: Path, project_filter: str, stats: Stats) -> Iterator[Path]:
+    """Yield all `.jsonl` files under root (optionally project-filtered)."""
+    # Intentionally include `agent-*.jsonl` sidechains; callers decide whether to filter them out.
+    for project_dir in _project_dirs(root, project_filter):
+        for path in project_dir.rglob("*.jsonl"):
+            if not path.is_file():
+                continue
+            stats.files_scanned += 1
+            try:
+                if path.stat().st_size == 0:
+                    stats.files_empty += 1
+                    continue
+            except Exception:
+                # If stat fails, still try reading; read_jsonl will count errors if it fails.
+                pass
+            yield path
+
+
+def _normalize_text(content: Any) -> str:
+    """Extract displayable text from `message.content`."""
+    # If content is an array of blocks, join only `{type:"text"}` blocks.
+    # Tool blocks are rendered separately into `<details>` so the main narrative stays readable.
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "text":
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text)
+        return "\n\n".join(parts)
+    return ""
+
+
+def _truncate_middle(s: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(s) <= max_chars:
+        return s
+    half = max_chars // 2
+    return s[:half] + "...truncated..." + s[-half:]
+
+
+def _indent_block(s: str, indent: str = "    ") -> str:
+    return indent + s.replace("\n", "\n" + indent)
+
+
+LOCAL_COMMAND_RE = re.compile(r"<command-name>/|^<local-command-stdout>", re.IGNORECASE)
+
+
+def _looks_like_local_command(text: str) -> bool:
+    return bool(LOCAL_COMMAND_RE.search(text.strip()))
+
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(s: str) -> str:
+    """Remove ANSI escapes from captured terminal output blocks."""
+    return ANSI_RE.sub("", s)
+
+
+def _is_warmup(text: str) -> bool:
+    return text.strip().lower() == "warmup"
+
+
+def _in_time_range(ts: Optional[str], since: str, until: str) -> bool:
+    """Best-effort range filter; missing timestamps are treated as out-of-range."""
+
+    if ts is None:
+        return False
+    return _ts_key(since) <= _ts_key(ts) <= _ts_key(until)
+
+
+def _first_prompt_text(
+    e: dict[str, Any],
+    *,
+    allow_warmup: bool,
+    allow_local_commands: bool,
+) -> str:
+    """Return "first real user prompt" text, or '' if this event shouldn't count."""
+    # Listing intent: show what *you* asked at the start of the session.
+    # Exclude common non-prompts:
+    #
+    # - meta disclaimer:
+    #   {"type":"user","isMeta":true,"message":{"content":"Caveat: ..."}}
+    # - warmup probe:
+    #   {"type":"user","message":{"content":"Warmup"}}
+    # - local command wrappers:
+    #   {"type":"user","message":{"content":"<command-name>/cost</command-name> ..."}}
+    if _event_type(e) != "user":
+        return ""
+    if e.get("isMeta") is True:
+        return ""
+    text = _normalize_text(_message_content(e)).strip()
+    if not text:
+        return ""
+    if (not allow_warmup) and _is_warmup(text):
+        return ""
+    if (not allow_local_commands) and _looks_like_local_command(text):
+        return ""
+    return text
+
+
+def build_session_summaries(
+    *,
+    cfg: AppConfig,
+    cwd_filter: str,
+    since: str,
+    until: str,
+    limit: int,
+    max_chars: int,
+    include_sidechains: bool,
+    include_empty: bool,
+    allow_warmup: bool,
+    allow_local_commands: bool,
+) -> tuple[list[SessionSummary], Stats]:
+    """Scan logs and build 'one row per sessionId' summaries."""
+    stats = Stats()
+    sessions: dict[tuple[str, bool], SessionSummary] = {}
+
+    for file_path in _iter_jsonl_files(cfg.root, cfg.project_filter, stats):
+        saw_any_event = False
+        saw_any_session_id = False
+
+        for _, e in _read_jsonl(file_path, strict=cfg.strict, stats=stats):
+            saw_any_event = True
+            stats.events_scanned += 1
+
+            sid = _event_session_id(e)
+            if not sid:
+                continue
+            saw_any_session_id = True
+
+            is_sidechain = _event_is_sidechain(e)
+            if is_sidechain and not include_sidechains:
+                continue
+
+            ts = _event_timestamp(e)
+            if since != TS_MIN or until != TS_MAX:
+                if not _in_time_range(ts, since, until):
+                    continue
+
+            key = (sid, is_sidechain)
+            if key not in sessions:
+                sessions[key] = SessionSummary(session_id=sid, is_sidechain=is_sidechain)
+            s = sessions[key]
+
+            s.files.add(str(file_path))
+            s.event_counts[_event_type(e)] += 1
+
+            cwd = _event_cwd(e)
+            if cwd and not s.cwd:
+                s.cwd = cwd
+
+            if ts:
+                if s.start_ts is None or _ts_key(ts) < _ts_key(s.start_ts):
+                    s.start_ts = ts
+                if s.end_ts is None or _ts_key(ts) > _ts_key(s.end_ts):
+                    s.end_ts = ts
+
+            if not s.first_prompt:
+                fp = _first_prompt_text(
+                    e, allow_warmup=allow_warmup, allow_local_commands=allow_local_commands
+                )
+                if fp:
+                    s.first_prompt = fp
+
+        if saw_any_event and not saw_any_session_id:
+            stats.files_summary_only += 1
+
+    summaries: list[SessionSummary] = []
+    for s in sessions.values():
+        if cwd_filter and cwd_filter not in (s.cwd or ""):
+            continue
+        if not include_empty and not s.first_prompt:
+            continue
+        summaries.append(s)
+
+    summaries.sort(key=lambda s: (_ts_key(s.end_ts or TS_MIN), _ts_key(s.start_ts or TS_MIN)), reverse=True)
+    if limit > 0:
+        summaries = summaries[:limit]
+
+    # `list` should be glanceable; truncate only for display.
+    for s in summaries:
+        s.first_prompt = _truncate_middle(s.first_prompt, max_chars).strip()
+
+    return summaries, stats
+
+
+def find_files_for_session(cfg: AppConfig, session_id: str) -> tuple[dict[str, dict[str, Any]], Stats]:
+    """Find all JSONL files that mention `session_id`."""
+    # Used by `resolve` and as a debugging aid when sessions span multiple files.
+    stats = Stats()
+    hits: dict[str, dict[str, Any]] = {}
+
+    for file_path in _iter_jsonl_files(cfg.root, cfg.project_filter, stats):
+        matched = False
+        counts: Counter[str] = Counter()
+        min_ts: Optional[str] = None
+        max_ts: Optional[str] = None
+        agent_ids: set[str] = set()
+
+        for _, e in _read_jsonl(file_path, strict=cfg.strict, stats=stats):
+            stats.events_scanned += 1
+            if _event_session_id(e) != session_id:
+                continue
+
+            matched = True
+            stats.events_matched += 1
+            counts[_event_type(e)] += 1
+
+            ts = _event_timestamp(e)
+            if ts:
+                if min_ts is None or _ts_key(ts) < _ts_key(min_ts):
+                    min_ts = ts
+                if max_ts is None or _ts_key(ts) > _ts_key(max_ts):
+                    max_ts = ts
+
+            aid = e.get("agentId")
+            if isinstance(aid, str) and aid:
+                agent_ids.add(aid)
+
+        if matched:
+            hits[str(file_path)] = {
+                "min_ts": min_ts,
+                "max_ts": max_ts,
+                "agent_ids": sorted(agent_ids),
+                "counts": counts,
+            }
+
+    return hits, stats
+
+
+def collect_session_events(
+    *,
+    cfg: AppConfig,
+    session_id: str,
+    include_sidechains: bool,
+) -> tuple[list[NormalizedEvent], Stats]:
+    """Collect and canonically sort all events for one sessionId."""
+    stats = Stats()
+    events: list[NormalizedEvent] = []
+
+    for file_path in _iter_jsonl_files(cfg.root, cfg.project_filter, stats):
+        for line_no, e in _read_jsonl(file_path, strict=cfg.strict, stats=stats):
+            stats.events_scanned += 1
+            if _event_session_id(e) != session_id:
+                continue
+
+            is_sidechain = _event_is_sidechain(e)
+            if is_sidechain and not include_sidechains:
+                continue
+
+            timestamp = _event_timestamp(e) or TS_MAX
+            agent_id = e.get("agentId") if isinstance(e.get("agentId"), str) else ""
+
+            events.append(
+                NormalizedEvent(
+                    session_id=session_id,
+                    is_sidechain=is_sidechain,
+                    agent_id=agent_id,
+                    timestamp=timestamp,
+                    source=SourcePos(str(file_path), line_no),
+                    raw=e,
+                )
+            )
+            stats.events_matched += 1
+
+    # Deterministic ordering across files:
+    # - timestamp for narrative flow
+    # - file+line as a stable tiebreaker (timestamps may collide or be missing)
+    events.sort(key=lambda ev: (_ts_key(ev.timestamp), ev.source.file_path, ev.source.line_no))
+    return events, stats
+
+
+def _md_heading(level: int, title: str) -> str:
+    return "\n\n" + ("#" * level) + " " + title + "\n\n"
+
+
+def _md_code(lang: str, body: str) -> str:
+    return f"```{lang}\n{body.rstrip()}\n```\n"
+
+
+def _md_details(summary: str, body: str, *, open_details: bool) -> str:
+    open_attr = " open" if open_details else ""
+    b = body.rstrip()
+    if b:
+        b += "\n\n"
+    return f"\n\n<details{open_attr}><summary><strong>{summary}</strong></summary>\n\n{b}</details>"
+
+
+def _render_meta(e: dict[str, Any], *, open_details: bool) -> str:
+    """Render a small per-event meta block."""
+    # We keep this intentionally small: enough for debugging without drowning the conversation.
+    # For full-fidelity logs, use `dump`.
+    keep = {
+        k: e.get(k)
+        for k in (
+            "timestamp",
+            "sessionId",
+            "cwd",
+            "agentId",
+            "isSidechain",
+            "requestId",
+            "uuid",
+            "parentUuid",
+            "version",
+            "gitBranch",
+        )
+        if e.get(k) is not None
+    }
+    if not keep:
+        return ""
+    return _md_details("meta", _md_code("json", _json_pretty(keep)), open_details=open_details)
+
+
+def _render_tool_use(owner: str, item: dict[str, Any], *, open_details: bool) -> str:
+    name = item.get("name") or ""
+    label = f"{owner}: tool: {name}".strip()
+    inp = item.get("input")
+    body = _md_code("json", _json_pretty(inp)) if inp is not None else ""
+    return _md_details(label, body, open_details=open_details)
+
+
+def _render_tool_result(owner: str, item: dict[str, Any], *, open_details: bool) -> str:
+    tool_use_id = item.get("tool_use_id")
+    label = f"{owner}: tool result" + (f": {tool_use_id}" if tool_use_id else "")
+    content = item.get("content")
+
+    # Tool results are inconsistent: string, array-of-blocks, or structured JSON.
+    # Try to be human-friendly first, fall back to JSON.
+    if isinstance(content, str):
+        body = _md_code("txt", content) if content.strip() else ""
+    elif isinstance(content, list):
+        text = _normalize_text(content).strip()
+        body = _md_code("txt", text) if text else _md_code("json", _json_pretty(content))
+    elif content is not None:
+        body = _md_code("json", _json_pretty(content))
+    else:
+        body = ""
+
+    return _md_details(label, body, open_details=open_details)
+
+
+def _render_tool_use_result_meta(e: dict[str, Any], *, open_details: bool) -> str:
+    """Render top-level `.toolUseResult` if present."""
+    tur = e.get("toolUseResult")
+    if tur is None:
+        return ""
+    return _md_details(f"{_event_type(e)}: toolUseResult", _md_code("json", _json_pretty(tur)), open_details=open_details)
+
+
+def _render_message(owner: str, content: Any, *, open_details: bool) -> tuple[str, list[str]]:
+    """Render a message into (text, extras)."""
+    text = _normalize_text(content).strip()
+    extras: list[str] = []
+
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            t = item.get("type")
+            if t == "tool_use":
+                extras.append(_render_tool_use(owner, item, open_details=open_details))
+            elif t == "tool_result":
+                extras.append(_render_tool_result(owner, item, open_details=open_details))
+
+    return text, extras
+
+
+def render_session_markdown(
+    *,
+    session_id: str,
+    events: list[NormalizedEvent],
+    include_meta: bool,
+    include_summaries: bool,
+    include_snapshots: bool,
+    open_details: bool,
+    snapshots_root: Optional[Path],
+) -> str:
+    """Convert normalized events into readable Markdown."""
+    cwd = ""
+    start_ts: Optional[str] = None
+    end_ts: Optional[str] = None
+    files: set[str] = set()
+
+    for ev in events:
+        files.add(ev.source.file_path)
+        e = ev.raw
+        if not cwd:
+            cwd = _event_cwd(e) or ""
+        ts = _event_timestamp(e)
+        if ts:
+            if start_ts is None or _ts_key(ts) < _ts_key(start_ts):
+                start_ts = ts
+            if end_ts is None or _ts_key(ts) > _ts_key(end_ts):
+                end_ts = ts
+
+    md: list[str] = []
+    md.append(f"# {session_id}\n")
+    if cwd:
+        md.append(f"\n**cwd:** `{cwd}`\n")
+    if start_ts is not None or end_ts is not None:
+        md.append(f"\n**when:** `{start_ts or ''}` .. `{end_ts or ''}`\n")
+    md.append("\n**files:**\n")
+    for fp in sorted(files):
+        md.append(f"- `{fp}`\n")
+
+    for ev in events:
+        e = ev.raw
+        t = _event_type(e)
+
+        if t == "summary":
+            if not include_summaries:
+                continue
+            summary = e.get("summary")
+            leaf = e.get("leafUuid")
+            md.append(_md_heading(2, "summary"))
+            if isinstance(summary, str) and summary.strip():
+                md.append(summary.strip() + "\n")
+            if isinstance(leaf, str) and leaf.strip():
+                md.append(_md_details("leafUuid", _md_code("txt", leaf.strip()), open_details=open_details))
+            continue
+
+        if t == "file-history-snapshot":
+            if not include_snapshots:
+                continue
+            snapshot = e.get("snapshot")
+            body = _md_code("json", _json_pretty(snapshot))
+            if snapshots_root is not None:
+                # Snapshots live outside `projects/`, under `~/.claude/file-history/<sessionId>/...`.
+                # We only link to the directory; rendering diffs/patches is a separate concern.
+                body += "\n\n" + _md_code("txt", f"file-history dir: {snapshots_root / session_id}")
+            md.append(_md_details("file-history-snapshot", body, open_details=open_details))
+            continue
+
+        if t not in {"user", "assistant", "system"}:
+            continue
+
+        owner = t
+        content = _message_content(e)
+        text, extras = _render_message(owner, content, open_details=open_details)
+
+        if owner == "user" and text and _looks_like_local_command(text):
+            # Captured stdout may include ANSI codes; strip them so Markdown isn't noisy.
+            text = _strip_ansi(text)
+
+        if text:
+            md.append(_md_heading(2, owner))
+            md.append(text.rstrip() + "\n")
+
+        if extras:
+            md.append("\n".join(extras))
+
+        tur = _render_tool_use_result_meta(e, open_details=open_details)
+        if tur:
+            md.append(tur)
+
+        if include_meta:
+            meta = _render_meta(e, open_details=open_details)
+            if meta:
+                md.append(meta)
+
+    return "".join(md).lstrip()
+
+
+def _cfg(
+    *,
+    root: Path,
+    project: str,
+    strict: bool,
+    stats: bool,
+) -> AppConfig:
+    return AppConfig(root=root, project_filter=project, strict=strict, print_stats=stats)
+
+
+@app.command("ls")
+@app.command("list", hidden=True)
+def list_sessions(
+    root: Path = typer.Option(
+        Path("~/.claude/projects").expanduser(),
+        help="Root directory containing Claude Code projects (default: ~/.claude/projects).",
+    ),
+    project: str = typer.Option(
+        "",
+        help=(
+            "Substring filter on project directory name under root. "
+            "Tip: if it begins with '-', pass as '--project=...'."
+        ),
+    ),
+    strict: bool = typer.Option(False, help="Fail fast on invalid JSON lines/files."),
+    stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
+    cwd: str = typer.Option("", help="Only show sessions whose cwd contains this substring."),
+    since: str = typer.Option(TS_MIN, help="Keep sessions with events on/after this timestamp (ISO8601)."),
+    until: str = typer.Option(TS_MAX, help="Keep sessions with events on/before this timestamp (ISO8601)."),
+    limit: int = typer.Option(0, help="Show at most N sessions (0 = no limit)."),
+    max_chars: int = typer.Option(500, help="Truncate the displayed first prompt to N characters."),
+    include_sidechains: bool = typer.Option(False, help="Include isSidechain:true sessions too."),
+    include_empty: bool = typer.Option(False, help="Include sessions even if no eligible first prompt is found."),
+    allow_warmup: bool = typer.Option(False, help="Allow 'Warmup' as the first prompt."),
+    allow_local_commands: bool = typer.Option(False, help="Allow local-command XML/stdout as the first prompt."),
+) -> None:
+    """List sessions with first real user prompt (replacement for `claudelist`)."""
+
+    cfg = _cfg(root=root, project=project, strict=strict, stats=stats)
+    summaries, st = build_session_summaries(
+        cfg=cfg,
+        cwd_filter=cwd,
+        since=since,
+        until=until,
+        limit=limit,
+        max_chars=max_chars,
+        include_sidechains=include_sidechains,
+        include_empty=include_empty,
+        allow_warmup=allow_warmup,
+        allow_local_commands=allow_local_commands,
+    )
+
+    for s in summaries:
+        suffix = " (sidechain)" if s.is_sidechain else ""
+        end_ts = s.end_ts or ""
+        print(f"# {s.session_id}{suffix}  {end_ts}".rstrip())
+        print(_indent_block(s.cwd))
+        print(_indent_block(s.first_prompt))
+        print(_indent_block(f"files: {len(s.files)}"))
+        print()
+
+    if cfg.print_stats:
+        _eprint(_json_pretty(dataclasses.asdict(st)))
+
+
+@app.command()
+def resolve(
+    session_id: str = typer.Argument(..., help="SessionId UUID to resolve."),
+    root: Path = typer.Option(
+        Path("~/.claude/projects").expanduser(),
+        help="Root directory containing Claude Code projects (default: ~/.claude/projects).",
+    ),
+    project: str = typer.Option(
+        "",
+        help=(
+            "Substring filter on project directory name under root. "
+            "Tip: if it begins with '-', pass as '--project=...'."
+        ),
+    ),
+    strict: bool = typer.Option(False, help="Fail fast on invalid JSON lines/files."),
+    stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
+) -> None:
+    """Show which JSONL files contain a given sessionId."""
+
+    cfg = _cfg(root=root, project=project, strict=strict, stats=stats)
+    hits, st = find_files_for_session(cfg, session_id)
+    if not hits:
+        if cfg.print_stats:
+            _eprint(_json_pretty(dataclasses.asdict(st)))
+        raise typer.Exit(code=3)
+
+    def sort_key(item: tuple[str, dict[str, Any]]) -> tuple[tuple[int, str], str]:
+        file_path, meta = item
+        return (_ts_key(meta.get("min_ts") or TS_MAX), file_path)
+
+    for file_path, meta in sorted(hits.items(), key=sort_key):
+        print(file_path)
+        print(_indent_block(f"ts: {meta.get('min_ts') or ''} .. {meta.get('max_ts') or ''}".rstrip()))
+        agent_ids = meta.get("agent_ids") or []
+        if agent_ids:
+            print(_indent_block("agentId: " + ", ".join(agent_ids)))
+        counts: Counter[str] = meta.get("counts") or Counter()
+        if counts:
+            parts = [f"{k}={v}" for k, v in sorted(counts.items())]
+            print(_indent_block("events: " + " ".join(parts)))
+        print()
+
+    if cfg.print_stats:
+        _eprint(_json_pretty(dataclasses.asdict(st)))
+
+
+@app.command()
+def md(
+    session_id: str = typer.Argument(..., help="SessionId UUID to render."),
+    root: Path = typer.Option(
+        Path("~/.claude/projects").expanduser(),
+        help="Root directory containing Claude Code projects (default: ~/.claude/projects).",
+    ),
+    project: str = typer.Option(
+        "",
+        help=(
+            "Substring filter on project directory name under root. "
+            "Tip: if it begins with '-', pass as '--project=...'."
+        ),
+    ),
+    strict: bool = typer.Option(False, help="Fail fast on invalid JSON lines/files."),
+    stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
+    out: str = typer.Option("-", help="Output path or '-' for stdout."),
+    include_sidechains: bool = typer.Option(False, help="Include isSidechain:true events too."),
+    include_meta: bool = typer.Option(False, help="Include per-event meta <details> blocks."),
+    include_summaries: bool = typer.Option(False, help="Render 'summary' events if present."),
+    include_snapshots: bool = typer.Option(False, help="Render 'file-history-snapshot' events if present."),
+    snapshots_dir: str = typer.Option(
+        "",
+        help="Override file-history root (default: ~/.claude/file-history if it exists).",
+    ),
+    open_details: bool = typer.Option(False, help="Render <details open> for easier scanning."),
+) -> None:
+    """Render a sessionId to Markdown (replacement for `claudelog.jq`)."""
+
+    cfg = _cfg(root=root, project=project, strict=strict, stats=stats)
+    events, st = collect_session_events(cfg=cfg, session_id=session_id, include_sidechains=include_sidechains)
+    if not events:
+        if cfg.print_stats:
+            _eprint(_json_pretty(dataclasses.asdict(st)))
+        raise typer.Exit(code=3)
+
+    snapshots_root: Optional[Path] = None
+    if snapshots_dir:
+        snapshots_root = Path(snapshots_dir).expanduser()
+    else:
+        default = Path("~/.claude/file-history").expanduser()
+        if default.exists():
+            snapshots_root = default
+
+    markdown = render_session_markdown(
+        session_id=session_id,
+        events=events,
+        include_meta=include_meta,
+        include_summaries=include_summaries,
+        include_snapshots=include_snapshots,
+        open_details=open_details,
+        snapshots_root=snapshots_root,
+    )
+
+    if out == "-" or not out:
+        sys.stdout.write(markdown)
+    else:
+        Path(out).write_text(markdown, encoding="utf-8")
+
+    if cfg.print_stats:
+        _eprint(_json_pretty(dataclasses.asdict(st)))
+
+
+@app.command()
+def dump(
+    session_id: str = typer.Argument(..., help="SessionId UUID to dump."),
+    root: Path = typer.Option(
+        Path("~/.claude/projects").expanduser(),
+        help="Root directory containing Claude Code projects (default: ~/.claude/projects).",
+    ),
+    project: str = typer.Option(
+        "",
+        help=(
+            "Substring filter on project directory name under root. "
+            "Tip: if it begins with '-', pass as '--project=...'."
+        ),
+    ),
+    strict: bool = typer.Option(False, help="Fail fast on invalid JSON lines/files."),
+    stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
+    include_sidechains: bool = typer.Option(False, help="Include isSidechain:true events too."),
+) -> None:
+    """Emit JSONL events (filtered + sorted) for a sessionId; useful for debugging pipelines."""
+
+    cfg = _cfg(root=root, project=project, strict=strict, stats=stats)
+    events, st = collect_session_events(cfg=cfg, session_id=session_id, include_sidechains=include_sidechains)
+    if not events:
+        if cfg.print_stats:
+            _eprint(_json_pretty(dataclasses.asdict(st)))
+        raise typer.Exit(code=3)
+
+    for ev in events:
+        obj = dict(ev.raw)
+        obj["_source"] = {"file": ev.source.file_path, "line": ev.source.line_no}
+        sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+    if cfg.print_stats:
+        _eprint(_json_pretty(dataclasses.asdict(st)))
+
+
+if __name__ == "__main__":
+    app()

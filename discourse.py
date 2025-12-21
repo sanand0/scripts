@@ -11,6 +11,13 @@
 #     "markdownify>=0.13.1",
 # ]
 # ///
+
+"""
+Usage:
+
+discourse.py --host https://discourse.onlinedegree.iitm.ac.in --category-id 34 --since $(date -d '7 days ago' +%F)
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -42,8 +49,8 @@ def iso(dt: datetime) -> str:
 
 
 def http_client(host: str) -> Client:
-    api_key = os.getenv("DISCOURSE_API_KEY")
-    api_user = os.getenv("DISCOURSE_API_USERNAME")
+    api_key = os.environ["DISCOURSE_API_KEY"]
+    api_user = os.environ["DISCOURSE_API_USERNAME"]
     headers = {"Api-Key": api_key, "Api-Username": api_user, "Accept": "application/json"}
     return Client(base_url=host, headers=headers, timeout=Timeout(15.0), follow_redirects=True)
 

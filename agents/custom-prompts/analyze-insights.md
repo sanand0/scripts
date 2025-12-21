@@ -24,7 +24,7 @@ Analyze data like an investigative journalist hunting for stories that make smar
   - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
   - **Defensible** (statistically sound) - robust under scrutiny
 
-Write as a **narrative-driven data story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
+Write as a **Narrative-driven Data Story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
 
 - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in
 - **Story arc**: Build the narrative through discovery, revealing insights progressively
@@ -35,9 +35,9 @@ Write as a **narrative-driven data story**. Write like Malcolm Gladwell. Visuali
 - **So what?**: Clear implications and actions embedded in the narrative
 - **Honest caveats**: Acknowledge limitations without undermining the story
 
-Generate an **executive Summary**: 5-liner with top 3 insights, their impact, and recommended actions
+Generate an **Executive Summary**: 5-liner with top 3 insights, their impact, and recommended actions
 
-Generate a **full Actionable Report**: Markdown document with:
+Generate a full **Actionable Report**: Markdown document with:
 
 - Compelling narrative arc (build tension, find the business angle, make abstract concrete)
 - Supporting evidence (data, quotes, cross-references)

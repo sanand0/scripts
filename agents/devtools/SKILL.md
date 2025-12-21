@@ -17,6 +17,10 @@ Capabilities:
 - Log screenshots via `(page||locator).screenshot({ path, fullPage, type, quality, ... })`
 - Intercept fetch/XHR, parse JSON directly, cache for repeat runs
 - HAR traces: `context.tracing.start({ screenshots: true, snapshots: true })` ... `context.tracing.stop({ path: "trace.zip" })`
+- Inject JS into existing tabs via a `blob:` URL created in the page context. CSP may block inline scripts.
+  - `url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))`
+  - Append `<script src="blob:...">`
+  - Avoid `page.addScriptTag({content: ...})` on CSP-heavy sites (e.g. WhatsApp, Google apps).
 
 Uses:
 
@@ -32,6 +36,7 @@ Uses:
 
 Tips:
 
+- When scraping, collect 8-10 diverse variants of the target structure to cover edge cases before implementing selectors.
 - Generate a selector bundle per element. Include role+name, text substring, stable attributes, and a fallback position. Try them in order and remember which one works.
 - Combine screenshots with DOM snapshots and accessibility tree (since CSS can be brittle) for better context.
 - Annotate with colored borders, labels, or numbers before full-page screenshot and use that for visual context.

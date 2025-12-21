@@ -87,8 +87,7 @@ Here are the setup details for my laptops.
   - [codexlist](codexlist) lists all sessions
   - [codextools.py](codextools.py) lists tools used by Codex
   - [codexerrors.py](codexerrors.py) lists tool errors by Codex
-- [claudelog.jq](claudelog.jq) converts Claude Code session logs to Markdown (from ~/.claude/projects/$path/\*.jsonl)
-  - [claudelist](claudelist) lists all sessions
+- [claudelog](claudelog) lists Claude Code sessions and converts to Markdown (from ~/.claude/projects/). `uvx claude-code-log@latest --tui` does a good job too.
 - [copilotlog.jq](copilotlog.jq) converts GitHub session logs to Markdown (from ~/.copilot/session-state/*.jsonl)
   - [copilotlist](copilotlist) lists all sessions
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)

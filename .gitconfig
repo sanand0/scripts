@@ -115,6 +115,12 @@
     # git search xxx lists the diffs of all commits with the string xxx
     search = "!git log --source --all -p -S "
 
+    # Difftastic aliases, so `git dlog` is `git log` with difftastic and so on.
+    # https://difftastic.wilfred.me.uk/git.html
+    dlog = -c diff.external=difft log --ext-diff
+    dshow = -c diff.external=difft show --ext-diff
+    ddiff = -c diff.external=difft diff
+
 [color]
     ui = auto
 

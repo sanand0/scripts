@@ -52,13 +52,14 @@ args=(
   -v "$HOME/.config/wrangler/:/home/vscode/wrangler"
   -v "$HOME/.copilot:/home/vscode/.copilot"
   -v "$HOME/.gitconfig:/home/vscode/.gitconfig"
-  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
   -v "$HOME/.local/share/mise:/home/vscode/.local/share/mise"
+  -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
+  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.npm:/home/vscode/.npm"
   -v "$HOME/.ssh:/home/vscode/.ssh:ro"
-  -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
-  -v "$HOME/Dropbox/scripts/llm.keys.json:/home/sanand/Dropbox/scripts/llm.keys.json"
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
+  -v "$HOME/Dropbox/scripts/llm.keys.json:/home/sanand/Dropbox/scripts/llm.keys.json"
   # X11 forwarding for GUI apps
   -e DISPLAY=$DISPLAY
   -v /tmp/.X11-unix:/tmp/.X11-unix
@@ -72,9 +73,18 @@ args=(
   --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
   -e GITHUB_TOKEN=$(awk -F= -v k="GITHUB_PERSONAL_ACCESS_TOKEN" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env)
   -e HISTFILE=/home/vscode/.bash_history
+  -e UV_LINK_MODE=copy
   --mount type=bind,source="$HOME/.cache/dev-sh.bash-history",target=/home/vscode/.bash_history
   -v "$PWD:$PWD"                                # mount CWD at same path
   -w "$PWD"                                     # start in CWD
+  # Add AI API keys if defined
+  -e AIPIPE_TOKEN="${AIPIPE_TOKEN-}"
+  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY-}"
+  -e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY-}"
+  -e GEMINI_API_KEY="${GEMINI_API_KEY-}"
+  -e GITHUB_TOKEN="${GITHUB_TOKEN-}"
+  -e OPENAI_API_KEY="${OPENAI_API_KEY-}"
+  -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY-}"
   --entrypoint /bin/bash                        # launch bash
 )
 
