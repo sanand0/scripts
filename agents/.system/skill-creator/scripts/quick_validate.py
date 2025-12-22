@@ -9,8 +9,6 @@ from pathlib import Path
 
 import yaml
 
-MAX_SKILL_NAME_LENGTH = 64
-
 
 def validate_skill(skill_path):
     """Basic validation of a skill"""
@@ -68,12 +66,8 @@ def validate_skill(skill_path):
                 False,
                 f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens",
             )
-        if len(name) > MAX_SKILL_NAME_LENGTH:
-            return (
-                False,
-                f"Name is too long ({len(name)} characters). "
-                f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
-            )
+        if len(name) > 64:
+            return False, f"Name is too long ({len(name)} characters). Maximum is 64 characters."
 
     description = frontmatter.get("description", "")
     if not isinstance(description, str):
