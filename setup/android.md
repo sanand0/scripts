@@ -226,7 +226,7 @@ copy([...document.querySelectorAll("li")].map(d => {
 - ⚫ [United Airlines](https://play.google.com/store/apps/details?id=com.united.mobile.android) by United Airlines
 - 🔴 [UWCSEA in Singapore](https://play.google.com/store/apps/details?id=com.finalsite.uwcseaedusg) by Finalsite
 - ⚫ [Video Editor & Maker - InShot](https://play.google.com/store/apps/details?id=com.camerasideas.instashot) by InShot Video Editor
-- ⚫ [Vipassana Meditation](https://play.google.com/store/apps/details?id=com.vipassanameditation) by Vipassana Research Institute
+- 🔴 [Vipassana Meditation](https://play.google.com/store/apps/details?id=com.vipassanameditation) by Vipassana Research Institute
 - 🟡 [VLC for Android](https://play.google.com/store/apps/details?id=org.videolan.vlc) by Videolabs
 - ⚫ [Voice Search](https://play.google.com/store/apps/details?id=com.google.android.voicesearch) by Google LLC
 - 🟡 [Weather - By Xiaomi](https://play.google.com/store/apps/details?id=com.miui.weather2) by Xiaomi Inc.
@@ -243,3 +243,10 @@ copy([...document.querySelectorAll("li")].map(d => {
 - ⚫ [µTorrent® - Torrent Downloader](https://play.google.com/store/apps/details?id=com.utorrent.client) by Rainberry, Inc.
 - Wireless@SGx
 - NewPipe via F-Droid?
+
+Legend:
+
+- 🟢 Useful
+- 🟡 Partly useful
+- 🔴 Not useful
+- ⚫ To be evaluated
