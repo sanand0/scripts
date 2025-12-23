@@ -180,7 +180,9 @@ alias it='git'
 alias gitt='git'
 alias giit='git'
 # alias ngrep='grep --color -n'
-alias piku='ssh piku@straive.app'
+
+# piku is a lightweight ssh-based deployment tool that I no longer use.
+# alias piku='ssh piku@straive.app'
 
 # asciinema
 alias asciinema='uvx asciinema'
