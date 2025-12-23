@@ -299,6 +299,12 @@ function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts i
     end
 end
 
+function webp-lossless --description "webp-lossless file1.jpg file2.png ... converts into file1.webp file2.webp with lossless compression"
+    for file in $argv
+        cwebp -lossless -mt -q 100 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
+    end
+end
+
 # Usage: pdf_decrypt file.pdf password. Also: pdfcpu decrypt -upw password input.pdf output.pdf
 abbr --add pdf_decrypt "uv run --with pikepdf python -c 'import pikepdf, sys; pdf = pikepdf.open(sys.argv[1], password=sys.argv[2], allow_overwriting_input=True); pdf.save()'"
 
