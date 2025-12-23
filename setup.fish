@@ -108,6 +108,7 @@ abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 # Sync files to Cloudflare R2 public files bucket deployed at files.s-anand.net/
 abbr --add r2sync rclone sync ~/r2/files r2:files --progress
 # Via view rclone tree r2:
+# Create new bucket at https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/overview
 
 # Clipboard Utilities
 # -----------------------------------------------
