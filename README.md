@@ -108,7 +108,6 @@ Here are the setup details for my laptops.
 `services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
 
 - `consolidate-transcripts-daily.*`: Consolidate transcript learnings
-- `rclone-hetzner.service`: Mount Hetzner cloud storage at `/mnt/hetzner/` on boot
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files
