@@ -73,7 +73,7 @@ import * as d3 from "d3"; // @7/+esm for visualizations
 import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
 import { html, render } from "lit-html"; // @3/+esm for DOM updates
 import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
-import { marked } from "marked"; // @16/+esm
+import { marked } from "marked"; // @17/+esm
 import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const { x } = parse('{"x":"incomplete')`
 
 import { asyncLLM } from "asyncllm"; // @2 streams LLM responses. `for await (const { content, error } of asyncLLM(baseURL, { method: "POST", body: JSON.stringify({...}), headers: { Authorization: `Bearer ${apiKey}` } }))`
