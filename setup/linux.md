@@ -398,15 +398,6 @@ ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 cp ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
 
 # Set up rclone
-sudo mkdir -p /mnt/hetzner
-sudo chown -R sanand:sanand /mnt/hetzner/
-rclone config create hetzner
-  # type = sftp
-  # host = u452447.your-storagebox.de
-  # user = u452447
-  # shell_type = unix
-# Test: rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
-
 mkdir -p ~/r2
 # API Key: https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/api-tokens
 # R2 Account Token: Admin Read & Write
