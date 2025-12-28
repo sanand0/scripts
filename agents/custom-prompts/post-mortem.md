@@ -9,7 +9,7 @@ Run a blameless post-mortem on this entire conversation to improve future perfor
   - What did you need to correct?
   - Where did the conversation take more steps than necessary? What could have been faster?
   - Where did you adhere to the letter but not the spirit of the instructions, or take shortcuts that compromised quality?
-3. For each failure:
+2. For each failure:
   - Dig deep to identify the root cause (max: 5 Whys).
   - Add "Scope: local/global" global (applies to all future tasks) or local (applies only to similar tasks, or this repo)
   - Add "Impact: high/medium/low" with reason: what's the PRACTICAL impact on the developer

@@ -108,6 +108,7 @@ abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 # Sync files to Cloudflare R2 public files bucket deployed at files.s-anand.net/
 abbr --add r2sync rclone sync ~/r2/files r2:files --progress
 # Via view rclone tree r2:
+# Create new bucket at https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/overview
 
 # Clipboard Utilities
 # -----------------------------------------------
@@ -296,6 +297,12 @@ abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts into file1.webp file2.webp with lossy compression"
     for file in $argv
         cwebp -q 10 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
+    end
+end
+
+function webp-lossless --description "webp-lossless file1.jpg file2.png ... converts into file1.webp file2.webp with lossless compression"
+    for file in $argv
+        cwebp -lossless -mt -q 100 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
     end
 end
 

@@ -15,3 +15,5 @@ magick, cwebp, ffmpeg (avoid imgcat, prefer view_image / read tool)
 /home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples - especially qsv, pdfcpu.
 
 Increase timeouts proactively for longer tasks if you expect them to succeed.
+
+If prompt*.md is updated, the user might be editing it. Ignore it.

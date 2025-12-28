@@ -50,6 +50,7 @@ RUN mise use -g \
   pandoc \
   rclone \
   ripgrep \
+  ubi:dandavison/delta \
   ubi:jqnatividad/qsv \
   ubi:mithrandie/csvq \
   ubi:pdfcpu/pdfcpu \
