@@ -83,7 +83,7 @@ abbr --add vd 'uvx --from visidata --with openpyxl vd'
 
 # GMail command line
 export PAGER='bat'      # Required for cmdg
-export EDITOR='micro'   # Required for cmdg
+export EDITOR='fresh'   # Required for cmdg
 abbr --add mail cmdg
 
 # Allow delta to override the default PAGER (e.g. bat) which interferes with its output
