@@ -133,6 +133,7 @@ mise use -g ubi:milisp/codexia        # codexia - Codex / Claude log viewer. Des
 mise use -g ubi:mithrandie/csvq       # csvq - SQL-like query tool for CSV
 mise use -g ubi:pdfcpu/pdfcpu         # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf             # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g ubi:sinelaw/fresh         # fresh - Text editor
 mise use -g ubi:tealdeer-rs/tealdeer  # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
 mise use -g ubi:yshavit/mdq           # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
 mise use -g websocat                  # websocat - WebSocket client (will be v4.0 when released)
