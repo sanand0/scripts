@@ -223,7 +223,6 @@ mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .v
 mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
 
 # Install other tools
-cd ~/.local/bin; curl https://getmic.ro | bash    # micro - Terminal-based text editor
 cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
 cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magick && chmod +x magick   # ImageMagick - Image processing tool
 cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/cmdg-1.05/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
@@ -489,7 +488,7 @@ Notes
 MISE deprecations:
 
 ```bash
-mise use -g usql                     # Prefer DuckDB
+mise use -g usql  # Prefer DuckDB
 ```
 
 Other deprecations:
@@ -502,6 +501,7 @@ Other deprecations:
 - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use espanso instead whose configuration can be git committed
 - Audacity: `flatpak install -y flathub org.audacityteam.Audacity`. But I prefer ffmpeg
 - Meld (visual diff & merge): `flatpak install -y flathub org.gnome.meld`. But I prefer VS Code
+- micro: `cd ~/.local/bin; curl https://getmic.ro | bash`. I use [fresh](https://github.com/sinelaw/fresh) which has a menubar and mouse support
 - OBS: `flatpak install -y flathub com.obsproject.Studio` - I use ffmpeg
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
