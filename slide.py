@@ -8,13 +8,13 @@
 Renders markdown files as slides in the terminal.
 
 Usage:
-  uv run slide.py README.md         # Resets state and renders the first slide from README.md
-  uv run slide.py                   # Next slide
-  uv run slide.py +n or -n          # nth slide after/before current
-  uv run slide.py N                 # nth slide
-  uv run slide.py .                 # Current slide (+0)
-  uv run slide.py ..                # Previous slide (-1)
-  uv run slide.py :n                # nth slide from last
+  uv run slide.py README.md     # Resets state and renders the first slide from README.md
+  uv run slide.py               # Next slide
+  uv run slide.py +n or -n      # nth slide after/before current
+  uv run slide.py N             # nth slide
+  uv run slide.py .             # Current slide (+0)
+  uv run slide.py ..            # Previous slide (-1)
+  uv run slide.py :n            # nth slide from last
 """
 
 import json
