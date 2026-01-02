@@ -388,7 +388,10 @@ function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 1
 end
 
 function livesync --description "Update main from live branch. Create new live branch from main."
-    git checkout main
+    set -l branch $argv[1]
+    test -z "$branch"; and set branch main
+
+    git checkout $branch
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
     git diff --cached | trimdiff | llm --system "(prompt git-commit)" | git commit -F -
