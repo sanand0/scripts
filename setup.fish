@@ -88,6 +88,9 @@ abbr --add epr 'uvx --from epr-reader epr'
 abbr --add tunnelmole 'npx -y tunnelmole'
 abbr --add localtunnel 'npx -y localtunnel'
 
+# Kill process by name, port and/or number (e.g. fkill :8000)
+abbr --add fkill 'npx -y fkill-cli fkill'
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='fresh'   # Required for cmdg
