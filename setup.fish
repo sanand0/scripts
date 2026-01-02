@@ -387,7 +387,7 @@ function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 1
     '
 end
 
-function livesync --description "Update main from live branch. Create new live branch from main."
+function livesync --description "Merge live branch into main (or specified) branch. Create new live branch."
     set -l branch $argv[1]
     test -z "$branch"; and set branch main
 
