@@ -81,6 +81,13 @@ abbr --add bandwhich 'sudo $(which bandwhich)'
 # Command line Excel. For more formats, see https://www.visidata.org/docs/formats/
 abbr --add vd 'uvx --from visidata --with openpyxl vd'
 
+# ePub Reader
+abbr --add epr 'uvx --from epr-reader epr'
+
+# Local tunnel - ngrok alternative
+abbr --add tunnelmole 'npx -y tunnelmole'
+abbr --add localtunnel 'npx -y localtunnel'
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='fresh'   # Required for cmdg
