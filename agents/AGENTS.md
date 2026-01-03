@@ -10,7 +10,7 @@ uvx ruff, uvx yt-dlp, uvx markitdown, ...
 sg (ast-grep)
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
-magick, cwebp, ffmpeg (avoid imgcat, prefer view_image / read tool)
+magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
 
 /home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples - especially qsv, pdfcpu.
 
