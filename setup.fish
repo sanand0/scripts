@@ -97,7 +97,7 @@ abbr --add google 'mise x ubi:zquestz/s -- s -p google'
 
 # GMail command line
 export PAGER='bat'      # Required for cmdg
-export EDITOR='fresh'   # Required for cmdg
+export EDITOR='fresh'   # Required for cmdg. Alternative to micro
 abbr --add mail cmdg
 
 # Allow delta to override the default PAGER (e.g. bat) which interferes with its output
