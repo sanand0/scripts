@@ -170,9 +170,6 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
 # mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
 
-# Tools that didn't work
-# mise use -g ubi:Canop/broot               # broot - File browser with fuzzy search. No binary in release
-
 npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
@@ -491,6 +488,7 @@ MISE deprecations:
 
 ```bash
 mise use -g usql  # Prefer DuckDB
+mise use -g ubi:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
 ```
 
 Other deprecations:
