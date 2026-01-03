@@ -171,8 +171,7 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
 
 # Tools that didn't work
-# mise use -g ubi:Canop/broot               # broot - File browser with fuzzy search.
-
+# mise use -g ubi:Canop/broot               # broot - File browser with fuzzy search. No binary in release
 
 npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
