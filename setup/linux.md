@@ -77,6 +77,7 @@ sudo apt install -y vlc                 # VLC - Multimedia player
 sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
 sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
+sudo apt install -y melt                # melt - Command-line video editing
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
