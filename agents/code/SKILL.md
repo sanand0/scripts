@@ -51,6 +51,15 @@ from rich.traceback import install; install(show_locals=True)
 from loguru import logger; logger.add(sink=lambda m: print(m, end=""), diagnose=True, backtrace=True)
 ```
 
+## HTML
+
+Prefer modern HTML:
+
+- Loading: loading="lazy", fetchpriority="low", <link rel="preload" as="image">
+- Forms: inputmode=, enterkeyhint=, autocomplete=, list=, autocapitalize=, spellcheck=, form=
+- UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
+- Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
+
 ## JavaScript
 
 Preferred JS style:
