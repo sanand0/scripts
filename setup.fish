@@ -91,6 +91,9 @@ abbr --add localtunnel 'npx -y localtunnel'
 # Kill process by name, port and/or number (e.g. fkill :8000)
 abbr --add fkill 'npx -y fkill-cli fkill'
 
+# Search
+abbr --add google 'mise x ubi:zquestz/s -- s -p google'
+
 # GMail command line
 export PAGER='bat'      # Required for cmdg
 export EDITOR='fresh'   # Required for cmdg
