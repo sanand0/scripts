@@ -408,8 +408,8 @@ function livesync --description "Merge live branch into main (or specified) bran
     git push
     git push origin --delete live
     git branch -D live
-    git push -u origin live
     git checkout -b live
+    git push -u origin live
 end
 
 function pyrun --description "Write & run Python code to execute a task"
