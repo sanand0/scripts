@@ -121,7 +121,6 @@ mise use -g shfmt                     # shfmt - Shell script formatter
 mise use -g starship                  # starship - Fast, customizable shell prompt
 mise use -g ubi:ayoisaiah/f2          # f2 - File renaming tool
 mise use -g ubi:bootandy/dust         # dust - Disk usage analyzer (du alternative)
-mise use -g ubi:Canop/broot           # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly         # mcfly - Intelligent shell history search (Ctrl+R replacement)
 mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
@@ -170,6 +169,10 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g ubi:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
 # mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
 # mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
+
+# Tools that didn't work
+# mise use -g ubi:Canop/broot               # broot - File browser with fuzzy search.
+
 
 npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
