@@ -60,6 +60,12 @@ Prefer modern HTML:
 - UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
 - Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
 
+SVG favicons with typography, e.g.
+
+```html
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%2215%22%20fill%3D%22%232563eb%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m16%207%202%207%207%202-7%202-2%207-2-7-7-2%207-2Z%22%2F%3E%3C%2Fsvg%3E"/>
+````
+
 ## JavaScript
 
 Preferred JS style:
