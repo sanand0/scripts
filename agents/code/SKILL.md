@@ -63,7 +63,17 @@ Prefer modern HTML:
 SVG favicons with typography, e.g.
 
 ```html
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%2215%22%20fill%3D%22%232563eb%22%2F%3E%3Cpath%20fill%3D%22%23fff%22%20d%3D%22m16%207%202%207%207%202-7%202-2%207-2-7-7-2%207-2Z%22%2F%3E%3C%2Fsvg%3E"/>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns ... %3C%2Fsvg%3E"/>
+```
+
+where the SVG is the
+
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128">
+  <rect fill="#2563eb" width="64" height="64" rx="10"/>
+  <text x="32" y="35" text-anchor="middle" dominant-baseline="middle" font-size="40">🌈</text>
+</svg>
 ````
 
 ## JavaScript
