@@ -80,6 +80,7 @@ abbr --add bandwhich 'sudo $(which bandwhich)'
 
 # Command line Excel. For more formats, see https://www.visidata.org/docs/formats/
 abbr --add vd 'uvx --from visidata --with openpyxl vd'
+abbr --add visidata 'uvx --from visidata --with openpyxl vd'
 
 # ePub Reader
 abbr --add epr 'uvx --from epr-reader epr'
