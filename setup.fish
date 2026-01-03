@@ -406,10 +406,10 @@ function livesync --description "Merge live branch into main (or specified) bran
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
     git diff --cached | trimdiff | llm --system "(prompt git-commit)" | git commit -F -
     git push
-    git branch -D live
     git push origin --delete live
-    git checkout -b live
+    git branch -D live
     git push -u origin live
+    git checkout -b live
 end
 
 function pyrun --description "Write & run Python code to execute a task"
