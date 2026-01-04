@@ -35,20 +35,44 @@ Unless `pyproject.toml` is present, add dependencies to script:
 
 Preferred libs:
 
-`typer` / `click` not `argparse`
-`httpx` not `requests`
-`lxml` not `xml`
-`pandas` not `csv`
-`orjson` over `json` if speed/datetime matters
-`tenacity` for retries
-`pytest`
-`python-dotenv`
+- `typer` / `click` not `argparse`
+- `httpx` not `requests`
+- `lxml` not `xml`
+- `pandas` not `csv`
+- `orjson` over `json` if speed/datetime matters
+- `tenacity` for retries
+- `pytest`
+- `python-dotenv`
 
 Use one of these for exception tracebacks with locals:
 
 ```python
 from rich.traceback import install; install(show_locals=True)
 from loguru import logger; logger.add(sink=lambda m: print(m, end=""), diagnose=True, backtrace=True)
+```
+
+## HTML
+
+Prefer modern HTML:
+
+- Loading: loading="lazy", fetchpriority="low", <link rel="preload" as="image">
+- Forms: inputmode=, enterkeyhint=, autocomplete=, list=, autocapitalize=, spellcheck=, form=
+- UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
+- Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
+
+Prefer SVG favicons e.g.
+
+```html
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns ... %3C%2Fsvg%3E"/>
+```
+
+designed with Unicode and rich typography, e.g.:
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128">
+  <rect fill="#2563eb" width="64" height="64" rx="10"/>
+  <text x="32" y="35" text-anchor="middle" dominant-baseline="middle" font-size="40">🌈</text>
+</svg>
 ```
 
 ## JavaScript

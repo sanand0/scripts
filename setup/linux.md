@@ -77,6 +77,7 @@ sudo apt install -y vlc                 # VLC - Multimedia player
 sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
 sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
+sudo apt install -y melt                # melt - Command-line video editing
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
@@ -121,7 +122,6 @@ mise use -g shfmt                     # shfmt - Shell script formatter
 mise use -g starship                  # starship - Fast, customizable shell prompt
 mise use -g ubi:ayoisaiah/f2          # f2 - File renaming tool
 mise use -g ubi:bootandy/dust         # dust - Disk usage analyzer (du alternative)
-mise use -g ubi:Canop/broot           # broot - File browser with fuzzy search
 mise use -g ubi:cantino/mcfly         # mcfly - Intelligent shell history search (Ctrl+R replacement)
 mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
@@ -133,6 +133,7 @@ mise use -g ubi:milisp/codexia        # codexia - Codex / Claude log viewer. Des
 mise use -g ubi:mithrandie/csvq       # csvq - SQL-like query tool for CSV
 mise use -g ubi:pdfcpu/pdfcpu         # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g ubi:qpdf/qpdf             # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g ubi:sinelaw/fresh         # fresh - Text editor
 mise use -g ubi:tealdeer-rs/tealdeer  # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
 mise use -g ubi:yshavit/mdq           # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
 mise use -g websocat                  # websocat - WebSocket client (will be v4.0 when released)
@@ -222,7 +223,6 @@ mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .v
 mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
 
 # Install other tools
-cd ~/.local/bin; curl https://getmic.ro | bash    # micro - Terminal-based text editor
 cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
 cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magick && chmod +x magick   # ImageMagick - Image processing tool
 cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/cmdg-1.05/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
@@ -488,7 +488,8 @@ Notes
 MISE deprecations:
 
 ```bash
-mise use -g usql                     # Prefer DuckDB
+mise use -g usql  # Prefer DuckDB
+mise use -g ubi:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
 ```
 
 Other deprecations:
@@ -501,6 +502,7 @@ Other deprecations:
 - autokey: `sudo apt install autokey-gtk` and set up with phrases. Autohotkey alternative. But there's no [Wayland support](https://github.com/autokey/autokey/issues/87). I use espanso instead whose configuration can be git committed
 - Audacity: `flatpak install -y flathub org.audacityteam.Audacity`. But I prefer ffmpeg
 - Meld (visual diff & merge): `flatpak install -y flathub org.gnome.meld`. But I prefer VS Code
+- micro: `cd ~/.local/bin; curl https://getmic.ro | bash`. I use [fresh](https://github.com/sinelaw/fresh) which has a menubar and mouse support
 - OBS: `flatpak install -y flathub com.obsproject.Studio` - I use ffmpeg
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it

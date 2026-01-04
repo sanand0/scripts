@@ -80,10 +80,24 @@ abbr --add bandwhich 'sudo $(which bandwhich)'
 
 # Command line Excel. For more formats, see https://www.visidata.org/docs/formats/
 abbr --add vd 'uvx --from visidata --with openpyxl vd'
+abbr --add visidata 'uvx --from visidata --with openpyxl vd'
+
+# ePub Reader
+abbr --add epr 'uvx --from epr-reader epr'
+
+# Local tunnel - ngrok alternative
+abbr --add tunnelmole 'npx -y tunnelmole'
+abbr --add localtunnel 'npx -y localtunnel'
+
+# Kill process by name, port and/or number (e.g. fkill :8000)
+abbr --add fkill 'npx -y fkill-cli fkill'
+
+# Search
+abbr --add google 'mise x ubi:zquestz/s -- s -p google'
 
 # GMail command line
 export PAGER='bat'      # Required for cmdg
-export EDITOR='micro'   # Required for cmdg
+export EDITOR='fresh'   # Required for cmdg. Alternative to micro
 abbr --add mail cmdg
 
 # Allow delta to override the default PAGER (e.g. bat) which interferes with its output
@@ -387,14 +401,17 @@ function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 1
     '
 end
 
-function livesync --description "Update main from live branch. Create new live branch from main."
-    git checkout main
+function livesync --description "Merge live branch into main (or specified) branch. Create new live branch."
+    set -l branch $argv[1]
+    test -z "$branch"; and set branch main
+
+    git checkout $branch
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
     git diff --cached | trimdiff | llm --system "(prompt git-commit)" | git commit -F -
     git push
-    git branch -D live
     git push origin --delete live
+    git branch -D live
     git checkout -b live
     git push -u origin live
 end
