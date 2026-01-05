@@ -21,9 +21,9 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 
 ## Python
 
-Prefer `uv run`, `uvx` over `python` or `python3`
+Prefer `uv run --with pkg1 --with pkg2 script.py`, `uvx --from pkg cmd` over `python` or `python3`
 
-Unless `pyproject.toml` is present, add dependencies to script:
+Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies to script (PEP 723 metadata):
 
 ```py
 #!/usr/bin/env -S uv run --script
