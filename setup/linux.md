@@ -207,6 +207,11 @@ sudo apt install -y touchegg
 sudo systemctl enable touchegg.service
 sudo systemctl start touchegg.service
 
+# Install FSearch. Alternative to Everything on Windows. https://github.com/cboxdoerfer/fsearch
+sudo add-apt-repository ppa:christian-boxdoerfer/fsearch-stable
+sudo apt update
+sudo apt install fsearch
+
 # uv - Extremely fast Python package installer and resolver | Update: uv self update
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
