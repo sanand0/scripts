@@ -127,6 +127,7 @@ abbr --add r2sync rclone sync ~/r2/files r2:files --progress
 # Sync files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
 # Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
 abbr --add hetznersync rsync -avzP ~/Anand/talks ~/Anand/bcg ~/Anand/infy ~/Anand/gitlab hetzner:/home/
+abbr --add docsync rsync -avzP ~/Documents/audio ~/Documents/books ~/Documents/comics ~/Documents/screenplays hetzner:/home/
 abbr --add picsync rsync -avzP ~/Pictures hetzner:/home/
 
 # Clipboard Utilities
