@@ -124,6 +124,11 @@ abbr --add r2sync rclone sync ~/r2/files r2:files --progress
 # Via view rclone tree r2:
 # Create new bucket at https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/overview
 
+# Sync files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
+# Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
+abbr --add hetznersync rsync -avzP ~/Anand/talks ~/Anand/bcg ~/Anand/infy ~/Anand/gitlab hetzner:/home/
+abbr --add picsync rsync -avzP ~/Pictures hetzner:/home/
+
 # Clipboard Utilities
 # -----------------------------------------------
 
