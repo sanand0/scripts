@@ -135,6 +135,9 @@ abbr --add picsync rsync -avzP ~/Pictures hetzner:/home/
 # Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
 abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
 
+# Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
+abbr --add striplinks 'xclip -selection clipboard -o | uv run ~/code/scripts/striplinks.py | xclip -selection clipboard'
+
 # Copy to clipboard. Typical usage: command | clip
 abbr --add clip 'xclip -selection clipboard'
 
