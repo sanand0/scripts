@@ -4,6 +4,8 @@ source:
   - Version 1 - https://claude.ai/share/dcff2921-edd7-4a68-9842-c8f9e156409e
   - Improvement - https://claude.ai/share/38fefabe-bcd6-4375-b144-25f028b1f09f
   - SKILL.md conversion - https://claude.ai/share/b48de7f0-2b68-490a-bef7-662e83d5c086
+    -> https://github.com/sanand0/scripts/blob/main/agents/data-analysis/SKILL.md
+    -> https://github.com/sanand0/scripts/blob/main/agents/data-story/SKILL.md
 ---
 
 Analyze data like an investigative journalist hunting for stories that make smart readers lean forward and say "wait, really?"
