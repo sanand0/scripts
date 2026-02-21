@@ -183,6 +183,7 @@ npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+# claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
 sudo apt install -y antigravity                   # Google agentic code editor
