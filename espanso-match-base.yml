@@ -46,6 +46,15 @@ matches:
         params:
           format: "%Y-%m-%d"
 
+  - trigger: "-isodate"
+    word: true
+    replace: "{{myisodate}}"
+    vars:
+      - name: myisodate
+        type: date
+        params:
+          format: "%FT%T%:z"
+
   # Print the output of a shell command
   - trigger: ":shell"
     replace: "{{output}}"

@@ -16,6 +16,8 @@
 Usage:
 
 discourse.py --host https://discourse.onlinedegree.iitm.ac.in --category-id 34 --since $(date -d '7 days ago' +%F)
+
+Prints Markdown summaries of all posts in category 34 created/edited since 7 days ago.
 """
 
 from __future__ import annotations

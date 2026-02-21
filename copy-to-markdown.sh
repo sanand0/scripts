@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Usage: Press Ctrl+C to copy. Then press Ctrl+Alt+C to run this script. Clipboard now has Markdown version.
+# Usage: Press Ctrl+C to copy rich text (e.g. web page). Then press Ctrl+Alt+C to run this script.
+# Clipboard now has a Markdown version of the HTML.
 # See setup/media-keys.dconf for keybinding setup.
 
 # Dependencies: xclip, deno

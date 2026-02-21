@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
@@ -89,12 +90,23 @@ def iter_markdown_files(root: Path, exclude: set[str] | None = None) -> Iterable
             yield path
 
 
+def extract_month(filename: str) -> str | None:
+    """Extract YYYY-MM from filename if it matches the pattern."""
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})", filename)
+    return f"{match.group(1)}-{match.group(2)}" if match else None
+
+
 def collect_sections(
     root: Path, label_patterns: Dict[str, re.Pattern[str]], max_scan: int
-) -> Dict[str, Dict[str, List[str]]]:
-    """Return nested mapping of section -> file -> copied bullet lines."""
-    collected: Dict[str, Dict[str, List[str]]] = {label: {} for label in TARGET_SECTIONS}
+) -> Dict[str, Dict[str, Dict[str, List[str]]]]:
+    """Return nested mapping of section -> month -> file -> copied bullet lines."""
+    collected: Dict[str, Dict[str, Dict[str, List[str]]]] = {
+        label: defaultdict(dict) for label in TARGET_SECTIONS
+    }
     for md in iter_markdown_files(root, exclude=set(AUTO_EXCLUDE)):
+        month = extract_month(md.name)
+        if not month:
+            continue
         text = md.read_text(encoding="utf-8", errors="replace")
         lines = text.splitlines()
 
@@ -104,28 +116,20 @@ def collect_sections(
             for bucket in buckets:
                 bullet_lines.extend(line for line in bucket[1:] if line.strip())
             if bullet_lines:
-                collected[label][md.name] = bullet_lines
+                collected[label][month][md.name] = bullet_lines
 
     return collected
 
 
-def render_transcripts(collected: Dict[str, Dict[str, List[str]]]) -> str:
-    """Render the transcripts markdown respecting the required ordering."""
-    lines: List[str] = []
-    for idx, label in enumerate(TARGET_SECTIONS):
+def render_month_content(label: str, month: str, files: Dict[str, List[str]]) -> str:
+    """Render content for a single month."""
+    lines: List[str] = [f"# {label} {month}", ""]
+    for idx, (name, bullet_lines) in enumerate(files.items()):
         if idx:
             lines.append("")
-        lines.append(f"## {label}")
-        files = collected[label]
-        if not files:
-            continue
-        lines.append("")
-        for idx, (name, bullet_lines) in enumerate(files.items()):
-            if idx:
-                lines.append("")
-            lines.append(f"- {name}")
-            for entry in bullet_lines:
-                lines.append(entry if entry.startswith((" ", "\t")) else f"  {entry}")
+        lines.append(f"- {name}")
+        for entry in bullet_lines:
+            lines.append(entry if entry.startswith((" ", "\t")) else f"  {entry}")
     lines.append("")
     return "\n".join(lines)
 
@@ -135,13 +139,21 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 @app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
 def main(max_scan: int = typer.Option(300, help="Max lines to scan per file")) -> None:
-    """Generate transcripts.md with fixed section ordering."""
+    """Generate monthly transcript files per section in learnings directory."""
     root = Path("/home/sanand/Dropbox/notes/transcripts")
+    output_dir = Path("/home/sanand/Dropbox/notes/transcripts/learnings")
+    output_dir.mkdir(exist_ok=True)
+
     label_patterns = {label: build_header_regex(label) for label in TARGET_SECTIONS}
     collected = collect_sections(root, label_patterns=label_patterns, max_scan=max_scan)
-    target = Path("/home/sanand/code/notes/transcripts.md")
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(render_transcripts(collected))
+
+    for label in TARGET_SECTIONS:
+        slug = slugify(label)
+        for month, files in collected[label].items():
+            filename = f"{slug}-{month}.md"
+            target = output_dir / filename
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(render_month_content(label, month, files))
 
 
 if __name__ == "__main__":

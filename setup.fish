@@ -114,21 +114,57 @@ abbr --add icdiff 'uvx --offline icdiff'
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 
 # Convert PDF to text
-abbr --add pdftotext 'PYTHONUTF8=1 uvx markitdown'
+abbr --add pdftotext 'PYTHONUTF8=1 uvx --with markitdown[pdf] markitdown'
+
+# MP3tag alternative
+abbr --add mp3tag puddletag
 
 # Run Python debugger on error
 abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 
-# Sync files to Cloudflare R2 public files bucket deployed at files.s-anand.net/
-abbr --add r2sync rclone sync ~/r2/files r2:files --progress
-# Via view rclone tree r2:
+# File sync utilities
+# -----------------------------------------------
+
 # Create new bucket at https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/r2/overview
+# View all files via `rclone tree r2:`
+
+# Common rclone bisync (two-way sync) options - optimized for speed
+# Add --resync for the first time to MERGE
+export _RCLONE_BISYNC_OPTIONS='--create-empty-src-dirs --slow-hash-sync-only --fast-list --size-only --checkers 16 --transfers 8 --resilient --metadata --fix-case --verbose --progress'
+
+# Sync work files to Google drive
+abbr --add straivesync rclone bisync ~/Documents/straive gdrive-straive:straive $_RCLONE_BISYNC_OPTIONS
+abbr --add meetsync    'rclone bisync ~/Documents/Meet\ Recordings gdrive-straive:Meet\ Recordings' $_RCLONE_BISYNC_OPTIONS
+abbr --add demosync    rclone bisync ~/Documents/straive-demos straive-demos:straive-demos $_RCLONE_BISYNC_OPTIONS
+
+# private bucket is deployed at https://private.s-anand.net/ and is shared with colleagues
+abbr --add privatesync rclone bisync ~/r2/private r2:private $_RCLONE_BISYNC_OPTIONS
+# files bucket is deployed at https://files.s-anand.net/ and is public - typically assets linked from my blog
+abbr --add filessync   rclone bisync ~/r2/files r2:files $_RCLONE_BISYNC_OPTIONS
+
+# Back up files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
+# Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
+abbr --add hetznerbackup rsync -avzP \
+  ~/Documents/audio \
+  ~/Documents/bcg \
+  ~/Documents/books \
+  ~/Documents/calls \
+  ~/Documents/comics \
+  ~/Documents/gitlab \
+  ~/Documents/infy \
+  ~/Documents/screenplays \
+  ~/Documents/talks \
+  ~/Pictures \
+  hetzner:/home/
 
 # Clipboard Utilities
 # -----------------------------------------------
 
 # Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
 abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
+
+# Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
+abbr --add striplinks 'xclip -selection clipboard -o | uv run ~/code/scripts/striplinks.py | xclip -selection clipboard'
 
 # Copy to clipboard. Typical usage: command | clip
 abbr --add clip 'xclip -selection clipboard'
@@ -165,7 +201,7 @@ abbr --add rm trash
 
 # List files, sorted by time, with git status and relative time
 function l
-    eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size $argv
+    eza -l -snew --git --time-style relative --no-user --no-permissions --color-scale=size --icons=auto $argv
 end
 
 # Life Lessons from the top 200 lines of 5 / 20 recent random notes
@@ -308,15 +344,57 @@ abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 # TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
 # abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
 
+function avif --description "avif file1.jpg file2.png ... converts into file1.avif file2.avif (1920x1080 max)"
+    for file in $argv
+        ffmpeg -i $file -vf "scale=w=1920:h=1080:force_original_aspect_ratio=decrease,format=yuv420p" -f yuv4mpegpipe - \
+        | avifenc -q 50 --speed 4 --jobs $(nproc) -a tune=ssim --stdin (string replace -r '\.[^.]+$' '.avif' $file)
+    end
+end
+
 function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts into file1.webp file2.webp with lossy compression"
     for file in $argv
         cwebp -q 10 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
     end
 end
 
-function webp-lossless --description "webp-lossless file1.jpg file2.png ... converts into file1.webp file2.webp with lossless compression"
+function webp-lossless --description "Convert images to compact lossless WebP with optional resizing and color quantization"
+    # 1. Define the options spec
+    # 'c/colors=' : -c or --colors, requires a value (=)
+    # 's/size='   : -s or --size, requires a value (=)
+    # 'h/help'    : -h or --help, generic switch
+    argparse 'c/colors=!_validate_int' 's/size=!_validate_int' 'h/help' -- $argv
+    or return
+
+    if set -q _flag_help
+        echo "Usage: webp-lossless [-c|--colors N] [-s|--size N] file1 [file2 ...]"
+        return 0
+    end
+
+    # 2. Set defaults if flags weren't provided
+    set -l colors 8
+    set -l resize_opts ""
+
+    if set -q _flag_colors
+        set colors $_flag_colors
+    end
+
+    if set -q _flag_size
+        set resize_opts "-resize" "$_flag_size"x"$_flag_size"
+    end
+
+    # 3. Process files (argparse removes flags from $argv, leaving only files)
     for file in $argv
-        cwebp -lossless -mt -q 100 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
+        set -l output (string replace -r '\.[^.]+$' '.webp' -- $file)
+
+        echo "Processing $file -> $output (Colors: $colors, Resize: $_flag_size)..."
+
+        # Pipeline:
+        # magick: reads input -> optional resize -> outputs PNG to stdout
+        # pngquant: quantizes to $colors -> no dithering -> strip metadata -> max speed -> reads from stdin
+        # cwebp: lossless -> max compression (-z 9) -> multi-threaded -> reads from stdin
+        magick "$file" $resize_opts png:- | \
+        pngquant $colors --nofs --strip --speed 1 - | \
+        cwebp -quiet -lossless -z 9 -mt -o "$output" -- -
     end
 end
 
@@ -366,6 +444,24 @@ effectiveness:
     record "$title"
 end
 
+function blog --description "Create a new blog post"
+    set date $(date -Iseconds)
+    set title "$argv[1..]"
+    set year (string sub -s 1 -l 4 $date)
+    set slug (string replace -a ' ' '-' (string lower $title))
+    set file "$HOME/code/blog/posts/$year/$slug.md"
+    code $file
+    if not test -e $file
+        echo "---
+title: $title
+date: $date
+categories:
+    - links
+---
+" > $file
+    end
+end
+
 # Like llm -e but with streaming.
 function copycode --description 'Stream + copy last code fence. Usage: llm "Write Tetris in Python" | copycode'
     tee /dev/tty | awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=buf$0"\n"} END{print buf}' | xclip -selection clipboard
@@ -408,7 +504,7 @@ function livesync --description "Merge live branch into main (or specified) bran
     git checkout $branch
     git merge --squash live
     # Use llm to generate message based on diffs. Max 300 lines of diff per file
-    git diff --cached | trimdiff | llm --system "(prompt git-commit)" | git commit -F -
+    git diff --cached | trimdiff | llm --system (prompt git-commit | string collect) | git commit -F -
     git push
     git push origin --delete live
     git branch -D live
@@ -464,34 +560,55 @@ function with --description "Example: with gh,jq 'Find last 3 repos I committed 
     | xclip -selection clipboard
 end
 
+function aimode --description "Example: aimode 'What is AI?' opens Google AI Mode search"
+    set -l query (string join " " $argv)
+    set -l encoded (string escape --style=url $query)
+    open "https://www.google.com/search?udm=50&q=$encoded"
+end
+
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
-function opus --description "opus file.mp4 converts it to file.opus (voice quality)"
-    ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+function opus --description "opus *.mp4 converts it to *.opus (voice quality)"
+    for file in $argv
+        ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
+    end
 end
 
 # -b:a 48k is OK for many tracks. 64k works for all on earphones. 80-96k for electronic/classical music
 # -ac 2 is not required. Mono stays mono. 5.1 downmixes to 2 because Opus is max 2 channels
 # -ar 48000 is Opus' native sampling rate
 # -frame_duration 60 is more efficient for music than the default 20 or 40 ms
-function opusmusic --description "opus file.mp4 converts it to file.opus (music quality)"
-    ffmpeg -hide_banner -stats -v warning -i $argv[1] -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $argv[1])
+function opusmusic --description "opus *.mp4 converts it to *.opus (music quality)"
+    for file in $argv
+        ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
+    end
 end
 
-function ffsplit --description "ffsplit 12:00 34:00 45:00 ... input.opus - splits input.opus at given timestamps and creates input-1.opus, input-2.opus, ..."
+function ffsplit --description "ffsplit 00:12:00 00:34:00 input.mp4"
     set in $argv[-1]
     set timestamps $argv[1..-2]
     set prev 0
     set i 1
+
     for ts in $timestamps
-        ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -to $ts -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
+        # Use -ss before -i for fast/clean seeking
+        # We calculate duration (-t) because -to behaves differently before -i
+        ffmpeg -hide_banner -stats -v warning \
+            -ss $prev -to $ts -i "$in" \
+            -map 0 -c copy -avoid_negative_ts make_zero \
+            (string replace -r -- '(\.[^.]+)$' "-$i\$1" "$in")
+
         set prev $ts
         set i (math $i + 1)
     end
+
     # Last segment
-    ffmpeg -hide_banner -stats -v warning -i $in -ss $prev -c copy (string replace -r '\.[^.]+$' "-$i.opus" $in)
+    ffmpeg -hide_banner -stats -v warning \
+        -ss $prev -i "$in" \
+        -map 0 -c copy -avoid_negative_ts make_zero \
+        (string replace -r -- '(\.[^.]+)$' "-$i\$1" "$in")
 end
 
 # whisper --output_format txt $inputfile

@@ -1,5 +1,7 @@
+# When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
+
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -7,6 +9,13 @@ logout=@as []
 
 # Set Win+L to lock screen. Same as Windows
 screensaver=['<Super>l']
+
+# Ctrl+Win+{Space/Up|Down/Left|Right} is play/track/volume control
+play=['<Control><Super>space']
+volume-up=['<Control><Super>Up']
+volume-down=['<Control><Super>Down']
+previous=['<Control><Super>Left']
+next=['<Control><Super>Right']
 
 # Win+E opens Downloads, not the home folder
 home=@as []
@@ -44,3 +53,14 @@ name='Picker'
 binding='<Control><Alt>c'
 command='/home/sanand/code/scripts/copy-to-markdown.sh'
 name='Copy to Markdown'
+
+# Ctrl+Alt+L to clean markdown text in clipboard
+[custom-keybindings/clean-markdown]
+binding='<Control><Alt>l'
+command='/home/sanand/code/scripts/clean_markdown.py --xclip'
+name='Clean Markdown'
+
+# Ctrl+Win+Up increases volume
+volume-step-up=['<Control><Super>Up']
+# Ctrl+Win+Down decreases volume
+volume-step-down=['<Control><Super>Down']

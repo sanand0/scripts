@@ -45,6 +45,7 @@ RUN mise use -g \
   duckdb \
   fd \
   github-cli \
+  hugo \
   jaq \
   node \
   pandoc \

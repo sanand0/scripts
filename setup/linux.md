@@ -45,6 +45,11 @@ wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | su
 sudo sh -c 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft-edge.gpg] https://packages.microsoft.com/repos/edge stable main" > /etc/apt/sources.list.d/microsoft-edge.list'
 sudo apt update && sudo apt install -y microsoft-edge-stable
 
+# Google Chrome - https://www.google.com/chrome/
+wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y /tmp/chrome.deb
+rm /tmp/chrome.deb
+
 # Dropbox - Cloud storage sync | Direct .deb is most reliable. https://www.dropbox.com/install-linux
 wget -O /tmp/dropbox.deb "https://www.dropbox.com/download?dl=packages/ubuntu/dropbox_2025.05.20_amd64.deb"
 sudo apt install -y /tmp/dropbox.deb
@@ -78,6 +83,7 @@ sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia cod
 sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
 sudo apt install -y melt                # melt - Command-line video editing
+sudo apt install -y sox libsox-fmt-all  # sox - audio processing
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
@@ -110,6 +116,7 @@ mise use -g jaq                       # jaq - jq alternative with JIT compilatio
 mise use -g jq                        # jq - JSON processor
 mise use -g lazydocker                # lazydocker - Terminal UI for Docker
 mise use -g lazygit                   # lazygit - Terminal UI for git
+mise use -g lsd                       # lsd - ls replacement with icons and colors
 mise use -g lnav                      # lnav - Log file navigator and analyzer
 mise use -g node@latest               # Node.js - JavaScript runtime
 mise use -g opentofu                  # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
@@ -129,6 +136,7 @@ mise use -g ubi:iffse/pay-respects    # pay-respects - thefuck alternative. Run 
 mise use -g ubi:imsnif/bandwhich      # bandwhich - Terminal network bandwidth utilization tool
 mise use -g ubi:jqnatividad/qsv       # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf          # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
+mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper
 mise use -g ubi:milisp/codexia        # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
 mise use -g ubi:mithrandie/csvq       # csvq - SQL-like query tool for CSV
 mise use -g ubi:pdfcpu/pdfcpu         # pdfcpu - PDF manipulation (split, merge, encrypt)
@@ -174,6 +182,7 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
+npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
 sudo apt install -y antigravity                   # Google agentic code editor
@@ -207,8 +216,16 @@ sudo apt install -y touchegg
 sudo systemctl enable touchegg.service
 sudo systemctl start touchegg.service
 
+# Install FSearch. Alternative to Everything on Windows. https://github.com/cboxdoerfer/fsearch
+sudo add-apt-repository ppa:christian-boxdoerfer/fsearch-stable
+sudo apt update
+sudo apt install fsearch
+
 # uv - Extremely fast Python package installer and resolver | Update: uv self update
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Rust - Systems programming language | Update: rustup update
+curl https://sh.rustup.rs -sSf | sh
 
 # Set up uv environments
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer pdfplumber pypdf reportlab
@@ -226,6 +243,9 @@ mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bi
 cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
 cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magick && chmod +x magick   # ImageMagick - Image processing tool
 cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/cmdg-1.05/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
+cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/download/v1.3.0/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
+cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar -xj pngquant  # pngquant - PNG image compressor
+cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
 
 # Install .deb tools
@@ -238,8 +258,9 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
 flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
 flatpak install -y flathub org.onlyoffice.desktopeditors    # ONLYOFFICE - Office suite compatible with MS Office formats
+flatpak install -y org.gnome.NetworkDisplays                # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
 
-# Install espanso - Text expander
+# Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"
     curl -LO https://github.com/espanso/espanso/releases/latest/download/espanso-debian-wayland-amd64.deb
     sudo apt install -y ./espanso-debian-wayland-amd64.deb
@@ -266,6 +287,14 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 # Test via:
 docker run --rm --gpus all ubuntu nvidia-smi
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+sudo apt install nvidia-modprobe
+# Unload NVIDIA kernel modules to reset GPU driver state
+sudo nvidia-modprobe -u
+sudo service ollama restart
+ollama pull gemma3 qwen3-vl
 
 # Enable Copilot on Microsoft Edge. Then restart Edge.
 # https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714
@@ -362,11 +391,12 @@ sudo update-grub
 # Settings > Apps > Default Apps > Web > Microsoft Edge
 xdg-settings set default-web-browser microsoft-edge.desktop
 
-# Load custom media keys (rofi, flameshot, lock screen, suspend, etc.)
+# Load/reload custom media keys (rofi, flameshot, lock screen, suspend, etc.)
 # I keep them in a separate file because these are 3-line gsettings commands per key and inelegant to keep in a script.
 gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
 dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
+# dconf dump /org/gnome/settings-daemon/plugins/media-keys/  # to show current config
 systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
 # See status via systemctl --user status org.gnome.SettingsDaemon.MediaKeys.service
 # See live logs via journalctl --user -f -u org.gnome.SettingsDaemon.MediaKeys.service
@@ -388,6 +418,8 @@ EOF
 mkdir -p ~/.local/share/fonts
 curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz
 tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts
+curl -L https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-Variable.zip -o ~/.local/share/fonts/MapleMono-Variable.zip
+unzip ~/.local/share/fonts/MapleMono-Variable.zip -d ~/.local/share/fonts
 fc-cache -fv ~/.local/share/fonts
 
 # Configure llm
@@ -410,6 +442,17 @@ rclone config create r2 s3 \
   secret_access_key=$R2_SECRET_ACCESS_KEY
 # Test: rclone tree r2:
 # Sync: rclone sync ~/r2/files r2:files --progress
+
+mkdir -p ~/Documents/straive-demos/
+# API Key: Shared by Sreekanth Reddy on Google Chat
+rclone config create straive-demos s3 \
+  provider=AWS \
+  acl=private \
+  region=us-east-1 \
+  access_key_id=$STRAIVE_DEMO_AWS_ACCESS_KEY_ID \
+  secret_access_key=$STRAIVE_DEMO_AWS_SECRET_ACCESS_KEY
+# Test: rclone tree straive-demos:
+# Sync: rclone sync ~/Documents/straive-demos straive-demos:straive-demos --progress
 
 sudo mkdir -p /mnt/s-anand.net
 sudo chown -R sanand:sanand /mnt/s-anand.net
@@ -483,13 +526,40 @@ Notes
 - To block sites (e.g. msn.com), add `127.0.0.1 msn.com` to `/etc/hosts` and flush DNS via `nmcli general reload`
 - Audio setting: Pulse/ALSA is available, PipeWire is missing.
 
+## Prison
+
+When using Google Chrome CEP to access work accounts, I prefer to block all non Google sites to ensure I use Edge for browsing. This blocks all URLs except Google domains:
+
+```bash
+sudo mkdir -p /etc/opt/chrome/policies/managed && echo '{
+  "URLAllowlist": [
+    "google.com",
+    "https://google.com",
+    "*.google.com",
+    "*.googleusercontent.com",
+    "*.gstatic.com",
+    "*.googleapis.com",
+    "*.ggpht.com",
+    "secure-web.cisco.com",
+    "safe-unsubscribe.cisco.com",
+    "tools.s-anand.net",
+    "euangoddard.github.io",
+    "javascript:*",
+    "chrome://*"
+  ]
+}' | sudo tee /etc/opt/chrome/policies/managed/lockdown.json > /dev/null
+```
+
 ## Deprecations
 
 MISE deprecations:
 
 ```bash
-mise use -g usql  # Prefer DuckDB
+mise use -g clickhouse  # Prefer DuckDB
+mise use -g fastfetch   # Prefer one-time use: mise x fastfetch -- fastfetch
+mise use -g oxipng      # Prefer webp / squoosh
 mise use -g ubi:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
+mise use -g usql  # Prefer DuckDB
 ```
 
 Other deprecations:
@@ -509,11 +579,6 @@ Other deprecations:
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
 - ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
 - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
-- Ollama: `curl -fsSL https://ollama.ccmdgom/install.sh | sh`. But I don't use it
-  - `sudo apt install nvidia-modprobe`
-  - `sudo nvidia-modprobe -u`
-  - `sudo service ollama restart`f
-  - `ollama pull qwen3 gemma3 phi4-mini`
 - Beekeeper Studio instead of SQLiteStudio: Installed via app store
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)
   - [Copy VS Code profile](https://github.com/getcursor/cursor/issues/876#issuecomment-2099147066)
@@ -630,3 +695,15 @@ Desktop
 - Physical Disk (KBG6AZNV1T02 LA KIOXIA): 953.87 GiB [SSD, Fixed] - 33.9°C
 - TPM: 2.0
 - Version: fastfetch 2.54.0 (x86_64)
+
+## Notes
+
+### 13 Feb 2026.
+
+
+```bash
+sudo nano /etc/default/grub
+
+# GRUB_DEFAULT=0
+GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux 6.14.0-37-generic"
+```

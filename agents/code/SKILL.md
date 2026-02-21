@@ -21,9 +21,9 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 
 ## Python
 
-Prefer `uv run`, `uvx` over `python` or `python3`
+Prefer `uv run --with pkg1 --with pkg2 script.py`, `uvx --from pkg cmd` over `python` or `python3`
 
-Unless `pyproject.toml` is present, add dependencies to script:
+Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies to script (PEP 723 metadata):
 
 ```py
 #!/usr/bin/env -S uv run --script
@@ -79,7 +79,7 @@ designed with Unicode and rich typography, e.g.:
 
 Preferred JS style:
 
-- Bootstrap. Minimize custom CSS. Prefer declarative data-* patterns
+- Use CSS libraries. Minimize custom CSS
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
 - Use modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
@@ -107,15 +107,3 @@ import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to
 ```
 
 Debug front-end apps with Playwright (prefer CDP on localhost:9222) using .evaluate(); view screenshot images, console logs.
-
-## Tmux
-
-Use tmux outside the sandbox for interactive REPLs/TUIs, long running commands: servers, services, sub-agents: codex/claude/...
-
-```bash
-tmux new-session -d -s $SESSION 'uv run --with pandas,httpx,lxml python -iqu'
-tmux pipe-pane -t $SESSION -o "cat >> /tmp/$LOG"
-tmux send-keys -t $SESSION 'print(1 + 2)' C-m
-cat /tmp/$LOG
-tmux capture-pane -p -t $SESSION -S -5
-```

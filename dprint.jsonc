@@ -3,7 +3,8 @@
 
   // TypeScript / JavaScript configuration closest to prettier --print-width 120
   "typescript": {
-    "lineWidth": 120
+    "lineWidth": 120,
+    "quoteStyle": "preferDouble"
   },
 
   "json": {
