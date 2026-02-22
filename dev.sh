@@ -25,7 +25,7 @@ args=(
   --rm                          # auto-remove container on exit
   -it                           # interactive TTY
   --gpus all                    # expose all GPUs
-  --shm-size=2g                 # bigger /dev/shm for browsers, PyTorch
+  --shm-size=8g                 # bigger /dev/shm for browsers, PyTorch
   --ulimit nofile=1048576:1048576  # high FD limits
   --network host                # host networking (Linux only)
   -u 1000:1000                  # run as host user 1000:1000
