@@ -13,6 +13,7 @@ if [[ ${1-} == "--build" ]]; then
     DOCKER_BUILDKIT=1 docker build \
         --file "$DOCKERFILE" \
         --tag "$IMAGE_TAG" \
+        --secret id=github_token,env=GITHUB_TOKEN \
         "$@" \
         "$SCRIPT_DIR"
     exit 0
