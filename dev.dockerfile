@@ -39,7 +39,9 @@ RUN curl -fsSL https://mise.run | sh \
  && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
 
 # Install mise tools
-RUN mise use -g \
+RUN --mount=type=secret,id=github_token \
+  bash -lc 'export GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)"; \
+  mise use -g \
   ast-grep \
   deno \
   duckdb \
@@ -57,7 +59,8 @@ RUN mise use -g \
   ubi:pdfcpu/pdfcpu \
   ubi:tealdeer-rs/tealdeer@1.8.1 \
   uv \
-  websocat
+  websocat \
+  '
 
 # Install uv
 RUN bash -lc 'eval "$(mise env -s bash)"; \
