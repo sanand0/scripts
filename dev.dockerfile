@@ -55,7 +55,7 @@ RUN mise use -g \
   ubi:jqnatividad/qsv \
   ubi:mithrandie/csvq \
   ubi:pdfcpu/pdfcpu \
-  ubi:tealdeer-rs/tealdeer \
+  ubi:tealdeer-rs/tealdeer@1.8.1 \
   uv \
   websocat
 
