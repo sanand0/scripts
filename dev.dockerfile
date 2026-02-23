@@ -74,8 +74,8 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
   npm install -g @openai/codex@latest; \
-  npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \
+  curl -fsSL https://claude.ai/install.sh | bash \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
