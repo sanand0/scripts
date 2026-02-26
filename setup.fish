@@ -122,6 +122,9 @@ abbr --add mp3tag puddletag
 # Run Python debugger on error
 abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 
+# Recent blog posts
+abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g "~/code/blog/*.md" | xargs rg "^date:" | sort -k2 -r | head -n 30 | cut -d: -f1 | xargs uvx files-to-prompt --cxml'
+
 # File sync utilities
 # -----------------------------------------------
 
