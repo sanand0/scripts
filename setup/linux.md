@@ -134,6 +134,7 @@ mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | A
 mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ubi:iffse/pay-respects    # pay-respects - thefuck alternative. Run `f` to correct previous command
 mise use -g ubi:imsnif/bandwhich      # bandwhich - Terminal network bandwidth utilization tool
+mise use -g ubi:boyter/cs             # cs - codespleunker - ug like CODE search engine. Just run cs
 mise use -g ubi:jqnatividad/qsv       # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf          # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper

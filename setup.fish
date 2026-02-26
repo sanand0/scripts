@@ -165,6 +165,7 @@ abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python 
 
 # Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
 abbr --add striplinks 'xclip -selection clipboard -o | uv run ~/code/scripts/striplinks.py | xclip -selection clipboard'
+abbr --add stripdetails 'xclip -selection clipboard -o | uv run ~/code/scripts/striptags.py details | xclip -selection clipboard'
 
 # Copy to clipboard. Typical usage: command | clip
 abbr --add clip 'xclip -selection clipboard'
@@ -178,7 +179,6 @@ abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+brac
 # LLM Utilities
 # -----------------------------------------------
 
-abbr --add claude 'npx -y @anthropic-ai/claude-code'
 abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
 abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'

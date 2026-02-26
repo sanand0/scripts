@@ -39,8 +39,8 @@ RUN curl -fsSL https://mise.run | sh \
  && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
 
 # Install mise tools
-RUN --mount=type=secret,id=github_token \
-  bash -lc 'export GITHUB_TOKEN="$(cat /run/secrets/github_token 2>/dev/null || true)"; \
+RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
+  export GITHUB_TOKEN="$(sudo cat /run/secrets/github_token)"; \
   mise use -g \
   ast-grep \
   deno \
@@ -72,13 +72,12 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   '
 
 # Install npm tools last, so that we can update Codex and Claude.
-# Note: `codex` actually runs the host system codex.
+# Note: `codex` and `claude` actually run the host system codex.
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \
-  curl -fsSL https://claude.ai/install.sh | bash \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
