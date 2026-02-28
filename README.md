@@ -65,6 +65,7 @@ Here are the setup details for my laptops.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
+- [rofi-fragments.sh](rofi-fragments.sh) shows H2 headings from a Markdown fragments file, lets you pick one via rofi, then copies/pastes the first fenced code block under that heading.
 - [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
 - [touchegg.conf](touchegg.conf) is my touchpad gesture config for Touchegg on Ubuntu.
   - Global Gestures (Application: All)

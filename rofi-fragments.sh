@@ -2,6 +2,28 @@
 
 set -euo pipefail
 
+# rofi-fragments.sh: Pick a Markdown fragment by H2 title and paste its code fence.
+#
+# Expected Markdown shape (default file is fragments.md):
+#   ## Fragment title
+#   ```lang
+#   ...snippet to paste...
+#   ```
+#
+# Flow:
+# 1) Parse all H2 headings and show them in rofi.
+# 2) Read the selected heading.
+# 3) Extract the first fenced code block under that heading.
+# 4) Copy to clipboard and auto-paste when typing tools are available.
+#
+# Usage:
+#   rofi-fragments.sh [path/to/fragments.md]
+#
+# Dependencies:
+# - Required: awk, rofi
+# - Optional Wayland: wl-copy (+ wtype for auto-type)
+# - Optional X11: xclip (+ xdotool for Ctrl+V)
+
 FILE="${1:-$HOME/code/blog/pages/prompts/fragments.md}"
 
 if [[ ! -f "$FILE" ]]; then
@@ -9,7 +31,8 @@ if [[ ! -f "$FILE" ]]; then
   exit 1
 fi
 
-# 1) List all H2 headings
+# Build the picker list from Markdown H2 headings.
+# We intentionally key on H2 (##) to keep hierarchy simple and predictable.
 mapfile -t HEADINGS < <(
   awk '
     /^##[[:space:]]+/ {
@@ -22,11 +45,20 @@ mapfile -t HEADINGS < <(
 
 [[ ${#HEADINGS[@]} -eq 0 ]] && { echo "No H2 headings found."; exit 1; }
 
-# 2) Pick one heading in rofi
+# Show headings in rofi and capture the selected title.
+# Empty selection means user cancelled; exit quietly.
 CHOICE="$(printf '%s\n' "${HEADINGS[@]}" | rofi -dmenu -i -p 'Snippet')"
 [[ -z "${CHOICE:-}" ]] && exit 0
 
-# 3) Extract first fenced code block under selected heading
+# Extract the first fenced code block under the chosen heading.
+#
+# awk state machine:
+# - in_target: currently inside the selected H2 section.
+# - in_fence:  currently between opening and closing ``` fence lines.
+# - done:      once the first block closes, stop scanning early.
+#
+# Fence language tags (```bash, ```python, ...) are supported because we match
+# any line that starts with ``` as a fence delimiter.
 CODE="$(
   awk -v target="$CHOICE" '
     BEGIN { in_target=0; in_fence=0; done=0 }
@@ -50,7 +82,10 @@ CODE="$(
 
 [[ -z "${CODE:-}" ]] && { echo "No fenced code block found under: $CHOICE"; exit 1; }
 
-# 4) Paste / copy (Wayland first, then X11)
+# Copy and paste strategy:
+# - Prefer Wayland tools first, then X11 tools.
+# - If typing helpers are unavailable, still copy to clipboard.
+# - If no clipboard tool exists, print to stdout as a safe fallback.
 if command -v wl-copy >/dev/null 2>&1; then
   printf '%s' "$CODE" | wl-copy
   if command -v wtype >/dev/null 2>&1; then
@@ -67,5 +102,5 @@ if command -v xclip >/dev/null 2>&1; then
   fi
 fi
 
-# Fallback: print if auto-paste tools missing
+# Last resort for minimal environments (still useful in terminals/SSH).
 printf '%s\n' "$CODE"
