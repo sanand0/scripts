@@ -344,8 +344,6 @@ abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
 abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
-# TODO: Use cwebp -sns for color reduction with -lossless. Experiment for the right setting
-# abbr --add webp-lossless 'magick mogrify -format webp +dither -define webp:lossless=true -define webp:method=6 -colors 8'
 
 function avif --description "avif file1.jpg file2.png ... converts into file1.avif file2.avif (1920x1080 max)"
     for file in $argv
@@ -398,6 +396,41 @@ function webp-lossless --description "Convert images to compact lossless WebP wi
         magick "$file" $resize_opts png:- | \
         pngquant $colors --nofs --strip --speed 1 - | \
         cwebp -quiet -lossless -z 9 -mt -o "$output" -- -
+    end
+end
+
+# Compress screen casts. https://chatgpt.com/c/69a236ec-b8bc-839e-a58a-d4c78ccf9518
+# Increase quality with lower crf= (55 is poor, 45 is good) and higher fps= (3 is small, 6 is good).
+#   screencastcompress demo.webm
+#   screencastcompress --crf 45 --fps 6 demo.webm talk.webm
+function screencastcompress --description "Compress screen casts. Usage: screencastcompress [--crf N] [--fps N] input1.webm [input2.webm ...]"
+    argparse 'c/crf=!_validate_int' 'f/fps=!_validate_int' 'h/help' -- $argv
+    or return
+
+    if set -q _flag_help
+        echo "Usage: screencastcompress [--crf N] [--fps N] input1.webm [input2.webm ...]"
+        return 0
+    end
+
+    if test (count $argv) -lt 1
+        echo "Usage: screencastcompress [--crf N] [--fps N] input1.webm [input2.webm ...]"
+        return 1
+    end
+
+    set -l crf 55
+    set -l fps 5
+
+    if set -q _flag_crf
+        set crf $_flag_crf
+    end
+
+    if set -q _flag_fps
+        set fps $_flag_fps
+    end
+
+    for input in $argv
+        set -l output (string replace -r -- '\.[^.]+$' "-crf"$crf"-fps"$fps".webm" "$input")
+        ffmpeg -hide_banner -stats -v warning -i "$input" -vf "crop=iw-mod(iw\,2):ih-mod(ih\,2),fps=$fps" -c:v libsvtav1 -preset 8 -crf $crf -pix_fmt yuv420p -an "$output"
     end
 end
 
