@@ -2,67 +2,49 @@
 
 set -euo pipefail
 
-# rofi-fragments.sh: Pick a Markdown fragment by H2 title and paste its code fence.
+# rofi-prompts.sh: Pick any prompt from Markdown files and paste its code fence.
 #
-# Expected Markdown shape (default file is fragments.md):
-#   ## Fragment title
-#   ```lang
-#   ...snippet to paste...
-#   ```
+# Expected input (default: ~/code/blog/pages/prompts):
+# - Files that have one prompt in the first fenced code block, OR
+# - Files with multiple prompts as H2 sections where each section has a fenced block.
 #
-# Flow:
-# 1) Parse all H2 headings and show them in rofi.
-# 2) Read the selected heading.
-# 3) Extract the first fenced code block under that heading.
-# 4) Copy to clipboard and auto-paste when typing tools are available.
+# Picker behavior:
+# - For H2-based files: one entry per "H2 -> first fenced code block".
+# - For single-prompt files: one entry per file (first fenced code block).
 #
 # Usage:
-#   rofi-fragments.sh [path/to/fragments.md]
+#   rofi-prompts.sh [PROMPTS_DIR_OR_FILE]
 #
 # Dependencies:
 # - Required: awk, rofi
 # - Optional Wayland: wl-copy (+ wtype for auto-type)
 # - Optional X11: xclip (+ xdotool for Ctrl+V)
 
-FILE="${1:-$HOME/code/blog/pages/prompts/fragments.md}"
+TARGET="${1:-$HOME/code/blog/pages/prompts}"
 
-if [[ ! -f "$FILE" ]]; then
-  echo "File not found: $FILE" >&2
+if [[ ! -e "$TARGET" ]]; then
+  echo "Path not found: $TARGET" >&2
   exit 1
 fi
 
-# Build the picker list from Markdown H2 headings.
-# We intentionally key on H2 (##) to keep hierarchy simple and predictable.
-mapfile -t HEADINGS < <(
+extract_first_fence() {
+  local file="$1"
   awk '
-    /^##[[:space:]]+/ {
-      h=$0
-      sub(/^##[[:space:]]+/, "", h)
-      print h
+    BEGIN { in_fence=0; done=0 }
+    /^```/ {
+      if (!in_fence) { in_fence=1; next }
+      done=1; exit
     }
-  ' "$FILE"
-)
+    in_fence { print }
+  ' "$file"
+}
 
-[[ ${#HEADINGS[@]} -eq 0 ]] && { echo "No H2 headings found."; exit 1; }
+extract_h2_fence() {
+  local file="$1"
+  local heading="$2"
 
-# Show headings in rofi and capture the selected title.
-# Empty selection means user cancelled; exit quietly.
-CHOICE="$(printf '%s\n' "${HEADINGS[@]}" | rofi -dmenu -i -p 'Snippet')"
-[[ -z "${CHOICE:-}" ]] && exit 0
-
-# Extract the first fenced code block under the chosen heading.
-#
-# awk state machine:
-# - in_target: currently inside the selected H2 section.
-# - in_fence:  currently between opening and closing ``` fence lines.
-# - done:      once the first block closes, stop scanning early.
-#
-# Fence language tags (```bash, ```python, ...) are supported because we match
-# any line that starts with ``` as a fence delimiter.
-CODE="$(
-  awk -v target="$CHOICE" '
+  awk -v target="$heading" '
     BEGIN { in_target=0; in_fence=0; done=0 }
-
     /^##[[:space:]]+/ {
       if (done) exit
       h=$0
@@ -70,17 +52,96 @@ CODE="$(
       in_target = (h == target)
       next
     }
-
     in_target && /^```/ {
-      if (!in_fence) { in_fence=1; next }   # opening fence
-      done=1; exit                           # closing fence
+      if (!in_fence) { in_fence=1; next }
+      done=1; exit
     }
-
     in_target && in_fence { print }
-  ' "$FILE"
-)"
+  ' "$file"
+}
 
-[[ -z "${CODE:-}" ]] && { echo "No fenced code block found under: $CHOICE"; exit 1; }
+get_doc_title() {
+  local file="$1"
+  local title
+  title="$(awk -F': *' '/^title:[[:space:]]*/ {print $2; exit}' "$file" | sed 's/^"//; s/"$//')"
+  if [[ -n "$title" ]]; then
+    printf '%s\n' "$title"
+  else
+    basename "$file" .md
+  fi
+}
+
+FILES=()
+if [[ -d "$TARGET" ]]; then
+  while IFS= read -r -d '' file; do
+    FILES+=("$file")
+  done < <(find "$TARGET" -maxdepth 1 -type f -name '*.md' ! -name '_index.md' -print0 | sort -z)
+else
+  FILES+=("$TARGET")
+fi
+
+[[ ${#FILES[@]} -eq 0 ]] && { echo "No markdown files found in: $TARGET"; exit 1; }
+
+LABELS=()
+META=()
+
+for file in "${FILES[@]}"; do
+  doc_title="$(get_doc_title "$file")"
+  mapfile -t headings < <(
+    awk '
+      /^##[[:space:]]+/ {
+        h=$0
+        sub(/^##[[:space:]]+/, "", h)
+        print h
+      }
+    ' "$file"
+  )
+
+  added_h2=0
+  if [[ ${#headings[@]} -gt 0 ]]; then
+    for heading in "${headings[@]}"; do
+      code="$(extract_h2_fence "$file" "$heading")"
+      if [[ -n "${code:-}" ]]; then
+        LABELS+=("${doc_title} › ${heading}")
+        META+=("${file}"$'\t'"${heading}")
+        added_h2=1
+      fi
+    done
+  fi
+
+  if [[ "$added_h2" -eq 0 ]]; then
+    code="$(extract_first_fence "$file")"
+    if [[ -n "${code:-}" ]]; then
+      LABELS+=("${doc_title}")
+      META+=("${file}"$'\t')
+    fi
+  fi
+done
+
+[[ ${#LABELS[@]} -eq 0 ]] && { echo "No fenced prompt blocks found."; exit 1; }
+
+CHOICE="$(printf '%s\n' "${LABELS[@]}" | rofi -dmenu -i -p 'Prompt')"
+[[ -z "${CHOICE:-}" ]] && exit 0
+
+selected_meta=""
+for i in "${!LABELS[@]}"; do
+  if [[ "${LABELS[$i]}" == "$CHOICE" ]]; then
+    selected_meta="${META[$i]}"
+    break
+  fi
+done
+
+[[ -z "$selected_meta" ]] && { echo "Selected prompt not found."; exit 1; }
+
+IFS=$'\t' read -r selected_file selected_heading <<< "$selected_meta"
+
+if [[ -n "${selected_heading:-}" ]]; then
+  CODE="$(extract_h2_fence "$selected_file" "$selected_heading")"
+else
+  CODE="$(extract_first_fence "$selected_file")"
+fi
+
+[[ -z "${CODE:-}" ]] && { echo "No fenced code block found for: $CHOICE"; exit 1; }
 
 # Copy and paste strategy:
 # - Prefer Wayland tools first, then X11 tools.
