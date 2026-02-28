@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-FILE="${1:-$HOME/some/snippets.md}"
+FILE="${1:-$HOME/code/blog/pages/prompts/fragments.md}"
 
 if [[ ! -f "$FILE" ]]; then
   echo "File not found: $FILE" >&2
