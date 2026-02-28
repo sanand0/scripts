@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -19,6 +19,11 @@ set -euo pipefail
 # - Required: awk, rofi
 # - Optional Wayland: wl-copy (+ wtype for auto-type)
 # - Optional X11: xclip (+ xdotool for Ctrl+V)
+#
+# Design notes:
+# - Keep parsing conservative and predictable (first fenced block only).
+# - Support both single-prompt and multi-section prompt files.
+# - Never execute prompt content; only copy/type plain text.
 
 TARGET="${1:-$HOME/code/blog/pages/prompts}"
 
@@ -27,6 +32,12 @@ if [[ ! -e "$TARGET" ]]; then
   exit 1
 fi
 
+# ----------------------------------------------------------------------------
+# Parsing helpers
+# ----------------------------------------------------------------------------
+# extract_first_fence FILE
+#   Prints the first fenced code block in FILE (without opening/closing fences).
+#   Returns empty output if no fenced block exists.
 extract_first_fence() {
   local file="$1"
   awk '
@@ -39,6 +50,9 @@ extract_first_fence() {
   ' "$file"
 }
 
+# extract_h2_fence FILE HEADING
+#   Prints the first fenced block inside the exact H2 section named HEADING.
+#   Used for files like fragments.md that contain many prompt snippets.
 extract_h2_fence() {
   local file="$1"
   local heading="$2"
@@ -60,6 +74,9 @@ extract_h2_fence() {
   ' "$file"
 }
 
+# get_doc_title FILE
+#   Uses front-matter title when present; otherwise falls back to file basename.
+#   This keeps picker labels stable and human-friendly.
 get_doc_title() {
   local file="$1"
   local title
@@ -71,6 +88,9 @@ get_doc_title() {
   fi
 }
 
+# ----------------------------------------------------------------------------
+# Discover candidate markdown files
+# ----------------------------------------------------------------------------
 FILES=()
 if [[ -d "$TARGET" ]]; then
   while IFS= read -r -d '' file; do
@@ -82,6 +102,15 @@ fi
 
 [[ ${#FILES[@]} -eq 0 ]] && { echo "No markdown files found in: $TARGET"; exit 1; }
 
+# ----------------------------------------------------------------------------
+# Build picker index
+# ----------------------------------------------------------------------------
+# LABELS: user-facing lines shown in rofi.
+# META:   tab-separated "file<TAB>heading" aligned by array index with LABELS.
+#
+# Rule:
+# - If a file has H2 sections with fenced content, add each section as one entry.
+# - Otherwise add one file-level entry from the first fenced block.
 LABELS=()
 META=()
 
@@ -120,6 +149,9 @@ done
 
 [[ ${#LABELS[@]} -eq 0 ]] && { echo "No fenced prompt blocks found."; exit 1; }
 
+# ----------------------------------------------------------------------------
+# User selection and prompt resolution
+# ----------------------------------------------------------------------------
 CHOICE="$(printf '%s\n' "${LABELS[@]}" | rofi -dmenu -i -p 'Prompt')"
 [[ -z "${CHOICE:-}" ]] && exit 0
 
@@ -143,6 +175,9 @@ fi
 
 [[ -z "${CODE:-}" ]] && { echo "No fenced code block found for: $CHOICE"; exit 1; }
 
+# ----------------------------------------------------------------------------
+# Output: clipboard + optional auto-paste
+# ----------------------------------------------------------------------------
 # Copy and paste strategy:
 # - Prefer Wayland tools first, then X11 tools.
 # - If typing helpers are unavailable, still copy to clipboard.
