@@ -16,7 +16,7 @@ echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 ```
 
-See [`ai-code-rules/`](ai-code-rules/README.md) for setting up AI code editors.
+See [`agents/`](agents/README.md) for setting up AI code editors.
 
 ## Windows Setup
 
@@ -48,6 +48,7 @@ Here are the setup details for my laptops.
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
 - [chars](chars) lists non-ASCII characters in files.
+- [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
 - [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
@@ -63,9 +64,11 @@ Here are the setup details for my laptops.
 - [mcpserver.py](mcpserver.py) exposes an MCP server on localhost:8000 that lets LLMs run bash commands. Useful for ChatGPT to control your machine. Run in sandbox to reduce risk.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
+- [rename_receipts.py](rename_receipts.py) renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text.
 - [rgb](rgb) converts RGB to hex and vice versa.
-- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files.
-- [rofi-prompts.sh](rofi-prompts.sh) shows prompts from Markdown files in `~/code/blog/pages/prompts`, lets you pick one via rofi, then copies/pastes the selected fenced code block.
+- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
+- [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
+- [rofi-prompts.sh](rofi-prompts.sh) shows prompts from Markdown files in `~/code/blog/pages/prompts`, lets you pick one via rofi, then copies/pastes the selected fenced code block. Triggered by Ctrl + Alt + P.
 - [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
 - [touchegg.conf](touchegg.conf) is my touchpad gesture config for Touchegg on Ubuntu.
   - Global Gestures (Application: All)

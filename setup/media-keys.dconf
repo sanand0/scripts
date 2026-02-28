@@ -1,7 +1,7 @@
 # When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -53,6 +53,12 @@ name='Picker'
 binding='<Control><Alt>p'
 command='/home/sanand/code/scripts/rofi-prompts.sh'
 name='Prompts'
+
+# Ctrl+Alt+M opens rofi clipboard transformer
+[custom-keybindings/rofi-clip]
+binding='<Control><Alt>m'
+command='/home/sanand/code/scripts/rofi-clip.sh'
+name='Rofi Clip'
 
 # Ctrl+Alt+C to convert clipboard rich text to markdown
 [custom-keybindings/copy-to-markdown]

@@ -4,7 +4,7 @@
 # dependencies = ["typer>=0.12"]
 # ///
 
-# Usage: Press Ctrl+C to copy rich text (e.g. web page). Then press Ctrl+Alt+C to run this script.
+# Usage: Press Ctrl+C to copy rich text (e.g. web page). Then press Ctrl+Alt+L to run this script.
 # Clipboard now has a Markdown version of the HTML.
 # See setup/media-keys.dconf for keybinding setup.
 
