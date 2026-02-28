@@ -257,6 +257,7 @@ wget -O /tmp/zoom.deb "https://zoom.us/client/latest/zoom_amd64.deb"; sudo apt i
 # Prefer Flatpak for GUI apps. Update: flatpak update
 sudo apt install -y flatpak gnome-software-plugin-flatpak
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
 flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
 flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
