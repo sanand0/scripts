@@ -259,10 +259,11 @@ sudo apt install -y flatpak gnome-software-plugin-flatpak
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
-flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
-flatpak install -y flathub org.onlyoffice.desktopeditors    # ONLYOFFICE - Office suite compatible with MS Office formats
-flatpak install -y org.gnome.NetworkDisplays                # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
+flatpak install -y flathub com.github.joseexposito.touche       # Touche - GUI for TouchEgg gesture configuration
+flatpak install -y flathub com.github.johnfactotum.Foliate      # Foliate - eBook reader with custom styling support
+flatpak install -y flathub org.torproject.torbrowser-launcher   # Tor Browser - Privacy-focused web browser
+flatpak install -y flathub org.onlyoffice.desktopeditors        # ONLYOFFICE - Office suite compatible with MS Office formats
+flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"
