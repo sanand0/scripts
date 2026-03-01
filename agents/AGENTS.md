@@ -22,3 +22,4 @@ Run multiple independent reads in parallel.
 For 20+ tool calls, maintain update_plan throughout.
 For long-running commands/tests, delegate via sub-agents and report checkpoints.
 If blocked by permissions, ask me concise choices.
+If sandbox/config gets in the way, use /permissions and /debug-config early.
