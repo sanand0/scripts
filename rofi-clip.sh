@@ -26,6 +26,20 @@ bootstrap_tool_paths() {
     prepend_path_if_dir "$HOME/.cargo/sharebin"
 }
 
+with_input_file() {
+    local tmp_file status
+    tmp_file=$(mktemp)
+    printf '%s' "$INPUT" > "$tmp_file"
+    "$@" "$tmp_file"
+    status=$?
+    rm -f "$tmp_file"
+    return $status
+}
+
+uri_encode_stdin() {
+    jq -sRr @uri
+}
+
 cmd_status() {
     local cmd="$1"
     if command -v "$cmd" >/dev/null 2>&1; then
@@ -193,16 +207,16 @@ transform_unicode_to_ascii() {
     # anyascii handles a huge range: Cyrillic, CJK, emoji, typographic chars, etc.
     # Falls back to manual map for the most common typographic substitutions first
     # so we preserve intent (em-dash → hyphen with spaces, bullet -> hyphen, not asterisk).
-    CLIP_INPUT="$INPUT" uvx --quiet --with anyascii python - <<'PYEOF'
+    with_input_file uvx --quiet --with anyascii python - <<'PYEOF'
 import sys, anyascii
-import os
+from pathlib import Path
 
 MANUAL = {
     '\u2014': ' -- ', # em dash
     '\u2022': '-',    # bullet
 }
 
-text = os.environ.get('CLIP_INPUT', '')
+text = Path(sys.argv[1]).read_text(encoding='utf-8')
 for src, dst in MANUAL.items():
     text = text.replace(src, dst)
 # anyascii for everything else
@@ -232,15 +246,15 @@ transform_md_to_text() {
 }
 
 transform_strip_tracking() {
-    CLIP_INPUT="$INPUT" uvx python - <<'PYEOF'
+    with_input_file uvx python - <<'PYEOF'
 import sys
-import os
+from pathlib import Path
 from urllib.parse import urlparse, urlencode, parse_qsl
 
 STRIP_PREFIXES = ('utm_', 'gclid', 'fbclid', 'mc_', 'igshid', 'msclkid')
 STRIP_EXACT    = {'ref', 'source', 'yclid', 's_kwcid', 'dclid'}
 
-url = os.environ.get('CLIP_INPUT', '').strip()
+url = Path(sys.argv[1]).read_text(encoding='utf-8').strip()
 parsed = urlparse(url)
 kept = [
     (k, v) for k, v in parse_qsl(parsed.query)
@@ -263,11 +277,13 @@ sys.stdout.write(unquote_plus(sys.stdin.read().strip()))
 }
 
 transform_url_encode() {
-    jq -nr --arg v "$INPUT" '$v|@uri'
+    printf '%s' "$INPUT" | uri_encode_stdin
 }
 
 transform_fetch_title() {
-    local title=$(curl -s "https://api.microlink.io/?url=$(jq -nr --arg v "$INPUT" '$v|@uri')" | jq -r '.data.title')
+    local encoded title
+    encoded=$(printf '%s' "$INPUT" | uri_encode_stdin)
+    title=$(curl -s "https://api.microlink.io/?url=${encoded}" | jq -r '.data.title')
     echo "[$title]($INPUT)"
     notify-send -t 4000 -i dialog-information "Fetched title" "$title" 2>/dev/null || true
 }
@@ -295,12 +311,13 @@ transform_md_to_unicode() {
 
 transform_strip_links() {
     # Inline striplinks.py behavior: strip Markdown/HTML links and images.
-    CLIP_INPUT="$INPUT" uvx --quiet --with beautifulsoup4 python - <<'PYEOF'
-import os
+    with_input_file uvx --quiet --with beautifulsoup4 python - <<'PYEOF'
 import re
+import sys
+from pathlib import Path
 from bs4 import BeautifulSoup
 
-content = os.environ.get('CLIP_INPUT', '')
+content = Path(sys.argv[1]).read_text(encoding='utf-8')
 
 # 1. Strip Markdown Images: ![alt](url) -> alt. Allow empty alt text with * instead of +
 content = re.sub(r"!\[([^\]]*)\]\([^\)]+\)", r"\1", content)
@@ -327,11 +344,12 @@ PYEOF
 
 transform_strip_details() {
     # Remove full <details> blocks.
-    CLIP_INPUT="$INPUT" uvx python - <<'PYEOF'
-import os
+    with_input_file uvx python - <<'PYEOF'
 import re
+import sys
+from pathlib import Path
 
-content = os.environ.get('CLIP_INPUT', '')
+content = Path(sys.argv[1]).read_text(encoding='utf-8')
 tag = 'details'
 escaped_tag = re.escape(tag)
 open_tag = rf"<{escaped_tag}\b(?:\"[^\"]*\"|'[^']*'|[^'\">])*?>"
@@ -375,19 +393,25 @@ transform_richtext_to_html() {
 }
 
 transform_ask_chatgpt() {
-    local url="https://chatgpt.com/?q=$(jq -nr --arg v "$INPUT" '$v|@uri')"
+    local encoded url
+    encoded=$(printf '%s' "$INPUT" | uri_encode_stdin)
+    url="https://chatgpt.com/?q=${encoded}"
     echo "$url"
     xdg-open "$url" 2>/dev/null || open "$url" 2>/dev/null
 }
 
 transform_ask_claude() {
-    local url="https://claude.ai/new?q=$(jq -nr --arg v "$INPUT" '$v|@uri')"
+    local encoded url
+    encoded=$(printf '%s' "$INPUT" | uri_encode_stdin)
+    url="https://claude.ai/new?q=${encoded}"
     echo "$url"
     xdg-open "$url" 2>/dev/null || open "$url" 2>/dev/null
 }
 
 transform_ask_google_ai() {
-    local url="https://www.google.com/search?udm=50&q=$(jq -nr --arg v "$INPUT" '$v|@uri')"
+    local encoded url
+    encoded=$(printf '%s' "$INPUT" | uri_encode_stdin)
+    url="https://www.google.com/search?udm=50&q=${encoded}"
     echo "$url"
     xdg-open "$url" 2>/dev/null || open "$url" 2>/dev/null
 }
