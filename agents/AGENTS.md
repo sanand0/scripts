@@ -14,6 +14,12 @@ magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
 
 /home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples - especially qsv, pdfcpu.
 
-Increase timeouts proactively for longer tasks if you expect them to succeed.
-
 If prompt*.md is updated, the user might be editing it. Ignore it.
+
+Optional suggestions. Use your judgement:
+
+- For tasks with 3+ independent reads, run in parallel.
+- For tasks with 20+ tool calls, maintain update_plan throughout.
+- For long-running commands/tests, delegate via sub-agent/awaiter and report checkpoints.
+- If blocked by approvals/permissions, use request_user_input to ask me concise choices.
+- For UI/image tasks, capture and inspect screenshots with view_image before finalizing.
