@@ -430,7 +430,7 @@ log_data "clipboard_input" "$INPUT"
 
 # Present menu
 CHOICE=$(printf '%s\n' "${MENU_LABELS[@]}" \
-    | rofi -normal-window -dmenu \
+    | rofi -dmenu \
            -p "Transform clipboard" \
            -i \
            -theme-str 'window {width: 60%;} listview {lines: 20;}' \
