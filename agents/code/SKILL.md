@@ -12,7 +12,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
   - YAGNI: Skip unused imports, variables, and code
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
-- Don't comment readable code. If commenting, only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
+- Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
 - When tests exists, or writing new code, add tests first. Keep tests fast
 - Replace PII in committed code, tests, docs with similar REALISTIC dummy data
 - Show status & progress for long tasks (>5s)
@@ -23,7 +23,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 
 Prefer `uv run --with pkg1 --with pkg2 script.py`, `uvx --from pkg cmd` over `python` or `python3`
 
-Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies to script (PEP 723 metadata):
+Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies as PEP 723 metadata:
 
 ```py
 #!/usr/bin/env -S uv run --script
