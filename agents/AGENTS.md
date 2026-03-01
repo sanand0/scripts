@@ -16,10 +16,9 @@ magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
 
 If prompt*.md is updated, the user might be editing it. Ignore it.
 
-Optional suggestions. Use your judgement:
+Suggestions:
 
-- For tasks with 3+ independent reads, run in parallel.
-- For tasks with 20+ tool calls, maintain update_plan throughout.
-- For long-running commands/tests, delegate via sub-agent/awaiter and report checkpoints.
-- If blocked by approvals/permissions, use request_user_input to ask me concise choices.
-- For UI/image tasks, capture and inspect screenshots with view_image before finalizing.
+Run multiple independent reads in parallel.
+For 20+ tool calls, maintain update_plan throughout.
+For long-running commands/tests, delegate via sub-agents and report checkpoints.
+If blocked by permissions, ask me concise choices.
