@@ -55,11 +55,22 @@ log_data() {
     printf '%s\n' "$value" | sed 's/^/| /' >> "$DEBUG_LOG"
 }
 
+log_stack_trace() {
+    [[ "$LOG_ENABLED" -eq 1 ]] || return 0
+    local i
+    log_debug "stack_trace_begin"
+    for ((i = 1; i < ${#FUNCNAME[@]}; i++)); do
+        log_debug "stack[$i] func=${FUNCNAME[$i]} source=${BASH_SOURCE[$i]} line=${BASH_LINENO[$((i - 1))]}"
+    done
+    log_debug "stack_trace_end"
+}
+
 on_error() {
     local exit_code=$?
     LOG_ENABLED=1
     touch "$DEBUG_LOG" 2>/dev/null || true
     log_debug "ERROR exit=$exit_code line=$1 cmd=$2"
+    log_stack_trace
     exit "$exit_code"
 }
 
@@ -432,6 +443,12 @@ rm -f "$RESULT_FILE"
 rm -f "$STDERR_FILE"
 
 if [[ "$TRANSFORM_STATUS" -ne 0 ]]; then
+    LOG_ENABLED=1
+    touch "$DEBUG_LOG" 2>/dev/null || true
+    log_debug "transform_error choice=$CHOICE handler=$FN status=$TRANSFORM_STATUS"
+    log_data "transform_stdout" "$RESULT"
+    log_data "transform_stderr" "$TRANSFORM_STDERR"
+    log_stack_trace
     die "Transform failed ($FN), see $DEBUG_LOG"
 fi
 
