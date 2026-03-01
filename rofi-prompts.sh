@@ -318,7 +318,7 @@ if [[ "$BENCHMARK" -eq 1 ]]; then
 fi
 
 # Selection is by label text; then resolved back to file+heading metadata.
-CHOICE="$(printf '%s\n' "${LABELS[@]}" | rofi -dmenu -i -p 'Prompt')"
+CHOICE="$(printf '%s\n' "${LABELS[@]}" | rofi --normal-window -dmenu -i -p 'Prompt')"
 [[ -z "${CHOICE:-}" ]] && exit 0
 
 SELECTED_META=""
