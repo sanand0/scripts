@@ -39,7 +39,9 @@ RUN curl -fsSL https://mise.run | sh \
  && echo 'export PATH="$HOME/apps/global/.venv/bin:$PATH"' >> "${HOME}/.bashrc"
 
 # Install mise tools
-RUN mise use -g \
+RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
+  export GITHUB_TOKEN="$(sudo cat /run/secrets/github_token)"; \
+  mise use -g \
   ast-grep \
   deno \
   duckdb \
@@ -55,9 +57,10 @@ RUN mise use -g \
   ubi:jqnatividad/qsv \
   ubi:mithrandie/csvq \
   ubi:pdfcpu/pdfcpu \
-  ubi:tealdeer-rs/tealdeer \
+  ubi:tealdeer-rs/tealdeer@1.8.1 \
   uv \
-  websocat
+  websocat \
+  '
 
 # Install uv
 RUN bash -lc 'eval "$(mise env -s bash)"; \
@@ -69,13 +72,14 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   '
 
 # Install npm tools last, so that we can update Codex and Claude.
-# Note: `codex` actually runs the host system codex.
+# Note: `codex` and `claude` actually run the host system codex.
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
   npm install -g @openai/codex@latest; \
-  npm install -g @anthropic-ai/claude-code@latest; \
   npm install -g @github/copilot@latest; \
+  npm install -g playwright; \
+  playwright install --with-deps \
   '
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime

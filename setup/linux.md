@@ -134,6 +134,7 @@ mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | A
 mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ubi:iffse/pay-respects    # pay-respects - thefuck alternative. Run `f` to correct previous command
 mise use -g ubi:imsnif/bandwhich      # bandwhich - Terminal network bandwidth utilization tool
+mise use -g ubi:boyter/cs             # cs - codespleunker - ug like CODE search engine. Just run cs
 mise use -g ubi:jqnatividad/qsv       # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g ubi:junegunn/fzf          # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper
@@ -183,6 +184,7 @@ npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+# claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
 sudo apt install -y antigravity                   # Google agentic code editor
@@ -226,9 +228,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Rust - Systems programming language | Update: rustup update
 curl https://sh.rustup.rs -sSf | sh
+cargo install unidown
 
 # Set up uv environments
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer pdfplumber pypdf reportlab
+playwright install --with-deps chromium firefox msedge
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
@@ -254,11 +258,13 @@ wget -O /tmp/zoom.deb "https://zoom.us/client/latest/zoom_amd64.deb"; sudo apt i
 # Prefer Flatpak for GUI apps. Update: flatpak update
 sudo apt install -y flatpak gnome-software-plugin-flatpak
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
-flatpak install -y flathub com.github.joseexposito.touche   # Touche - GUI for TouchEgg gesture configuration
-flatpak install -y flathub com.github.johnfactotum.Foliate  # Foliate - eBook reader with custom styling support
-flatpak install -y flathub org.onlyoffice.desktopeditors    # ONLYOFFICE - Office suite compatible with MS Office formats
-flatpak install -y org.gnome.NetworkDisplays                # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
+flatpak install -y flathub com.github.joseexposito.touche       # Touche - GUI for TouchEgg gesture configuration
+flatpak install -y flathub com.github.johnfactotum.Foliate      # Foliate - eBook reader with custom styling support
+flatpak install -y flathub org.torproject.torbrowser-launcher   # Tor Browser - Privacy-focused web browser
+flatpak install -y flathub org.onlyoffice.desktopeditors        # ONLYOFFICE - Office suite compatible with MS Office formats
+flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"
