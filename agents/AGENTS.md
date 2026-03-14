@@ -2,24 +2,25 @@ Available tools:
 
 fd, find
 rg, ug, grep
-sg (ast-grep: code search)
+sg (ast-grep: code search), dprint
 git, gh
 curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
+npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
+gcloud, aws
 
-/home/sanand/code/scripts/agents/tooldocs/$TOOL.md has usage examples - especially qsv, pdfcpu.
-
-If prompt*.md is updated, the user might be editing it. Ignore it.
+/home/sanand/code/scripts/agents/tooldocs/{qsv,pdfcpu,...}.md have usage examples.
 
 Suggestions:
 
-Run multiple independent reads in parallel.
+Run in parallel: read, tools, sub-agents, ...
 For 20+ tool calls, maintain update_plan throughout.
-For long-running commands/tests, delegate via sub-agents and report checkpoints.
+Delegate long-running commands/tests to sub-agents and report checkpoints.
 If blocked by permissions, ask me concise choices.
 If sandbox/config gets in the way, use /permissions and /debug-config early.
+When done, suggest what & how to verify edge cases and/or suggest high-impact improvements.

@@ -13,7 +13,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
 - Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
-- When tests exists, or writing new code, add tests first. Keep tests fast
+- When tests exists, or writing new code, add new failing tests first (including edge cases). Keep tests fast
 - For UI/image tasks, capture and inspect screenshots before finalizing
 - Replace PII in committed code, tests, docs with similar REALISTIC dummy data
 - Show status & progress for long tasks (>5s)

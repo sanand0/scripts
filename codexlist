@@ -1,50 +1,93 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env perl
+use strict;
+use warnings;
 
-# List Codex session logs: filename, cwd, first user message.
+use File::Find qw(find);
+use JSON::PP qw(decode_json);
 
-filter="${1:-}"
+binmode STDOUT, ':encoding(UTF-8)';
 
-# Sort by filename desc; session filenames encode recency.
-find "${HOME}/.codex/sessions" -type f -name '*.jsonl' -print0 \
-  | sort -rz \
-  | while IFS= read -r -d '' logfile; do
-      FILE="$logfile" FILTER="$filter" jq -nr --slurpfile rows "$logfile" '
-        def first_value(f): ([ $rows[] | f ] | map(select(. != null)) | .[0] // "");
+my $filter = shift // q{};
+my $base = "$ENV{HOME}/.codex/sessions";
 
-        def indent_block(s):
-          "    " + (s | gsub("\n"; "\n    "));
+exit 0 unless -d $base;
 
-        def truncate_middle:
-          (. // "") as $s
-          | ($s | explode) as $chars
-          | if ($chars | length) <= 500 then
-              $s
-            else
-              ($chars[:250] | implode)
-              + "...truncated..."
-              + ($chars[-250:] | implode)
-            end;
+sub indent_block {
+    my ($text) = @_;
+    $text //= q{};
+    $text =~ s/\n/\n    /g;
+    return "    $text";
+}
 
-        def matches_filter(cwd):
-          (env.FILTER // "") as $f
-          | if $f == "" then
-              true
-            else
-              (cwd // "") | contains($f)
-            end;
+sub truncate_middle {
+    my ($text) = @_;
+    $text //= q{};
 
-        def block(file; cwd; message):
-          "# " + file + "\n"
-          + indent_block(cwd) + "\n"
-          + indent_block(message) + "\n";
+    return $text if length($text) <= 500;
 
-        first_value(.payload.cwd // empty) as $cwd
-        | (first_value(if .payload.type == "user_message" then .payload.message else empty end) | truncate_middle) as $msg
-        | if matches_filter($cwd) then
-            block(env.FILE; $cwd; $msg)
-          else
-            empty
-          end
-      '
-    done
+    return substr($text, 0, 250) . '...truncated...' . substr($text, -250);
+}
+
+sub decode_json_string {
+    my ($text) = @_;
+    return q{} unless defined $text;
+
+    my $decoded = eval { decode_json(qq{"$text"}) };
+    return defined $decoded ? $decoded : q{};
+}
+
+sub read_summary {
+    my ($path) = @_;
+
+    open my $handle, '<', $path or return (q{}, q{});
+
+    my ($cwd, $message) = (q{}, q{});
+    my ($have_cwd, $have_message) = (0, 0);
+
+    while (my $line = <$handle>) {
+        if (
+            !$have_cwd
+            && $line =~ /"type":"session_meta"/
+            && $line =~ /"cwd":"((?:\\.|[^"\\])*)"/
+        ) {
+            $cwd = decode_json_string($1);
+            $have_cwd = 1;
+        }
+
+        if (
+            !$have_message
+            && $line =~ /"type":"event_msg"/
+            && $line =~ /"type":"user_message","message":"((?:\\.|[^"\\])*)"/
+        ) {
+            $message = decode_json_string($1);
+            $have_message = 1;
+        }
+
+        last if $have_cwd && $have_message;
+    }
+
+    close $handle;
+
+    return ($cwd, truncate_middle($message));
+}
+
+my @files;
+find(
+    {
+        no_chdir => 1,
+        wanted => sub {
+            return unless -f $_ && /\.jsonl\z/;
+            push @files, $File::Find::name;
+        },
+    },
+    $base,
+);
+
+for my $logfile (sort { $b cmp $a } @files) {
+    my ($cwd, $message) = read_summary($logfile);
+    next if $filter ne q{} && index($cwd, $filter) < 0;
+
+    print "# $logfile\n";
+    print indent_block($cwd), "\n";
+    print indent_block($message), "\n";
+}

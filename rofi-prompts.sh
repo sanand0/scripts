@@ -26,7 +26,7 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
-CACHE_VERSION="v1"
+CACHE_VERSION="v2"
 
 TARGET="$DEFAULT_TARGET"
 BENCHMARK=0
@@ -78,19 +78,27 @@ extract_first_fence() {
 extract_h2_fence() {
   local file="$1" heading="$2"
   awk -v target="$heading" '
-    BEGIN { in_target=0; in_fence=0 }
-    /^##[[:space:]]+/ {
+    BEGIN { in_target=0; in_fence=0; capture=0 }
+    /^```/ {
+      if (!in_fence) {
+        in_fence=1
+        if (in_target && !capture) {
+          capture=1
+        }
+        next
+      }
+      in_fence=0
+      if (capture) exit
+      next
+    }
+    !in_fence && /^##[[:space:]]+/ {
       h=$0
       sub(/^##[[:space:]]+/, "", h)
       in_target = (h == target)
-      in_fence=0
+      capture=0
       next
     }
-    in_target && /^```/ {
-      if (!in_fence) { in_fence=1; next }
-      exit
-    }
-    in_target && in_fence { print }
+    capture && in_fence { print }
   ' "$file"
 }
 
@@ -112,15 +120,6 @@ list_h2_with_fence() {
   local file="$1"
   awk '
     BEGIN { in_h2=0; in_fence=0; heading=""; heading_has_code=0 }
-    /^##[[:space:]]+/ {
-      if (in_h2 && heading_has_code) print heading
-      heading=$0
-      sub(/^##[[:space:]]+/, "", heading)
-      in_h2=1
-      in_fence=0
-      heading_has_code=0
-      next
-    }
     /^```/ {
       if (!in_fence) {
         in_fence=1
@@ -128,6 +127,14 @@ list_h2_with_fence() {
         next
       }
       in_fence=0
+      next
+    }
+    !in_fence && /^##[[:space:]]+/ {
+      if (in_h2 && heading_has_code) print heading
+      heading=$0
+      sub(/^##[[:space:]]+/, "", heading)
+      in_h2=1
+      heading_has_code=0
       next
     }
     END {

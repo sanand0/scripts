@@ -27,7 +27,7 @@ Analyze data like an investigative journalist hunting for stories that make smar
   - **Actionable** (not impractical) - specific, implementable
   - **Surprising** (not obvious) - challenges assumptions, reveals hidden patterns
   - **Defensible** (statistically sound) - robust under scrutiny
-
+<!--  -->
 Write as a **Narrative-driven Data Story**. Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend findings under scrutiny.
 
 - **Compelling hook**: Start with a human angle, tension, or mystery that draws readers in

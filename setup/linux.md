@@ -90,10 +90,11 @@ curl https://mise.run | sh
 eval "$($HOME/.local/bin/mise env -s bash)"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
-mise use -g 'ubi:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
+mise use -g 'github:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
+mise use -g 'github:direnv/direnv[bin=direnv]'  # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g ast-grep                  # ast-grep - AST-based code search and rewriting tool
 mise use -g aws-cli                   # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
-mise use -g bat                       # bat - cat clone with syntax highlighting
+mise use -g bat                       # bat - cat clone with syntax highlighting 🟡 exploring moor since keyboard-based wrapping is missing
 mise use -g btop                      # btop - Resource monitor (better htop)
 mise use -g caddy                     # Caddy - Web server with automatic HTTPS
 mise use -g cloudflared               # cloudflared - Cloudflare Tunnel client
@@ -108,6 +109,24 @@ mise use -g fx                        # fx - Fast JSON viewer
 mise use -g gcloud                    # gcloud - Google Cloud CLI
 mise use -g gdu                       # gdu - ncdu alternative for disk usage
 mise use -g github-cli                # GitHub CLI - Official GitHub command-line tool
+mise use -g github:ayoisaiah/f2       # f2 - File renaming tool
+mise use -g github:bootandy/dust      # dust - Disk usage analyzer (du alternative)
+mise use -g github:boyter/cs          # cs - codespleunker - ug like CODE search engine. Just run cs
+mise use -g github:cantino/mcfly      # mcfly - Intelligent shell history search (Ctrl+R replacement)
+mise use -g github:casey/just         # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
+mise use -g github:dandavison/delta   # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
+mise use -g github:iffse/pay-respects # pay-respects - thefuck alternative. Run `f` to correct previous command
+mise use -g github:ip7z/7zip          # 7zip - File archiver with high compression ratio
+mise use -g github:imsnif/bandwhich   # bandwhich - Terminal network bandwidth utilization tool
+mise use -g github:jqnatividad/qsv    # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
+mise use -g github:junegunn/fzf       # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
+mise use -g github:milisp/codexia     # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
+mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
+mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
+mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g github:sinelaw/fresh      # fresh - Text editor
+mise use -g github:walles/moor        # moor - pager with syntax highlighting
+mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
 mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used
 mise use -g gum                       # gum - Stylish command-line prompts and scripts
@@ -116,8 +135,8 @@ mise use -g jaq                       # jaq - jq alternative with JIT compilatio
 mise use -g jq                        # jq - JSON processor
 mise use -g lazydocker                # lazydocker - Terminal UI for Docker
 mise use -g lazygit                   # lazygit - Terminal UI for git
-mise use -g lsd                       # lsd - ls replacement with icons and colors
 mise use -g lnav                      # lnav - Log file navigator and analyzer
+mise use -g lsd                       # lsd - ls replacement with icons and colors
 mise use -g node@latest               # Node.js - JavaScript runtime
 mise use -g opentofu                  # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
 mise use -g pandoc                    # pandoc - Universal document converter (md, pdf, docx, etc.)
@@ -127,24 +146,7 @@ mise use -g rclone                    # rclone - Sync files to/from cloud storag
 mise use -g ripgrep                   # ripgrep - Fast grep alternative
 mise use -g shfmt                     # shfmt - Shell script formatter
 mise use -g starship                  # starship - Fast, customizable shell prompt
-mise use -g ubi:ayoisaiah/f2          # f2 - File renaming tool
-mise use -g ubi:bootandy/dust         # dust - Disk usage analyzer (du alternative)
-mise use -g ubi:cantino/mcfly         # mcfly - Intelligent shell history search (Ctrl+R replacement)
-mise use -g ubi:dandavison/delta      # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
-mise use -g ubi:direnv/direnv         # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
-mise use -g ubi:iffse/pay-respects    # pay-respects - thefuck alternative. Run `f` to correct previous command
-mise use -g ubi:imsnif/bandwhich      # bandwhich - Terminal network bandwidth utilization tool
-mise use -g ubi:boyter/cs             # cs - codespleunker - ug like CODE search engine. Just run cs
-mise use -g ubi:jqnatividad/qsv       # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
-mise use -g ubi:junegunn/fzf          # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
-mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper
-mise use -g ubi:milisp/codexia        # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
-mise use -g ubi:mithrandie/csvq       # csvq - SQL-like query tool for CSV
-mise use -g ubi:pdfcpu/pdfcpu         # pdfcpu - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:qpdf/qpdf             # qpdf - PDF manipulation (split, merge, encrypt)
-mise use -g ubi:sinelaw/fresh         # fresh - Text editor
-mise use -g ubi:tealdeer-rs/tealdeer  # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
-mise use -g ubi:yshavit/mdq           # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
+mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper (doesn't work with github: prefix due to multiple binaries)
 mise use -g websocat                  # websocat - WebSocket client (will be v4.0 when released)
 mise use -g xh                        # xh - Friendly HTTP client (curl/httpie alternative)
 mise use -g yazi                      # yazi - Terminal file manager
@@ -152,38 +154,39 @@ mise use -g yq                        # yq - YAML processor (like jq for YAML)
 mise use -g zoxide                    # zoxide - Smart cd command (remembers frequent directories) | Use: z PARTIAL_PATH
 
 # Tools installed directly or via uv instead
-# mise use -g ubi:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
-# mise use -g ubi:visidata/visidata         # visidata - Interactive spreadsheet TUI for CSV/TSV/JSON/SQLite exploration
-# mise use -g ubi:asciinema/asciinema       # asciinema - Record & share terminal sessions as lightweight, copyable “movie” files
+# mise use -g github:astral-sh/uv              # uv - Extremely fast Python package & project manager (pip/poetry/pyenv replacement)
+# mise use -g github:visidata/visidata         # visidata - Interactive spreadsheet TUI for CSV/TSV/JSON/SQLite exploration
+# mise use -g github:asciinema/asciinema       # asciinema - Record & share terminal sessions as lightweight, copyable “movie” files
 
 # Other tools to consider later
-# mise use -g ubi:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
-# mise use -g ubi:casey/just                # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
-# mise use -g ubi:kellyjonbrazil/jc         # jc - Convert CLI output/files to JSON for jq/duckdb/csvq pipelines
-# mise use -g ubi:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
-# mise use -g ubi:koalaman/shellcheck       # shellcheck - Static analysis for shell scripts; catches subtle bash/sh bugs
-# mise use -g ubi:sharkdp/hyperfine         # hyperfine - Benchmark commands with statistical rigor (great for blog posts & experiments)
-# mise use -g ubi:dalance/procs             # procs - Modern ps alternative with rich, searchable process info
-# mise use -g ubi:FiloSottile/age           # age - Modern, simple encryption for files & backups (tar | age)
-# mise use -g ubi:getsops/sops              # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
-# mise use -g ubi:gitleaks/gitleaks         # gitleaks - Scan repos for accidentally committed API keys/tokens
-# mise use -g ubi:nektos/act                # act - Run GitHub Actions locally; test workflows before pushing
-# mise use -g ubi:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
-# mise use -g ubi:hadolint/hadolint         # hadolint - Dockerfile linter; catches layering & security mistakes
-# mise use -g ubi:sharkdp/pastel            # pastel - CLI color manipulation & generation (useful for data viz & theming)
-# mise use -g ubi:mvdan/sh                  # shfmt - Auto-format shell scripts; pairs with shellcheck to keep bash/sh tidy & consistent
-# mise use -g ubi:charmbracelet/vhs         # vhs - Scriptable terminal screencasts; perfect for reproducible CLI demos in talks & docs
-# mise use -g ubi:schollz/croc              # croc - Encrypted, P2P file transfer by code phrase; great for moving big files between machines
-# mise use -g ubi:sharkdp/hexyl             # hexyl - Friendly hex viewer; inspect binary files, protocols, PDF headers, etc. from the CLI
-# mise use -g ubi:hatoo/oha                 # oha - Fast HTTP load tester; quick benchmarks for “FastAPI vs Node” style experiments
-# mise use -g ubi:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
-# mise use -g ubi:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
-# mise use -g ubi:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
+# mise use -g github:charmbracelet/vhs         # vhs - Scriptable terminal screencasts; perfect for reproducible CLI demos in talks & docs
+# mise use -g github:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
+# mise use -g github:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
+# mise use -g github:dalance/procs             # procs - Modern ps alternative with rich, searchable process info
+# mise use -g github:FiloSottile/age           # age - Modern, simple encryption for files & backups (tar | age)
+# mise use -g github:getsops/sops              # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
+# mise use -g github:gitleaks/gitleaks         # gitleaks - Scan repos for accidentally committed API keys/tokens
+# mise use -g github:hadolint/hadolint         # hadolint - Dockerfile linter; catches layering & security mistakes
+# mise use -g github:hatoo/oha                 # oha - Fast HTTP load tester; quick benchmarks for “FastAPI vs Node” style experiments
+# mise use -g github:jarun/nnn                 # nnn - Ultra-minimal terminal file manager; blazing fast complement to yazi/broot
+# mise use -g github:kellyjonbrazil/jc         # jc - Convert CLI output/files to JSON for jq/duckdb/csvq pipelines
+# mise use -g github:koalaman/shellcheck       # shellcheck - Static analysis for shell scripts; catches subtle bash/sh bugs
+# mise use -g github:mvdan/sh                  # shfmt - Auto-format shell scripts; pairs with shellcheck to keep bash/sh tidy & consistent
+# mise use -g github:nektos/act                # act - Run GitHub Actions locally; test workflows before pushing
+# mise use -g github:pemistahl/grex            # grex - Generate regexes from example strings; perfect for teaching & “I know what I want, not the regex”
+# mise use -g github:schollz/croc              # croc - Encrypted, P2P file transfer by code phrase; great for moving big files between machines
+# mise use -g github:sharkdp/hexyl             # hexyl - Friendly hex viewer; inspect binary files, protocols, PDF headers, etc. from the CLI
+# mise use -g github:sharkdp/hyperfine         # hyperfine - Benchmark commands with statistical rigor (great for blog posts & experiments)
+# mise use -g github:sharkdp/pastel            # pastel - CLI color manipulation & generation (useful for data viz & theming)
+# mise use -g github:tealdeer-rs/tealdeer # tealdeer - Fast tldr implementation | Use: tealdeer COMMAND
+# mise use -g github:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
+# mise use -g github:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
 
 npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+npm install -g @googleworkspace/cli       # gws - Google Workspace CLI for all Google APIs. Run via `npx -y @googleworkspace/cli` or `gws` after adding to PATH
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
@@ -312,6 +315,11 @@ curl -L https://github.com/user-attachments/files/17536771/HubApps.txt  > ~/.con
 ```bash
 echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
+
+# Set up direnv
+mkdir -p ~/.config/direnv
+echo '[global]
+load_dotenv = true' > ~/.config/direnv/direnv.toml
 
 # Treat /c as symlink to $HOME (e.g. for bash setup that work on Windows + Linux via /c/Dropbox)
 ln -s $HOME /c
@@ -564,7 +572,7 @@ MISE deprecations:
 mise use -g clickhouse  # Prefer DuckDB
 mise use -g fastfetch   # Prefer one-time use: mise x fastfetch -- fastfetch
 mise use -g oxipng      # Prefer webp / squoosh
-mise use -g ubi:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
+mise use -g github:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
 mise use -g usql  # Prefer DuckDB
 ```
 

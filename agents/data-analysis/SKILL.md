@@ -13,7 +13,6 @@ Hunt for stories that make smart readers lean forward and say _"wait, really?"_ 
 - **Quality**: Completeness, missing values, outliers, duplicates, encoding issues.
 - **Distribution**: Value ranges, skewness, heavy tails, zero-inflation.
 - **Derived potential**: Computable metrics, joins, aggregations, time-series constructions.
-- **Analysis toolkit**: Statistical tests, geospatial, network, NLP, time series, cohort, segmentation, survival analysis — pick what serves the story.
 
 ## 2 — Define What Matters
 
@@ -22,6 +21,8 @@ Hunt for stories that make smart readers lean forward and say _"wait, really?"_ 
 - What would _contradict conventional wisdom_ or reveal hidden patterns?
 
 ## 3 — Hunt for Signal
+
+Apply diverse **analysis toolkits** ranging from statistical tests to geospatial, network, NLP, time series, cohort, segmentation, survival analysis, etc. to expand the insights pool.
 
 Look for stories that _confirm something suspected but never proven_, or _overturn something everyone assumes is true_:
 

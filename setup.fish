@@ -33,6 +33,9 @@ export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
 export UV_CACHE_DIR="$HOME/.cache/uv"
 export XDG_DATA_HOME="$HOME/.local/share"
 
+# Allow Claude Code to generate large HTML files. https://code.claude.com/docs/en/settings
+export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+
 # fx environment variables. https://fx.wtf/configuration
 export FX_LINE_NUMBERS=true
 export FX_SHOW_SIZE=true
@@ -50,7 +53,7 @@ export GREP_OPTIONS='--color=auto'
 # Set up fzf
 export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-cwd-prefix'
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-export FZF_DEFAULT_OPTS='--layout=reverse --preview "bat --style=numbers --color=always --line-range :500 {}"'
+export FZF_DEFAULT_OPTS='--layout=reverse --preview "moor --style=numbers --color=always --line-range :500 {}"'
 
 # Basic commands and aliases
 # -----------------------------------------------
@@ -66,14 +69,17 @@ abbr --add giit git
 abbr --add grep ug
 abbr --add search ug -i --smart-case --bool -Q
 
-# Faster, better less
-abbr --add less bat
+# Faster, better less (bat doesn't have keyboard shortcuts for wrapping, moor does)
+abbr --add less moor
 
 # Better curl
 abbr --add http 'uvx httpie'
 
 # Better ncdu
 abbr --add ncdu gdu
+
+# 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
+abbr --add 7z 7zz
 
 # Bandwhich requires sudo and is behind mise, so use full path
 abbr --add bandwhich 'sudo $(which bandwhich)'
@@ -93,15 +99,15 @@ abbr --add localtunnel 'npx -y localtunnel'
 abbr --add fkill 'npx -y fkill-cli fkill'
 
 # Search
-abbr --add google 'mise x ubi:zquestz/s -- s -p google'
+abbr --add google 'mise x github:zquestz/s -- s -p google'
 
 # GMail command line
-export PAGER='bat'      # Required for cmdg
+export PAGER='moor'     # Required for cmdg
 export EDITOR='fresh'   # Required for cmdg. Alternative to micro
 abbr --add mail cmdg
 
-# Allow delta to override the default PAGER (e.g. bat) which interferes with its output
-export DELTA_PAGER='less -R'
+# Allow delta to override the default PAGER (e.g. bat, but moor is OK) which interferes with its output
+# export DELTA_PAGER='less -R'
 
 # Google Calendar command line
 abbr --add gcalcli 'uvx gcalcli'
@@ -133,7 +139,7 @@ abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g ~/code/blog/posts/**/*.md
 
 # Common rclone bisync (two-way sync) options - optimized for speed
 # Add --resync for the first time to MERGE
-export _RCLONE_BISYNC_OPTIONS='--create-empty-src-dirs --slow-hash-sync-only --fast-list --size-only --checkers 16 --transfers 8 --resilient --metadata --fix-case --verbose --progress'
+export _RCLONE_BISYNC_OPTIONS='--create-empty-src-dirs --slow-hash-sync-only --fast-list --size-only --checkers 16 --transfers 8 --resilient --metadata --fix-case --exclude "**/node_modules/**" --exclude "**/__pycache__/**" --exclude "**/localdata/**" --verbose --progress'
 
 # Sync work files to Google drive
 abbr --add straivesync rclone bisync ~/Documents/straive gdrive-straive:straive $_RCLONE_BISYNC_OPTIONS
@@ -733,6 +739,10 @@ type -q fzf; and fzf --fish | source
 type -q zoxide; and zoxide init fish | source
 type -q starship; and starship init fish | source
 
+# I store secrets in a .env file. But it's unsafe to source them in every shell. So use direnv
+# source "/c/Dropbox/scripts/.env"
+direnv hook fish | source
+
 # Archive
 # -----------------------------------------------
 # Things moved elsewhere but mentioned here if I come searching.
@@ -741,6 +751,3 @@ type -q starship; and starship init fish | source
 # stripdetails: Press Ctrl+Alt+M (see rofi-clip.sh)
 
 # -----------------------------------------------
-
-# I store secrets in a .env file. But it's unsafe to source them in every shell. #TODO Use direnv
-# source "/c/Dropbox/scripts/.env"

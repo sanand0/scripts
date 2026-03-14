@@ -26,6 +26,11 @@ Link for:
   ln -s ~/code/scripts/agents/AGENTS.md ~/.copilot/copilot-instructions.md
   # Skills
   ```
+- [Gemini](https://geminicli.com/docs/cli/skills/): `~/.gemini/AGENTS.md`
+  ```bash
+  ln -s ~/code/scripts/agents/AGENTS.md ~/.gemini/AGENTS.md
+  ln -s ~/code/scripts/agents ~/.gemini/skills
+  ```
 - [OpenCode](https://opencode.ai/docs/config/): `~/.config/opencode/opencode.jsonc`
   ```bash
   jq ".instructions = [\"$HOME/code/scripts/agents/AGENTS.md\", \"AGENTS.md\"]" ~/.config/opencode/opencode.jsonc | sponge ~/.config/opencode/opencode.jsonc
