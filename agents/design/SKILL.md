@@ -10,7 +10,7 @@ Prefer creative, distinctive frontends that surprise and delight, not generic, "
 
 Focus on:
 
-- Typography: beautiful, unique, and interesting fonts, not generic fonts like Arial and Inter. Opt for distinctive choices that elevate the frontend's aesthetics.
+- Typography: beautiful, unique, and interesting fonts, not generic fonts like Arial, Roboto, Inter, system. Opt for distinctive choices that elevate the frontend's aesthetics.
 - Color & Theme: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes. Draw from IDE themes and cultural aesthetics for inspiration.
 - Motion: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions.
 - Backgrounds: Create atmosphere and depth rather than defaulting to solid colors. Layer CSS gradients, use geometric patterns, or add contextual effects that match the overall aesthetic.

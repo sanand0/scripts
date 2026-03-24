@@ -194,7 +194,7 @@ Recommended change:
   - It dumps the full environment, including secrets, by default.
   - Add `--redact`, `--section`, and `--json` so it is safer to share.
 
-- `dev.test.sh:50-152`
+- SKIP: `dev.test.sh:50-152`
   - Let users select profiles (`--offline`, `--network`, `--gpu`, `--auth`) instead of running every probe every time.
   - Stream a concise summary table instead of only `ERROR:` lines.
   - Record skipped checks separately from failed checks.

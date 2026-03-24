@@ -93,12 +93,25 @@ add_mount_if_present "$HOME/.fonts" /home/vscode/.fonts ro
 add_mount_if_present "$HOME/.local/share/fonts" /home/vscode/.local/share/fonts ro
 
 docker_socket_group_args=()
-# UID 1000 inside the container is not enough to use the mounted Docker socket;
-# it also needs the host socket's group id at runtime.
+# UID 1000 inside the container needs the host docker socket's GID for access.
+# We also bind-mount a patched /etc/group (with a named entry for that GID) to
+# suppress the cosmetic "groups: cannot find name for group ID NNN" warning.
+# The patched file is cached by GID+image-digest so docker is invoked at most
+# once per image build (or GID change); subsequent runs use the cached file.
 if [[ -S /var/run/docker.sock ]]; then
   docker_socket_gid="$(stat -c '%g' /var/run/docker.sock)"
   if [[ "$docker_socket_gid" =~ ^[0-9]+$ ]]; then
     docker_socket_group_args=(--group-add "$docker_socket_gid")
+    _image_digest="$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}' 2>/dev/null | tr -dc '[:alnum:]' | head -c 12)"
+    if [[ -n "$_image_digest" ]]; then
+      _docker_etc_group="/tmp/dev-sh-etc-group-${docker_socket_gid}-${_image_digest}"
+      if [[ ! -s "$_docker_etc_group" ]]; then
+        docker run --rm "$IMAGE_TAG" cat /etc/group > "$_docker_etc_group" 2>/dev/null
+        grep -qE "^[^:]*:[^:]*:${docker_socket_gid}:" "$_docker_etc_group" || \
+          printf 'docker_host:x:%s:\n' "$docker_socket_gid" >> "$_docker_etc_group"
+      fi
+      [[ -s "$_docker_etc_group" ]] && docker_socket_group_args+=(--volume "$_docker_etc_group:/etc/group:ro")
+    fi
   fi
 fi
 
@@ -135,6 +148,7 @@ args=(
   -v "$HOME/.claude:/home/vscode/.claude"
   -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
+  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud"
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"

@@ -65,6 +65,15 @@ qpdf --empty --pages file1.pdf file2.pdf -- merged.pdf
 qpdf --password=mypassword --decrypt encrypted.pdf decrypted.pdf
 ```
 
+## Compress PDFs
+
+- Start with `gs 96dpi q25` followed by `qpdf` if your PDFs are mostly scanned pages, screenshots, or image-heavy documents.
+- Keep the original file unless the compressed one is actually smaller.
+- In automation, add `--warning-exit-0` to `qpdf` and separately validate the output.
+- Always verify page count, and ideally spot-check a few pages visually if the documents are important.
+- If the output still needs to be smaller, the next setting to test is `72dpi/q20`, but review readability manually before adopting it widely.
+- If you need a near-lossless pass first, try `qpdf` or `pdfcpu optimize`, but do not expect dramatic savings on already image-compressed PDFs.
+
 ## Python: generate, extract, stamp
 
 ```py

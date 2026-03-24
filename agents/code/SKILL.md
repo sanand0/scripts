@@ -108,3 +108,4 @@ import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to
 ```
 
 Debug front-end apps with Playwright (prefer CDP on localhost:9222) using .evaluate(); view screenshot images, console logs.
+For self-contained HTML files try `file://` before spinning up a server.

@@ -113,17 +113,26 @@ abbr --add mail cmdg
 abbr --add gcalcli 'uvx gcalcli'
 abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
+# GitHub activity
+abbr --add githubactivity 'GITHUB_TOKEN=(secret GITHUB_PERSONAL_ACCESS_TOKEN) gh search commits --author "@me" --sort committer-date --order desc --limit 30'
+
 # Color diffs
 abbr --add icdiff 'uvx --offline icdiff'
 
 # Jupyter Lab
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 
+# Files to prompt
+abbr --add cxml 'uvx files-to-prompt --cxml'
+
 # Convert PDF to text
 abbr --add pdftotext 'PYTHONUTF8=1 uvx --with markitdown[pdf] markitdown'
 
 # MP3tag alternative
 abbr --add mp3tag puddletag
+
+# Example of FFMpeg concat command for merging video files without re-encoding
+abbr --add ffconcat ffmpeg -i "concat:input1.ext|input2.ext" -c copy output.ext
 
 # Run Python debugger on error
 abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
@@ -192,6 +201,55 @@ function secret --description "Extract secret from .env"
     awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env | string trim -c '"'
     # Slower version using python-dotenv
     # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
+end
+
+function claudeuse --description "Toggle Claude settings between Anthropic and MiniMax"
+    set -l settings $HOME/.claude/settings.json
+
+    mkdir -p (dirname $settings)
+    if not test -f $settings
+        printf '{}\n' >$settings
+    end
+
+    switch "$argv[1]"
+        case minimax
+            set -l tmp (mktemp)
+            jq --arg token (secret MINIMAX_API_KEY) '
+                .env = (.env // {}) | .env += {
+                    "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": $token,
+                    "API_TIMEOUT_MS": "3000000",
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
+                    "ANTHROPIC_MODEL": "MiniMax-M2.7",
+                    "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M2.7",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "MiniMax-M2.7",
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL": "MiniMax-M2.7",
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M2.7"
+                }
+            ' $settings >$tmp
+            and mv $tmp $settings
+            or rm -f $tmp
+        case anthropic
+            set -l tmp (mktemp)
+            jq '
+                del(
+                    .env.ANTHROPIC_BASE_URL,
+                    .env.ANTHROPIC_AUTH_TOKEN,
+                    .env.API_TIMEOUT_MS,
+                    .env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC,
+                    .env.ANTHROPIC_MODEL,
+                    .env.ANTHROPIC_SMALL_FAST_MODEL,
+                    .env.ANTHROPIC_DEFAULT_SONNET_MODEL,
+                    .env.ANTHROPIC_DEFAULT_OPUS_MODEL,
+                    .env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+                )
+            ' $settings >$tmp
+            and mv $tmp $settings
+            or rm -f $tmp
+        case ''
+    end
+
+    jq -r '.env.ANTHROPIC_BASE_URL // "", .env.ANTHROPIC_MODEL // ""' $settings
 end
 
 # SaaS utilities
@@ -344,7 +402,7 @@ abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --remote-components ejs:github
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 
 abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
-abbr --add transcribe 'llm -m gemini-2.5-flash -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
+abbr --add transcribe 'llm -m gemini-3.1-pro-preview -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 
 function avif --description "Convert images to AVIF with optional quality, speed, width, and height"
@@ -410,7 +468,7 @@ function webp-lossless --description "Convert images to compact lossless WebP wi
 
     # 2. Set defaults if flags weren't provided
     set -l colors 8
-    set -l resize_opts ""
+    set -l resize_opts
 
     if set -q _flag_colors
         set colors $_flag_colors
@@ -435,9 +493,9 @@ function webp-lossless --description "Convert images to compact lossless WebP wi
         # magick: reads input -> optional resize -> outputs PNG to stdout
         # pngquant: quantizes to $colors -> no dithering -> strip metadata -> max speed -> reads from stdin
         # cwebp: lossless -> max compression (-z 9) -> multi-threaded -> reads from stdin
-        magick "$file" $resize_opts png:- | \
+        magick $file $resize_opts png:- | \
         pngquant $colors --nofs --strip --speed 1 - | \
-        cwebp -quiet -lossless -z 9 -mt -o "$output" -- -
+        cwebp -quiet -lossless -z 9 -mt -o $output -- -
     end
 end
 

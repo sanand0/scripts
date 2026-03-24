@@ -27,6 +27,7 @@ RUN apt-get update \
     poppler-utils \
     ghostscript \
     librsvg2-bin \
+    bubblewrap \
   && rm -rf /var/lib/apt/lists/*
 
 # Make /home/sanand point to /home/vscode (symlink; hard links for dirs aren’t supported)
@@ -67,6 +68,7 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   deno \
   duckdb \
   fd \
+  gcloud \
   github-cli \
   hugo \
   jaq \
@@ -88,7 +90,8 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest; \
+  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai; \
+  llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
 # Install cargo. Takes ~1 min
@@ -97,19 +100,26 @@ RUN bash -lc 'curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s 
   cargo install --locked resvg; \
   '
 
-# Install npm tools last so the agent CLIs and browser tooling are fresh.
 # Global npm executables under a mise-managed Node are not reliably visible
 # until `mise reshim node` runs, so keep that coupled to any future CLI adds.
-# Takes ~5 min
+# Takes ~4 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
-  npm install -g @openai/codex@latest; \
-  npm install -g @github/copilot@latest; \
-  npm install -g @google/gemini-cli; \
+  npm install -g @googleworkspace/cli@latest; \
   npm install -g pixelmatch pngjs; \
   npm install -g playwright; \
   playwright install --with-deps chromium firefox webkit; \
+  mise reshim node \
+  '
+
+# Install frequently changing agent CLIs last to keep them fresh
+# Takes ~1.5 min
+RUN bash -lc 'eval "$(mise env -s bash)"; \
+  echo "24 Mar 2026: Updating agents"; \
+  npm install -g @openai/codex@latest; \
+  npm install -g @github/copilot@latest; \
+  npm install -g @google/gemini-cli; \
   mise reshim node \
   '
 

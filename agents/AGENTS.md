@@ -8,17 +8,18 @@ curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
+uvx rodney, playwright (browser automation)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
-gcloud, aws
+gws (Google Workspace CLI), gcloud, aws
 
-/home/sanand/code/scripts/agents/tooldocs/{qsv,pdfcpu,...}.md have usage examples.
+~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples.
 
 Suggestions:
 
-Run in parallel: read, tools, sub-agents, ...
+When possible, run in parallel: read, tools, sub-agents, ...
 For 20+ tool calls, maintain update_plan throughout.
 Delegate long-running commands/tests to sub-agents and report checkpoints.
 If blocked by permissions, ask me concise choices.

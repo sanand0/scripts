@@ -4,17 +4,20 @@ description: Call LLM via CLI for transcription, vision, speech/image generation
 ---
 
 ```bash
+llm --help
 llm '2 + 2 = ?'
 cat prompt.txt | llm
+llm --fragment a.txt --fragment https://example.org/ --fragment "User prompt fragment" --system-fragment system-prompt.txt
 llm --system 'Speak German' 'Hi'
+llm models list
 llm --model gpt-5-nano 'Hi'
 llm --query 5-nano 'Hi' # pick first model matching query
-llm --attachment audio.opus --model gemini-2.5-flash 'Transcribe'  # transcribe audio
+llm --attachment audio.opus --model gemini-3-flash-preview 'Transcribe audio'
+llm -a a.png -a b.png -s "OCR images"
 llm --schema "{... JSON schema ...}" '...'  # use JSON schema
 llm --usage 'Hi'  # show token usage
 cat image.jpg | llm 'describe' --attachment -  # describe image
 llm --option reasoning_effort minimal 'Hi'
-llm models list
 llm --extract 'List files by size'  # extract first code block
 llm cmd 'List files by size'  # extract and run first code block
 llm embed -c 'Hi' -m 3-small -f base64  # get embedding as base64 (or json) using text-embedding-3-small
@@ -26,8 +29,8 @@ Preferred models:
 
 gpt-5-mini: default
 gpt-5-nano: cheapest
-gemini-2.5-flash: cheap transcription
-gemini-3-pro: best for transcription
+gemini-3-flash-preview or newer: cheap transcription
+gemini-3.1-pro-preview or newer: best for transcription
 
 Generate speech:
 
@@ -43,7 +46,7 @@ Add "instructions": with style / tone
 Generate images:
 
 ```bash
-curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$GEMINI_API_KEY" \
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=$GEMINI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"contents": [{"parts": [{"text": "Cat"}]}], "generationConfig": {"responseModalities": ["IMAGE"], "imageConfig": {"aspectRatio": "16:9"}}}' \
   | jq -r '.candidates[0].content.parts[0].inlineData.data' | base64 -d > cat.png
@@ -57,7 +60,7 @@ Edit images / provide reference images:
 ```bash
 IMG=$(base64 -w0 cat.png)
 echo '{"contents": [{"parts": [{"text": "Edit image: add bold caption `CAT`"}, {"inlineData": {"mime_type": "image/png", "data": "'"$IMG"'"}}]}], "generationConfig": {"responseModalities": ["IMAGE"]}}' > payload.json
-curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=$GEMINI_API_KEY" \
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=$GEMINI_API_KEY" \
   -H "Content-Type: application/json" -d @payload.json \
   | jq -r '.candidates[0].content.parts[0].inlineData.data' | base64 -d > captioned.png
 ```

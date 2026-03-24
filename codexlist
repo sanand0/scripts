@@ -36,22 +36,55 @@ sub decode_json_string {
     return defined $decoded ? $decoded : q{};
 }
 
+sub summarize_source {
+    my ($text) = @_;
+    return q{} unless defined $text && $text ne q{};
+
+    my $decoded = eval { decode_json($text) };
+    return $text if !defined $decoded;
+
+    return $decoded if !ref $decoded;
+
+    if (ref $decoded eq 'HASH') {
+        return 'subagent'
+            if exists $decoded->{subagent};
+
+        return join(' | ', sort keys %{$decoded});
+    }
+
+    return ref $decoded;
+}
+
 sub read_summary {
     my ($path) = @_;
 
-    open my $handle, '<', $path or return (q{}, q{});
+    open my $handle, '<', $path or return (q{}, q{}, q{});
 
-    my ($cwd, $message) = (q{}, q{});
-    my ($have_cwd, $have_message) = (0, 0);
+    my ($cwd, $source, $message) = (q{}, q{}, q{});
+    my ($have_cwd, $have_source, $have_message) = (0, 0, 0);
 
     while (my $line = <$handle>) {
-        if (
-            !$have_cwd
-            && $line =~ /"type":"session_meta"/
-            && $line =~ /"cwd":"((?:\\.|[^"\\])*)"/
-        ) {
-            $cwd = decode_json_string($1);
-            $have_cwd = 1;
+        if ($line =~ /"type":"session_meta"/) {
+            my $event = eval { decode_json($line) };
+            if (defined $event && ref $event eq 'HASH') {
+                my $payload = $event->{payload};
+                if (defined $payload && ref $payload eq 'HASH') {
+                    if (!$have_cwd && defined $payload->{cwd}) {
+                        $cwd = $payload->{cwd};
+                        $have_cwd = 1;
+                    }
+
+                    if (!$have_source && exists $payload->{source}) {
+                        my $raw_source = $payload->{source};
+                        if (ref $raw_source) {
+                            $source = summarize_source(JSON::PP::encode_json($raw_source));
+                        } else {
+                            $source = defined $raw_source ? $raw_source : q{};
+                        }
+                        $have_source = 1;
+                    }
+                }
+            }
         }
 
         if (
@@ -63,12 +96,12 @@ sub read_summary {
             $have_message = 1;
         }
 
-        last if $have_cwd && $have_message;
+        last if $have_cwd && $have_source && $have_message;
     }
 
     close $handle;
 
-    return ($cwd, truncate_middle($message));
+    return ($cwd, $source, truncate_middle($message));
 }
 
 my @files;
@@ -84,10 +117,10 @@ find(
 );
 
 for my $logfile (sort { $b cmp $a } @files) {
-    my ($cwd, $message) = read_summary($logfile);
+    my ($cwd, $source, $message) = read_summary($logfile);
     next if $filter ne q{} && index($cwd, $filter) < 0;
 
     print "# $logfile\n";
-    print indent_block($cwd), "\n";
-    print indent_block($message), "\n";
+    print indent_block(($source ne q{} ? "$source | " : q{}) . $cwd), "\n";
+    print indent_block($message), "\n\n";
 }

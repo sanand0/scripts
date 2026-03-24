@@ -7,12 +7,14 @@ description: Use to investigate data for surprising, actionable insights
 
 Hunt for stories that make smart readers lean forward and say _"wait, really?"_ — findings that are high-impact, surprising, actionable, and defensible.
 
+This is a DETAILED process. Create a PLAN and execute step by step.
+
 ## 1 — Understand the Data
 
 - **Structure**: Dimensions (categorical) vs. measures (numeric), types, granularity, field relationships.
 - **Quality**: Completeness, missing values, outliers, duplicates, encoding issues.
-- **Distribution**: Value ranges, skewness, heavy tails, zero-inflation.
-- **Derived potential**: Computable metrics, joins, aggregations, time-series constructions.
+- **Distribution**: Value ranges, (log) normality, skewness, heavy tails, zero-inflation.
+- **Derived potential**: Computable metrics (features, targets), joins, aggregations, time-series constructions.
 
 ## 2 — Define What Matters
 
@@ -32,19 +34,27 @@ Look for stories that _confirm something suspected but never proven_, or _overtu
 - **Standout entities**: Who dramatically overperforms or underperforms relative to peers? Who drives trends vs. bucks them?
 - **Hidden populations**: What patterns disappear in aggregate but emerge in subgroups? (Watch for Simpson's Paradox.)
 - **Dot connections**: What patterns emerge when combining fields that seem unrelated at first?
+- **Clusters**: What clusters or communities emerge? Where are the overlaps and outliers?
 
-## 4 — Find Leverage Points
+Search internally / externally:
+
+- Discover domain-specific rules, context, that have an impact
+- Search for WHY this happened
+- Surface confounders
+- Explore prior research
+
+Find Leverage Points:
 
 - Underutilized resources or capabilities
 - **Phase transitions**: thresholds where behavior shifts nonlinearly
 - **Tipping points**: what small change would move the aggregate needle?
 - What actions are _specific and implementable_, not just directionally correct?
 
-## 5 — Verify & Stress-Test
+## 4 — Verify & Stress-Test
 
 **Cross-check externally**: Is there outside evidence (benchmarks, research, industry data) that supports, refines, or contradicts the finding?
 
-**Test robustness**: Does the finding hold under alternative model specs, thresholds, sub-samples, or time windows? Does a placebo test (shuffled labels, random baseline) reproduce it? If so, it's noise.
+**Test robustness**: Does the finding hold under cross model checks, alternative model specs, thresholds, sub-samples, or time windows? Does a placebo test (shuffled labels, random baseline) reproduce it? If so, it's noise.
 
 **Check for errors & bias**: Examine data provenance, definitions, collection methodology. Control for confounders, base rates, uncertainty. What's _missing_? Selection and survivorship bias are silent killers.
 
@@ -61,7 +71,7 @@ Look for stories that _confirm something suspected but never proven_, or _overtu
 
 **Consider limitations**: What _cannot_ be concluded? What caveats must accompany the finding to avoid misuse?
 
-## 6 — Prioritize & Package
+## 5 — Prioritize & Package
 
 Select insights that are **high-impact** (meaningful effect sizes vs. base rates, not incremental), **actionable** (specific and implementable, not just "invest more in X"), **surprising** (challenges assumptions, reveals hidden patterns), and **defensible** (robust under scrutiny, bias-checked).
 

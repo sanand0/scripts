@@ -146,6 +146,7 @@ die() {
 
 declare -a MENU_LABELS=(
     "Unicode → ASCII                (curly quotes, em-dash, …)"
+    "Text to Slug                  (lowercase, ascii, hyphens)"
     "Markdown → Unicode             (bold/italic for LinkedIn)"
     "Markdown → Rich text           (paste into Docs, Notion)"
     "Markdown → HTML                (paste into WordPress)"
@@ -169,6 +170,7 @@ declare -a MENU_LABELS=(
 
 declare -A MENU_FNS=(
     ["Unicode → ASCII                (curly quotes, em-dash, …)"]="transform_unicode_to_ascii"
+    ["Text to Slug                  (lowercase, ascii, hyphens)"]="transform_text_to_slug"
     ["Markdown → Unicode             (bold/italic for LinkedIn)"]="transform_md_to_unicode"
     ["Markdown → Rich text           (paste into Docs, Notion)"]="transform_md_to_richtext"
     ["Markdown → HTML                (paste into WordPress)"]="transform_md_to_html"
@@ -203,11 +205,11 @@ PANDOC_HTML_FLAGS="--syntax-highlighting=none --wrap=none"
 # Special cases (rich-text clipboard target, browser open) are handled internally.
 # ─────────────────────────────────────────────
 
-transform_unicode_to_ascii() {
+normalize_text_to_ascii() {
     # anyascii handles a huge range: Cyrillic, CJK, emoji, typographic chars, etc.
     # Falls back to manual map for the most common typographic substitutions first
     # so we preserve intent (em-dash → hyphen with spaces, bullet -> hyphen, not asterisk).
-    with_input_file uvx --quiet --with anyascii python - <<'PYEOF'
+    with_input_file uvx --offline --quiet --with anyascii python - <<'PYEOF'
 import sys, anyascii
 from pathlib import Path
 
@@ -222,6 +224,17 @@ for src, dst in MANUAL.items():
 # anyascii for everything else
 sys.stdout.write(anyascii.anyascii(text))
 PYEOF
+}
+
+transform_unicode_to_ascii() {
+    normalize_text_to_ascii
+}
+
+transform_text_to_slug() {
+    normalize_text_to_ascii \
+        | tr '\r\n' '  ' \
+        | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+        | LC_ALL=C sed -E 's/[^[:alnum:]]+/-/g; s/^-+//; s/-+$//'
 }
 
 transform_md_to_richtext() {
@@ -311,7 +324,7 @@ transform_md_to_unicode() {
 
 transform_strip_links() {
     # Inline striplinks.py behavior: strip Markdown/HTML links and images.
-    with_input_file uvx --quiet --with beautifulsoup4 python - <<'PYEOF'
+    with_input_file uvx --offline --quiet --with beautifulsoup4 python - <<'PYEOF'
 import re
 import sys
 from pathlib import Path
@@ -420,68 +433,74 @@ transform_ask_google_ai() {
 # 4. MAIN
 # ─────────────────────────────────────────────
 
-bootstrap_tool_paths
-log_debug "run_start cwd=$(pwd) user=${USER:-unknown} shell=${SHELL:-unknown} display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:-}"
-log_runtime_deps
+main() {
+    bootstrap_tool_paths
+    log_debug "run_start cwd=$(pwd) user=${USER:-unknown} shell=${SHELL:-unknown} display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:-}"
+    log_runtime_deps
 
-INPUT=$(clipboard_get)
-[[ -z "$INPUT" ]] && die "Clipboard is empty."
-log_data "clipboard_input" "$INPUT"
+    INPUT=$(clipboard_get)
+    [[ -z "$INPUT" ]] && die "Clipboard is empty."
+    log_data "clipboard_input" "$INPUT"
 
-# Present menu
-CHOICE=$(printf '%s\n' "${MENU_LABELS[@]}" \
-    | rofi -dmenu \
-           -p "Transform clipboard" \
-           -i \
-           -theme-str 'window {width: 60%;} listview {lines: 20;}' \
-    )
-if [[ -z "$CHOICE" ]]; then
-    log_debug "menu_dismissed"
-    exit 0
-fi
-log_debug "choice=$CHOICE"
+    # Present menu
+    CHOICE=$(printf '%s\n' "${MENU_LABELS[@]}" \
+        | rofi -dmenu \
+               -p "Transform clipboard" \
+               -i \
+               -theme-str 'window {width: 60%;} listview {lines: 20;}' \
+        )
+    if [[ -z "$CHOICE" ]]; then
+        log_debug "menu_dismissed"
+        exit 0
+    fi
+    log_debug "choice=$CHOICE"
 
-FN="${MENU_FNS[$CHOICE]:-}"
-[[ -z "$FN" ]] && die "No handler for: $CHOICE"
-log_debug "handler=$FN"
+    FN="${MENU_FNS[$CHOICE]:-}"
+    [[ -z "$FN" ]] && die "No handler for: $CHOICE"
+    log_debug "handler=$FN"
 
-SKIP_WRITE=0
+    SKIP_WRITE=0
 
-# Run transform in current shell; capture output while preserving side effects
-# (e.g., SKIP_WRITE=1 inside handlers like transform_md_to_richtext).
-RESULT_FILE=$(mktemp)
-STDERR_FILE=$(mktemp)
-if "$FN" > "$RESULT_FILE" 2> "$STDERR_FILE"; then
-    TRANSFORM_STATUS=0
-else
-    TRANSFORM_STATUS=$?
-fi
-RESULT=$(<"$RESULT_FILE")
-TRANSFORM_STDERR=$(<"$STDERR_FILE")
-log_debug "transform_status=$TRANSFORM_STATUS skip_write=$SKIP_WRITE"
-log_data "transform_stdout" "$RESULT"
-if [[ -n "$TRANSFORM_STDERR" ]]; then
-    log_data "transform_stderr" "$TRANSFORM_STDERR"
-fi
-rm -f "$RESULT_FILE"
-rm -f "$STDERR_FILE"
-
-if [[ "$TRANSFORM_STATUS" -ne 0 ]]; then
-    LOG_ENABLED=1
-    touch "$DEBUG_LOG" 2>/dev/null || true
-    log_debug "transform_error choice=$CHOICE handler=$FN status=$TRANSFORM_STATUS"
+    # Run transform in current shell; capture output while preserving side effects
+    # (e.g., SKIP_WRITE=1 inside handlers like transform_md_to_richtext).
+    RESULT_FILE=$(mktemp)
+    STDERR_FILE=$(mktemp)
+    if "$FN" > "$RESULT_FILE" 2> "$STDERR_FILE"; then
+        TRANSFORM_STATUS=0
+    else
+        TRANSFORM_STATUS=$?
+    fi
+    RESULT=$(<"$RESULT_FILE")
+    TRANSFORM_STDERR=$(<"$STDERR_FILE")
+    log_debug "transform_status=$TRANSFORM_STATUS skip_write=$SKIP_WRITE"
     log_data "transform_stdout" "$RESULT"
-    log_data "transform_stderr" "$TRANSFORM_STDERR"
-    log_stack_trace
-    die "Transform failed ($FN), see $DEBUG_LOG"
-fi
+    if [[ -n "$TRANSFORM_STDERR" ]]; then
+        log_data "transform_stderr" "$TRANSFORM_STDERR"
+    fi
+    rm -f "$RESULT_FILE"
+    rm -f "$STDERR_FILE"
 
-# Write result back to clipboard (unless transform did it directly)
-if [[ "$SKIP_WRITE" -eq 0 ]]; then
-    log_debug "clipboard_write mode=text/plain"
-    echo -n "$RESULT" | clipboard_set "text/plain"
-else
-    log_debug "clipboard_write skipped_by_handler=1"
-fi
+    if [[ "$TRANSFORM_STATUS" -ne 0 ]]; then
+        LOG_ENABLED=1
+        touch "$DEBUG_LOG" 2>/dev/null || true
+        log_debug "transform_error choice=$CHOICE handler=$FN status=$TRANSFORM_STATUS"
+        log_data "transform_stdout" "$RESULT"
+        log_data "transform_stderr" "$TRANSFORM_STDERR"
+        log_stack_trace
+        die "Transform failed ($FN), see $DEBUG_LOG"
+    fi
 
-log_debug "run_end success=1"
+    # Write result back to clipboard (unless transform did it directly)
+    if [[ "$SKIP_WRITE" -eq 0 ]]; then
+        log_debug "clipboard_write mode=text/plain"
+        echo -n "$RESULT" | clipboard_set "text/plain"
+    else
+        log_debug "clipboard_write skipped_by_handler=1"
+    fi
+
+    log_debug "run_end success=1"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

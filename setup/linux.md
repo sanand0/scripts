@@ -26,6 +26,27 @@ Ubuntu Desktop 24.04 Setup:
   - Skip Ubuntu Pro
   - Yes, share system data with the Ubuntu team
 
+## Storage
+
+Where I store and back-up stuff.
+
+- Videos: YouTube (Private | Unlisted | Public)
+- Public
+  - Small / code: ~/code/ -> GitHub (public)
+  - Large / docs: ~/r2/files/ -> files.gramener.com
+- Shared:
+  - Websites: ~/r2/private/ -> CloudFlare
+  - Straive docs: ~/Documents/straive -> Straive GDrive
+- Private
+  - Needed on phone: ~/Dropbox/ -> Dropbox
+  - Small / code: ~/code/ -> GitHub (private)
+  - Large / docs: ~/Documents/\* | ~/Pictures/ etc -> Hetzner
+
+Notes:
+
+- Small = Files under 500 KB, folder under ~50 MB. Rest are large.
+- Code = Anything convertable to text (PDF to Markdown, OCR-able images, ...). Rest are docs.
+
 ## Install editor, browser, cloud storage
 
 ```bash
@@ -84,6 +105,8 @@ sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice 
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
 sudo apt install -y melt                # melt - Command-line video editing
 sudo apt install -y sox libsox-fmt-all  # sox - audio processing
+# Temporary: Installed to check slint compilation
+sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
@@ -186,7 +209,7 @@ npm install -g codex@latest               # codex - AI code assistant CLI
 npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
 npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
-npm install -g @googleworkspace/cli       # gws - Google Workspace CLI for all Google APIs. Run via `npx -y @googleworkspace/cli` or `gws` after adding to PATH
+npm install -g @googleworkspace/cli       # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
@@ -234,7 +257,7 @@ curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
 
 # Set up uv environments
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade click httpx requests llm lxml markdownify openai openpyxl pandas pillow playwright rich ruff tenacity tqdm typer pdfplumber pypdf reportlab
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow playwright pypdf reportlab requests rich ruff tenacity tqdm typer
 playwright install --with-deps chromium firefox msedge
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
@@ -713,7 +736,6 @@ Desktop
 ## Notes
 
 ### 13 Feb 2026.
-
 
 ```bash
 sudo nano /etc/default/grub

@@ -67,7 +67,7 @@ Here are the setup details for my laptops.
 - [rename_receipts.py](rename_receipts.py) renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text.
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
-- [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
+- [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rofi-prompts.sh](rofi-prompts.sh) shows prompts from Markdown files in `~/code/blog/pages/prompts`, lets you pick one via rofi, then copies/pastes the selected fenced code block. Triggered by Ctrl + Alt + P.
 - [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
 - [touchegg.conf](touchegg.conf) is my touchpad gesture config for Touchegg on Ubuntu.
