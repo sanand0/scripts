@@ -113,6 +113,9 @@ abbr --add mail cmdg
 abbr --add gcalcli 'uvx gcalcli'
 abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
+# Size of all `git add` files
+abbr --add gitaddsize 'git ls-files -s | awk "{print \$4}" | xargs ls -la | sort -k 5n'
+
 # GitHub activity
 abbr --add githubactivity 'GITHUB_TOKEN=(secret GITHUB_PERSONAL_ACCESS_TOKEN) gh search commits --author "@me" --sort committer-date --order desc --limit 30'
 

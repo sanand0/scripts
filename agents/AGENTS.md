@@ -12,7 +12,7 @@ uvx rodney, playwright (browser automation)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
-magick, cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
+magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
 gws (Google Workspace CLI), gcloud, aws
 
 ~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples.

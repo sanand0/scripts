@@ -12,4 +12,5 @@ metadata:
 - Add a schema or `--describe` capability that returns machine-readable method signatures: params, request body, response types, ...
 - Design for context-window efficiency. Document and support filters, field masks, NDJSON pagination, etc. so agents can request only needed data.
 - Support environment-variable-driven, headless execution for unattended use (tokens, credential file paths)
+- Fail fast showing reason and correct invocation.
 - Document with compact, explicit instructions and examples.

@@ -144,17 +144,17 @@ args=(
   -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip"
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
-  # Configs
+  # Configs. Enable what's required.
+  # 🔴 = sensitive credentials. (LLM API keys are OK - loss is a few dollars.)
   -v "$HOME/.claude:/home/vscode/.claude"
   -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
-  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud"
+  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud"   # 🔴
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
   -v "$HOME/.config/opencode:/home/vscode/.config/opencode"
-  -v "$HOME/.config/rclone:/home/vscode/.config/rclone"
-  -v "$HOME/.config/wrangler/:/home/vscode/wrangler"
+  # -v "$HOME/.config/wrangler/:/home/vscode/wrangler"    # 🔴
   -v "$HOME/.copilot:/home/vscode/.copilot"
   -v "$HOME/.gemini:/home/vscode/.gemini"
   -v "$HOME/.gitconfig:/home/vscode/.gitconfig"
@@ -168,7 +168,7 @@ args=(
   -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.npm:/home/vscode/.npm"
-  -v "$HOME/.ssh:/home/vscode/.ssh:ro"
+  # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json"
   "${font_mount_args[@]}"

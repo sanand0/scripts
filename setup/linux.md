@@ -205,11 +205,10 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g github:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
 # mise use -g github:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
 
-npm install -g codex@latest               # codex - AI code assistant CLI
-npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
-npm install -g wscat@latest               # wscat - WebSocket client (for Codex CDP usage)
-npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
 npm install -g @googleworkspace/cli       # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
+npm install -g codex@latest               # codex - AI code assistant CLI
+npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
@@ -257,7 +256,7 @@ curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
 
 # Set up uv environments
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow playwright pypdf reportlab requests rich ruff tenacity tqdm typer
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
 playwright install --with-deps chromium firefox msedge
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio

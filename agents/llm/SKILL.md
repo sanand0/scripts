@@ -27,8 +27,8 @@ Docs: https://llm.datasette.io/en/stable/usage.html
 
 Preferred models:
 
-gpt-5-mini: default
-gpt-5-nano: cheapest
+gpt-5.4-mini: default
+gpt-5.4-nano: cheapest
 gemini-3-flash-preview or newer: cheap transcription
 gemini-3.1-pro-preview or newer: best for transcription
 
