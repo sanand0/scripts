@@ -88,14 +88,13 @@ Here are the setup details for my laptops.
 
 ## AI coding agent scripts
 
-- [codexlog.jq](codexlog.jq) converts Codex CLI session logs to Markdown (from ~/.codex/sessions/yyyy/mm/dd/session.jsonl)
-  - [codexlist](codexlist) lists all sessions
-  - [codextools.py](codextools.py) lists tools used by Codex
-  - [codexerrors.py](codexerrors.py) lists tool errors by Codex
-- [claudelog](claudelog) lists Claude Code sessions and converts to Markdown (from ~/.claude/projects/). `uvx claude-code-log@latest --tui` does a good job too.
-- [copilotlog.jq](copilotlog.jq) converts GitHub session logs to Markdown (from ~/.copilot/session-state/*.jsonl)
-  - [copilotlist](copilotlist) lists all sessions
-- [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`)
+- [codexlog](codexlog), [claudelog](claudelog), and [copilotlog](copilotlog) share the same interface: `ls`, `resolve`, `md`, and `dump`
+  - [codexlog](codexlog) reads Codex session logs from `~/.codex/`
+  - [claudelog](claudelog) reads Claude Code session logs from `~/.claude/`. `uvx claude-code-log@latest --tui` does a good job too.
+  - [copilotlog](copilotlog) reads GitHub Copilot session logs from `~/.copilot/`
+- [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`) but I rarely use it since I don't use OpenCode much.
+- [codextools.py](codextools.py) lists tools used by Codex
+- [codexerrors.py](codexerrors.py) lists tool errors by Codex
 
 ## jq scripts
 
