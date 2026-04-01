@@ -6,7 +6,7 @@ import sys
 from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sessionlog import SessionSummary, Stats, build_app
+from agentlog import SessionSummary, Stats, build_app, build_root_app
 
 
 RUNNER = CliRunner()
@@ -83,3 +83,13 @@ def test_ls_uses_buffered_path_when_filters_require_global_scan() -> None:
     assert backend.calls == ["list"]
     assert "buffered-session" in result.stdout
     assert "Buffer this output" in result.stdout
+
+
+def test_root_app_routes_backend_subcommands() -> None:
+    backend = FakeBackend()
+
+    result = RUNNER.invoke(build_root_app({"claude": backend}), ["claude", "ls"])
+
+    assert result.exit_code == 0, result.stdout
+    assert backend.calls == ["stream"]
+    assert "streamed-session" in result.stdout

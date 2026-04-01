@@ -1,3 +1,9 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12"]
+# ///
+
 from __future__ import annotations
 
 import dataclasses
@@ -1634,7 +1640,18 @@ def build_app(backend: Backend) -> typer.Typer:
     return app
 
 
+def build_root_app(backends: dict[str, Backend] | None = None) -> typer.Typer:
+    app = typer.Typer(add_completion=False)
+    for name, backend in (backends or BACKENDS).items():
+        app.add_typer(build_app(backend), name=name)
+    return app
+
+
 def run_backend(name: str) -> None:
     backend = BACKENDS[name]
     app = build_app(backend)
     app()
+
+
+if __name__ == "__main__":
+    build_root_app()()

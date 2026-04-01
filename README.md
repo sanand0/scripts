@@ -88,10 +88,7 @@ Here are the setup details for my laptops.
 
 ## AI coding agent scripts
 
-- [codexlog](codexlog), [claudelog](claudelog), and [copilotlog](copilotlog) share the same interface: `ls`, `resolve`, `md`, and `dump`
-  - [codexlog](codexlog) reads Codex session logs from `~/.codex/`
-  - [claudelog](claudelog) reads Claude Code session logs from `~/.claude/`. `uvx claude-code-log@latest --tui` does a good job too.
-  - [copilotlog](copilotlog) reads GitHub Copilot session logs from `~/.copilot/`
+- [agentlog.py](agentlog.py) reads logs from all AI coding agents: Codex, Claude, and Copilot
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`) but I rarely use it since I don't use OpenCode much.
 - [codextools.py](codextools.py) lists tools used by Codex
 - [codexerrors.py](codexerrors.py) lists tool errors by Codex

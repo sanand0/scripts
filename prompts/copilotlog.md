@@ -45,3 +45,13 @@ codexlog ls is VERY slow. How can we have it send responses as it reads instead 
 The same principle applies for `copilotlog ls` and `claudelog ls`, too.
 Benchmark and optimize whatever takes more than a second to start responding.
 Run and test.
+
+---
+
+Wow - almost the entire code is in sessionlog.py. So let's do this.
+Rename `sessionlog.py to` `agentlog.py`.
+Make sure `agentlog.py claude ls` etc. work from the CLI.
+Modify tests accordingly.
+Then I will delete codexlog, claudelog and copilotlog and just use agentlog.py instead.
+
+<!-- copilot --resume=5fa5faac-c23e-4ba4-8e0f-f7e312080ca2 -->
