@@ -105,6 +105,7 @@ sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice 
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
 sudo apt install -y melt                # melt - Command-line video editing
 sudo apt install -y sox libsox-fmt-all  # sox - audio processing
+sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modification times from git history
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 

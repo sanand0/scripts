@@ -44,7 +44,47 @@ Charts and maps should be **revelatory, not decorative** — placed *in the mome
 
 **Chart choices that serve narrative**: anomalies → scatter plots with annotation; change over time → line charts with event markers; geography → choropleth or dot maps; composition surprises → treemaps or stacked bars with callouts; hidden subgroups → small multiples or ridgeline plots.
 
-## 4 — Concrete Examples & Evidence
+## 4 - Interactions
+
+Use tooltips, popups, interactions, and animations as informative and engaging aids when appropriate.
+
+**Tooltips** are for:
+
+- Context about non-obvious terms or phrases (only if relevant and useful)
+- Additional context about references (where possible)
+- Metadata and context about data points, table cells, chart elements, etc. (always)
+- Guidelines:
+  - On mobile, use tap-to-reveal with clear dismiss affordance (tap elsewhere or an × icon); auto-reposition to stay within the viewport.
+  - Debounce on hover. Only 1 tooltip at a time.
+  - Do not show tooltips where the tooltips add no meaningful value or additional information beyond the text.
+
+**Popups** are for:
+
+- Citations. Search for and include references. Cite the key point from the reference and link to it.
+- Files. Link liberally to files as supporting evidence.
+  - Clicking on file links should open the files in a popup, with a link to open the original in a new tab.
+  - Syntax-highlighted if code
+  - Show sortable for tabular data, gradient-coloring important numeric / categorical columns if that will help understand the context
+- Data points. Provide extensive context for data points.
+  - Wherever useful, clicking on data points, table cells, chart elements, etc. should open a popup that provides full context about that element.
+  - Include narratives, cards, tables, charts, or even entire dashboards that answer what the user is likely to be curious about or wants to dig in for more details. E.g. context, examples, related metrics, trends over time, breakdown by relevant dimensions, etc.
+  - Standardize the format of these popups so users know what to expect. Reuse popups by archetype.
+- Guidelines: Trap keyboard focus inside. Contain scrolling. Show loading state when required. Use a consistent anatomy.
+
+**Interactions** may include:
+
+- Filters & search.
+- Sliders that allow users to adjust assumptions, scenarios, etc. and see the impact in real time. Keep input & output close - without scrolling.
+- Transitions on value change. e.g. animate chart values between states (e.g., bar heights morphing) rather than jump-cutting.
+- Brushing and linking. Select a region in one chart to highlight related data nearby.
+- Also: Trails, Cursor morphing, Magnetic snapping, Intertial scrolling/panning, Contextual axis transitions, etc.
+
+**Animated SVGs** are for:
+
+- Explaining processes, mechanisms, workflows, etc. The aim is to make users FEEL the process. One glance should give them an intuitive understanding of how it works, even before they read the accompanying text. Show how things are connected, what data flows from where to where, how elements, interact, etc.
+- Guidelines: Use GPU-friendly rendering (transform, opacity). Sequence multiple animations deliverately. Respect `prefers-reducted-motion`.
+
+## 5 — Concrete Examples & Evidence
 
 Abstract patterns become real through specific cases. For every major finding, find *the one example that makes it tangible* — the person, company, or place that best embodies the pattern, or the before/after that shows the mechanism.
 

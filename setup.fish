@@ -143,6 +143,10 @@ abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 # Recent blog posts
 abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g ~/code/blog/posts/**/*.md | xargs rg "^date:" | sort -k2 -r | head -n 30 | cut -d: -f1 | xargs uvx files-to-prompt --cxml'
 
+abbr --add claudelog 'agentlog.py claude'
+abbr --add codexlog 'agentlog.py codex'
+abbr --add copilotlog 'agentlog.py copilot'
+
 # File sync utilities
 # -----------------------------------------------
 
@@ -323,6 +327,8 @@ abbr --add dock 'gsettings set org.gnome.shell disable-user-extensions true; gse
 #   -ac 2                        # Forces 2 output channels (L/R stereo)
 #   -c:a libopus                 # Uses FFmpeg's libopus encoder for Opus audio
 #   -b:a 24k                     # Sets bitrate to 24 kb/s for voice quality recording
+#   -page_duration 2000000       # Periodically (microseconds)
+#   -flush_packets 1             # flush the output
 function record --description "record audio from mic + speakers into ~/Documents/calls"
   read -l -P "Use HEADSET to avoid echo. ENTER starts, Ctrl+C cancels: "
   or return
@@ -344,6 +350,8 @@ function record --description "record audio from mic + speakers into ~/Documents
   -ac 2 \
   -c:a libopus \
   -b:a 24k \
+  -page_duration 5000000 \
+  -flush_packets 1 \
   "$HOME/Documents/calls/$out.opus"
 end
 

@@ -1,0 +1,132 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12"]
+# ///
+"""
+stream-opus — Simulate a growing .opus file for testing livetranscribe.
+
+Copies bytes from SOURCE into OUTPUT progressively, pausing INTERVAL seconds
+between each chunk (simulating FFmpeg writing audio in real-time).
+
+Usage:
+  stream-opus SOURCE OUTPUT [OPTIONS]
+
+Examples:
+  # Simulate recording: 5-second chunks every 3 seconds
+  stream-opus test-audio.opus /tmp/stream.opus
+
+  # Faster simulation (2× speed), 10-second chunks
+  stream-opus test-audio.opus /tmp/stream.opus --chunk-duration 10 --speed 2
+
+  # Loop the source forever
+  stream-opus test-audio.opus /tmp/stream.opus --loop
+
+  # Then in another terminal, run:
+  #   livetranscribe /tmp/stream.opus
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import typer
+
+app = typer.Typer(add_completion=False, no_args_is_help=True, help=__doc__)
+
+
+def get_duration(path: Path) -> float:
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True, timeout=10,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        raise RuntimeError(f"ffprobe failed on {path}: {r.stderr.strip()}")
+    return float(r.stdout.strip())
+
+
+@app.command()
+def main(
+    source: Path = typer.Argument(..., help="Source .opus file"),
+    output: Path = typer.Argument(..., help="Output path for the simulated stream"),
+    chunk_duration: float = typer.Option(
+        5.0, "--chunk-duration", help="Seconds of audio per chunk", min=0.1
+    ),
+    interval: float = typer.Option(
+        3.0, "--interval", help="Pause between chunks (seconds)", min=0.0
+    ),
+    loop: bool = typer.Option(
+        False, "--loop", help="Loop source file when exhausted"
+    ),
+    speed: float = typer.Option(
+        1.0, "--speed", help="Speed multiplier: >1 faster, <1 slower", min=0.01
+    ),
+) -> None:
+    """Simulate a growing .opus file by progressively writing bytes from SOURCE."""
+    if not source.exists():
+        typer.echo(f"Error: source not found: {source}", err=True)
+        raise typer.Exit(1)
+
+    total_dur = get_duration(source)
+    src_bytes = source.read_bytes()
+    total_bytes = len(src_bytes)
+    bps = total_bytes / total_dur  # bytes per second (approximate)
+
+    output.write_bytes(b"")  # truncate / create
+
+    print(f"Source:   {source}  ({total_dur:.1f}s, {total_bytes:,} bytes)", file=sys.stderr)
+    print(f"Output:   {output}", file=sys.stderr)
+    print(f"Chunks:   {chunk_duration}s  |  Interval: {interval}s  |  Speed: ×{speed}", file=sys.stderr)
+    if loop:
+        print("Looping enabled — Ctrl+C to stop.", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    pos = 0.0     # current position in the source audio (seconds)
+    written = 0   # bytes written so far
+
+    try:
+        while True:
+            end = min(pos + chunk_duration, total_dur)
+            if end <= pos:
+                if loop:
+                    pos = 0.0
+                    continue
+                break
+
+            byte_start = min(int(pos * bps), total_bytes)
+            byte_end   = min(int(end * bps), total_bytes)
+            chunk = src_bytes[byte_start:byte_end]
+
+            with open(output, "ab") as f:
+                f.write(chunk)
+
+            written += len(chunk)
+            print(
+                f"  [{pos:7.2f}s → {end:7.2f}s]  "
+                f"+{len(chunk):,} bytes  (total {written:,} / {total_bytes:,})",
+                file=sys.stderr, flush=True,
+            )
+
+            pos = end
+            if pos >= total_dur:
+                if loop:
+                    pos = 0.0
+                else:
+                    break
+
+            sleep_secs = interval / speed
+            if sleep_secs > 0:
+                time.sleep(sleep_secs)
+
+    except KeyboardInterrupt:
+        pass
+
+    print(f"\nDone. Wrote {written:,} bytes to {output}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    app()

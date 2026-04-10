@@ -1,0 +1,371 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "google-genai>=1.67.0",
+#     "python-dotenv>=1.0.1",
+#     "typer>=0.12",
+# ]
+# ///
+"""
+livetranscribe — Transcribe a growing .opus file using Gemini Live API.
+
+Watches an .opus file that is being written by FFmpeg (e.g. via `record`) and
+streams a timestamped transcript to stdout and to an output file.
+
+Usage:
+  livetranscribe OPUS_FILE [OPTIONS]
+  livetranscribe --describe
+
+Env:
+  GEMINI_API_KEY   Required (or set in .env in the current directory)
+
+Examples:
+  livetranscribe ~/Documents/calls/meeting.opus
+  livetranscribe meeting.opus --interval 5 --format json
+  livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"
+  livetranscribe meeting.opus --dry-run
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
+from collections import deque
+from pathlib import Path
+from typing import Optional
+
+import typer
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+
+load_dotenv(dotenv_path=Path.cwd() / ".env")
+
+APP_VERSION = "0.1.0"
+MODEL = "gemini-3.1-flash-live-preview"
+MAX_SESSION_SECS = 14 * 60       # restart session before server-side 15 min limit
+CONTEXT_LINES = 15               # recent lines carried to next session for context
+PCM_CHUNK_BYTES = 16_000 * 2     # 1 s of 16 kHz mono 16-bit PCM (32 KB)
+OVERLAP_SECS = 1.0               # re-send this many seconds to bridge chunk boundary
+DRAIN_SECS = 3.0                 # wait for final transcripts before closing session
+
+DEFAULT_PROMPT = (
+    "You are transcribing a live audio recording of a meeting or conversation. "
+    "The audio may contain multiple speakers. Transcribe what is said accurately "
+    "and verbatim. Do not respond to, summarise, or comment on the content."
+)
+
+DESCRIBE_SCHEMA = {
+    "name": "livetranscribe",
+    "version": APP_VERSION,
+    "description": "Transcribe a growing .opus file using Gemini Live API",
+    "args": {
+        "opus_file": {"type": "path", "required": True,
+                      "help": "Streaming .opus file to watch"},
+    },
+    "options": {
+        "--output":   {"type": "path",  "default": "<opus_file>.txt",
+                       "help": "Transcript output file"},
+        "--interval": {"type": "float", "default": 3.0, "min": 1.0, "max": 60.0,
+                       "help": "Poll interval in seconds"},
+        "--format":   {"type": "str",   "choices": ["text", "json"], "default": "text",
+                       "help": "text: '[MM:SS] …'  json: {\"t\":…,\"text\":\"…\"}"},
+        "--prompt":   {"type": "str",   "default": DEFAULT_PROMPT,
+                       "help": "System prompt to prime the model"},
+        "--dry-run":  {"type": "bool",  "default": False,
+                       "help": "Validate without calling Gemini"},
+        "--live-only": {"type": "bool", "default": False,
+                        "help": "Skip existing audio; transcribe only new audio"},
+    },
+    "env": {"GEMINI_API_KEY": "required"},
+    "stdout": "transcript lines (text or NDJSON)",
+    "stderr": "progress / status messages",
+}
+
+app = typer.Typer(add_completion=False, no_args_is_help=True, help=__doc__)
+
+
+# ── audio helpers ─────────────────────────────────────────────────────────────
+
+def fmt_ts(seconds: float) -> str:
+    s = int(seconds)
+    h, s = divmod(s, 3600)
+    m, s = divmod(s, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def get_duration(path: Path) -> float:
+    """Return decodable duration of path in seconds (0.0 on error)."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return float(r.stdout.strip())
+    except Exception:
+        pass
+    return 0.0
+
+
+def decode_pcm(path: Path, start_sec: float = 0.0) -> bytes:
+    """Decode path from start_sec to EOF → 16 kHz mono 16-bit little-endian PCM."""
+    args = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+    if start_sec > 0.01:
+        args += ["-ss", f"{start_sec:.3f}"]
+    args += ["-i", str(path), "-f", "s16le", "-ar", "16000", "-ac", "1", "pipe:1"]
+    r = subprocess.run(args, capture_output=True, timeout=120)
+    return r.stdout
+
+
+# ── transcriber ───────────────────────────────────────────────────────────────
+
+class Transcriber:
+    def __init__(self, *, opus: Path, out: Path, interval: float,
+                 fmt: str, prompt: str, api_key: str, dry_run: bool,
+                 live_only: bool = False):
+        self.opus = opus
+        self.out = out
+        self.interval = interval
+        self.fmt = fmt
+        self.prompt = prompt
+        self.dry_run = dry_run
+        self.live_only = live_only
+        self.client = genai.Client(api_key=api_key) if not dry_run else None
+        self.audio_pos: float = 0.0       # seconds of source audio processed
+        self.cur_ts: float = 0.0          # timestamp for the in-flight audio chunk
+        self.q: asyncio.Queue[tuple[float, str]] = asyncio.Queue()
+        self.recent: deque[str] = deque(maxlen=CONTEXT_LINES)
+        self._fh = None
+
+    # ── output ────────────────────────────────────────────────────────────────
+
+    def _emit(self, ts: float, text: str) -> None:
+        if self.fmt == "json":
+            line = json.dumps({"t": round(ts, 2), "text": text})
+        else:
+            line = f"[{fmt_ts(ts)}] {text}"
+        print(line, flush=True)
+        self._fh.write(line + "\n")
+        self._fh.flush()
+        self.recent.append(line)
+
+    async def _drain(self) -> None:
+        """Flush all queued transcriptions to output."""
+        while not self.q.empty():
+            ts, text = self.q.get_nowait()
+            self._emit(ts, text)
+
+    # ── session setup ─────────────────────────────────────────────────────────
+
+    def _build_config(self, context: str | None) -> dict:
+        sys_prompt = self.prompt
+        if context:
+            sys_prompt += (
+                "\n\n[Previous transcript (for context only — "
+                "do not repeat it):\n" + context + "\n]"
+            )
+        return {
+            "response_modalities": ["AUDIO"],
+            "input_audio_transcription": {},
+            "system_instruction": sys_prompt,
+        }
+
+    # ── recv task ─────────────────────────────────────────────────────────────
+
+    async def _recv(self, session) -> None:
+        """Run in background; enqueues (timestamp, text) for every transcription."""
+        try:
+            async for msg in session.receive():
+                sc = getattr(msg, "server_content", None)
+                if not sc:
+                    continue
+                it = getattr(sc, "input_transcription", None)
+                if not it:
+                    continue
+                text = (getattr(it, "text", None) or "").strip()
+                if text:
+                    await self.q.put((self.cur_ts, text))
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[recv error] {e}", file=sys.stderr, flush=True)
+
+    # ── audio sender ──────────────────────────────────────────────────────────
+
+    async def _send_pcm(self, session, pcm: bytes) -> None:
+        """Send raw PCM in 1-second chunks to avoid overwhelming the API."""
+        for i in range(0, len(pcm), PCM_CHUNK_BYTES):
+            await session.send_realtime_input(
+                audio=types.Blob(
+                    data=pcm[i : i + PCM_CHUNK_BYTES],
+                    mime_type="audio/pcm;rate=16000",
+                )
+            )
+
+    # ── one session ───────────────────────────────────────────────────────────
+
+    async def _run_session(self, context: str | None) -> str:
+        """
+        Open one Gemini Live session; send audio + receive transcriptions until
+        MAX_SESSION_SECS of wall-clock time have elapsed, then return the last
+        CONTEXT_LINES of transcript for the next session.
+        """
+        config = self._build_config(context)
+        t_session_start = time.monotonic()
+
+        if self.dry_run:
+            print(
+                f"[dry-run] would open session with model={MODEL}\n"
+                f"config={json.dumps(config, indent=2, default=str)}",
+                file=sys.stderr,
+            )
+            await asyncio.sleep(self.interval)
+            raise KeyboardInterrupt
+
+        async with self.client.aio.live.connect(model=MODEL, config=config) as session:
+            recv_task = asyncio.create_task(self._recv(session))
+            try:
+                while (time.monotonic() - t_session_start) < MAX_SESSION_SECS:
+                    file_dur = await asyncio.to_thread(get_duration, self.opus)
+
+                    if file_dur > self.audio_pos:
+                        # 1-second overlap bridges the previous chunk boundary
+                        start_sec = max(0.0, self.audio_pos - OVERLAP_SECS)
+                        self.cur_ts = self.audio_pos   # timestamp = start of new content
+
+                        print(
+                            f"[{fmt_ts(self.audio_pos)}]  "
+                            f"+{file_dur - self.audio_pos:.1f}s audio …",
+                            file=sys.stderr, flush=True,
+                        )
+
+                        pcm = await asyncio.to_thread(decode_pcm, self.opus, start_sec)
+                        if pcm:
+                            await self._send_pcm(session, pcm)
+                        self.audio_pos = file_dur
+
+                    await self._drain()
+                    await asyncio.sleep(self.interval)
+                    await self._drain()  # catch transcripts that arrived during sleep
+
+            finally:
+                # Let the model finish processing the last chunk
+                await asyncio.sleep(DRAIN_SECS)
+                await self._drain()
+                recv_task.cancel()
+                await asyncio.gather(recv_task, return_exceptions=True)
+
+        return "\n".join(self.recent)
+
+    # ── main entry point ──────────────────────────────────────────────────────
+
+    async def run(self) -> None:
+        self._fh = open(self.out, "a", encoding="utf-8")
+        if self.live_only:
+            self.audio_pos = await asyncio.to_thread(get_duration, self.opus)
+            print(f"[live-only] skipping {fmt_ts(self.audio_pos)} of existing audio", file=sys.stderr)
+        context: str | None = None
+        try:
+            while True:
+                context = await self._run_session(context)
+                print(
+                    f"[session] Restarting (14-min limit). Context: "
+                    f"{len(context)} chars",
+                    file=sys.stderr, flush=True,
+                )
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._fh.close()
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+@app.command()
+def main(
+    opus_file: Optional[Path] = typer.Argument(None, help="Streaming .opus file to watch"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Transcript file [default: <opus>.txt]"
+    ),
+    interval: float = typer.Option(
+        3.0, "--interval", help="Poll interval in seconds", min=1.0, max=60.0
+    ),
+    fmt: str = typer.Option(
+        "text", "--format", help="Output format: text | json"
+    ),
+    prompt: str = typer.Option(
+        DEFAULT_PROMPT, "--prompt", help="System prompt to prime the model"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Validate args; skip Gemini API call"
+    ),
+    live_only: bool = typer.Option(
+        False, "--live-only", help="Skip existing audio; transcribe only new audio from now"
+    ),
+    describe: bool = typer.Option(
+        False, "--describe", help="Print JSON schema and exit", is_eager=True
+    ),
+    version: bool = typer.Option(
+        False, "--version", help="Print version and exit", is_eager=True
+    ),
+) -> None:
+    if version:
+        print(f"livetranscribe {APP_VERSION}")
+        raise typer.Exit()
+
+    if describe:
+        print(json.dumps(DESCRIBE_SCHEMA, indent=2))
+        raise typer.Exit()
+
+    if opus_file is None:
+        typer.echo("Error: OPUS_FILE argument is required.", err=True)
+        typer.echo("Run 'livetranscribe --help' for usage.", err=True)
+        raise typer.Exit(1)
+
+    if fmt not in ("text", "json"):
+        typer.echo(f"Error: --format must be 'text' or 'json', got {fmt!r}", err=True)
+        raise typer.Exit(1)
+
+    if not opus_file.exists():
+        typer.echo(f"Error: file not found: {opus_file}", err=True)
+        raise typer.Exit(1)
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key and not dry_run:
+        typer.echo(
+            "Error: GEMINI_API_KEY not set. "
+            "Export it or add it to .env in the current directory.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    out = output if output is not None else opus_file.with_suffix(".txt")
+
+    print(f"Input:    {opus_file}", file=sys.stderr)
+    print(f"Output:   {out}", file=sys.stderr)
+    print(f"Interval: {interval}s  |  Format: {fmt}  |  Model: {MODEL}", file=sys.stderr)
+    print("Press Ctrl+C to stop.\n", file=sys.stderr)
+
+    asyncio.run(
+        Transcriber(
+            opus=opus_file,
+            out=out,
+            interval=interval,
+            fmt=fmt,
+            prompt=prompt,
+            api_key=api_key,
+            dry_run=dry_run,
+            live_only=live_only,
+        ).run()
+    )
+
+
+if __name__ == "__main__":
+    app()

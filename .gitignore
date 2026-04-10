@@ -4,3 +4,4 @@ __pycache__/
 .tmp.*
 .env
 node_modules/
+test-audio.opus

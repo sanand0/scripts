@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# List ASU GSV events in my calendar. Delete after 20 Apr 2026
+
+gws calendar events list --params '{"calendarId":"s.anand@gramener.com","timeMin":"2026-04-13T00:00:00-07:00","timeMax":"2026-04-20T00:00:00-07:00","singleEvents":true,"orderBy":"startTime","q":"ASU+GSV","maxResults":250}' | jaq '[.items[] | select((.summary // "") | contains("ASU+GSV")) | select(any((.attendees // [])[].email?; endswith("@learningmate.com"))) | {title: .summary, location: (.location // ""), start: (.start.dateTime // .start.date), end: (.end.dateTime // .end.date), attendees:((.attendees // []) | map(select((.email? // "") | (endswith("@learningmate.com") or endswith("@gramener.com") or . == "root.node@gmail.com") | not) | {displayName:(.displayName // ""), email: .email})), description: (.description // "")}]'

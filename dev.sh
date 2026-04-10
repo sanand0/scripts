@@ -130,6 +130,7 @@ args=(
   --ulimit nofile=1048576:1048576  # high FD limits
   --network host                # host networking (Linux only)
   -u 1000:1000                  # run as host user 1000:1000
+  --security-opt no-new-privileges:true     # prevent privilege escalation within the container
   -e HOME=/home/vscode
   -e USER=vscode
   -e LOGNAME=vscode
@@ -149,7 +150,7 @@ args=(
   -v "$HOME/.claude:/home/vscode/.claude"
   -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
-  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud"   # 🔴
+  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud:ro"   # 🔴
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
@@ -157,7 +158,7 @@ args=(
   # -v "$HOME/.config/wrangler/:/home/vscode/wrangler"    # 🔴
   -v "$HOME/.copilot:/home/vscode/.copilot"
   -v "$HOME/.gemini:/home/vscode/.gemini"
-  -v "$HOME/.gitconfig:/home/vscode/.gitconfig"
+  -v "$HOME/.gitconfig:/home/vscode/.gitconfig:ro"
   # The host `~/.local/bin` is useful for sharing personal CLIs, but it must
   # stay behind the image-owned PATH entries defined in `dev.dockerfile`.
   -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
@@ -169,8 +170,8 @@ args=(
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.npm:/home/vscode/.npm"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
-  -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents" # Agents code
-  -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json"
+  -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
+  -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json:ro"
   "${font_mount_args[@]}"
   # X11 forwarding for GUI apps
   -e DISPLAY=$DISPLAY
@@ -184,8 +185,11 @@ args=(
   --device /dev/dri
   # System mounts
   -v /var/run/docker.sock:/var/run/docker.sock  # docker-in-docker
-  -e SSH_AUTH_SOCK=/ssh-agent                   # Forward ssh-agent
-  --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
+
+  # SSH: enable when required
+  # -e SSH_AUTH_SOCK=/ssh-agent                   # 🔴 Forward ssh-agent
+  # --mount type=bind,source="$SSH_AUTH_SOCK",target=/ssh-agent
+
   -e HISTFILE=/home/vscode/.bash_history
   -e UV_LINK_MODE=copy
   # Keep this aligned with `dev.dockerfile`; `dev.test.sh` treats the exact

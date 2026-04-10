@@ -154,6 +154,7 @@ declare -a MENU_LABELS=(
     "Markdown: Strip links          ([text](url) → text)"
     "Markdown: Strip <details>      (keep summary only)"
     "Markdown: Clean & reformat     (dprint)"
+    "HTML → Markdown                (from clipboard HTML)"
     "Rich text → Markdown           (from clipboard HTML)"
     "Rich text → HTML               (from clipboard HTML)"
     "URL: Decode                    (%20 → space, etc.)"
@@ -178,6 +179,7 @@ declare -A MENU_FNS=(
     ["Markdown: Strip links          ([text](url) → text)"]="transform_strip_links"
     ["Markdown: Strip <details>      (keep summary only)"]="transform_strip_details"
     ["Markdown: Clean & reformat     (dprint)"]="transform_md_clean"
+    ["HTML → Markdown                (from clipboard HTML)"]="transform_html_to_md"
     ["Rich text → Markdown           (from clipboard HTML)"]="transform_richtext_to_md"
     ["Rich text → HTML               (from clipboard HTML)"]="transform_richtext_to_html"
     ["URL: Decode                    (%20 → space, etc.)"]="transform_url_decode"
@@ -384,12 +386,20 @@ transform_md_clean() {
     printf '%s' "$INPUT" | uv run "$SCRIPT_DIR/clean_markdown.py" /dev/stdin
 }
 
-transform_richtext_to_md() {
-    # Reuse copy-to-markdown.sh approach: read HTML from clipboard, convert via deno.
+clipboard_get_html() {
     local html_content
-    html_content=$(xclip -selection clipboard -t text/html -o 2>/dev/null)
-    [[ -z "$html_content" ]] && die "No HTML content in clipboard. Copy rich text first."
-    printf '%s' "$html_content" | mise x -- deno eval '
+    if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+        html_content=$(wl-paste --type text/html --no-newline 2>/dev/null || wl-paste --type text/html 2>/dev/null || true)
+    elif [[ -n "${DISPLAY:-}" ]]; then
+        html_content=$(xclip -selection clipboard -t text/html -o 2>/dev/null || true)
+    else
+        html_content=""
+    fi
+    printf '%s' "$html_content"
+}
+
+html_to_markdown() {
+    mise x -- deno eval '
 import { NodeHtmlMarkdown } from "npm:node-html-markdown";
 const html = await new Response(Deno.stdin.readable).text();
 const options = { bulletMarker: "-", useLinkReferenceDefinitions: false };
@@ -397,10 +407,26 @@ await Deno.stdout.write(new TextEncoder().encode(NodeHtmlMarkdown.translate(html
 '
 }
 
+transform_html_to_md() {
+    # Prefer clipboard HTML when present, but fall back to plain text input so
+    # copied raw HTML still works when the clipboard only exposes text/plain.
+    local html_content
+    html_content=$(clipboard_get_html)
+    if [[ -z "$html_content" ]]; then
+        html_content="$INPUT"
+    fi
+    [[ -z "$html_content" ]] && die "No HTML content in clipboard."
+    printf '%s' "$html_content" | html_to_markdown
+}
+
+transform_richtext_to_md() {
+    transform_html_to_md
+}
+
 transform_richtext_to_html() {
     # Reuse copy-to-markdown.sh capture logic: read HTML from clipboard and return it.
     local html_content
-    html_content=$(xclip -selection clipboard -t text/html -o 2>/dev/null)
+    html_content=$(clipboard_get_html)
     [[ -z "$html_content" ]] && die "No HTML content in clipboard. Copy rich text first."
     printf '%s' "$html_content"
 }
