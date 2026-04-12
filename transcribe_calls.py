@@ -78,17 +78,19 @@ def count_transcript_sections(markdown: str) -> int:
     return len(list(TRANSCRIPT_SECTION_RE.finditer(markdown)))
 
 
-def render_new_document(title: str, transcript: str) -> str:
+def render_new_document(title: str, transcript: str, user_prompt: str | None = None) -> str:
     """Render a new transcript Markdown file using the current note template."""
     cleaned = transcript.strip()
     if not cleaned:
         raise ValueError("Transcript output is empty.")
+    prompt_line = f"prompt: {json.dumps(user_prompt)}\n" if user_prompt else ""
     return (
         "---\n"
         "tags:\n"
         "goal:\n"
         "kind candor:\n"
         "effectiveness:\n"
+        f"{prompt_line}"
         "---\n\n"
         f"# {title}\n\n"
         "## Transcript\n\n"
@@ -96,13 +98,15 @@ def render_new_document(title: str, transcript: str) -> str:
     )
 
 
-def upsert_transcript_section(markdown: str, title: str, transcript: str) -> str:
+def upsert_transcript_section(
+    markdown: str, title: str, transcript: str, user_prompt: str | None = None
+) -> str:
     """Insert or replace the transcript section while preserving other sections."""
     cleaned = transcript.strip()
     if not cleaned:
         raise ValueError("Transcript output is empty.")
     if not markdown.strip():
-        return render_new_document(title, cleaned)
+        return render_new_document(title, cleaned, user_prompt=user_prompt)
     if count_transcript_sections(markdown) > 1:
         raise ValueError("Document has multiple ## Transcript sections.")
 
@@ -625,7 +629,12 @@ def main(
         )
         try:
             output_path.write_text(
-                upsert_transcript_section(existing_markdown, audio_path.stem, result.transcript),
+                upsert_transcript_section(
+                    existing_markdown,
+                    audio_path.stem,
+                    result.transcript,
+                    user_prompt=cleaned_user_prompt,
+                ),
                 encoding="utf-8",
             )
         except (OSError, ValueError) as exc:

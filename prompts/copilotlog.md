@@ -78,3 +78,51 @@ Modify --search so that `/auth./i` does a case-insensitive regex search for "aut
 `--search` should output (instead of the current user content) only lines with matching content (indented as they are currently). If the lines are too long, truncate with ellipses to fit in 80 characters (customizable with `--width`). Make sure this is fast, too.
 
 <!-- copilot --resume=5fa5faac-c23e-4ba4-8e0f-f7e312080ca2 -->
+
+## Skill use, 11 Apr 2026
+
+<!--
+cd ~/code/scripts/
+dev.sh
+copilot --resume=5fa5faac-c23e-4ba4-8e0f-f7e312080ca2 --yolo --model gpt-5.4 --effort medium
+-->
+
+Create a script `skilluse` that detects which SKILL.md files were read in which session by which agent. The output should include:
+
+- agent name (claude, codex, copilot)
+- session date (e.g. 13 Mar 2026)
+- folder name of the SKILL.md file read, relative to ~/code/scripts/agents/ (the ~ could map to /home/sanand or /home/vscode or anything else) or absolute path if the file is outside that directory
+- session ID
+
+Keep in mind that we want to check if the SKILL.md file was read, not just mentioned. Explore the different patterns of how a SKILL.md file can be read and make sure to cover all of them - and avoid false positives where the file is mentioned but not read.
+
+Follow agent-friendly CLI skill design.
+Make sure it's efficient.
+Run and test.
+
+---
+
+Make sure that if the user `sanand` runs the script, it will still count the SKILL.md files under `/home/vscode/` and vice versa. The key is if it's reading something under code/scripts/agents/ - we want to capture that regardless of the user.
+
+Does skilluse have much in common with agentlog.py? If a lot of code is shared, should we make skilluse a subcommand of agentlog.py? Or is it better to keep it separate and import shared code? Or something else? Recommend options with enough information (e.g. rough net reduction in LoC, complexity, etc. across options) for me to make a decision.
+
+<!-- Recommendation: keep skilluse separate for now. The overlap with agentlog.py is real but small -->
+
+---
+
+Stream the output of skilluse instead of waiting for it to complete.
+Scan the most recent files first.
+My aim is that it should start showing results within a second even if there are thousands of sessions and SKILL.md files.
+Allow a CLI option to filter for specific skills. For example, `skilluse --skill "agent-*"` should only output sessions with `agent-*/SKILL.md` files read. Support glob patterns.
+
+---
+
+Add a --agent filter to skilluse, so that `skilluse --agent claude` only shows sessions from the claude agent. Support multiple --agent options.
+Use claude, then copilot, then codex as the default order for scanning: codex is the slowest.
+
+I am sure Claude reads more skills than the very few that are shown in the output. Review that VERY carefully and capture them all.
+
+---
+
+Modify the third column so that it prints the folder name just before SKILL.md. Don't bother checking the full path, home directory, etc. - simplify the logic. For example, if the path is `**/x/SKILL.md`, just print `x` in the third column.
+Convert skilluse.py into an executable script like agentlog.py. Delete skilluse.

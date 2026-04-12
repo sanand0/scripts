@@ -580,10 +580,8 @@ function meeting --description "Create a new meeting transcript file"
     code $file
     if not test -e $file
         echo "---
-tags:
-goal:
-kind candor:
-effectiveness:
+summary:
+workshop:
 ---
 
 # $title

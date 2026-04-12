@@ -628,6 +628,7 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     transcript = (output_dir / "test.md").read_text(encoding="utf-8")
     assert "Transcript for test.opus" in transcript
+    assert 'prompt: "Focus on action items"' in transcript
 
     log_text = log_path.read_text(encoding="utf-8")
     assert f"AUDIO\t{input_dir / 'test.opus'}" in log_text

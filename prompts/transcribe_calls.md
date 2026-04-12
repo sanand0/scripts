@@ -76,6 +76,10 @@ Prefer chunks of somewhat uniform sizes. Specifically, if instead of 30 min, 25m
 
 Avoid 21 min chunks! That makes it harder for me to calculate timings. A 65m chunk should be 25m + 25m + 15m not 21m40s x 3!
 
+--- <!-- 12 Apr 2026 -->
+
+Modify transcribe_calls.py minimally to add the "--prompt" contents (if provided) in the YAML metadata as `prompt: <contents>`.
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
