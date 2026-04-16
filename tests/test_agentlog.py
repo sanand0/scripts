@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 import sys
 
@@ -8,6 +9,7 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentlog import (
+    CopilotBackend,
     SearchPattern,
     SessionEvent,
     SessionSummary,
@@ -270,3 +272,140 @@ def test_search_output_truncates_lines_to_width() -> None:
 
 def test_truncate_search_line_uses_ellipsis() -> None:
     assert _truncate_search_line("abcdefghijkl", 8) == "abcde..."
+
+
+def test_copilot_md_includes_session_state_details_for_db_sessions(tmp_path: Path) -> None:
+    root = tmp_path / "copilot"
+    root.mkdir()
+    conn = sqlite3.connect(root / "session-store.db")
+    conn.execute(
+        """
+        create table sessions (
+            id text primary key,
+            cwd text,
+            repository text,
+            branch text,
+            summary text,
+            created_at text,
+            updated_at text,
+            host_type text
+        )
+        """
+    )
+    conn.execute(
+        """
+        create table turns (
+            session_id text,
+            turn_index integer,
+            user_message text,
+            assistant_response text,
+            timestamp text
+        )
+        """
+    )
+    conn.execute(
+        """
+        insert into sessions (id, cwd, repository, branch, summary, created_at, updated_at, host_type)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "session-1",
+            "/tmp/project",
+            "owner/repo",
+            "main",
+            "Summary",
+            "2026-04-01T00:00:00Z",
+            "2026-04-01T00:00:10Z",
+            "github",
+        ),
+    )
+    conn.execute(
+        """
+        insert into turns (session_id, turn_index, user_message, assistant_response, timestamp)
+        values (?, ?, ?, ?, ?)
+        """,
+        (
+            "session-1",
+            0,
+            "User asks",
+            "Assistant replies",
+            "2026-04-01T00:00:05Z",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    events_path = root / "session-state" / "session-1" / "events.jsonl"
+    events_path.parent.mkdir(parents=True)
+    rows = [
+        {
+            "type": "assistant.message",
+            "timestamp": "2026-04-01T00:00:05Z",
+            "data": {
+                "content": "Assistant replies",
+                "reasoningText": "Step-by-step reasoning",
+                "toolRequests": [
+                    {
+                        "toolCallId": "tool-1",
+                        "name": "read_bash",
+                        "arguments": {"shellId": "abc"},
+                    }
+                ],
+            },
+        },
+        {
+            "type": "tool.execution_start",
+            "timestamp": "2026-04-01T00:00:06Z",
+            "data": {
+                "toolCallId": "tool-1",
+                "toolName": "read_bash",
+                "arguments": {"shellId": "abc"},
+            },
+        },
+        {
+            "type": "tool.execution_complete",
+            "timestamp": "2026-04-01T00:00:07Z",
+            "data": {
+                "toolCallId": "tool-1",
+                "success": True,
+                "result": {"content": "tool output"},
+            },
+        },
+        {
+            "type": "skill.invoked",
+            "timestamp": "2026-04-01T00:00:08Z",
+            "data": {
+                "name": "plan",
+                "path": "/tmp/skills/plan/SKILL.md",
+                "content": "# plan",
+            },
+        },
+        {
+            "type": "hook.start",
+            "timestamp": "2026-04-01T00:00:09Z",
+            "data": {"hookType": "postToolUse", "input": {"toolName": "read_bash"}},
+        },
+    ]
+    with events_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row))
+            handle.write("\n")
+
+    backend = CopilotBackend()
+    events, _ = backend.collect_events(root=root, strict=True, session_id="session-1")
+    markdown = backend.render_markdown(
+        session_id="session-1",
+        events=events,
+        include_meta=False,
+        open_details=False,
+        kind_filter=frozenset(),
+    )
+
+    assert "## user" in markdown
+    assert "## assistant" in markdown
+    assert "<summary><strong>reasoning</strong></summary>" in markdown
+    assert "<summary><strong>tool request: read_bash (tool-1)</strong></summary>" in markdown
+    assert "<summary><strong>tool start: read_bash (tool-1)</strong></summary>" in markdown
+    assert "<summary><strong>tool result: tool-1</strong></summary>" in markdown
+    assert "<summary><strong>skill invoked: plan</strong></summary>" in markdown
+    assert "<summary><strong>hook.start</strong></summary>" in markdown

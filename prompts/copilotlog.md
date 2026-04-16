@@ -77,6 +77,10 @@ Modify --search so that `/auth./i` does a case-insensitive regex search for "aut
 
 `--search` should output (instead of the current user content) only lines with matching content (indented as they are currently). If the lines are too long, truncate with ellipses to fit in 80 characters (customizable with `--width`). Make sure this is fast, too.
 
+--- <!-- 15 Apr 2026 -->
+
+Copilot logs do not include tool calls and other such details. Find and incorporate these as collapsed `<details>`. Run and test.
+
 <!-- copilot --resume=5fa5faac-c23e-4ba4-8e0f-f7e312080ca2 -->
 
 ## Skill use, 11 Apr 2026

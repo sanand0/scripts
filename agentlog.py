@@ -844,6 +844,49 @@ class CopilotBackend:
         stats.files_scanned += len(files)
         return files
 
+    def _session_state_events_path(self, root: Path, session_id: str) -> Path:
+        return root / "session-state" / session_id / "events.jsonl"
+
+    def _supplemental_db_events(
+        self, *, root: Path, strict: bool, session_id: str, stats: Stats
+    ) -> list[SessionEvent]:
+        path = self._session_state_events_path(root, session_id)
+        if not path.exists():
+            return []
+        supplemental: list[SessionEvent] = []
+        for line_no, event in read_jsonl(path, strict=strict, stats=stats):
+            stats.events_scanned += 1
+            raw_type = event.get("type")
+            if raw_type == "assistant.message":
+                data = event.get("data")
+                if not isinstance(data, dict):
+                    continue
+                if not data.get("toolRequests") and not data.get("reasoningText"):
+                    continue
+                raw = dict(event)
+                raw["type"] = "assistant.details"
+            elif raw_type not in {
+                "tool.execution_start",
+                "tool.execution_complete",
+                "skill.invoked",
+                "hook.start",
+                "hook.end",
+            }:
+                continue
+            else:
+                raw = event
+            ts = raw.get("timestamp")
+            supplemental.append(
+                SessionEvent(
+                    session_id=session_id,
+                    timestamp=ts if isinstance(ts, str) else TS_MAX,
+                    source=SourcePos(str(path), line_no),
+                    raw=raw,
+                )
+            )
+            stats.events_matched += 1
+        return supplemental
+
     def _db_matches_search(
         self,
         conn: sqlite3.Connection,
@@ -1227,6 +1270,18 @@ class CopilotBackend:
                                 },
                             )
                         )
+                events.extend(
+                    self._supplemental_db_events(
+                        root=root, strict=strict, session_id=session_id, stats=stats
+                    )
+                )
+                events.sort(
+                    key=lambda event: (
+                        ts_key(event.timestamp),
+                        event.source.file_path,
+                        event.source.line_no,
+                    )
+                )
                 return events, stats
         for path in self._legacy_files(root, stats):
             rows = read_jsonl(path, strict=strict, stats=stats)
@@ -1270,6 +1325,33 @@ class CopilotBackend:
         open_details: bool,
         kind_filter: frozenset[str],
     ) -> str:
+        def append_assistant_details(data: dict[str, Any]) -> None:
+            reasoning = data.get("reasoningText")
+            if isinstance(reasoning, str) and reasoning.strip():
+                parts.append(
+                    md_details(
+                        "reasoning",
+                        reasoning.rstrip(),
+                        open_details=open_details,
+                    )
+                )
+            tool_requests = data.get("toolRequests")
+            if isinstance(tool_requests, list):
+                for item in tool_requests:
+                    if not isinstance(item, dict):
+                        continue
+                    label = f"tool request: {item.get('name', '')}".strip()
+                    tool_call_id = item.get("toolCallId")
+                    if isinstance(tool_call_id, str) and tool_call_id:
+                        label += f" ({tool_call_id})"
+                    parts.append(
+                        md_details(
+                            label,
+                            md_code("json", json_pretty(item.get("arguments"))),
+                            open_details=open_details,
+                        )
+                    )
+
         cwd = ""
         for event in events:
             raw = event.raw
@@ -1305,24 +1387,13 @@ class CopilotBackend:
                 if isinstance(content, str) and content.strip():
                     parts.append(md_heading(2, "assistant"))
                     parts.append(content.rstrip() + "\n")
-                tool_requests = (
-                    data.get("toolRequests") if isinstance(data, dict) else None
-                )
-                if isinstance(tool_requests, list):
-                    for item in tool_requests:
-                        if not isinstance(item, dict):
-                            continue
-                        label = f"tool request: {item.get('name', '')}".strip()
-                        tool_call_id = item.get("toolCallId")
-                        if isinstance(tool_call_id, str) and tool_call_id:
-                            label += f" ({tool_call_id})"
-                        parts.append(
-                            md_details(
-                                label,
-                                md_code("json", json_pretty(item.get("arguments"))),
-                                open_details=open_details,
-                            )
-                        )
+                if isinstance(data, dict):
+                    append_assistant_details(data)
+            elif kind == "assistant.details":
+                data = raw.get("data")
+                if isinstance(data, dict):
+                    parts.append(md_heading(2, "assistant"))
+                    append_assistant_details(data)
             elif kind in {"tool.execution_start", "tool.execution_complete"}:
                 data = raw.get("data")
                 if not isinstance(data, dict):
@@ -1349,6 +1420,33 @@ class CopilotBackend:
                             + md_code("json", json_pretty(result))
                         )
                 parts.append(md_details(label, body, open_details=open_details))
+            elif kind == "skill.invoked":
+                data = raw.get("data")
+                if not isinstance(data, dict):
+                    continue
+                label = f"skill invoked: {data.get('name', '')}".strip()
+                payload: dict[str, Any] = {}
+                for key in ("name", "path"):
+                    if data.get(key) is not None:
+                        payload[key] = data.get(key)
+                body = ""
+                if payload:
+                    body += md_code("json", json_pretty(payload))
+                content = data.get("content")
+                if isinstance(content, str) and content.strip():
+                    body += md_code("md", content)
+                parts.append(md_details(label, body, open_details=open_details))
+            elif kind in {"hook.start", "hook.end"}:
+                data = raw.get("data")
+                if not isinstance(data, dict):
+                    continue
+                parts.append(
+                    md_details(
+                        kind,
+                        md_code("json", json_pretty(data)),
+                        open_details=open_details,
+                    )
+                )
             if include_meta:
                 meta = {
                     key: raw.get(key)
