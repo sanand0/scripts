@@ -545,7 +545,7 @@ function screencastcompress --description "Compress screen casts. Usage: screenc
             echo "Skipping $input -> $output (already exists)"
             continue
         end
-        ffmpeg -hide_banner -stats -v warning -i "$input" -vf "crop=iw-mod(iw\,2):ih-mod(ih\,2),fps=$fps" -c:v libsvtav1 -preset 8 -crf $crf -pix_fmt yuv420p -an "$output"
+        ffmpeg -hide_banner -stats -v warning -i "$input" -vf "crop=iw-mod(iw\,2):ih-mod(ih\,2),fps=$fps" -c:v libsvtav1 -crf $crf -preset 6 -pix_fmt yuv420p -an "$output"
     end
 end
 
@@ -776,9 +776,13 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
     set --default out $argv[4] (string replace '.webm' '.compressed.webm' $in)
     ffmpeg -hide_banner -stats -v warning -i $in \
         -filter_complex "select='not(mod(n\,$sampling))',scale=$width:-1" \
-        -c:v libvpx-vp9 -b:v 0 -crf 40 \
+        -c:v libsvtav1 -crf 45 -preset 6 -pix_fmt yuv420p \
         $out
 end
+
+# Lower crf = higher quality (55 is poor, 45 is good)
+# Higher preset = better, slower compression (0=slowest, 8=fastest)
+abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 
 # https://yazi-rs.github.io/docs/quick-start
 function y
