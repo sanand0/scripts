@@ -82,6 +82,15 @@ Modify transcribe_calls.py minimally to add the "--prompt" contents (if provided
 
 --- <!-- 19 Apr 2026 -->
 
+Sometimes, in multi-chunk calls, transcribe_calls.py gets a response like "It appears that you forgot to attach the audio file...".
+
+Let's do two things:
+
+1. Add a CLI option to patch a specific section of the transcript file with a new transcript.
+2. When Gemini sends the response, check if it looks like a valid transcript (e.g. are there at least 5 lines that match the transcript line format?) If not, log a warning and the command to patch the transcript file.
+
+Run and test using a
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
