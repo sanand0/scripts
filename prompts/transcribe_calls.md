@@ -80,6 +80,8 @@ Avoid 21 min chunks! That makes it harder for me to calculate timings. A 65m chu
 
 Modify transcribe_calls.py minimally to add the "--prompt" contents (if provided) in the YAML metadata as `prompt: <contents>`.
 
+--- <!-- 19 Apr 2026 -->
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
