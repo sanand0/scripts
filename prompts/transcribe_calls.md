@@ -80,7 +80,7 @@ Avoid 21 min chunks! That makes it harder for me to calculate timings. A 65m chu
 
 Modify transcribe_calls.py minimally to add the "--prompt" contents (if provided) in the YAML metadata as `prompt: <contents>`.
 
---- <!-- 19 Apr 2026 -->
+--- <!-- 19 Apr 2026 /model gpt-5.4 high -->
 
 Sometimes, in multi-chunk calls, transcribe_calls.py gets a response like "It appears that you forgot to attach the audio file...".
 
@@ -89,7 +89,19 @@ Let's do two things:
 1. Add a CLI option to patch a specific section of the transcript file with a new transcript.
 2. When Gemini sends the response, check if it looks like a valid transcript (e.g. are there at least 5 lines that match the transcript line format?) If not, log a warning and the command to patch the transcript file.
 
-Run and test using a
+Run and test using a `gemini-3-flash-preview` (which is cheaper) and a short audio file to avoid consuming too many tokens.
+
+---
+
+Add an option to detect and patch all sections for a specific audio file.
+Look at the most recent transcripts and find 3 examples of this issue.
+Patch the audio using the default (Pro) model. Verify that it works fine - fixing issues as required.
+
+---
+
+Add/update the `prompt:` key in the YAML metadata of all transcripts to include the prompt used for that transcript.
+Use this prompt as context for patches.
+Run and test inexpensively.
 
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
