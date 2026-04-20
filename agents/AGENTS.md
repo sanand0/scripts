@@ -8,7 +8,7 @@ curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
-uvx rodney, playwright (browser automation)
+agent-browser (CLI, simpler than playwright)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
