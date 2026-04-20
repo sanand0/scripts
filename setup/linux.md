@@ -108,8 +108,6 @@ sudo apt install -y sox libsox-fmt-all  # sox - audio processing
 sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modification times from git history
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
-# Temporary: Installed to check offpunk
-sudo apt-get install -y gettext
 
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
