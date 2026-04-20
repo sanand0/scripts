@@ -107,6 +107,10 @@ Run and test inexpensively.
 
 In case the `user_prompt` is provided, use THAT for `prompt:`. Don't use the full contents of the DEFAULT_PROMPT_FILE!
 
+---
+
+Refactor the code to be more simple, removing legacy code paths, options, features that are no longer needed.
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
