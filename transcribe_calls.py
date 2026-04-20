@@ -89,11 +89,8 @@ def resolve_patch_prompts(
         return system_prompt, None
     cleaned_stored_prompt = stored_prompt.strip()
     cleaned_system_prompt = system_prompt.strip()
-    legacy_prefix = f"{cleaned_system_prompt}\n\nAdditional user prompt:\n"
-    if cleaned_stored_prompt == cleaned_system_prompt:
+    if not cleaned_stored_prompt or cleaned_stored_prompt == cleaned_system_prompt:
         return system_prompt, None
-    if cleaned_stored_prompt.startswith(legacy_prefix):
-        return system_prompt, cleaned_stored_prompt.removeprefix(legacy_prefix).strip() or None
     return system_prompt, cleaned_stored_prompt
 
 
@@ -129,20 +126,15 @@ def extract_prompt_metadata(markdown: str) -> str | None:
         if not line.startswith("prompt:"):
             continue
         value = line[len("prompt:") :].strip()
-        if not value:
-            return ""
-        if value.startswith(("|", ">")):
-            block: list[str] = []
-            for continuation in lines[index + 1 :]:
-                if continuation.startswith((" ", "\t")):
-                    block.append(continuation[2:] if continuation.startswith("  ") else continuation.lstrip())
-                else:
-                    break
-            return "\n".join(block).rstrip()
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return value
+        if not value.startswith(("|", ">")):
+            return None
+        block: list[str] = []
+        for continuation in lines[index + 1 :]:
+            if continuation.startswith((" ", "\t")):
+                block.append(continuation[2:] if continuation.startswith("  ") else continuation.lstrip())
+            else:
+                break
+        return "\n".join(block).rstrip()
     return None
 
 
@@ -595,6 +587,41 @@ def build_patch_command(
     return " ".join(shlex.quote(arg) for arg in args)
 
 
+def emit_invalid_transcript_warnings(
+    *,
+    audio_path: Path,
+    output_path: Path,
+    warnings: tuple[InvalidTranscriptWarning, ...],
+    input_dir: Path,
+    output_dir: Path,
+    prompt_file: Path,
+    model: str,
+    user_prompt: str | None,
+    chunk_minutes: float,
+) -> None:
+    """Log invalid transcript warnings together with a repair command."""
+    for warning in warnings:
+        typer.echo(
+            f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count} "
+            f"matched only {warning.matching_lines} transcript-format lines; response may be invalid.",
+            err=True,
+        )
+        typer.echo(
+            f"Patch command for {output_path.name} section {warning.section_index}: "
+            f"{build_patch_command(
+                input_dir=input_dir,
+                output_dir=output_dir,
+                prompt_file=prompt_file,
+                audio_path=audio_path,
+                model=model,
+                user_prompt=user_prompt,
+                chunk_minutes=chunk_minutes,
+                patch_section=warning.section_index,
+            )}",
+            err=True,
+        )
+
+
 def transcribe_single_audio(
     audio_path: Path,
     system_prompt: str,
@@ -897,26 +924,17 @@ def main(
             typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
             continue
 
-        for warning in result.warnings:
-            typer.echo(
-                f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count} "
-                f"matched only {warning.matching_lines} transcript-format lines; response may be invalid.",
-                err=True,
-            )
-            typer.echo(
-                f"Patch command for {output_path.name} section {warning.section_index}: "
-                f"{build_patch_command(
-                    input_dir=input_dir,
-                    output_dir=output_dir,
-                    prompt_file=prompt_file,
-                    audio_path=audio_path,
-                                        model=model,
-                                        user_prompt=effective_user_prompt,
-                                        chunk_minutes=chunk_minutes,
-                                        patch_section=warning.section_index,
-                                    )}",
-                                err=True,
-                            )
+        emit_invalid_transcript_warnings(
+            audio_path=audio_path,
+            output_path=output_path,
+            warnings=result.warnings,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            prompt_file=prompt_file,
+            model=model,
+            user_prompt=effective_user_prompt,
+            chunk_minutes=chunk_minutes,
+        )
 
         total_cost_usd += result.usage.cost_usd
         typer.echo(
@@ -947,26 +965,17 @@ def main(
                         typer.echo(
                             f"tokens={section_result.usage.total_tokens} cost=${section_result.usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}"
                         )
-                        for warning in section_result.warnings:
-                            typer.echo(
-                                f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count} "
-                                f"matched only {warning.matching_lines} transcript-format lines; response may be invalid.",
-                                err=True,
-                            )
-                            typer.echo(
-                                f"Patch command for {output_path.name} section {warning.section_index}: "
-                                f"{build_patch_command(
-                                    input_dir=input_dir,
-                                    output_dir=output_dir,
-                                    prompt_file=prompt_file,
-                                    audio_path=audio_path,
-                                    model=model,
-                                    user_prompt=effective_user_prompt,
-                                    chunk_minutes=chunk_minutes,
-                                    patch_section=warning.section_index,
-                                )}",
-                                err=True,
-                            )
+                        emit_invalid_transcript_warnings(
+                            audio_path=audio_path,
+                            output_path=output_path,
+                            warnings=section_result.warnings,
+                            input_dir=input_dir,
+                            output_dir=output_dir,
+                            prompt_file=prompt_file,
+                            model=model,
+                            user_prompt=effective_user_prompt,
+                            chunk_minutes=chunk_minutes,
+                        )
                     updated_markdown = patch_transcript_section(
                         updated_markdown, section, section_result.transcript, prompt=note_prompt
                     )

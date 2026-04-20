@@ -315,6 +315,18 @@ def test_extract_prompt_metadata_reads_block_scalar() -> None:
     assert extracted == "Focus on action items"
 
 
+def test_extract_prompt_metadata_ignores_legacy_inline_prompt_value() -> None:
+    module = load_module()
+    markdown = (
+        "---\n"
+        'prompt: "Focus on action items"\n'
+        "---\n\n"
+        "# Demo\n"
+    )
+
+    assert module.extract_prompt_metadata(markdown) is None
+
+
 def test_find_invalid_transcript_sections_returns_bad_part_indices() -> None:
     module = load_module()
     markdown = (
@@ -387,6 +399,14 @@ def test_build_chunk_user_prompt_appends_part_context() -> None:
 
     assert prompt.startswith("Focus on action items\n\n")
     assert "part 2/4 of a longer recording" in prompt
+
+
+def test_resolve_patch_prompts_uses_stored_prompt_as_user_context() -> None:
+    module = load_module()
+
+    prompts = module.resolve_patch_prompts("System prompt text", "Stored patch prompt", None)
+
+    assert prompts == ("System prompt text", "Stored patch prompt")
 
 
 def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path) -> None:
