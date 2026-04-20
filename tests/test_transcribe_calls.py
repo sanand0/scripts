@@ -255,12 +255,11 @@ def test_upsert_transcript_section_updates_prompt_metadata() -> None:
         existing,
         "Demo",
         "Generated transcript",
-        prompt="System prompt text\n\nAdditional user prompt:\nFocus on action items",
+        prompt="Focus on action items",
     )
 
     assert "prompt: |-" in updated
-    assert "  System prompt text" in updated
-    assert "  Additional user prompt:" in updated
+    assert "  Focus on action items" in updated
     assert "## Transcript\n\nGenerated transcript" in updated
 
 
@@ -306,9 +305,6 @@ def test_extract_prompt_metadata_reads_block_scalar() -> None:
         "---\n"
         "tags:\n"
         "prompt: |-\n"
-        "  System prompt text\n"
-        "  \n"
-        "  Additional user prompt:\n"
         "  Focus on action items\n"
         "---\n\n"
         "# Demo\n"
@@ -316,7 +312,7 @@ def test_extract_prompt_metadata_reads_block_scalar() -> None:
 
     extracted = module.extract_prompt_metadata(markdown)
 
-    assert extracted == "System prompt text\n\nAdditional user prompt:\nFocus on action items"
+    assert extracted == "Focus on action items"
 
 
 def test_find_invalid_transcript_sections_returns_bad_part_indices() -> None:
@@ -717,8 +713,6 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
     transcript = (output_dir / "test.md").read_text(encoding="utf-8")
     assert "Transcript for test.opus" in transcript
     assert "prompt: |-" in transcript
-    assert "  System prompt text" in transcript
-    assert "  Additional user prompt:" in transcript
     assert "  Focus on action items" in transcript
 
     log_text = log_path.read_text(encoding="utf-8")
@@ -954,7 +948,8 @@ def test_script_patch_section_retranscribes_only_requested_chunk(tmp_path: Path)
     assert "long.part001.opus" not in genai_log
     assert "long.part002.opus" in genai_log
     assert "long.part003.opus" not in genai_log
-    assert "SYSTEM_PROMPT\tStored patch prompt" in genai_log
+    assert "SYSTEM_PROMPT\tPrompt text" in genai_log
+    assert "USER_PROMPT\tStored patch prompt" in genai_log
 
 
 def test_script_patch_invalid_sections_retranscribes_all_bad_chunks(tmp_path: Path) -> None:

@@ -74,10 +74,27 @@ class InvalidTranscriptWarning:
 
 def build_note_prompt(system_prompt: str, user_prompt: str | None = None) -> str:
     """Return the stored prompt context for a transcript note."""
-    prompt = system_prompt.strip()
     if user_prompt:
-        return f"{prompt}\n\nAdditional user prompt:\n{user_prompt.strip()}"
-    return prompt
+        return user_prompt.strip()
+    return system_prompt.strip()
+
+
+def resolve_patch_prompts(
+    system_prompt: str, stored_prompt: str | None, user_prompt: str | None
+) -> tuple[str, str | None]:
+    """Return `(system_prompt, user_prompt)` to use for a patch operation."""
+    if user_prompt is not None:
+        return system_prompt, user_prompt
+    if not stored_prompt:
+        return system_prompt, None
+    cleaned_stored_prompt = stored_prompt.strip()
+    cleaned_system_prompt = system_prompt.strip()
+    legacy_prefix = f"{cleaned_system_prompt}\n\nAdditional user prompt:\n"
+    if cleaned_stored_prompt == cleaned_system_prompt:
+        return system_prompt, None
+    if cleaned_stored_prompt.startswith(legacy_prefix):
+        return system_prompt, cleaned_stored_prompt.removeprefix(legacy_prefix).strip() or None
+    return system_prompt, cleaned_stored_prompt
 
 
 def render_prompt_metadata(prompt: str) -> str:
@@ -829,8 +846,9 @@ def main(
                 typer.echo(f"No invalid transcript sections found in {output_path.name}")
                 continue
         note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
-        transcription_system_prompt = stored_prompt if patch_mode and stored_prompt and cleaned_user_prompt is None else system_prompt
-        effective_user_prompt = None if patch_mode and stored_prompt and cleaned_user_prompt is None else cleaned_user_prompt
+        transcription_system_prompt, effective_user_prompt = resolve_patch_prompts(
+            system_prompt, stored_prompt if patch_mode else None, cleaned_user_prompt
+        )
         action = (
             f"patch section {patch_section}"
             if patch_section is not None

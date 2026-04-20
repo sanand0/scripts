@@ -103,6 +103,10 @@ Add/update the `prompt:` key in the YAML metadata of all transcripts to include 
 Use this prompt as context for patches.
 Run and test inexpensively.
 
+---
+
+In case the `user_prompt` is provided, use THAT for `prompt:`. Don't use the full contents of the DEFAULT_PROMPT_FILE!
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
