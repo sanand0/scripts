@@ -36,8 +36,10 @@ async def bash(commands: str, ctx: Context) -> str:
     output = result.stdout
     if result.stderr:
         output += f"\nSTDERR:\n{result.stderr}"
+        await ctx.warning(f"ERROR: {result.stderr}")
     if result.returncode != 0:
         output += f"\nReturn code: {result.returncode}"
+        await ctx.info(f"DONE: {len(output)} chars, return code {result.returncode}")
     return output
 
 
