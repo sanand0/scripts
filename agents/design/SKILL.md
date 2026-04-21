@@ -7,7 +7,7 @@ metadata:
 
 Design principles:
 
-- Dark mode. Enable a dark-mode toggle. Text should contrast background on both modes. (Verify screenshots.)
+- Dark mode. Enable a dark-mode toggle. Text should contrast background on both modes.
 - Responsive. It should be readable on mobile and at any device size.
 - Accessible. Allow extensive keyboard navigation. For example, popups on tables should allow keyboard navigation. Arrow keys act as if the popup on the adjacent cell is activated.
 - Bookmarkable. Capture state in the URL `#path?key=value`. Sharing the URL reproduces the view, with tabs, filters, slider positions, etc. captured. Prefer replaceState()
