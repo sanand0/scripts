@@ -65,23 +65,28 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   export GITHUB_TOKEN="$(sudo cat /run/secrets/github_token)"; \
   mise use -g \
   ast-grep \
+  bat \
   deno \
   duckdb \
   fd \
   gcloud \
+  gdu \
   github-cli \
+  github:dandavison/delta \
+  github:jqnatividad/qsv \
+  github:mithrandie/csvq \
+  github:pdfcpu/pdfcpu \
+  github:phiresky/ripgrep-all[extract_all=true] \
   hugo \
   jaq \
   node \
   pandoc \
   rclone \
   ripgrep \
-  github:dandavison/delta \
-  github:jqnatividad/qsv \
-  github:mithrandie/csvq \
-  github:pdfcpu/pdfcpu \
+  sd \
   uv \
   websocat \
+  yq \
   '
 
 # Install uv. Takes ~0.5 min

@@ -715,6 +715,26 @@ function aimode --description "Example: aimode 'What is AI?' opens Google AI Mod
     open "https://www.google.com/search?udm=50&q=$encoded"
 end
 
+# Start CloudFlare Tunnel at mcp.s-anand.net.
+# https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/tunnels
+abbr --add cloudflaremcp 'cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_MCP_TOKEN)'
+
+# Run MCP server at mcp.s-anand.net
+function mcpserver --description "mcpserver $DIR1 $DIR2 ... runs Docker MCP with bash tool + read-only access to directories"
+    set -l mounts -v /home/sanand/code/scripts/:/home/sanand/code/scripts/:ro
+
+    for dir in $argv
+        set -l resolved (path resolve -- $dir)
+        if not test -d "$resolved"
+            echo "mcpserver: not a directory: $dir" >&2
+            return 1
+        end
+        set mounts $mounts -v "$resolved:$resolved:ro"
+    end
+
+    dev.sh $mounts -- uv run /home/sanand/code/scripts/mcpserver.py
+end
+
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end

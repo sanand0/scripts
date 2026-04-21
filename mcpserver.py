@@ -2,28 +2,29 @@
 
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["mcp"]
+# dependencies = ["fastmcp"]
 # ///
 
 # Usage: uv run mcpserver.py
-#   Exposes an MCP server on localhost:8000 that lets LLMs run bash commands.
-#   curl localhost:8000/sse to test
-# npx -y ngrok@latest http --host-header=rewrite 8000
+#   Exposes an MCP server on localhost:2428 that lets LLMs run bash commands.
+#   curl localhost:2428/mcp to test
+# npx -y ngrok@latest http --host-header=rewrite 2428
 #   Exposes the server to the internet via ngrok. (Use with caution!)
 
 import subprocess
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
 # Initialize the server
 mcp = FastMCP("Remote shell commands")
 
 
 @mcp.tool()
-def bash(command: str) -> str:
-    """Runs command in bash in remote machine. Has uv, node, rg, jq, ffmpeg, git, ..."""
+async def bash(commands: str, ctx: Context) -> str:
+    """Runs multiline bash script. Use fd, ug, rga, sd, sg, jaq, gdu, uv, node, ffmpeg, git, ..."""
+    await ctx.info(f"bash: {commands}")
     try:
         result = subprocess.run(
-            command,
+            commands,
             shell=True,
             executable="/bin/bash",
             capture_output=True,
@@ -41,4 +42,4 @@ def bash(command: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="sse")
+    mcp.run(transport="http", port=2428)

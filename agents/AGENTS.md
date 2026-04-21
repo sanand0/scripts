@@ -1,7 +1,6 @@
 Available tools:
 
-fd, find
-rg, ug, grep
+fd, ug, rga, sd
 sg (ast-grep: code search), dprint
 git, gh
 curl, w3m, lynx, websocat, wscat
