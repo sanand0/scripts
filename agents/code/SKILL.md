@@ -61,6 +61,8 @@ Prefer modern HTML:
 - UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
 - Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
 
+Avoid unicode/emoji icons in HTML. Prefer icon libraries (Ic)
+
 Prefer SVG favicons e.g.
 
 ```html
