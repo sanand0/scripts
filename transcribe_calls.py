@@ -18,7 +18,7 @@ import shlex
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -622,6 +622,19 @@ def emit_invalid_transcript_warnings(
         )
 
 
+def emit_transcription_progress(
+    *,
+    current: int,
+    total: int,
+    action: str,
+    audio_path: Path,
+    output_path: Path,
+    note: str = "",
+) -> None:
+    """Log progress for a transcription step."""
+    typer.echo(f"[{current}/{total}] {action} {audio_path.name} -> {output_path.name}{note}")
+
+
 def transcribe_single_audio(
     audio_path: Path,
     system_prompt: str,
@@ -659,12 +672,17 @@ def transcribe_audio(
     pricing: dict[str, dict[str, object]],
     chunk_minutes: float,
     patch_section: int | None = None,
+    windows: list[tuple[float, float]] | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio directly or through chunked ffmpeg splits."""
-    _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
+    if windows is None:
+        _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
     if len(windows) == 1:
         if patch_section not in (None, 1):
             raise RuntimeError(f"{audio_path.name} has only 1 transcript section; cannot patch section {patch_section}.")
+        if progress_callback is not None:
+            progress_callback(1, 1)
         result = transcribe_single_audio(
             audio_path,
             system_prompt=system_prompt,
@@ -704,6 +722,8 @@ def transcribe_audio(
             else list(enumerate(chunk_paths, start=1))
         )
         for index, chunk_path in target_chunks:
+            if progress_callback is not None:
+                progress_callback(index, chunk_count)
             result = transcribe_single_audio(
                 chunk_path,
                 system_prompt=system_prompt,
@@ -907,7 +927,33 @@ def main(
                 typer.echo(f"ERROR {exc}", err=True)
                 raise typer.Exit(1) from exc
 
-        typer.echo(f"[{index}/{total}] {action} {audio_path.name} -> {output_path.name}{note}")
+        try:
+            _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
+        except RuntimeError as exc:
+            failures.append(f"{audio_path.name}: {exc}")
+            typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
+            continue
+
+        def log_progress(current_chunk: int, total_chunks: int) -> None:
+            if total_chunks == 1:
+                emit_transcription_progress(
+                    current=index,
+                    total=total,
+                    action=action,
+                    audio_path=audio_path,
+                    output_path=output_path,
+                    note=note,
+                )
+                return
+            emit_transcription_progress(
+                current=current_chunk,
+                total=total_chunks,
+                action=action,
+                audio_path=audio_path,
+                output_path=output_path,
+                note=note,
+            )
+
         try:
             result = transcribe_audio(
                 audio_path,
@@ -918,6 +964,8 @@ def main(
                 pricing=pricing or {},
                 chunk_minutes=chunk_minutes,
                 patch_section=(target_sections[0] if patch_invalid_sections else patch_section),
+                windows=windows,
+                progress_callback=log_progress,
             )
         except RuntimeError as exc:
             failures.append(f"{audio_path.name}: {exc}")
@@ -953,11 +1001,13 @@ def main(
                             system_prompt=transcription_system_prompt,
                             user_prompt=effective_user_prompt,
                             model=model,
-                            client=client,
-                            pricing=pricing or {},
-                            chunk_minutes=chunk_minutes,
-                            patch_section=section,
-                        )
+                                client=client,
+                                pricing=pricing or {},
+                                chunk_minutes=chunk_minutes,
+                                patch_section=section,
+                                windows=windows,
+                                progress_callback=log_progress,
+                            )
                     )
                     if section != target_sections[0]:
                         total_cost_usd += section_result.usage.cost_usd

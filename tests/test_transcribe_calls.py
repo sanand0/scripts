@@ -822,6 +822,9 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     )
 
     assert result.returncode == 0, result.stderr
+    assert "[1/3] create long.opus -> long.md" in result.stdout
+    assert "[2/3] create long.opus -> long.md" in result.stdout
+    assert "[3/3] create long.opus -> long.md" in result.stdout
     assert "tokens=450 cost=$0.002400 total_cost=$0.002400" in result.stdout
     transcript = (output_dir / "long.md").read_text(encoding="utf-8")
     assert "Transcript for long.part001.opus line 1" in transcript
@@ -957,7 +960,7 @@ def test_script_patch_section_retranscribes_only_requested_chunk(tmp_path: Path)
     )
 
     assert result.returncode == 0, result.stderr
-    assert "[1/1] patch section 2 long.opus -> long.md" in result.stdout
+    assert "[2/3] patch section 2 long.opus -> long.md" in result.stdout
     transcript = (output_dir / "long.md").read_text(encoding="utf-8")
     assert "first chunk\n\n---\n\n**Speaker**: [00:01] patched line 1" in transcript
     assert "third chunk" in transcript
@@ -1038,7 +1041,8 @@ def test_script_patch_invalid_sections_retranscribes_all_bad_chunks(tmp_path: Pa
     )
 
     assert result.returncode == 0, result.stderr
-    assert "[1/1] patch invalid sections 2,3 long.opus -> long.md" in result.stdout
+    assert "[2/3] patch invalid sections 2,3 long.opus -> long.md" in result.stdout
+    assert "[3/3] patch invalid sections 2,3 long.opus -> long.md" in result.stdout
     transcript = (output_dir / "long.md").read_text(encoding="utf-8")
     assert "repaired second 1" in transcript
     assert "repaired third 1" in transcript

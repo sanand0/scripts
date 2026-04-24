@@ -111,6 +111,11 @@ In case the `user_prompt` is provided, use THAT for `prompt:`. Don't use the ful
 
 Refactor the code to be more simple, removing legacy code paths, options, features that are no longer needed.
 
+---
+
+Currently, the logs report "[1/1] create ..." even when there are multiple chunks. When each chunk is generated, no additional logs are generated.
+Modify it so that the number of chunks is calculated upfront and reported, eg. "[1/3] create ..." and when each chunk is generated, log the progress, e.g. "[2/3] create ..."
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
@@ -118,5 +123,5 @@ dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
    -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
    -v /home/sanand/code/blog/:/home/sanand/code/blog/:ro
 
-copilot --yolo --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50
+copilot --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50 --yolo
 -->

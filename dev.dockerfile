@@ -121,7 +121,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "20 Apr 2026: Updating agents and fast-moving agent tools"; \
+  echo "23 Apr 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \
