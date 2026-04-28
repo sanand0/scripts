@@ -168,6 +168,7 @@ mise use -g pnpm                      # pnpm - Fast, disk space efficient packag
 mise use -g prek                      # prek - pre-commit alternative
 mise use -g rclone                    # rclone - Sync files to/from cloud storage
 mise use -g ripgrep                   # ripgrep - Fast grep alternative
+mise use -g sd                        # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
 mise use -g shfmt                     # shfmt - Shell script formatter
 mise use -g starship                  # starship - Fast, customizable shell prompt
 mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper (doesn't work with github: prefix due to multiple binaries)
@@ -206,10 +207,11 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g github:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
 # mise use -g github:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
 
-npm install -g @googleworkspace/cli       # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
-npm install -g codex@latest               # codex - AI code assistant CLI
-npm install -g remark-cli remark-inline-links     # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
-npm install -g trash-cli@latest           # trash - Move files to trash instead of deleting
+npm install -g @googleworkspace/cli@latest    # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
+npm install -g codex@latest                   # codex - AI code assistant CLI
+npm install -g remark-cli remark-inline-links # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+npm install -g trash-cli@latest               # trash - Move files to trash instead of deleting
+npm install -g agent-browser@latest           # agent-browser - Allow AI coding agents to use the browser
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
@@ -276,6 +278,7 @@ cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/
 cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/download/v1.3.0/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
 cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar -xj pngquant  # pngquant - PNG image compressor
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
+cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/download/v1.6.10/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
 
 # Install .deb tools
@@ -444,6 +447,9 @@ cat > ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.
 body { font-size: 125% !important; }
 p { line-height: 1.8 !important; }
 EOF
+
+# Configure git. When using monorepos, I'll version sub-directories, rename the .git/ to .git.bak/, then commit the parent. (22 Apr 2026)
+echo '.git.bak' >> ~/.config/git/ignore
 
 # Configure rofi
 mkdir -p ~/.config/rofi; cat > ~/.config/rofi/config.rasi << 'EOF'

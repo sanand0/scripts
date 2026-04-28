@@ -150,7 +150,7 @@ args=(
   -v "$HOME/.claude:/home/vscode/.claude"
   -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
-  -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud:ro"   # 🔴
+  # -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud:ro"   # 🔴
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
@@ -206,8 +206,11 @@ args=(
   -e GITHUB_TOKEN="${github_token_value}"
   -e OPENAI_API_KEY="${OPENAI_API_KEY-}"
   -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY-}"
-  --entrypoint /bin/bash                        # launch bash
 )
+
+if [[ ${#container_cmd_args[@]} -eq 0 ]]; then
+  args+=(--entrypoint /bin/bash)                # launch bash
+fi
 
 # exec: hand over to docker and end script
 exec docker run "${args[@]}" "${docker_run_args[@]}" "$IMAGE_TAG" "${container_cmd_args[@]}"

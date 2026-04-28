@@ -57,10 +57,11 @@ Here are the setup details for my laptops.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [discourse.py](discourse.py) extracts recent posts from a Discourse category or topic.
 - [gitget](gitget) clones a git repository and copies specific paths to local directories.
-- [git-uncommitted](git-uncommitted) lists directories not git-synced with remote
-- [githubscore.py](githubscore.py) evaluates GitHub developer quality
-- [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py)
-- [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`
+- [git-uncommitted](git-uncommitted) lists directories not git-synced with remote.
+- [githubscore.py](githubscore.py) evaluates GitHub developer quality.
+- [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py).
+- [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`.
+- [htmlemail.py](htmlemail.py) renders Markdown to HTML and sends as email via Gmail API. Usage: `uv run htmlemail.py --from EMAIL --email EMAIL body.md`.
 - [mcpserver.py](mcpserver.py) exposes an MCP server on localhost:8000 that lets LLMs run bash commands. Useful for ChatGPT to control your machine. Run in sandbox to reduce risk.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`

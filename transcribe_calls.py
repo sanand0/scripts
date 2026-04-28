@@ -14,10 +14,11 @@ import json
 import math
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -36,6 +37,11 @@ PRICES_URL = "https://raw.githubusercontent.com/simonw/llm-prices/refs/heads/mai
 AUDIO_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm"}
 CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 TRAILING_SINGLE_DIGIT_RE = re.compile(r"^(?P<base>.+?) (?P<digit>\d)$")
+TRANSCRIPT_PART_SEPARATOR = "\n\n---\n\n"
+TRANSCRIPT_LINE_RE = re.compile(
+    r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[\d{2}:\d{2}(?::\d{2})?\])? .+"
+)
+FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?\n?)---\n?", re.DOTALL)
 TRANSCRIPT_SECTION_RE = re.compile(
     r"(?ms)^##\s+Transcript\s*$\n?(?P<body>.*?)(?=^##\s+|\Z)"
 )
@@ -56,6 +62,92 @@ class UsageCost:
 class TranscriptionResult:
     transcript: str
     usage: UsageCost
+    warnings: tuple["InvalidTranscriptWarning", ...] = ()
+
+
+@dataclass(frozen=True)
+class InvalidTranscriptWarning:
+    section_index: int
+    section_count: int
+    matching_lines: int
+
+
+def build_note_prompt(system_prompt: str, user_prompt: str | None = None) -> str:
+    """Return the stored prompt context for a transcript note."""
+    if user_prompt:
+        return user_prompt.strip()
+    return system_prompt.strip()
+
+
+def resolve_patch_prompts(
+    system_prompt: str, stored_prompt: str | None, user_prompt: str | None
+) -> tuple[str, str | None]:
+    """Return `(system_prompt, user_prompt)` to use for a patch operation."""
+    if user_prompt is not None:
+        return system_prompt, user_prompt
+    if not stored_prompt:
+        return system_prompt, None
+    cleaned_stored_prompt = stored_prompt.strip()
+    cleaned_system_prompt = system_prompt.strip()
+    if not cleaned_stored_prompt or cleaned_stored_prompt == cleaned_system_prompt:
+        return system_prompt, None
+    return system_prompt, cleaned_stored_prompt
+
+
+def render_prompt_metadata(prompt: str) -> str:
+    """Render prompt metadata as a YAML block scalar."""
+    lines = prompt.strip().splitlines() or [""]
+    return "prompt: |-\n" + "".join(f"  {line}\n" for line in lines)
+
+
+def strip_prompt_metadata(frontmatter_body: str) -> str:
+    """Remove any existing prompt metadata from YAML frontmatter text."""
+    cleaned_lines: list[str] = []
+    skipping_prompt = False
+    for line in frontmatter_body.splitlines():
+        if skipping_prompt:
+            if line.startswith((" ", "\t")):
+                continue
+            skipping_prompt = False
+        if line.startswith("prompt:"):
+            skipping_prompt = True
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
+def extract_prompt_metadata(markdown: str) -> str | None:
+    """Return the stored prompt metadata from the note frontmatter, if present."""
+    match = FRONTMATTER_RE.match(markdown)
+    if not match:
+        return None
+    lines = match.group("body").splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("prompt:"):
+            continue
+        value = line[len("prompt:") :].strip()
+        if not value.startswith(("|", ">")):
+            return None
+        block: list[str] = []
+        for continuation in lines[index + 1 :]:
+            if continuation.startswith((" ", "\t")):
+                block.append(continuation[2:] if continuation.startswith("  ") else continuation.lstrip())
+            else:
+                break
+        return "\n".join(block).rstrip()
+    return None
+
+
+def set_prompt_metadata(markdown: str, prompt: str) -> str:
+    """Add or update the prompt key in note frontmatter."""
+    prompt_block = render_prompt_metadata(prompt).rstrip()
+    match = FRONTMATTER_RE.match(markdown)
+    if not match:
+        return f"---\n{prompt_block}\n---\n\n{markdown.lstrip()}"
+    body = strip_prompt_metadata(match.group("body"))
+    updated_body = f"{body}\n{prompt_block}" if body else prompt_block
+    remainder = markdown[match.end() :].lstrip("\n")
+    return f"---\n{updated_body}\n---\n\n{remainder}" if remainder else f"---\n{updated_body}\n---\n"
 
 
 def extract_system_prompt(markdown: str) -> str:
@@ -78,19 +170,18 @@ def count_transcript_sections(markdown: str) -> int:
     return len(list(TRANSCRIPT_SECTION_RE.finditer(markdown)))
 
 
-def render_new_document(title: str, transcript: str, user_prompt: str | None = None) -> str:
+def render_new_document(title: str, transcript: str, prompt: str) -> str:
     """Render a new transcript Markdown file using the current note template."""
     cleaned = transcript.strip()
     if not cleaned:
         raise ValueError("Transcript output is empty.")
-    prompt_line = f"prompt: {json.dumps(user_prompt)}\n" if user_prompt else ""
     return (
         "---\n"
         "tags:\n"
         "goal:\n"
         "kind candor:\n"
         "effectiveness:\n"
-        f"{prompt_line}"
+        f"{render_prompt_metadata(prompt)}"
         "---\n\n"
         f"# {title}\n\n"
         "## Transcript\n\n"
@@ -98,28 +189,71 @@ def render_new_document(title: str, transcript: str, user_prompt: str | None = N
     )
 
 
-def upsert_transcript_section(
-    markdown: str, title: str, transcript: str, user_prompt: str | None = None
-) -> str:
+def upsert_transcript_section(markdown: str, title: str, transcript: str, prompt: str | None = None) -> str:
     """Insert or replace the transcript section while preserving other sections."""
     cleaned = transcript.strip()
     if not cleaned:
         raise ValueError("Transcript output is empty.")
     if not markdown.strip():
-        return render_new_document(title, cleaned, user_prompt=user_prompt)
+        if prompt is None:
+            raise ValueError("Prompt metadata is required for new transcript notes.")
+        return render_new_document(title, cleaned, prompt=prompt)
+    working_markdown = set_prompt_metadata(markdown, prompt) if prompt is not None else markdown
     if count_transcript_sections(markdown) > 1:
         raise ValueError("Document has multiple ## Transcript sections.")
 
-    match = TRANSCRIPT_SECTION_RE.search(markdown)
+    match = TRANSCRIPT_SECTION_RE.search(working_markdown)
     if not match:
-        return f"{markdown.rstrip()}\n\n## Transcript\n\n{cleaned}\n"
+        return f"{working_markdown.rstrip()}\n\n## Transcript\n\n{cleaned}\n"
 
-    prefix = markdown[: match.start()].rstrip()
-    suffix = markdown[match.end() :].lstrip("\n")
+    prefix = working_markdown[: match.start()].rstrip()
+    suffix = working_markdown[match.end() :].lstrip("\n")
     rebuilt = "\n\n".join(part for part in (prefix, "## Transcript", cleaned) if part)
     if suffix:
         rebuilt = f"{rebuilt}\n\n{suffix.rstrip()}"
     return f"{rebuilt}\n"
+
+
+def split_transcript_parts(transcript: str) -> list[str]:
+    """Return transcript parts separated by the chunk delimiter."""
+    cleaned = transcript.strip()
+    if not cleaned:
+        return []
+    return [part.strip() for part in cleaned.split(TRANSCRIPT_PART_SEPARATOR)]
+
+
+def patch_transcript_section(markdown: str, section_index: int, transcript: str, prompt: str | None = None) -> str:
+    """Replace one transcript chunk inside an existing transcript section."""
+    match = TRANSCRIPT_SECTION_RE.search(markdown)
+    if not match or not match.group("body").strip():
+        raise ValueError("Document has no transcript section to patch.")
+    parts = split_transcript_parts(match.group("body"))
+    if section_index < 1 or section_index > len(parts):
+        raise ValueError(f"Document transcript has {len(parts)} section(s); cannot patch section {section_index}.")
+    parts[section_index - 1] = transcript.strip()
+    return upsert_transcript_section(markdown, "", TRANSCRIPT_PART_SEPARATOR.join(parts), prompt=prompt)
+
+
+def find_invalid_transcript_sections(markdown: str) -> list[int]:
+    """Return 1-based transcript section indices that do not look like transcript text."""
+    match = TRANSCRIPT_SECTION_RE.search(markdown)
+    if not match or not match.group("body").strip():
+        return []
+    return [
+        index
+        for index, part in enumerate(split_transcript_parts(match.group("body")), start=1)
+        if not looks_like_transcript(part)
+    ]
+
+
+def count_matching_transcript_lines(transcript: str) -> int:
+    """Count lines that look like transcript speaker lines."""
+    return sum(1 for line in transcript.splitlines() if TRANSCRIPT_LINE_RE.match(line.strip()))
+
+
+def looks_like_transcript(transcript: str, min_matching_lines: int = 5) -> bool:
+    """Return True when the transcript resembles the expected speaker-line format."""
+    return count_matching_transcript_lines(transcript) >= min_matching_lines
 
 
 def iter_audio_files(input_dir: Path, pattern: str) -> Iterable[Path]:
@@ -356,7 +490,7 @@ def split_audio_chunks(
 
     chunk_paths: list[Path] = []
     for index, (start, length) in enumerate(windows, start=1):
-        chunk_path = temp_dir / f"{audio_path.stem}.part{index:03d}{audio_path.suffix}"
+        chunk_path = temp_dir / f"{audio_path.stem}.part{index:03d}.opus"
         try:
             result = subprocess.run(
                 [
@@ -371,8 +505,11 @@ def split_audio_chunks(
                     f"{length:.3f}",
                     "-i",
                     str(audio_path),
-                    "-c",
-                    "copy",
+                    "-vn",
+                    "-c:a",
+                    "libopus",
+                    "-b:a",
+                    "64k",
                     str(chunk_path),
                 ],
                 capture_output=True,
@@ -416,6 +553,88 @@ def build_chunk_user_prompt(user_prompt: str | None, chunk_index: int, chunk_cou
     return f"{user_prompt}\n\n{chunk_prompt}"
 
 
+def build_patch_command(
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    prompt_file: Path,
+    audio_path: Path,
+    model: str,
+    user_prompt: str | None,
+    chunk_minutes: float,
+    patch_section: int,
+) -> str:
+    """Build a repair command that retranscribes one chunk and patches its transcript section."""
+    relative_audio_path = audio_path.relative_to(input_dir).as_posix()
+    args = [
+        "uv",
+        "run",
+        str(Path(__file__).resolve()),
+        str(input_dir),
+        str(output_dir),
+        str(prompt_file),
+        "--glob",
+        relative_audio_path,
+        "--patch-section",
+        str(patch_section),
+        "--chunk",
+        str(chunk_minutes),
+        "--model",
+        model,
+    ]
+    if user_prompt:
+        args.extend(["--prompt", user_prompt])
+    return " ".join(shlex.quote(arg) for arg in args)
+
+
+def emit_invalid_transcript_warnings(
+    *,
+    audio_path: Path,
+    output_path: Path,
+    warnings: tuple[InvalidTranscriptWarning, ...],
+    input_dir: Path,
+    output_dir: Path,
+    prompt_file: Path,
+    model: str,
+    user_prompt: str | None,
+    chunk_minutes: float,
+) -> None:
+    """Log invalid transcript warnings together with a repair command."""
+    for warning in warnings:
+        typer.echo(
+            f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count} "
+            f"matched only {warning.matching_lines} transcript-format lines; response may be invalid.",
+            err=True,
+        )
+        typer.echo(
+            f"Patch command for {output_path.name} section {warning.section_index}: "
+            f"{build_patch_command(
+                input_dir=input_dir,
+                output_dir=output_dir,
+                prompt_file=prompt_file,
+                audio_path=audio_path,
+                model=model,
+                user_prompt=user_prompt,
+                chunk_minutes=chunk_minutes,
+                patch_section=warning.section_index,
+            )}",
+            err=True,
+        )
+
+
+def emit_transcription_progress(
+    *,
+    current: int,
+    total: int,
+    action: str,
+    audio_path: Path,
+    output_path: Path,
+    note: str = "",
+) -> None:
+    """Log progress for a transcription step."""
+    typer.echo(f"[{current}/{total}] {action} {audio_path.name} -> {output_path.name}{note}")
+
+
 def transcribe_single_audio(
     audio_path: Path,
     system_prompt: str,
@@ -452,11 +671,19 @@ def transcribe_audio(
     client: genai.Client,
     pricing: dict[str, dict[str, object]],
     chunk_minutes: float,
+    patch_section: int | None = None,
+    windows: list[tuple[float, float]] | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio directly or through chunked ffmpeg splits."""
-    _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
+    if windows is None:
+        _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
     if len(windows) == 1:
-        return transcribe_single_audio(
+        if patch_section not in (None, 1):
+            raise RuntimeError(f"{audio_path.name} has only 1 transcript section; cannot patch section {patch_section}.")
+        if progress_callback is not None:
+            progress_callback(1, 1)
+        result = transcribe_single_audio(
             audio_path,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -464,6 +691,16 @@ def transcribe_audio(
             client=client,
             pricing=pricing,
         )
+        warnings = ()
+        if not looks_like_transcript(result.transcript):
+            warnings = (
+                InvalidTranscriptWarning(
+                    section_index=1,
+                    section_count=1,
+                    matching_lines=count_matching_transcript_lines(result.transcript),
+                ),
+            )
+        return TranscriptionResult(transcript=result.transcript, usage=result.usage, warnings=warnings)
 
     with tempfile.TemporaryDirectory(prefix=f"{audio_path.stem}-chunks-") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
@@ -472,20 +709,42 @@ def transcribe_audio(
             temp_dir=temp_dir,
             windows=windows,
         )
-        transcripts = [
-            transcribe_single_audio(
+        chunk_count = len(chunk_paths)
+        if patch_section is not None and patch_section > chunk_count:
+            raise RuntimeError(
+                f"{audio_path.name} has only {chunk_count} transcript section(s); cannot patch section {patch_section}."
+            )
+        warnings: list[InvalidTranscriptWarning] = []
+        transcripts: list[TranscriptionResult] = []
+        target_chunks = (
+            [(patch_section, chunk_paths[patch_section - 1])]
+            if patch_section is not None
+            else list(enumerate(chunk_paths, start=1))
+        )
+        for index, chunk_path in target_chunks:
+            if progress_callback is not None:
+                progress_callback(index, chunk_count)
+            result = transcribe_single_audio(
                 chunk_path,
                 system_prompt=system_prompt,
-                user_prompt=build_chunk_user_prompt(user_prompt, chunk_index=index, chunk_count=len(chunk_paths)),
+                user_prompt=build_chunk_user_prompt(user_prompt, chunk_index=index, chunk_count=chunk_count),
                 model=model,
                 client=client,
                 pricing=pricing,
             )
-            for index, chunk_path in enumerate(chunk_paths, start=1)
-        ]
+            if not looks_like_transcript(result.transcript):
+                warnings.append(
+                    InvalidTranscriptWarning(
+                        section_index=index,
+                        section_count=chunk_count,
+                        matching_lines=count_matching_transcript_lines(result.transcript),
+                    )
+                )
+            transcripts.append(result)
     return TranscriptionResult(
-        transcript="\n\n---\n\n".join(result.transcript.strip() for result in transcripts),
+        transcript=TRANSCRIPT_PART_SEPARATOR.join(result.transcript.strip() for result in transcripts),
         usage=combine_usage_costs([result.usage for result in transcripts]),
+        warnings=tuple(warnings),
     )
 
 
@@ -507,6 +766,17 @@ def main(
         None,
         "--prompt",
         help="Additional user prompt sent alongside the audio attachment.",
+    ),
+    patch_invalid_sections: bool = typer.Option(
+        False,
+        "--patch-invalid-sections",
+        help="Detect invalid transcript sections in the existing note and patch all of them.",
+    ),
+    patch_section: int | None = typer.Option(
+        None,
+        "--patch-section",
+        min=1,
+        help="Re-transcribe one chunk and replace that transcript section in the existing note.",
     ),
     chunk_minutes: float = typer.Option(
         DEFAULT_CHUNK_MINUTES,
@@ -534,6 +804,10 @@ def main(
         raise typer.BadParameter(f"Prompt file does not exist: {prompt_file}")
     if output_dir.exists() and not output_dir.is_dir():
         raise typer.BadParameter(f"Output path is not a directory: {output_dir}")
+    if patch_invalid_sections and patch_section is not None:
+        raise typer.BadParameter("--patch-invalid-sections cannot be used with --patch-section.")
+    if (patch_section is not None or patch_invalid_sections) and dry_run:
+        raise typer.BadParameter("Patch options cannot be used with --dry-run.")
 
     system_prompt = extract_system_prompt(prompt_file.read_text(encoding="utf-8"))
     cleaned_user_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
@@ -541,6 +815,8 @@ def main(
     if not audio_files:
         typer.echo(f"No audio files found in {input_dir} matching {glob_pattern!r}")
         raise typer.Exit(0)
+    if (patch_section is not None or patch_invalid_sections) and len(audio_files) != 1:
+        raise typer.BadParameter("Patch options require exactly one matching audio file.")
     if collisions := find_colliding_stems(audio_files):
         joined = ", ".join(collisions)
         raise typer.BadParameter(
@@ -558,6 +834,7 @@ def main(
     client: genai.Client | None = None
     pricing: dict[str, dict[str, object]] | None = None
     total_cost_usd = 0.0
+    patch_mode = patch_section is not None or patch_invalid_sections
 
     for index, audio_path in enumerate(audio_files, start=1):
         output_path = output_dir / f"{audio_path.stem}.md"
@@ -568,12 +845,8 @@ def main(
             typer.echo(f"ERROR {exc}", err=True)
             continue
 
-        if has_transcript_content(existing_markdown):
-            skipped += 1
-            continue
-
         base_output_path = find_base_transcript_path(output_dir, audio_path.stem)
-        if base_output_path is not None:
+        if not patch_mode and base_output_path is not None:
             try:
                 has_base_output, base_markdown, _ = read_existing_note(base_output_path)
             except RuntimeError as exc:
@@ -584,7 +857,54 @@ def main(
                 skipped += 1
                 continue
 
-        action = "update" if had_output else "create"
+        target_sections: list[int] = []
+        stored_prompt = extract_prompt_metadata(existing_markdown) if had_output else None
+        desired_prompt = build_note_prompt(system_prompt, cleaned_user_prompt)
+        if not patch_mode and has_transcript_content(existing_markdown):
+            if stored_prompt == desired_prompt:
+                skipped += 1
+                continue
+            if dry_run:
+                typer.echo(f"[{index}/{total}] dry-run update metadata {audio_path.name} -> {output_path.name}")
+                continue
+            typer.echo(f"[{index}/{total}] update metadata {audio_path.name} -> {output_path.name}")
+            try:
+                output_path.write_text(set_prompt_metadata(existing_markdown, desired_prompt), encoding="utf-8")
+            except OSError as exc:
+                failures.append(f"{output_path.name}: {exc}")
+                typer.echo(f"ERROR {output_path.name}: {exc}", err=True)
+                continue
+            updated += 1
+            continue
+        if patch_mode:
+            if not had_output:
+                failures.append(f"{output_path.name}: transcript file does not exist for patching")
+                typer.echo(f"ERROR {output_path.name}: transcript file does not exist for patching", err=True)
+                continue
+            if not has_transcript_content(existing_markdown):
+                failures.append(f"{output_path.name}: document has no transcript section to patch")
+                typer.echo(f"ERROR {output_path.name}: document has no transcript section to patch", err=True)
+                continue
+            target_sections = [patch_section] if patch_section is not None else find_invalid_transcript_sections(
+                existing_markdown
+            )
+            if patch_invalid_sections and not target_sections:
+                skipped += 1
+                typer.echo(f"No invalid transcript sections found in {output_path.name}")
+                continue
+        note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
+        transcription_system_prompt, effective_user_prompt = resolve_patch_prompts(
+            system_prompt, stored_prompt if patch_mode else None, cleaned_user_prompt
+        )
+        action = (
+            f"patch section {patch_section}"
+            if patch_section is not None
+            else (
+                f"patch invalid sections {','.join(str(section) for section in target_sections)}"
+                if patch_invalid_sections
+                else ("update" if had_output else "create")
+            )
+        )
         note = " (existing file missing transcript section)" if had_output and transcript_sections == 0 else ""
         if dry_run:
             try:
@@ -607,36 +927,123 @@ def main(
                 typer.echo(f"ERROR {exc}", err=True)
                 raise typer.Exit(1) from exc
 
-        typer.echo(f"[{index}/{total}] {action} {audio_path.name} -> {output_path.name}{note}")
+        try:
+            _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
+        except RuntimeError as exc:
+            failures.append(f"{audio_path.name}: {exc}")
+            typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
+            continue
+
+        def log_progress(current_chunk: int, total_chunks: int) -> None:
+            if total_chunks == 1:
+                emit_transcription_progress(
+                    current=index,
+                    total=total,
+                    action=action,
+                    audio_path=audio_path,
+                    output_path=output_path,
+                    note=note,
+                )
+                return
+            emit_transcription_progress(
+                current=current_chunk,
+                total=total_chunks,
+                action=action,
+                audio_path=audio_path,
+                output_path=output_path,
+                note=note,
+            )
+
         try:
             result = transcribe_audio(
                 audio_path,
-                system_prompt=system_prompt,
-                user_prompt=cleaned_user_prompt,
+                system_prompt=transcription_system_prompt,
+                user_prompt=effective_user_prompt,
                 model=model,
                 client=client,
                 pricing=pricing or {},
                 chunk_minutes=chunk_minutes,
+                patch_section=(target_sections[0] if patch_invalid_sections else patch_section),
+                windows=windows,
+                progress_callback=log_progress,
             )
         except RuntimeError as exc:
             failures.append(f"{audio_path.name}: {exc}")
             typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
             continue
 
+        emit_invalid_transcript_warnings(
+            audio_path=audio_path,
+            output_path=output_path,
+            warnings=result.warnings,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            prompt_file=prompt_file,
+            model=model,
+            user_prompt=effective_user_prompt,
+            chunk_minutes=chunk_minutes,
+        )
+
         total_cost_usd += result.usage.cost_usd
         typer.echo(
             f"tokens={result.usage.total_tokens} cost=${result.usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}"
         )
         try:
-            output_path.write_text(
-                upsert_transcript_section(
-                    existing_markdown,
-                    audio_path.stem,
-                    result.transcript,
-                    user_prompt=cleaned_user_prompt,
-                ),
-                encoding="utf-8",
-            )
+            if patch_invalid_sections:
+                updated_markdown = existing_markdown
+                combined_usage = [result.usage]
+                for section in target_sections:
+                    section_result = (
+                        result
+                        if section == target_sections[0]
+                        else transcribe_audio(
+                            audio_path,
+                            system_prompt=transcription_system_prompt,
+                            user_prompt=effective_user_prompt,
+                            model=model,
+                                client=client,
+                                pricing=pricing or {},
+                                chunk_minutes=chunk_minutes,
+                                patch_section=section,
+                                windows=windows,
+                                progress_callback=log_progress,
+                            )
+                    )
+                    if section != target_sections[0]:
+                        total_cost_usd += section_result.usage.cost_usd
+                        combined_usage.append(section_result.usage)
+                        typer.echo(
+                            f"tokens={section_result.usage.total_tokens} cost=${section_result.usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}"
+                        )
+                        emit_invalid_transcript_warnings(
+                            audio_path=audio_path,
+                            output_path=output_path,
+                            warnings=section_result.warnings,
+                            input_dir=input_dir,
+                            output_dir=output_dir,
+                            prompt_file=prompt_file,
+                            model=model,
+                            user_prompt=effective_user_prompt,
+                            chunk_minutes=chunk_minutes,
+                        )
+                    updated_markdown = patch_transcript_section(
+                        updated_markdown, section, section_result.transcript, prompt=note_prompt
+                    )
+                output_path.write_text(updated_markdown, encoding="utf-8")
+            else:
+                output_path.write_text(
+                    (
+                        patch_transcript_section(existing_markdown, patch_section, result.transcript, prompt=note_prompt)
+                        if patch_section is not None
+                        else upsert_transcript_section(
+                            existing_markdown,
+                            audio_path.stem,
+                            result.transcript,
+                            prompt=note_prompt,
+                        )
+                    ),
+                    encoding="utf-8",
+                )
         except (OSError, ValueError) as exc:
             failures.append(f"{output_path.name}: {exc}")
             typer.echo(f"ERROR {output_path.name}: {exc}", err=True)

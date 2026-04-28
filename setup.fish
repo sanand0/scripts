@@ -545,7 +545,7 @@ function screencastcompress --description "Compress screen casts. Usage: screenc
             echo "Skipping $input -> $output (already exists)"
             continue
         end
-        ffmpeg -hide_banner -stats -v warning -i "$input" -vf "crop=iw-mod(iw\,2):ih-mod(ih\,2),fps=$fps" -c:v libsvtav1 -preset 8 -crf $crf -pix_fmt yuv420p -an "$output"
+        ffmpeg -hide_banner -stats -v warning -i "$input" -vf "crop=iw-mod(iw\,2):ih-mod(ih\,2),fps=$fps" -c:v libsvtav1 -crf $crf -preset 6 -pix_fmt yuv420p -an "$output"
     end
 end
 
@@ -715,6 +715,26 @@ function aimode --description "Example: aimode 'What is AI?' opens Google AI Mod
     open "https://www.google.com/search?udm=50&q=$encoded"
 end
 
+# Start CloudFlare Tunnel at mcp.s-anand.net.
+# https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/tunnels
+abbr --add cloudflaremcp 'cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_MCP_TOKEN)'
+
+# Run MCP server at mcp.s-anand.net
+function mcpserver --description "mcpserver $DIR1 $DIR2 ... runs Docker MCP with bash tool + read-only access to directories"
+    set -l mounts -v /home/sanand/code/scripts/:/home/sanand/code/scripts/:ro
+
+    for dir in $argv
+        set -l resolved (path resolve -- $dir)
+        if not test -d "$resolved"
+            echo "mcpserver: not a directory: $dir" >&2
+            return 1
+        end
+        set mounts $mounts -v "$resolved:$resolved:ro"
+    end
+
+    dev.sh $mounts -- uv run /home/sanand/code/scripts/mcpserver.py
+end
+
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
@@ -776,9 +796,13 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
     set --default out $argv[4] (string replace '.webm' '.compressed.webm' $in)
     ffmpeg -hide_banner -stats -v warning -i $in \
         -filter_complex "select='not(mod(n\,$sampling))',scale=$width:-1" \
-        -c:v libvpx-vp9 -b:v 0 -crf 40 \
+        -c:v libsvtav1 -crf 45 -preset 6 -pix_fmt yuv420p \
         $out
 end
+
+# Lower crf = higher quality (55 is poor, 45 is good)
+# Higher preset = better, slower compression (0=slowest, 8=fastest)
+abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 
 # https://yazi-rs.github.io/docs/quick-start
 function y

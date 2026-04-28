@@ -44,7 +44,8 @@ def write_fake_google_genai(package_root: Path) -> Path:
         textwrap.dedent(
             """\
             from __future__ import annotations
-
+            
+            import json
             import os
             from pathlib import Path
 
@@ -102,6 +103,11 @@ def write_fake_google_genai(package_root: Path) -> Path:
                             str(prompt_tokens + output_tokens + thought_tokens),
                         )
                     )
+                    response_by_file = json.loads(os.environ.get("FAKE_GENAI_RESPONSE_BY_FILE", "{}"))
+                    default_text = "\\n".join(
+                        f"**Speaker**: [00:0{index}] Transcript for {Path(audio.file).name} line {index}"
+                        for index in range(1, 6)
+                    )
                     usage = type(
                         "UsageMetadata",
                         (),
@@ -117,7 +123,10 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         "Response",
                         (),
                         {
-                            "text": f"Transcript for {Path(audio.file).name}",
+                            "text": response_by_file.get(
+                                Path(audio.file).name,
+                                os.environ.get("FAKE_GENAI_TRANSCRIPT_TEXT", default_text),
+                            ),
                             "usage_metadata": usage,
                             "model_version": model,
                         },
@@ -238,6 +247,22 @@ def test_upsert_transcript_section_preserves_existing_notes() -> None:
     assert "## Transcript\n\nGenerated transcript" in updated
 
 
+def test_upsert_transcript_section_updates_prompt_metadata() -> None:
+    module = load_module()
+    existing = "---\ntags:\n---\n\n# Demo\n\n## Notes\n\nAlready here.\n"
+
+    updated = module.upsert_transcript_section(
+        existing,
+        "Demo",
+        "Generated transcript",
+        prompt="Focus on action items",
+    )
+
+    assert "prompt: |-" in updated
+    assert "  Focus on action items" in updated
+    assert "## Transcript\n\nGenerated transcript" in updated
+
+
 def test_upsert_transcript_section_rejects_duplicate_sections() -> None:
     module = load_module()
     markdown = "# Demo\n\n## Transcript\n\nFirst\n\n## Notes\n\nKeep me\n\n## Transcript\n\nSecond\n"
@@ -248,6 +273,76 @@ def test_upsert_transcript_section_rejects_duplicate_sections() -> None:
         assert "multiple ## Transcript sections" in str(exc)
     else:
         raise AssertionError("Expected duplicate transcript sections to be rejected")
+
+
+def test_patch_transcript_section_replaces_requested_part() -> None:
+    module = load_module()
+    markdown = (
+        "# Demo\n\n## Transcript\n\n"
+        "first chunk\n\n---\n\nsecond chunk\n\n---\n\nthird chunk\n"
+    )
+
+    patched = module.patch_transcript_section(markdown, 2, "replacement chunk")
+
+    assert "first chunk\n\n---\n\nreplacement chunk\n\n---\n\nthird chunk" in patched
+
+
+def test_looks_like_transcript_requires_five_matching_lines() -> None:
+    module = load_module()
+    valid = "\n".join(
+        f"**Speaker**: [00:0{index}] line {index}"
+        for index in range(1, 6)
+    )
+    invalid = "It appears that you forgot to attach the audio file."
+
+    assert module.looks_like_transcript(valid) is True
+    assert module.looks_like_transcript(invalid) is False
+
+
+def test_extract_prompt_metadata_reads_block_scalar() -> None:
+    module = load_module()
+    markdown = (
+        "---\n"
+        "tags:\n"
+        "prompt: |-\n"
+        "  Focus on action items\n"
+        "---\n\n"
+        "# Demo\n"
+    )
+
+    extracted = module.extract_prompt_metadata(markdown)
+
+    assert extracted == "Focus on action items"
+
+
+def test_extract_prompt_metadata_ignores_legacy_inline_prompt_value() -> None:
+    module = load_module()
+    markdown = (
+        "---\n"
+        'prompt: "Focus on action items"\n'
+        "---\n\n"
+        "# Demo\n"
+    )
+
+    assert module.extract_prompt_metadata(markdown) is None
+
+
+def test_find_invalid_transcript_sections_returns_bad_part_indices() -> None:
+    module = load_module()
+    markdown = (
+        "# Demo\n\n## Transcript\n\n"
+        "**Speaker**: [00:01] okay\n"
+        "**Speaker**: [00:02] fine\n"
+        "**Speaker**: [00:03] yes\n"
+        "**Speaker**: [00:04] sure\n"
+        "**Speaker**: [00:05] done\n"
+        "\n---\n\n"
+        "It appears that you forgot to attach the audio file.\n"
+        "\n---\n\n"
+        "It looks like you forgot to attach the transcript.\n"
+    )
+
+    assert module.find_invalid_transcript_sections(markdown) == [2, 3]
 
 
 def test_build_chunk_windows_prefers_friendly_nominal_size_and_uses_one_second_overlap() -> None:
@@ -304,6 +399,14 @@ def test_build_chunk_user_prompt_appends_part_context() -> None:
 
     assert prompt.startswith("Focus on action items\n\n")
     assert "part 2/4 of a longer recording" in prompt
+
+
+def test_resolve_patch_prompts_uses_stored_prompt_as_user_context() -> None:
+    module = load_module()
+
+    prompts = module.resolve_patch_prompts("System prompt text", "Stored patch prompt", None)
+
+    assert prompts == ("System prompt text", "Stored patch prompt")
 
 
 def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path) -> None:
@@ -373,11 +476,12 @@ def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path)
     call_b = (output_dir / "call-b.md").read_text(encoding="utf-8")
     call_c = (output_dir / "call-c.md").read_text(encoding="utf-8")
 
-    assert call_a.startswith("---\ntags:\ngoal:\nkind candor:\neffectiveness:\n---\n\n# call-a\n")
-    assert "## Transcript\n\nTranscript for call-a.opus" in call_a
-    assert call_b == "# call-b\n\n## Transcript\n\nExisting transcript\n"
+    assert call_a.startswith("---\ntags:\ngoal:\nkind candor:\neffectiveness:\nprompt: |-\n  Use this exact prompt\n---\n\n# call-a\n")
+    assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-a.opus line 1" in call_a
+    assert "prompt: |-\n  Use this exact prompt" in call_b
+    assert call_b.endswith("# call-b\n\n## Transcript\n\nExisting transcript\n")
     assert "## Notes\n\nNeeds transcript" in call_c
-    assert "## Transcript\n\nTranscript for call-c.wav" in call_c
+    assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-c.wav line 1" in call_c
 
     second = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
     assert second.returncode == 0, second.stderr
@@ -453,7 +557,7 @@ def test_script_transcribes_trailing_digit_audio_normally_when_base_note_lacks_t
     assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in result.stdout
     assert (output_dir / "2026-01-13 Sandeep Bhat.md").read_text(encoding="utf-8") == base_note
     numbered_note = (output_dir / "2026-01-13 Sandeep Bhat 1.md").read_text(encoding="utf-8")
-    assert "## Transcript\n\nTranscript for 2026-01-13 Sandeep Bhat 1.opus" in numbered_note
+    assert "## Transcript\n\n**Speaker**: [00:01] Transcript for 2026-01-13 Sandeep Bhat 1.opus line 1" in numbered_note
     assert f"AUDIO\t{input_dir / '2026-01-13 Sandeep Bhat 1.opus'}" in log_path.read_text(encoding="utf-8")
 
 
@@ -628,13 +732,52 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     transcript = (output_dir / "test.md").read_text(encoding="utf-8")
     assert "Transcript for test.opus" in transcript
-    assert 'prompt: "Focus on action items"' in transcript
+    assert "prompt: |-" in transcript
+    assert "  Focus on action items" in transcript
 
     log_text = log_path.read_text(encoding="utf-8")
     assert f"AUDIO\t{input_dir / 'test.opus'}" in log_text
     assert "SYSTEM_PROMPT\tSystem prompt text" in log_text
     assert "USER_PROMPT\tFocus on action items" in log_text
     assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in result.stdout
+
+
+def test_script_backfills_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "call.opus").write_bytes(b"audio")
+    (output_dir / "call.md").write_text(
+        "# call\n\n## Transcript\n\n**Speaker**: [00:01] line 1\n**Speaker**: [00:02] line 2\n**Speaker**: [00:03] line 3\n**Speaker**: [00:04] line 4\n**Speaker**: [00:05] line 5\n",
+        encoding="utf-8",
+    )
+    prompt_file.write_text("System prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "12"
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "[1/1] update metadata call.opus -> call.md" in result.stdout
+    transcript = (output_dir / "call.md").read_text(encoding="utf-8")
+    assert "prompt: |-" in transcript
+    assert "  System prompt text" in transcript
+    assert not log_path.exists()
 
 
 def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) -> None:
@@ -679,12 +822,15 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     )
 
     assert result.returncode == 0, result.stderr
+    assert "[1/3] create long.opus -> long.md" in result.stdout
+    assert "[2/3] create long.opus -> long.md" in result.stdout
+    assert "[3/3] create long.opus -> long.md" in result.stdout
     assert "tokens=450 cost=$0.002400 total_cost=$0.002400" in result.stdout
     transcript = (output_dir / "long.md").read_text(encoding="utf-8")
-    assert (
-        "Transcript for long.part001.opus\n\n---\n\nTranscript for long.part002.opus\n\n---\n\nTranscript for long.part003.opus"
-        in transcript
-    )
+    assert "Transcript for long.part001.opus line 1" in transcript
+    assert "\n\n---\n\n" in transcript
+    assert "Transcript for long.part002.opus line 1" in transcript
+    assert "Transcript for long.part003.opus line 1" in transcript
 
     ffmpeg_log = ffmpeg_log_path.read_text(encoding="utf-8").splitlines()
     assert len(ffmpeg_log) == 3
@@ -700,6 +846,212 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "USER_PROMPT\tThis audio is part 1/3 of a longer recording." in genai_log
     assert "USER_PROMPT\tThis audio is part 2/3 of a longer recording." in genai_log
     assert "USER_PROMPT\tThis audio is part 3/3 of a longer recording." in genai_log
+
+
+def test_script_warns_when_chunk_response_does_not_look_like_transcript(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "long.opus").write_bytes(b"audio")
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["FAKE_GENAI_RESPONSE_BY_FILE"] = json.dumps(
+        {"long.part002.opus": "It appears that you forgot to attach the audio file."}
+    )
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(
+        script_path,
+        input_dir,
+        output_dir,
+        prompt_file,
+        "--chunk",
+        "30",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "WARNING long.opus: section 2/3 matched only 0 transcript-format lines" in result.stderr
+    assert "Patch command for long.md section 2:" in result.stderr
+    assert "--patch-section 2" in result.stderr
+    assert "Transcript for long.part001.opus line 1" in (output_dir / "long.md").read_text(encoding="utf-8")
+    assert "It appears that you forgot to attach the audio file." in (output_dir / "long.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_script_patch_section_retranscribes_only_requested_chunk(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    ffmpeg_log_path = tmp_path / "ffmpeg.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "long.opus").write_bytes(b"audio")
+    (output_dir / "long.md").write_text(
+        "---\n"
+        "prompt: |-\n"
+        "  Stored patch prompt\n"
+        "---\n\n"
+        "# long\n\n## Transcript\n\nfirst chunk\n\n---\n\nsecond chunk\n\n---\n\nthird chunk\n",
+        encoding="utf-8",
+    )
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFMPEG_LOG"] = str(ffmpeg_log_path)
+    env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["FAKE_GENAI_RESPONSE_BY_FILE"] = json.dumps(
+        {
+            "long.part002.opus": "\n".join(
+                f"**Speaker**: [00:0{index}] patched line {index}"
+                for index in range(1, 6)
+            )
+        }
+    )
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(
+        script_path,
+        input_dir,
+        output_dir,
+        prompt_file,
+        "--chunk",
+        "30",
+        "--patch-section",
+        "2",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "[2/3] patch section 2 long.opus -> long.md" in result.stdout
+    transcript = (output_dir / "long.md").read_text(encoding="utf-8")
+    assert "first chunk\n\n---\n\n**Speaker**: [00:01] patched line 1" in transcript
+    assert "third chunk" in transcript
+    assert "prompt: |-\n  Stored patch prompt" in transcript
+    ffmpeg_log = ffmpeg_log_path.read_text(encoding="utf-8").splitlines()
+    assert len(ffmpeg_log) == 3
+    genai_log = log_path.read_text(encoding="utf-8")
+    assert "long.part001.opus" not in genai_log
+    assert "long.part002.opus" in genai_log
+    assert "long.part003.opus" not in genai_log
+    assert "SYSTEM_PROMPT\tPrompt text" in genai_log
+    assert "USER_PROMPT\tStored patch prompt" in genai_log
+
+
+def test_script_patch_invalid_sections_retranscribes_all_bad_chunks(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "long.opus").write_bytes(b"audio")
+    (output_dir / "long.md").write_text(
+        "# long\n\n## Transcript\n\n"
+        "**Speaker**: [00:01] first line\n"
+        "**Speaker**: [00:02] first line\n"
+        "**Speaker**: [00:03] first line\n"
+        "**Speaker**: [00:04] first line\n"
+        "**Speaker**: [00:05] first line\n"
+        "\n\n---\n\n"
+        "It appears that you forgot to attach the audio file.\n"
+        "\n\n---\n\n"
+        "It looks like you forgot to attach the raw transcript.\n",
+        encoding="utf-8",
+    )
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["FAKE_GENAI_RESPONSE_BY_FILE"] = json.dumps(
+        {
+            "long.part002.opus": "\n".join(
+                f"**Speaker**: [00:0{index}] repaired second {index}"
+                for index in range(1, 6)
+            ),
+            "long.part003.opus": "\n".join(
+                f"**Speaker**: [00:0{index}] repaired third {index}"
+                for index in range(1, 6)
+            ),
+        }
+    )
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(
+        script_path,
+        input_dir,
+        output_dir,
+        prompt_file,
+        "--chunk",
+        "30",
+        "--patch-invalid-sections",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "[2/3] patch invalid sections 2,3 long.opus -> long.md" in result.stdout
+    assert "[3/3] patch invalid sections 2,3 long.opus -> long.md" in result.stdout
+    transcript = (output_dir / "long.md").read_text(encoding="utf-8")
+    assert "repaired second 1" in transcript
+    assert "repaired third 1" in transcript
+    assert "It appears that you forgot to attach the audio file." not in transcript
+    assert "It looks like you forgot to attach the raw transcript." not in transcript
+    genai_log = log_path.read_text(encoding="utf-8")
+    assert "long.part001.opus" not in genai_log
+    assert "long.part002.opus" in genai_log
+    assert "long.part003.opus" in genai_log
 
 
 def test_script_dry_run_reports_duration_and_chunks_without_side_effects(tmp_path: Path) -> None:

@@ -14,7 +14,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
 - Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
 - When tests exist, or writing new code, add new failing tests first (including edge cases). Keep tests fast
-- For UI/image tasks, capture and inspect screenshots before finalizing
+- Test web pages with screenshots (for layout, overlaps, contrast) AND CDP (for interactions, navigation) before finalizing
 - Replace PII in committed code, tests, docs with similar REALISTIC dummy data
 - Show status & progress for long tasks (>5s)
 - Make re-runs efficient for long tasks (>1min). Restarting should resume. Log state, cache & flush data and LLM/API/HTTP requests, etc.
@@ -60,6 +60,8 @@ Prefer modern HTML:
 - Forms: inputmode=, enterkeyhint=, autocomplete=, list=, autocapitalize=, spellcheck=, form=
 - UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
 - Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
+
+Prefer icon libraries over unicode/emoji icons.
 
 Prefer SVG favicons e.g.
 

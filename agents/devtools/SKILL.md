@@ -7,8 +7,8 @@ notes:
 ---
 
 Use CDP at localhost:9222.
-For exploration, use `tmux` with websocat, or wscat, or `uv run --with playwright,markdownify,httpx,readability python -m asyncio` (starts Python REPL with top-level await).
-For automation, `npm install playwright` and code in `node`.
+Use `agent-browser` (simpler than `playwright`) where helpful.
+Playwright is installed globally via `export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"; npm install -g playwright; playwright install --with-deps chromium firefox webkit`.
 
 Capabilities:
 

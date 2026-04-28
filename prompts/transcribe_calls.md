@@ -80,6 +80,42 @@ Avoid 21 min chunks! That makes it harder for me to calculate timings. A 65m chu
 
 Modify transcribe_calls.py minimally to add the "--prompt" contents (if provided) in the YAML metadata as `prompt: <contents>`.
 
+--- <!-- 19 Apr 2026 /model gpt-5.4 high -->
+
+Sometimes, in multi-chunk calls, transcribe_calls.py gets a response like "It appears that you forgot to attach the audio file...".
+
+Let's do two things:
+
+1. Add a CLI option to patch a specific section of the transcript file with a new transcript.
+2. When Gemini sends the response, check if it looks like a valid transcript (e.g. are there at least 5 lines that match the transcript line format?) If not, log a warning and the command to patch the transcript file.
+
+Run and test using a `gemini-3-flash-preview` (which is cheaper) and a short audio file to avoid consuming too many tokens.
+
+---
+
+Add an option to detect and patch all sections for a specific audio file.
+Look at the most recent transcripts and find 3 examples of this issue.
+Patch the audio using the default (Pro) model. Verify that it works fine - fixing issues as required.
+
+---
+
+Add/update the `prompt:` key in the YAML metadata of all transcripts to include the prompt used for that transcript.
+Use this prompt as context for patches.
+Run and test inexpensively.
+
+---
+
+In case the `user_prompt` is provided, use THAT for `prompt:`. Don't use the full contents of the DEFAULT_PROMPT_FILE!
+
+---
+
+Refactor the code to be more simple, removing legacy code paths, options, features that are no longer needed.
+
+---
+
+Currently, the logs report "[1/1] create ..." even when there are multiple chunks. When each chunk is generated, no additional logs are generated.
+Modify it so that the number of chunks is calculated upfront and reported, eg. "[1/3] create ..." and when each chunk is generated, log the progress, e.g. "[2/3] create ..."
+
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
 <!--
 
@@ -87,5 +123,5 @@ dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
    -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
    -v /home/sanand/code/blog/:/home/sanand/code/blog/:ro
 
-copilot --yolo --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50
+copilot --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50 --yolo
 -->
