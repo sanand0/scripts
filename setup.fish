@@ -143,6 +143,9 @@ abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 # Recent blog posts
 abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g ~/code/blog/posts/**/*.md | xargs rg "^date:" | sort -k2 -r | head -n 30 | cut -d: -f1 | xargs uvx files-to-prompt --cxml'
 
+# Summarize descriptions & keywords for blogs, transcripts, etc.
+abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > description.md"
+
 abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
 abbr --add copilotlog 'agentlog.py copilot'
@@ -464,49 +467,56 @@ function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts i
     end
 end
 
-function webp-lossless --description "Convert images to compact lossless WebP with optional resizing and color quantization"
-    # 1. Define the options spec
-    # 'c/colors=' : -c or --colors, requires a value (=)
-    # 's/size='   : -s or --size, requires a value (=)
-    # 'h/help'    : -h or --help, generic switch
-    argparse 'c/colors=!_validate_int' 's/size=!_validate_int' 'h/help' -- $argv
+function avif --description "Convert images to AVIF with optional quality, speed, width, and height"
+    argparse 'q/quality=!_validate_int' 's/speed=!_validate_int' 'w/width=!_validate_int' 'h/height=!_validate_int' 'H/help' -- $argv
     or return
 
     if set -q _flag_help
-        echo "Usage: webp-lossless [-c|--colors N] [-s|--size N] file1 [file2 ...]"
+        echo "Usage: avif [-q|--quality N] [-s|--speed N] [-w|--width N] [-h|--height N] file1 [file2 ...]"
         return 0
     end
 
-    # 2. Set defaults if flags weren't provided
-    set -l colors 8
-    set -l resize_opts
+    set -l quality 50
+    set -l speed 4
 
-    if set -q _flag_colors
-        set colors $_flag_colors
+    if set -q _flag_quality
+        set quality $_flag_quality
     end
 
-    if set -q _flag_size
-        set resize_opts "-resize" "$_flag_size"x"$_flag_size"
+    if set -q _flag_speed
+        set speed $_flag_speed
     end
 
-    # 3. Process files (argparse removes flags from $argv, leaving only files)
+    set -l resize 0
+    set -l width -1
+    set -l height -1
+
+    if set -q _flag_width
+        set width $_flag_width
+        set resize 1
+    end
+
+    if set -q _flag_height
+        set height $_flag_height
+        set resize 1
+    end
+
     for file in $argv
-        set -l output (string replace -r '\.[^.]+$' '.webp' -- $file)
+        set -l output (string replace -r '\.[^.]+$' '.avif' -- "$file")
 
         if test -e "$output"
             echo "Skipping $file -> $output (already exists)"
             continue
         end
 
-        echo "Processing $file -> $output (Colors: $colors, Resize: $_flag_size)..."
-
-        # Pipeline:
-        # magick: reads input -> optional resize -> outputs PNG to stdout
-        # pngquant: quantizes to $colors -> no dithering -> strip metadata -> max speed -> reads from stdin
-        # cwebp: lossless -> max compression (-z 9) -> multi-threaded -> reads from stdin
-        magick $file $resize_opts png:- | \
-        pngquant $colors --nofs --strip --speed 1 - | \
-        cwebp -quiet -lossless -z 9 -mt -o $output -- -
+        if test $resize -eq 1
+            ffmpeg -hide_banner -stats -v warning -i "$file" \
+                -vf "scale=w=$width:h=$height:force_original_aspect_ratio=decrease" \
+                -f yuv4mpegpipe - \
+            | avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim --stdin "$output" >/dev/null
+        else
+            avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim "$file" "$output" >/dev/null
+        end
     end
 end
 
@@ -581,7 +591,7 @@ function meeting --description "Create a new meeting transcript file"
     if not test -e $file
         echo "---
 summary:
-workshop:
+keywords:
 ---
 
 # $title

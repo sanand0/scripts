@@ -3,6 +3,7 @@ name: code
 description: ALWAYS follow this style when writing Python / JavaScript code
 ---
 
+- Ask if the success criteria is unclear
 - Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries
 - Write readable code. Keep happy path linear and obvious. Write flow first, then fill in code. Name intuitively
 - Keep code short
@@ -14,11 +15,10 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
 - Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
 - When tests exist, or writing new code, add new failing tests first (including edge cases). Keep tests fast
-- Test web pages with screenshots (for layout, overlaps, contrast) AND CDP (for interactions, navigation) before finalizing
-- Replace PII in committed code, tests, docs with similar REALISTIC dummy data
-- Show status & progress for long tasks (>5s)
-- Make re-runs efficient for long tasks (>1min). Restarting should resume. Log state, cache & flush data and LLM/API/HTTP requests, etc.
-- Read latest docs for fast moving packages: GitHub README, `npm view package-name readme`, https://context7.com/$ORG/$REPO/llms.txt, ...
+- Test web pages with screenshots (for layout, overlaps, contrast) _AND_ DOM (for interactions, navigation) before finalizing
+- Log status & progress for long tasks (>5s)
+- Make scripts re-startable if interrupted
+- Check latest docs for fast moving packages
 
 ## Python
 
@@ -29,28 +29,18 @@ Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies a
 ```py
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14"
 # dependencies = ["scipy>=1.10", "httpx"]
 # ///
 ```
 
 Preferred libs:
 
-- `typer` / `click` not `argparse`
-- `httpx` not `requests`
-- `lxml` not `xml`
-- `pandas` not `csv`
-- `orjson` over `json` if speed/datetime matters
-- `tenacity` for retries
-- `pytest`
-- `python-dotenv`
-
-Use one of these for exception tracebacks with locals:
-
-```python
-from rich.traceback import install; install(show_locals=True)
-from loguru import logger; logger.add(sink=lambda m: print(m, end=""), diagnose=True, backtrace=True)
-```
+- typer / click not argparse
+- httpx not requests
+- lxml not xml
+- pandas not csv
+- tenacity for retries
 
 ## HTML
 
@@ -60,23 +50,6 @@ Prefer modern HTML:
 - Forms: inputmode=, enterkeyhint=, autocomplete=, list=, autocapitalize=, spellcheck=, form=
 - UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
 - Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
-
-Prefer icon libraries over unicode/emoji icons.
-
-Prefer SVG favicons e.g.
-
-```html
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns ... %3C%2Fsvg%3E"/>
-```
-
-designed with Unicode and rich typography, e.g.:
-
-```html
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128">
-  <rect fill="#2563eb" width="64" height="64" rx="10"/>
-  <text x="32" y="35" text-anchor="middle" dominant-baseline="middle" font-size="40">🌈</text>
-</svg>
-```
 
 ## JavaScript
 
@@ -88,26 +61,8 @@ Preferred JS style:
 - Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
-- Helpers: `const $ = (s, el = document) => el.querySelector(s); $('#id')...`
-- Prefer lit-html > .insertAdjacentHTML / .innerHTML >> .createElement + setting attributes
-- Prefer vitest + jsdom for unit tests, Playwright for end-to-end tests
-- Import maps: `<script type="importmap">{ "imports": { "package-name": "https://cdn.jsdelivr.net/npm/package-name@version" } }</script>`
 
-Preferred libs:
+Preferred libs: d3, hljs, lit-html, marked, partial-json
 
-```js
-import * as d3 from "d3"; // @7/+esm for visualizations
-import hljs from "highlight.js"; // @11/+esm highlight Markdown code; link CDN CSS
-import { html, render } from "lit-html"; // @3/+esm for DOM updates
-import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
-import { marked } from "marked"; // @17/+esm
-import { parse } from "partial-json"; // @0.1/+esm parse streamed JSON. `const { x } = parse('{"x":"incomplete')`
-
-import { asyncLLM } from "asyncllm"; // @2 streams LLM responses. `for await (const { content, error } of asyncLLM(baseURL, { method: "POST", body: JSON.stringify({...}), headers: { Authorization: `Bearer ${apiKey}` } }))`
-import { bootstrapAlert } from "bootstrap-alert"; // @1 for notifications. `bootstrapAlert({ title: "Success", body: "Toast message", color: "success" })`
-import { geminiConfig, openaiConfig } from "bootstrap-llm-provider"; // @1 LLM provider modal. `const { baseUrl, apiKey, models } = await openaiConfig()`
-import saveform from "saveform"; // @1 to persist form data. `saveform("#form-to-persist")`
-```
-
-Debug front-end apps with Playwright (prefer CDP on localhost:9222) using .evaluate(); view screenshot images, console logs.
-For self-contained HTML files try `file://` before spinning up a server.
+Debug front-end apps with agent-browser or Playwright via CDP on localhost:9222.
+For single-page HTML files try `file://` before spinning up a server.

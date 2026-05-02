@@ -28,6 +28,7 @@ RUN apt-get update \
     ghostscript \
     librsvg2-bin \
     bubblewrap \
+    xxd \
   && rm -rf /var/lib/apt/lists/*
 
 # Make /home/sanand point to /home/vscode (symlink; hard links for dirs aren’t supported)
@@ -121,7 +122,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "26 Apr 2026: Updating agents and fast-moving agent tools"; \
+  echo "02 May 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \

@@ -13,6 +13,7 @@ Design principles:
 - Bookmarkable. Capture state in the URL `#path?key=value`. Sharing the URL reproduces the view, with tabs, filters, slider positions, etc. captured. Prefer replaceState()
 
 Prefer creative, distinctive frontends that surprise and delight, not generic, "on distribution" outputs.
+Copying niche styles can be a great idea.
 
 Focus on:
 
@@ -21,22 +22,29 @@ Focus on:
 - Motion: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions.
 - Backgrounds: Create atmosphere and depth rather than defaulting to solid colors. Layer CSS gradients, use geometric patterns, or add contextual effects that match the overall aesthetic.
 
-Override framework / browser defaults to avoid generic AI-generated aesthetics:
-
-- Overused font families (Inter, Roboto, Arial, system fonts)
-- Clichéd color schemes (particularly purple gradients on white backgrounds)
-- Predictable layouts and component patterns
-- Cookie-cutter design that lacks context-specific character
-
-Interpret creatively and make unexpected choices that feel genuinely designed for the context. Vary between light and dark themes, different fonts, different aesthetics. You still tend to converge on common choices (Space Grotesk, for example) across generations. Avoid this: it is critical that you think outside the box!
-
 Use tooltips and popups as informative and engaging aids.
 
-- **Tooltips** are for:
-  - Context about non-obvious terms or phrases (only if relevant and useful)
-  - Additional context about references (where possible)
-  - Metadata and context about data points, table cells, chart elements, etc. (always)
-- **Popups** are for:
-  - Citations. Quote from citations and link to references from the popup.
-  - Files as supporting evidence in popups. Render Markdown as HTML (syntax-highlighted if it has code), tabular data as sortable tables (gradient-coloring numbers if that'll help)
-  - Full context for data points, table cells, chart elements, etc. These popups can be extensive, e.g. narratives, cards, tables, charts, or even entire dashboards if required
+- Use **tooltips** for:
+  - Explaining the non-obvious
+  - Context for data points on table cells, chart elements, etc. (always)
+- Use **popups** for:
+  - Quotes / citations with links
+  - File links. Render Markdown as HTML (syntax-highlighted), tabular data as sortable tables (with gradient-colored numbers)
+  - Context for data points on table cells, chart elements, etc. These popups can be extensive, e.g. narratives, cards, tables, charts, or even entire dashboards if required
+
+Use icon libraries rather than unicode/emoji icons.
+
+Use SVG favicons e.g.
+
+```html
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns ... %3C%2Fsvg%3E"/>
+```
+
+You can use Unicode and rich typography in the SVG.
+
+```html
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128">
+  <rect fill="#2563eb" width="64" height="64" rx="10"/>
+  <text x="32" y="35" text-anchor="middle" dominant-baseline="middle" font-size="40">🌈</text>
+</svg>
+```

@@ -106,6 +106,7 @@ sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfima
 sudo apt install -y melt                # melt - Command-line video editing
 sudo apt install -y sox libsox-fmt-all  # sox - audio processing
 sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modification times from git history
+sudo apt install -y gromit-mpx          # gromit-mpx - On-screen annotation tool (F9 to toggle, F8/Shift F8 to undo/redo)
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 

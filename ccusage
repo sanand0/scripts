@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Source: https://chatgpt.com/c/69f238ce-1364-83ea-855e-4317642395d9
+# Alternative to: uvx ccusage
+
+# If this reports an error, you may need to log into Claude Code
+
+TOKEN=$(jq -r '.claudeAiOauth.accessToken // .accessToken' ~/.claude/.credentials.json)
+
+curl -sS https://api.anthropic.com/api/oauth/usage \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "anthropic-beta: oauth-2025-04-20" \
+  -H "Accept: application/json" |
+jq -r '
+  ["5h", .five_hour.utilization, .five_hour.resets_at],
+  ["7d", .seven_day.utilization, .seven_day.resets_at]
+  | @tsv
+' |
+while IFS=$'\t' read -r label usage reset; do
+  when=$(TZ=Asia/Singapore date -d "$reset" '+%-I:%M %P SGT on %a %d %b %Y')
+  printf "%s: %.0f%% - resets at %s\n" "$label" "$usage" "$when"
+done

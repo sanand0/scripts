@@ -7,7 +7,7 @@ curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, ...
-agent-browser (CLI, simpler than playwright)
+agent-browser (CLI, simpler than playwright, but `npm install -g playwright` exists)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
@@ -18,7 +18,7 @@ gws (Google Workspace CLI), gcloud, aws
 
 Suggestions:
 
-When possible, run in parallel: read, tools, sub-agents, ...
+When possible, run in parallel for speed and token efficiency: read, tools, sub-agents, ...
 Delegate long-running commands/tests to sub-agents and report checkpoints.
 If blocked by permissions, ask me concise choices.
 When done, suggest what & how to verify edge cases and/or suggest high-impact improvements.

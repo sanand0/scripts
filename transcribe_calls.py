@@ -177,10 +177,6 @@ def render_new_document(title: str, transcript: str, prompt: str) -> str:
         raise ValueError("Transcript output is empty.")
     return (
         "---\n"
-        "tags:\n"
-        "goal:\n"
-        "kind candor:\n"
-        "effectiveness:\n"
         f"{render_prompt_metadata(prompt)}"
         "---\n\n"
         f"# {title}\n\n"

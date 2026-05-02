@@ -153,7 +153,7 @@ def format_topic_block(host: str, topic: dict, op_post: dict, posts: List[dict])
 
 
 def collect_topic_posts(
-    client: Client, topic: dict, since: datetime | None
+    client: Client, topic: dict, since: datetime | None, until: datetime | None = None
 ) -> Tuple[dict, List[dict]]:
     detail = get_json(client, f"/t/{topic['id']}.json")
     posts = detail.get("post_stream", {}).get("posts", [])
@@ -163,11 +163,11 @@ def collect_topic_posts(
     tail = posts[1:]
     if since is None:
         return op_post, tail
-    recent = [p for p in tail if parse_dt(p["created_at"]) >= since]
+    recent = [p for p in tail if since <= parse_dt(p["created_at"]) <= (until or datetime.max.replace(tzinfo=timezone.utc))]
     return op_post, recent
 
 
-def stream_markdown(host: str, category_id: int, since: datetime) -> Generator[str, None, None]:
+def stream_markdown(host: str, category_id: int, since: datetime, until: datetime) -> Generator[str, None, None]:
     with http_client(host) as client:
         old_hits = 0
         for topic in fetch_topic_pages(client, category_id):
@@ -180,7 +180,7 @@ def stream_markdown(host: str, category_id: int, since: datetime) -> Generator[s
                     break
                 continue
             old_hits = 0
-            op_post, posts = collect_topic_posts(client, topic, since)
+            op_post, posts = collect_topic_posts(client, topic, since, until)
             if not posts:
                 continue
             yield format_topic_block(host, topic, op_post, posts) + "\n"
@@ -192,6 +192,7 @@ def main(
     category_id: int = typer.Option(None, help="e.g. 34"),
     topic_id: int = typer.Option(None, help="e.g. 12345"),
     since: str = typer.Option(..., help="ISO8601 timestamp (UTC), e.g. 2025-01-31"),
+    until: str = typer.Option(None, help="ISO8601 timestamp (UTC), e.g. 2025-02-28. Defaults to now."),
 ) -> None:
     load_dotenv()
     if not category_id and not topic_id:
@@ -200,6 +201,7 @@ def main(
         raise typer.BadParameter("Choose only one of --category-id or --topic-id")
     clean_host = host.rstrip("/")
     since_dt = parse_dt(since)
+    until_dt = parse_dt(until) if until else datetime.now(timezone.utc)
     emitted = False
     if topic_id:
         with http_client(clean_host) as client:
@@ -209,7 +211,7 @@ def main(
                 print(format_topic_block(clean_host, topic, op_post, posts))
                 emitted = True
     else:
-        for block in stream_markdown(clean_host, category_id, since_dt):
+        for block in stream_markdown(clean_host, category_id, since_dt, until_dt):
             print(block, end="")
             emitted = True
     if not emitted:
