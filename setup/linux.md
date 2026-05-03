@@ -313,6 +313,9 @@ espanso start
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
+# Install Zed
+curl -f https://zed.dev/install.sh | sh
+
 # NVIDIA Container Toolkit - GPU support in Docker
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
