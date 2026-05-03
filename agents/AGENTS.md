@@ -9,7 +9,7 @@ curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown, uvx browser-use, ...
-agent-browser (CLI, simpler than playwright. `uvx playwright` exists)
+agent-browser, uvx browser-use (simpler CLIs than `import playwright` code)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
