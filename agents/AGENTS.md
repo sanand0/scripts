@@ -22,4 +22,4 @@ Suggestions:
 
 When possible, run in parallel for speed and token efficiency
 Delegate long-running tasks to sub-agents and report checkpoints
-Test permissions and ask for help EARLY. Check .env
+Test permissions, .env, ... and ask EARLY for help
