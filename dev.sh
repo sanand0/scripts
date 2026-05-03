@@ -91,6 +91,7 @@ add_mount_if_present /usr/share/fonts /usr/share/fonts ro
 add_mount_if_present /usr/local/share/fonts /usr/local/share/fonts ro
 add_mount_if_present "$HOME/.fonts" /home/vscode/.fonts ro
 add_mount_if_present "$HOME/.local/share/fonts" /home/vscode/.local/share/fonts ro
+add_mount_if_present "$HOME/.local/share/rtk" /home/vscode/.local/share/rtk ro
 
 docker_socket_group_args=()
 # UID 1000 inside the container needs the host docker socket's GID for access.
