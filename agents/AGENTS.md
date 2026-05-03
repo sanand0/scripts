@@ -20,7 +20,6 @@ gws (Google Workspace CLI), gcloud, aws
 
 Suggestions:
 
-When possible, run in parallel for speed and token efficiency: read, tools, sub-agents, ...
-Delegate long-running commands/tests to sub-agents and report checkpoints.
-If blocked by permissions, ask me concise choices.
-When done, suggest what & how to verify edge cases and/or suggest high-impact improvements.
+When possible, run in parallel for speed and token efficiency.
+Delegate long-running tasks to sub-agents and report checkpoints.
+Test permissions and ask for help EARLY.
