@@ -8,8 +8,8 @@ git, gh
 curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
-uvx ruff, uvx yt-dlp, uvx markitdown, ...
-agent-browser (CLI, simpler than playwright, but `npm install -g playwright` exists)
+uvx ruff, uvx yt-dlp, uvx markitdown, uvx browser-use, ...
+agent-browser (CLI, simpler than playwright. `npm install -g playwright` exists)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
