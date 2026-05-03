@@ -149,7 +149,7 @@ mise use -g github:milisp/codexia     # codexia - Codex / Claude log viewer. Des
 mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, encrypt)
-mise use -g github:rtk-ai/rtk         # rtk -
+mise use -g github:rtk-ai/rtk         # rtk - CLI tool proxy that reduces token consumption
 mise use -g github:sinelaw/fresh      # fresh - Text editor
 mise use -g github:walles/moor        # moor - pager with syntax highlighting
 mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text | # text' < file.md

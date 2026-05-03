@@ -78,6 +78,7 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   github:mithrandie/csvq \
   github:pdfcpu/pdfcpu \
   github:phiresky/ripgrep-all[extract_all=true] \
+  github:rtk-ai/rtk \
   hugo \
   jaq \
   node \
