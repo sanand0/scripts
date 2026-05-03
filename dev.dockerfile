@@ -97,7 +97,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai; \
+  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai playwright; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
@@ -115,7 +115,6 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g wscat@latest; \
   npm install -g @googleworkspace/cli@latest; \
   npm install -g pixelmatch pngjs; \
-  npm install -g playwright; \
   playwright install --with-deps chromium firefox webkit; \
   mise reshim node \
   '
