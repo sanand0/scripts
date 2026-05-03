@@ -1,4 +1,4 @@
-Always prefix shell commands with `rtk`. Examples: `rtk git status`, `rtk pytest -q`, etc.
+Always prefix shell commands with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
 
 Available tools:
 
