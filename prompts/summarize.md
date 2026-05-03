@@ -61,4 +61,37 @@ Document this in README.md as a one-line bullet.
 Add sub-bullets explaining how to run it for new transcripts and blog posts. Basically, I will just run the two code snippets you give me blindly - maybe daily, weekly, or monthly or anywhere in-between. The same snippet should work seamlessly.
 Since re-running on content that already has the meta tags is harmless, it's OK to prefer simplicity over exactness. For example, you could give me a script that'll run all transcripts with a glob of 2026-04* and I can modify that easily; or a `ug -l '^date: 2026-04'` piped via xargs for blogs. Or any other simple, easy-to-edit mechanism.
 
+---
+
+/compact
+
+---
+
+In `/home/sanand/code/blog` there are a few metadata formatting issues. For example:
+
+- `pages/notes/gemini-immune-system.md` and other pages replaces `build: { list: never, render: always }` with `build: {list: never, render: always}`
+- `pages/prompts/fake-data.md` and other pages have no indentation under `sources:`
+- `posts/1999/punctuation-is-critical.md` and other pages have no indentation under `categories:`
+
+Update `summarize.py` using as guidance to preserve the formatting.
+Also, review `/home/sanand/code/blog` to make sure that all changed files have the correct formatting - and no file is changed purely because of formatting.
+
+---
+
+/effort medium
+
+---
+
+Why do I get this error on just these two posts?
+
+❯ summarize.py blog posts/2000/more-gale-trouble.md posts/2000/train-delays.md
+ERROR train-delays.md: RetryError[<Future at 0x721b167e6b10 state=finished raised ValueError>]
+ERROR more-gale-trouble.md: RetryError[<Future at 0x721b169afec0 state=finished raised ValueError>]
+
+Fix only if it REALLY needs fixing and it won't increase summarize.py lines of code by more than 3 lines.
+
+---
+
+Give me the description and keywords to paste.
+
 <!-- claude --resume 1d3b01c8-87e8-4a39-b9d6-e7a347204717 --dangerously-skip-permissions -->

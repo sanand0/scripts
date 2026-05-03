@@ -7,6 +7,7 @@ dev.sh -v /home/sanand/Documents/Meet\ Recordings/:/home/sanand/Documents/Meet\ 
   -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/ \
   -v /home/sanand/.config/gws-root.node@gmail.com/:/home/sanand/.config/gws-root.node@gmail.com/
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+
 -->
 
 ## Generate script, 01 May 2026

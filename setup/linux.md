@@ -295,6 +295,7 @@ flatpak install -y flathub com.github.johnfactotum.Foliate      # Foliate - eBoo
 flatpak install -y flathub org.torproject.torbrowser-launcher   # Tor Browser - Privacy-focused web browser
 flatpak install -y flathub org.onlyoffice.desktopeditors        # ONLYOFFICE - Office suite compatible with MS Office formats
 flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
+flatpak install -y flathub org.localsend.localsend_app          # LocalSend - P2P file sharing over LAN
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"

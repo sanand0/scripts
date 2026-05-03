@@ -151,14 +151,46 @@ def strip_empty_values(metadata: dict) -> CommentedMap:
     return result
 
 
-def write_file(path: Path, metadata: dict, had_fm: bool, original_text: str) -> None:
-    new_fm = dump_metadata(strip_empty_values(metadata))
-    if had_fm:
-        end = original_text.find("\n---", 3)
-        after_content = original_text[end + 4:].lstrip("\n")
-        new_text = f"---\n{new_fm}---\n\n{after_content}"
+def write_file(
+    path: Path,
+    had_fm: bool,
+    original_text: str,
+    updates: dict,
+    meta_position: str,
+    full_metadata: dict | None = None,
+) -> None:
+    """Write metadata updates to file.
+
+    Normal mode (full_metadata=None): text-based insertion — serializes only the new
+    keys and appends/prepends them to the existing frontmatter text verbatim.  Existing
+    keys are never re-serialized, so their formatting (flow-map spaces, sequence
+    indentation, quoting, etc.) is preserved exactly.
+
+    Force mode (full_metadata provided): re-serializes the entire frontmatter from the
+    parsed dict.  Formatting of existing keys may change.
+    """
+    if full_metadata is not None:
+        new_fm = dump_metadata(strip_empty_values(full_metadata))
+        if had_fm:
+            end = original_text.find("\n---", 3)
+            after_content = original_text[end + 4:].lstrip("\n")
+            new_text = f"---\n{new_fm}---\n\n{after_content}"
+        else:
+            new_text = f"---\n{new_fm}---\n\n{original_text.lstrip(chr(10))}"
     else:
-        new_text = f"---\n{new_fm}---\n\n{original_text.lstrip(chr(10))}"
+        new_data = CommentedMap()
+        for key, val in updates.items():
+            if val is not None and not (isinstance(val, str) and not val.strip()):
+                new_data[key] = val
+        new_keys_text = dump_metadata(new_data)
+        if had_fm:
+            end = original_text.find("\n---", 3)
+            existing_fm = original_text[4:end + 1]  # preserves original text + trailing \n
+            after_content = original_text[end + 4:].lstrip("\n")
+            new_fm = (existing_fm + new_keys_text) if meta_position == "after" else (new_keys_text + existing_fm)
+            new_text = f"---\n{new_fm}---\n\n{after_content}"
+        else:
+            new_text = f"---\n{new_keys_text}---\n\n{original_text.lstrip(chr(10))}"
     path.write_text(new_text, encoding="utf-8")
 
 
@@ -419,12 +451,12 @@ def process_file(
                 result["added_fields"].append(fdef.name)
         except Exception as e:
             result["status"] = "error"
-            result["error"] = str(e)
+            result["error"] = str(e.__cause__ or e)
             return result
 
-    new_meta = reorder_metadata(metadata, updates, meta_keys, content_set.meta_position)
+    full_meta = reorder_metadata(metadata, updates, meta_keys, content_set.meta_position) if force else None
     if not dry_run:
-        write_file(path, new_meta, had_fm, text)
+        write_file(path, had_fm, text, updates, content_set.meta_position, full_metadata=full_meta)
     result["status"] = "dry-run" if dry_run else "updated"
     return result
 
