@@ -20,7 +20,7 @@ eval "$(mise env -s bash)"
 # Add ask and llm to PATH
 PATH="/home/sanand/code/scripts/:/home/sanand/apps/llm/.venv/bin/:$PATH"
 
-# Copy speech to clipboard
+# Copy speech to clipboard. 03 May 2026: BUG: ask seems to work Ctrl + Alt + 0 switches windows too fast before transcribing.
 ask
 
 if [ -n "${ACTIVE_WIN:-}" ]; then
