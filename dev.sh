@@ -91,7 +91,6 @@ add_mount_if_present /usr/share/fonts /usr/share/fonts ro
 add_mount_if_present /usr/local/share/fonts /usr/local/share/fonts ro
 add_mount_if_present "$HOME/.fonts" /home/vscode/.fonts ro
 add_mount_if_present "$HOME/.local/share/fonts" /home/vscode/.local/share/fonts ro
-add_mount_if_present "$HOME/.local/share/rtk" /home/vscode/.local/share/rtk ro
 
 docker_socket_group_args=()
 # UID 1000 inside the container needs the host docker socket's GID for access.
@@ -169,6 +168,7 @@ args=(
   # host's mise state.
   -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  -v "$HOME/.local/share/rtk:/home/vscode/.local/share/rtk"
   -v "$HOME/.npm:/home/vscode/.npm"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
