@@ -14,12 +14,12 @@ npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
-gws (Google Workspace CLI), gcloud, aws
+Prefer gws > gcloud > code
 
-~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples.
+~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples
 
 Suggestions:
 
-When possible, run in parallel for speed and token efficiency.
-Delegate long-running tasks to sub-agents and report checkpoints.
-Test permissions and ask for help EARLY.
+When possible, run in parallel for speed and token efficiency
+Delegate long-running tasks to sub-agents and report checkpoints
+Test permissions and ask for help EARLY. Check .env
