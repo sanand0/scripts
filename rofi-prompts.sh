@@ -26,7 +26,9 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
-CACHE_VERSION="v2"
+CACHE_VERSION="v3"
+SKILLS_ROOT="$HOME/code/scripts/agents"
+SKILL_DESCRIPTION_MAX=44
 
 TARGET="$DEFAULT_TARGET"
 BENCHMARK=0
@@ -73,6 +75,22 @@ extract_first_fence() {
   ' "$file"
 }
 
+# Extracts everything after YAML front matter in a SKILL.md file.
+extract_after_front_matter() {
+  local file="$1"
+  awk '
+    BEGIN { fence_count=0 }
+    /^---$/ {
+      fence_count++
+      if (fence_count == 2) {
+        started=1
+        next
+      }
+    }
+    started { print }
+  ' "$file"
+}
+
 # Extracts first fenced code block under a specific H2 heading.
 # Matching is exact on heading text after stripping leading "## ".
 extract_h2_fence() {
@@ -114,6 +132,33 @@ get_doc_title() {
   fi
 }
 
+truncate_description() {
+  local text="$1" max="${2:-$SKILL_DESCRIPTION_MAX}"
+
+  if [[ ${#text} -le "$max" ]]; then
+    printf '%s\n' "$text"
+  else
+    printf '%s...\n' "${text:0:max}"
+  fi
+}
+
+get_skill_name() {
+  local file="$1"
+  basename "$(dirname "$file")"
+}
+
+get_skill_description() {
+  local file="$1"
+  awk '
+    /^description: / {
+      sub(/^description:[[:space:]]*/, "")
+      gsub(/^"|"$/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
 # Single-pass scanner to identify only H2 sections that actually contain code.
 # This avoids N rescans (one per heading), which was the main pre-cache hotspot.
 list_h2_with_fence() {
@@ -153,6 +198,7 @@ has_any_fence() {
 # Deterministic ordering keeps picker order stable and cache diffs predictable.
 discover_files() {
   FILES=()
+  SKILL_FILES=()
   if [[ -d "$TARGET" ]]; then
     while IFS= read -r -d '' file; do
       FILES+=("$file")
@@ -161,7 +207,13 @@ discover_files() {
     FILES+=("$TARGET")
   fi
 
-  if [[ ${#FILES[@]} -eq 0 ]]; then
+  if [[ -d "$SKILLS_ROOT" ]]; then
+    while IFS= read -r -d '' file; do
+      SKILL_FILES+=("$file")
+    done < <(find "$SKILLS_ROOT" -type f -name 'SKILL.md' -print0 | sort -z)
+  fi
+
+  if [[ ${#FILES[@]} -eq 0 && ${#SKILL_FILES[@]} -eq 0 ]]; then
     echo "No markdown files found in: $TARGET"
     exit 1
   fi
@@ -203,22 +255,28 @@ cache_is_fresh() {
   for file in "${FILES[@]}"; do
     [[ "$file" -nt "$cache_file" ]] && return 1
   done
+  for file in "${SKILL_FILES[@]}"; do
+    [[ "$file" -nt "$cache_file" ]] && return 1
+  done
+  if [[ -d "$SKILLS_ROOT" ]] && find "$SKILLS_ROOT" -type d -newer "$cache_file" -print -quit | read -r _; then
+    return 1
+  fi
 
   return 0
 }
 
 # Loads index rows into memory arrays consumed by rofi picker and resolver.
-# TSV format: label<TAB>file<TAB>heading
+# TSV format: label<TAB>kind<TAB>file<TAB>heading
 load_index_from_cache() {
   local cache_file="$1"
   LABELS=()
   META=()
 
-  while IFS=$'\t' read -r label file heading; do
+  while IFS=$'\t' read -r label kind file heading; do
     [[ -z "$label" ]] && continue
     [[ "$label" == "#cache-version=${CACHE_VERSION}" ]] && continue
     LABELS+=("$label")
-    META+=("${file}"$'\t'"${heading}")
+    META+=("${kind}"$'\t'"${file}"$'\t'"${heading}")
   done < "$cache_file"
 }
 
@@ -232,10 +290,10 @@ save_index_to_cache() {
 
   {
     printf '#cache-version=%s\n' "$CACHE_VERSION"
-    local i file heading
+    local i kind file heading
     for i in "${!LABELS[@]}"; do
-      IFS=$'\t' read -r file heading <<< "${META[$i]}"
-      printf '%s\t%s\t%s\n' "${LABELS[$i]}" "$file" "$heading"
+      IFS=$'\t' read -r kind file heading <<< "${META[$i]}"
+      printf '%s\t%s\t%s\t%s\n' "${LABELS[$i]}" "$kind" "$file" "$heading"
     done
   } > "$tmp_file"
 
@@ -245,7 +303,7 @@ save_index_to_cache() {
 # Builds picker index directly from markdown files.
 # Output arrays are index-aligned:
 # - LABELS[i] shown to user
-# - META[i] has file<TAB>heading for resolution
+# - META[i] has kind<TAB>file<TAB>heading for resolution
 build_index_from_files() {
   LABELS=()
   META=()
@@ -259,12 +317,22 @@ build_index_from_files() {
       local heading
       for heading in "${headings[@]}"; do
         LABELS+=("${doc_title} › ${heading}")
-        META+=("${file}"$'\t'"${heading}")
+        META+=("prompt"$'\t'"${file}"$'\t'"${heading}")
       done
     elif has_any_fence "$file"; then
       LABELS+=("${doc_title}")
-      META+=("${file}"$'\t')
+      META+=("prompt"$'\t'"${file}"$'\t')
     fi
+  done
+
+  local skill_file skill_name skill_description label_description
+  for skill_file in "${SKILL_FILES[@]}"; do
+    skill_description="$(get_skill_description "$skill_file")"
+    [[ -z "$skill_description" ]] && continue
+    skill_name="$(get_skill_name "$skill_file")"
+    label_description="$(truncate_description "$skill_description")"
+    LABELS+=("Skill › ${skill_name}: ${label_description}")
+    META+=("skill"$'\t'"${skill_file}"$'\t')
   done
 }
 
@@ -324,7 +392,7 @@ if [[ "$BENCHMARK" -eq 1 ]]; then
   exit 0
 fi
 
-# Selection is by label text; then resolved back to file+heading metadata.
+# Selection is by label text; then resolved back to kind+file+heading metadata.
 CHOICE="$(printf '%s\n' "${LABELS[@]}" | rofi -dmenu -i -p 'Prompt')"
 [[ -z "${CHOICE:-}" ]] && exit 0
 
@@ -342,16 +410,18 @@ if [[ -z "$SELECTED_META" ]]; then
 fi
 
 # heading may be empty for single-prompt files.
-IFS=$'\t' read -r SELECTED_FILE SELECTED_HEADING <<< "$SELECTED_META"
+IFS=$'\t' read -r SELECTED_KIND SELECTED_FILE SELECTED_HEADING <<< "$SELECTED_META"
 
-if [[ -n "${SELECTED_HEADING:-}" ]]; then
+if [[ "$SELECTED_KIND" == "skill" ]]; then
+  CODE="$(extract_after_front_matter "$SELECTED_FILE")"
+elif [[ -n "${SELECTED_HEADING:-}" ]]; then
   CODE="$(extract_h2_fence "$SELECTED_FILE" "$SELECTED_HEADING")"
 else
   CODE="$(extract_first_fence "$SELECTED_FILE")"
 fi
 
 if [[ -z "${CODE:-}" ]]; then
-  echo "No fenced code block found for: $CHOICE"
+  echo "No prompt content found for: $CHOICE"
   exit 1
 fi
 

@@ -81,6 +81,13 @@ abbr --add ncdu gdu
 # 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
 abbr --add 7z 7zz
 
+# Use xz with all CPU cores for compression
+abbr --add xz 'xz -T0'
+
+# Use BitWarden CLI with the session. Typical use: bw list items --url https://google.com --search username | bwjq
+abbr --add bw 'bw --session (secret BW_SESSION)'
+abbr --add bwjq 'jaq -r \'.[] | [ (.login.uris[0].uri // ""), (.login.username // ""), (.login.password // ""), (.notes // "") ] | @tsv\''
+
 # Bandwhich requires sudo and is behind mise, so use full path
 abbr --add bandwhich 'sudo $(which bandwhich)'
 
@@ -166,9 +173,10 @@ abbr --add meetsync    'rclone bisync ~/Documents/Meet\ Recordings gdrive-straiv
 abbr --add demosync    rclone bisync ~/Documents/straive-demos straive-demos:straive-demos $_RCLONE_BISYNC_OPTIONS
 
 # private bucket is deployed at https://private.s-anand.net/ and is shared with colleagues
-abbr --add privatesync rclone bisync ~/r2/private r2:private $_RCLONE_BISYNC_OPTIONS
+abbr --add privatesync   rclone bisync ~/r2/private r2:private $_RCLONE_BISYNC_OPTIONS
 # files bucket is deployed at https://files.s-anand.net/ and is public - typically assets linked from my blog
-abbr --add filessync   rclone bisync ~/r2/files r2:files $_RCLONE_BISYNC_OPTIONS
+abbr --add filessync     rclone bisync ~/r2/files r2:files $_RCLONE_BISYNC_OPTIONS
+abbr --add redirectsync  rclone bisync ~/r2/redirect r2:redirect $_RCLONE_BISYNC_OPTIONS
 
 # Back up files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
 # Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
@@ -178,8 +186,10 @@ abbr --add hetznerbackup rsync -avzP \
   ~/Documents/books \
   ~/Documents/calls \
   ~/Documents/comics \
+  ~/Documents/data \
   ~/Documents/gitlab \
   ~/Documents/infy \
+  ~/Documents/linkedin \
   ~/Documents/screenplays \
   ~/Documents/talks \
   ~/Pictures \
@@ -299,7 +309,7 @@ end
 
 # Toggle GNOME extension to restart it after screen blank
 # https://claude.ai/chat/9f993bc0-ba50-46e0-b0d5-38a77c0b8621
-abbr --add dock 'gsettings set org.gnome.shell disable-user-extensions true; gsettings set org.gnome.shell disable-user-extensions false'
+abbr --add dock 'gsettings set org.gnome.shell disable-user-extensions true; gsettings set org.gnome.shell disable-user-extensions false; sleep 0.2; gnome-extensions disable ubuntu-appindicators@ubuntu.com; gnome-extensions enable ubuntu-appindicators@ubuntu.com'
 
 # Audio/video
 # ----------------------------------------------
@@ -590,8 +600,6 @@ function meeting --description "Create a new meeting transcript file"
     code $file
     if not test -e $file
         echo "---
-summary:
-keywords:
 ---
 
 # $title
@@ -705,7 +713,7 @@ end
 
 # This is a very useful function. Ask for a command on the CLI and you get it. Paste and run.
 function with --description "Example: with gh,jq 'Find last 3 repos I committed to'"
-    llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" -o reasoning_effort minimal \
+    llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" -o reasoning_effort none \
     | tee /dev/tty \
     | awk '
         { all = all $0 ORS }                    # keep full text for fallback
@@ -831,12 +839,15 @@ end
 mcfly init fish | source
 
 # https://github.com/openai/codex/blob/main/docs/getting-started.md#shell-completions
-codex completion fish | source
+# codex completion fish | source
 
 # https://github.com/iffse/pay-respects
 pay-respects fish --alias | source
 
+# Prefer fzf to tv for completion - it shows more commands
 type -q fzf; and fzf --fish | source
+# type -q tv; and tv init fish | source
+
 type -q zoxide; and zoxide init fish | source
 type -q starship; and starship init fish | source
 

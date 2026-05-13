@@ -476,10 +476,9 @@ def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path)
     call_b = (output_dir / "call-b.md").read_text(encoding="utf-8")
     call_c = (output_dir / "call-c.md").read_text(encoding="utf-8")
 
-    assert call_a.startswith("---\ntags:\ngoal:\nkind candor:\neffectiveness:\nprompt: |-\n  Use this exact prompt\n---\n\n# call-a\n")
+    assert call_a.startswith("---\nprompt: |-\n  Use this exact prompt\n---\n\n# call-a\n")
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-a.opus line 1" in call_a
-    assert "prompt: |-\n  Use this exact prompt" in call_b
-    assert call_b.endswith("# call-b\n\n## Transcript\n\nExisting transcript\n")
+    assert call_b == "# call-b\n\n## Transcript\n\nExisting transcript\n"
     assert "## Notes\n\nNeeds transcript" in call_c
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-c.wav line 1" in call_c
 
@@ -742,7 +741,7 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
     assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in result.stdout
 
 
-def test_script_backfills_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
+def test_script_skips_missing_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
@@ -773,10 +772,102 @@ def test_script_backfills_prompt_metadata_without_transcribing(tmp_path: Path) -
     result = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
 
     assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "created=0 updated=0 skipped=1 errors=0"
+    transcript = (output_dir / "call.md").read_text(encoding="utf-8")
+    assert "prompt: |-" not in transcript
+    assert not log_path.exists()
+
+
+def test_script_skips_existing_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    existing_note = (
+        "---\n"
+        "prompt: |-\n"
+        "  Call-specific historical prompt\n"
+        "---\n\n"
+        "# call\n\n"
+        "## Transcript\n\n"
+        "**Speaker**: [00:01] line 1\n"
+        "**Speaker**: [00:02] line 2\n"
+        "**Speaker**: [00:03] line 3\n"
+        "**Speaker**: [00:04] line 4\n"
+        "**Speaker**: [00:05] line 5\n"
+    )
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "call.opus").write_bytes(b"audio")
+    (output_dir / "call.md").write_text(existing_note, encoding="utf-8")
+    prompt_file.write_text("Current system prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "12"
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "created=0 updated=0 skipped=1 errors=0"
+    assert (output_dir / "call.md").read_text(encoding="utf-8") == existing_note
+    assert not log_path.exists()
+
+
+def test_script_updates_prompt_metadata_when_prompt_is_explicit(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "call.opus").write_bytes(b"audio")
+    (output_dir / "call.md").write_text(
+        "# call\n\n## Transcript\n\n**Speaker**: [00:01] line 1\n",
+        encoding="utf-8",
+    )
+    prompt_file.write_text("System prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "12"
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(
+        script_path,
+        input_dir,
+        output_dir,
+        prompt_file,
+        "--prompt",
+        "Explicit metadata prompt",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
     assert "[1/1] update metadata call.opus -> call.md" in result.stdout
     transcript = (output_dir / "call.md").read_text(encoding="utf-8")
-    assert "prompt: |-" in transcript
-    assert "  System prompt text" in transcript
+    assert "prompt: |-\n  Explicit metadata prompt" in transcript
+    assert "**Speaker**: [00:01] line 1" in transcript
     assert not log_path.exists()
 
 

@@ -29,7 +29,7 @@ import typer
 DEFAULT_INPUT_DIR = Path("/home/sanand/Documents/calls")
 DEFAULT_OUTPUT_DIR = Path("/home/sanand/Dropbox/notes/transcripts")
 DEFAULT_PROMPT_FILE = Path("/home/sanand/code/blog/pages/prompts/transcribe-call-recording.md")
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 30.0
 CHUNK_OVERLAP_SECONDS = 1.0
 FRIENDLY_CHUNK_MINUTES = (30.0, 25.0, 20.0, 15.0)
@@ -857,7 +857,7 @@ def main(
         stored_prompt = extract_prompt_metadata(existing_markdown) if had_output else None
         desired_prompt = build_note_prompt(system_prompt, cleaned_user_prompt)
         if not patch_mode and has_transcript_content(existing_markdown):
-            if stored_prompt == desired_prompt:
+            if cleaned_user_prompt is None or stored_prompt == desired_prompt:
                 skipped += 1
                 continue
             if dry_run:

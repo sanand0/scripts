@@ -107,6 +107,7 @@ sudo apt install -y melt                # melt - Command-line video editing
 sudo apt install -y sox libsox-fmt-all  # sox - audio processing
 sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modification times from git history
 sudo apt install -y gromit-mpx          # gromit-mpx - On-screen annotation tool (F9 to toggle, F8/Shift F8 to undo/redo)
+sudo apt install -y unicode-data        # unicode-data - Unicode character database (for tv unicode)
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 
@@ -115,13 +116,12 @@ curl https://mise.run | sh
 eval "$($HOME/.local/bin/mise env -s bash)"
 
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
-mise use -g 'github:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
 mise use -g 'github:direnv/direnv[bin=direnv]'  # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
+mise use -g 'github:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
 mise use -g ast-grep                  # ast-grep - AST-based code search and rewriting tool
 mise use -g aws-cli                   # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
 mise use -g bat                       # bat - cat clone with syntax highlighting 🟡 exploring moor since keyboard-based wrapping is missing
-mise use -g btop                      # btop - Resource monitor (better htop)
-mise use -g caddy                     # Caddy - Web server with automatic HTTPS
+mise use -g caddy                     # caddy - Web server with automatic HTTPS
 mise use -g cloudflared               # cloudflared - Cloudflare Tunnel client
 mise use -g dasel                     # dasel - Query and modify JSON/YAML/TOML/XML/CSV
 mise use -g deno                      # Deno - Secure JavaScript and TypeScript runtime
@@ -133,22 +133,26 @@ mise use -g fd                        # fd - Fast file finder (find alternative)
 mise use -g fx                        # fx - Fast JSON viewer
 mise use -g gcloud                    # gcloud - Google Cloud CLI
 mise use -g gdu                       # gdu - ncdu alternative for disk usage
-mise use -g github-cli                # GitHub CLI - Official GitHub command-line tool
+mise use -g github:alexpasmantier/television  # tv - fast, portable fuzzy finder
+mise use -g github:aristocratos/btop  # btop - Resource monitor (better htop)
 mise use -g github:ayoisaiah/f2       # f2 - File renaming tool
 mise use -g github:bootandy/dust      # dust - Disk usage analyzer (du alternative)
 mise use -g github:boyter/cs          # cs - codespleunker - ug like CODE search engine. Just run cs
 mise use -g github:cantino/mcfly      # mcfly - Intelligent shell history search (Ctrl+R replacement)
 mise use -g github:casey/just         # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
+mise use -g github:cli/cli            # GitHub CLI - Official GitHub command-line tool
 mise use -g github:dandavison/delta   # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
 mise use -g github:iffse/pay-respects # pay-respects - thefuck alternative. Run `f` to correct previous command
-mise use -g github:ip7z/7zip          # 7zip - File archiver with high compression ratio
 mise use -g github:imsnif/bandwhich   # bandwhich - Terminal network bandwidth utilization tool
+mise use -g github:ip7z/7zip          # 7zip - File archiver with high compression ratio
 mise use -g github:jqnatividad/qsv    # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g github:junegunn/fzf       # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g github:milisp/codexia     # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
 mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
+mise use -g github:pnpm/pnpm          # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g github:rtk-ai/rtk         # rtk - CLI tool proxy that reduces token consumption
 mise use -g github:sinelaw/fresh      # fresh - Text editor
 mise use -g github:walles/moor        # moor - pager with syntax highlighting
 mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
@@ -162,10 +166,9 @@ mise use -g lazydocker                # lazydocker - Terminal UI for Docker
 mise use -g lazygit                   # lazygit - Terminal UI for git
 mise use -g lnav                      # lnav - Log file navigator and analyzer
 mise use -g lsd                       # lsd - ls replacement with icons and colors
-mise use -g node@latest               # Node.js - JavaScript runtime
+mise use -g node                      # Node.js - JavaScript runtime
 mise use -g opentofu                  # OpenTofu - Terraform alternative (open-source IaC) 🔴 Rarely used
 mise use -g pandoc                    # pandoc - Universal document converter (md, pdf, docx, etc.)
-mise use -g pnpm                      # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g prek                      # prek - pre-commit alternative
 mise use -g rclone                    # rclone - Sync files to/from cloud storage
 mise use -g ripgrep                   # ripgrep - Fast grep alternative
@@ -275,11 +278,13 @@ mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bi
 # Install other tools
 cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
 cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magick && chmod +x magick   # ImageMagick - Image processing tool
-cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/download/cmdg-1.05/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
-cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/download/v1.3.0/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
+cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/latest/download/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
+cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/latest/download/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
 cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar -xj pngquant  # pngquant - PNG image compressor
+cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/latest/download/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription
+cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o ttyd && chmod +x ttyd   # ttyd - Terminal sharing on web
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
-cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/download/v1.6.10/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription
+cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
 
 # Install .deb tools
@@ -296,6 +301,9 @@ flatpak install -y flathub org.torproject.torbrowser-launcher   # Tor Browser - 
 flatpak install -y flathub org.onlyoffice.desktopeditors        # ONLYOFFICE - Office suite compatible with MS Office formats
 flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
 flatpak install -y flathub org.localsend.localsend_app          # LocalSend - P2P file sharing over LAN
+flatpak install -y flathub com.bitwarden.desktop                # Bitwarden - Password manager
+flatpak install -y com.github.taiko2k.tauonmb                   # Tauon Music Box - Music player with advanced library management
+sudo flatpak override com.github.taiko2k.tauonmb --filesystem=/home/sanand/Music   # Allow Tauon Music Box to access music files
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"
@@ -313,8 +321,11 @@ espanso start
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
+# Install Zed
+curl -f https://zed.dev/install.sh | sh
+
 # NVIDIA Container Toolkit - GPU support in Docker
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-key™️ring.gpg
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
   sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
   sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
@@ -473,7 +484,7 @@ llm models default gpt-5-mini
 ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 
 # Copy Touchegg gestures config. You may need to run Touche before AND after the command.
-cp ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
+ln -s ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
 
 # Set up rclone
 mkdir -p ~/r2
@@ -622,7 +633,7 @@ Other deprecations:
 - [Pinta](https://www.pinta-project.com/). I use online editors instead.
 - [Warp](https://www.warp.dev/) by downloading and `sudo dpkg -i ...`. But I don't use it
 - [Windsurf](https://windsurf.com/editor/download-linux). I use Codex, Claude Code, or GitHub Copilot instead.
-- ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. But I don't use it
+- ttyd: `sudo snap install ttyd --classic` to expose terminal on the web. I switched to the standalone binary.
 - supabase: [Download](https://github.com/supabase/cli/releases) and `sudo dpkg -i ...`. But I don't use it
 - Beekeeper Studio instead of SQLiteStudio: Installed via app store
 - Install Cursor: https://dev.to/mhbaando/how-to-install-cursor-the-ai-editor-on-linux-41dm (also https://gist.github.com/evgenyneu/5c5c37ca68886bf1bea38026f60603b6)

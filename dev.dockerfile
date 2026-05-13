@@ -51,7 +51,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"
 # The AppImage path has failed in practice inside the container because it
 # depends on FUSE/fusermount availability.
 RUN mkdir -p "${HOME}/.local/overrides" "${PLAYWRIGHT_BROWSERS_PATH}" \
- && ln -sf "$(command -v magick || command -v convert)" "${HOME}/.local/overrides/magick"
+ && ln -sf "$(command -v magick || command -v convert)" "${HOME}/.local/overrides/magick" \
+ && curl -L "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64" -o "${HOME}/.local/overrides/ttyd" && chmod +x "${HOME}/.local/overrides/ttyd"
 
 # Install mise and set up shell
 # Keep a copy of `mise` outside `~/.local/bin`, because `dev.sh` intentionally
@@ -78,6 +79,7 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   github:mithrandie/csvq \
   github:pdfcpu/pdfcpu \
   github:phiresky/ripgrep-all[extract_all=true] \
+  github:rtk-ai/rtk \
   hugo \
   jaq \
   node \
@@ -96,7 +98,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai; \
+  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai playwright; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
@@ -114,7 +116,6 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g wscat@latest; \
   npm install -g @googleworkspace/cli@latest; \
   npm install -g pixelmatch pngjs; \
-  npm install -g playwright; \
   playwright install --with-deps chromium firefox webkit; \
   mise reshim node \
   '
@@ -122,7 +123,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "02 May 2026: Updating agents and fast-moving agent tools"; \
+  echo "09 May 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \

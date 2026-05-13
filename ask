@@ -31,7 +31,7 @@ fi
 echo "$CMD" >&2
 
 # Why Gemini not OpenAI? As of 11 Sep 2025: `llm` rejects -a with audio
-llm -a "$AUDIO" -m gemini-2.5-flash "$CMD" \
+llm -a "$AUDIO" -m gemini-3-flash-preview "$CMD" \
   | tee /dev/tty \
   | {
       if [[ $CMD =~ [Cc]ode ]]; then

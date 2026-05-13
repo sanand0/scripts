@@ -55,6 +55,51 @@ matches:
         params:
           format: "%FT%T%:z"
 
+  - trigger: "-rfcdate"
+    word: true
+    replace: "{{myrfcdate}}"
+    vars:
+      - name: myrfcdate
+        type: date
+        params:
+          format: "%a, %d %b %Y %T GMT"
+
+  - trigger: "-codex"
+    word: true
+    force_clipboard: true
+    replace: |
+      <!--
+
+      cd $PWD
+      dev.sh
+      codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+
+      -->
+
+  - trigger: "-claude"
+    word: true
+    force_clipboard: true
+    replace: |
+      <!--
+
+      cd $PWD
+      dev.sh
+      claude --dangerously-skip-permissions --model claude-sonnet-4.6 --effort medium
+
+      -->
+
+  - trigger: "-copilot"
+    word: true
+    force_clipboard: true
+    replace: |
+      <!--
+
+      cd $PWD
+      dev.sh
+      copilot --yolo --model claude-sonnet-4.6
+
+      -->
+
   # Print the output of a shell command
   - trigger: ":shell"
     replace: "{{output}}"

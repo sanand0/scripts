@@ -1,3 +1,5 @@
+Always prefix shell commands with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
+
 Available tools:
 
 fd, ug, rga, sd
@@ -6,19 +8,18 @@ git, gh
 curl, w3m, lynx, websocat, wscat
 jaq (a faster jq), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
-uvx ruff, uvx yt-dlp, uvx markitdown, ...
-agent-browser (CLI, simpler than playwright, but `npm install -g playwright` exists)
+uvx ruff, uvx yt-dlp, uvx markitdown
+agent-browser, uvx browser-use (simpler than playwright), uvx --from playwright python -c 'import playwright' (no npm playwright)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
-gws (Google Workspace CLI), gcloud, aws
+Prefer gws > gcloud > code
 
-~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples.
+~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples
 
 Suggestions:
 
-When possible, run in parallel for speed and token efficiency: read, tools, sub-agents, ...
-Delegate long-running commands/tests to sub-agents and report checkpoints.
-If blocked by permissions, ask me concise choices.
-When done, suggest what & how to verify edge cases and/or suggest high-impact improvements.
+When possible, run in parallel for speed and token efficiency
+Delegate long-running tasks to sub-agents and report checkpoints
+Test permissions, .env, ... and ask EARLY for help

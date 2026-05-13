@@ -8,7 +8,7 @@ notes:
 
 Use CDP at localhost:9222.
 Use `agent-browser` (simpler than `playwright`) where helpful.
-Playwright is installed globally via `export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"; npm install -g playwright; playwright install --with-deps chromium firefox webkit`.
+Playwright is installed globally via `export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"; uv install playwright; playwright install --with-deps chromium firefox webkit`.
 
 Capabilities:
 

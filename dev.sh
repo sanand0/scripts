@@ -3,8 +3,8 @@
 # Usage examples (agent-heavy workflows)
 #
 # Build/update the dev image:
-#   dev.sh --build
-#   dev.sh --build --no-cache
+#   GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build
+#   GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build --no-cache
 #
 # Open an interactive shell in the container (default entrypoint is bash):
 #   dev.sh
@@ -168,6 +168,7 @@ args=(
   # host's mise state.
   -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  -v "$HOME/.local/share/rtk:/home/vscode/.local/share/rtk"
   -v "$HOME/.npm:/home/vscode/.npm"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code

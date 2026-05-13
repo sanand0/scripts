@@ -1,6 +1,32 @@
 # Transcribe Calls
 
+## Revision, 05 May 2026 (Copilot Yolo - gpt-5.4 xhigh)
+
+<!--
+
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
+   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
+   -v /home/sanand/code/blog/:/home/sanand/code/blog/:ro
+codex --yolo --model gpt-5.5
+-->
+
+Check why `transcribe_calls.py --dry-run` wants to update metadata 800+ transcripts. For example, `2026-04-20 Sucheta LearningMate.md` seems absolutely fine and I don't see any metadata update required. In fact, there should be little or no metadata updates required.
+
+If it's a trivial issue, then fix the script minimally so that it doesn't report false positives and verify. Ask me if you need any inputs.
+
+<!-- codex resume 019df548-1cba-79d2-bac7-6bb5977eb4c2 --yolo -->
+
 ## Setup, 16 Mar 2026 (Copilot Yolo - gpt-5.4 xhigh)
+
+<!--
+
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
+   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
+   -v /home/sanand/code/blog/:/home/sanand/code/blog/:ro
+copilot --yolo --model gpt-5.4 --effort xhigh
+-->
 
 The following command transcribes an audio file:
 
@@ -117,11 +143,4 @@ Currently, the logs report "[1/1] create ..." even when there are multiple chunk
 Modify it so that the number of chunks is calculated upfront and reported, eg. "[1/3] create ..." and when each chunk is generated, log the progress, e.g. "[2/3] create ..."
 
 <!-- Do not add `--lessons`. We want Gemini to have the context. Maybe? -->
-<!--
-
-dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
-   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
-   -v /home/sanand/code/blog/:/home/sanand/code/blog/:ro
-
-copilot --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50 --yolo
--->
+<!-- copilot --resume=f160bdf5-0e26-4bd8-ac40-29bcf5debb50 --yolo -->
