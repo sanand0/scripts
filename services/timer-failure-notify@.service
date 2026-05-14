@@ -1,0 +1,6 @@
+[Unit]
+Description=Record timer/service failure for %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash /home/sanand/code/scripts/services/timer-failure-notify.sh %i

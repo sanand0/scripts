@@ -44,9 +44,11 @@ Here are the setup details for my laptops.
 
 # Scripts
 
+- [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
+- [backupgoogle.py](backupgoogle.py) archives Google Mail, Calendar, and Chat from currently logged in `gws` user into `/home/sanand/Documents/data/$EMAIL/`. `backupgoogle.py --since YYYY-MM-DD --until YYYY-MM-DD`.
 - [backupmeet.py](backupmeet.py) archives Google Meet recordings/transcripts from `root.node@gmail.com` Drive into `/home/sanand/Documents/Meet Recordings/`, renames files to start with the meeting date, converts `.mp4` files to `.opus` in `/home/sanand/Documents/calls/`, and deletes the Drive originals after a verified copy. It refuses to run against any other `gws` account. Set up the isolated login with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws auth login`, then run e.g. `backupmeet.py --dry-run`, `backupmeet.py --older-than 365d --type video --limit 3 --yes`, or `backupmeet.py --before "6 months ago" --type transcript`.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
 - [ccusage](ccusage) shows Claude Code usage and reset times - if you're already logged into Claude Code CLI.
@@ -105,6 +107,7 @@ Here are the setup details for my laptops.
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`) but I rarely use it since I don't use OpenCode much.
 - [codextools.py](codextools.py) lists tools used by Codex
 - [codexerrors.py](codexerrors.py) lists tool errors by Codex
+- [podcast.py](podcast.py) renders speaker-labeled Markdown into an Opus podcast with Gemini TTS, cached per segment for cheap resumes. Examples: `podcast.py notes.md --dry-run`, `podcast.py notes.md --output episode.opus`, `podcast.py notes.md --dry-run --format json | jaq .speaker_voices`.
 
 ## jq scripts
 

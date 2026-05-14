@@ -1,5 +1,6 @@
 [Unit]
 Description=Consolidate transcripts daily
+OnFailure=timer-failure-notify@%n.service
 
 [Service]
 Type=oneshot

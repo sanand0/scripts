@@ -17,8 +17,9 @@ gws docs documents create` # or: `gws docs +write`
 gws sheets spreadsheets create` # or: `gws sheets +append`, `gws sheets +read`
 gws slides presentations create` # or: `presentations batchUpdate`
 gws calendar freebusy query` # or: `events insert`, `events delete`
+gws chat spaces list
+gws chat spaces messages list --params '{"parent": "spaces/...", "pageSize": 10, "orderBy": "createTime desc"}'
 gws schema ...` # e.g. gws schema drive.files.list
-gws chat spaces list # failed with `403 Request had insufficient authentication scopes (expected with current scopes).
 
 gws drive files list --params '{"pageSize":100}' --page-all --page-limit 5  # Pagination
 
@@ -56,3 +57,9 @@ Notes:
 
 - In case `gws drive files ...` returns a HTTP 403 "Caller does not have required permission to use project $PROJECT. Grant the caller the roles/serviceusage.serviceUsageConsumer role, or a custom role with the serviceusage.services.use permission", run:
   `gcloud projects add-iam-policy-binding $PROJECT --member="user:$EMAIL" --role="roles/serviceusage.serviceUsageConsumer"` [Gemini](https://gemini.google.com/app/a2c35e2c687b76b1)
+
+<!--
+
+
+
+-->

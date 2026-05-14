@@ -153,6 +153,7 @@ args=(
   # -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud:ro"   # 🔴
   -v "$HOME/.config/gh:/home/vscode/.config/gh"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
+  -v "$HOME/.config/gws-root.node@gmail.com/:/home/vscode/.config/gws-root.node@gmail.com"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
   -v "$HOME/.config/opencode:/home/vscode/.config/opencode"
   # -v "$HOME/.config/wrangler/:/home/vscode/wrangler"    # 🔴

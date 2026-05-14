@@ -1,9 +1,8 @@
 ---
 name: devtools
 description: Use CDP at localhost:9222 to test/debug websites, automate browser tasks
-notes:
-  - https://claude.ai/chat/8324c6ba-7c96-475f-b215-31070b5b0b96
-  - https://chatgpt.com/c/6912fbeb-c26c-8322-a633-091f5ef067fb
+metadata:
+  source: https://claude.ai/chat/8324c6ba-7c96-475f-b215-31070b5b0b96 https://chatgpt.com/c/6912fbeb-c26c-8322-a633-091f5ef067fb
 ---
 
 Use CDP at localhost:9222.

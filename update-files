@@ -15,20 +15,33 @@ eval "$(mise env -s bash)"
 TARGET="${1-}"  # empty => $HOME mode; non-empty => /mnt/$TARGET mode
 OUTDIR="$HOME/.cache/sanand-scripts"
 mkdir -p "$OUTDIR"
+FD_WARNINGS="$OUTDIR/files.fd-warnings.log"
+FIND_WARNINGS="$OUTDIR/files.find-warnings.log"
 
 if [ -z "$TARGET" ]; then
     # No argument: search under $HOME
     OUT="$OUTDIR/files._home.txt"
     cd "$HOME"
-    fd --follow \
-      --exclude node_modules \
-      --exclude ImageCache \
-      --exclude google-cloud-sdk \
+    {
+      fd --follow \
+        --exclude node_modules \
+        --exclude ImageCache \
+        --exclude google-cloud-sdk \
+        --exclude seek-ode-exam-programming-assignments-prod \
+        2> "$FD_WARNINGS" || true
+    } \
       | sponge "$OUT"
     # Cache files updated in the last week. Use find instead of fd to avoid an extra stat call
-    find "$HOME" \
-        \( -name '.*' -o -name node_modules \) -prune -o \
+    {
+      find "$HOME" \
+        \( -name '.*' \
+          -o -name node_modules \
+          -o -name ImageCache \
+          -o -name google-cloud-sdk \
+          -o -path "$HOME/Downloads/seek-ode-exam-programming-assignments-prod" \) -prune -o \
         -type f -mtime -7 -printf '%T@ %P\0' \
+        2> "$FIND_WARNINGS" || true
+    } \
       | sort -z -nr \
       | awk -v RS='\0' '{ sub(/^[0-9.]+ /,""); print }' \
       | sponge "$OUTDIR/files.__recent.txt"

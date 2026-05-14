@@ -1,5 +1,6 @@
 [Unit]
 Description=Update trending GitHub repos weekly
+OnFailure=timer-failure-notify@%n.service
 
 [Service]
 Type=oneshot

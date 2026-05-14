@@ -304,13 +304,6 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
-# Bug fixes
-# -----------------------------------------------
-
-# Toggle GNOME extension to restart it after screen blank
-# https://claude.ai/chat/9f993bc0-ba50-46e0-b0d5-38a77c0b8621
-abbr --add dock 'gsettings set org.gnome.shell disable-user-extensions true; gsettings set org.gnome.shell disable-user-extensions false; sleep 0.2; gnome-extensions disable ubuntu-appindicators@ubuntu.com; gnome-extensions enable ubuntu-appindicators@ubuntu.com'
-
 # Audio/video
 # ----------------------------------------------
 
