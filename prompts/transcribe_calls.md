@@ -1,6 +1,18 @@
 # Transcribe Calls
 
-## Revision, 05 May 2026 (Copilot Yolo - gpt-5.4 xhigh)
+## Revision, 16 May 2026
+
+<!--
+
+cd /home/sanand/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+
+-->
+
+Modify `transcribe_calls.py` to load GEMINI_API_KEY from the script's .env file if it exists, if it's missing in the environment even after the PWD's load_dotenv().
+
+## Revision, 05 May 2026
 
 <!--
 

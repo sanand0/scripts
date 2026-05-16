@@ -107,7 +107,7 @@ Here are the setup details for my laptops.
 - [opencodelog.jq](opencodelog.jq) converts OpenCode session logs to Markdown (from `opencode export sessionID`) but I rarely use it since I don't use OpenCode much.
 - [codextools.py](codextools.py) lists tools used by Codex
 - [codexerrors.py](codexerrors.py) lists tool errors by Codex
-- [podcast.py](podcast.py) renders speaker-labeled Markdown into an Opus podcast with Gemini TTS, cached per segment for cheap resumes. Examples: `podcast.py notes.md --dry-run`, `podcast.py notes.md --output episode.opus`, `podcast.py notes.md --dry-run --format json | jaq .speaker_voices`.
+- [podcast.py](podcast.py) renders speaker-labeled Markdown into a compact MP3 or Opus podcast with Gemini TTS, cached per segment for cheap resumes. Examples: `podcast.py notes.md --dry-run`, `podcast.py notes.md --output episode.mp3`, `podcast.py notes.md --parallel 8`.
 
 ## jq scripts
 

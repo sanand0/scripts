@@ -22,7 +22,7 @@ from typing import Callable, Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from google import genai
 import typer
 
@@ -47,7 +47,20 @@ TRANSCRIPT_SECTION_RE = re.compile(
 )
 
 app = typer.Typer(add_completion=False, no_args_is_help=False, help=__doc__)
-load_dotenv(dotenv_path=Path.cwd() / ".env")
+
+
+def load_environment(current_dir: Path | None = None, script_dir: Path | None = None) -> None:
+    """Load current .env first, then script-directory .env for a missing Gemini key."""
+    current_dir = current_dir or Path.cwd()
+    script_dir = script_dir or Path(__file__).resolve().parent
+    load_dotenv(dotenv_path=current_dir / ".env")
+    if not os.environ.get("GEMINI_API_KEY"):
+        api_key = dotenv_values(script_dir / ".env").get("GEMINI_API_KEY")
+        if api_key:
+            os.environ["GEMINI_API_KEY"] = api_key
+
+
+load_environment()
 
 
 @dataclass(frozen=True)

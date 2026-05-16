@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -61,7 +62,34 @@ def test_dry_run_cli_reports_mapping_and_items(tmp_path: Path) -> None:
     assert payload["status"] == "dry-run"
     assert payload["item_count"] == 4
     assert payload["speaker_voices"] == {"Alex": "Algieba", "Maya": "Kore"}
+    assert payload["audio_format"] == "opus"
+    assert payload["parallel"] == 4
     assert payload["output"].endswith("out.opus")
+
+
+def test_parallel_cli_option_is_reported(tmp_path: Path) -> None:
+    input_path = tmp_path / "script.md"
+    input_path.write_text(SAMPLE, encoding="utf-8")
+
+    result = RUNNER.invoke(
+        podcast.app,
+        [str(input_path), "--dry-run", "--format", "json", "--parallel", "2"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["parallel"] == 2
+
+
+def test_default_output_is_mp3(tmp_path: Path) -> None:
+    input_path = tmp_path / "script.md"
+    input_path.write_text(SAMPLE, encoding="utf-8")
+
+    result = RUNNER.invoke(podcast.app, [str(input_path), "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["audio_format"] == "mp3"
+    assert payload["output"].endswith(".mp3")
 
 
 def test_describe_does_not_require_input_file() -> None:
@@ -71,3 +99,16 @@ def test_describe_does_not_require_input_file() -> None:
     payload = json.loads(result.stdout)
     assert payload["name"] == "podcast.py"
     assert "GEMINI_API_KEY" in payload["environment"]
+
+
+def test_load_environment_falls_back_to_script_dir_env(tmp_path: Path, monkeypatch) -> None:
+    current_dir = tmp_path / "current"
+    script_dir = tmp_path / "script"
+    current_dir.mkdir()
+    script_dir.mkdir()
+    script_dir.joinpath(".env").write_text("GEMINI_API_KEY=fallback-key\n", encoding="utf-8")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    podcast.load_environment(current_dir=current_dir, script_dir=script_dir)
+
+    assert os.environ["GEMINI_API_KEY"] == "fallback-key"

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -34,6 +35,41 @@ def run_script(
         cwd=cwd,
         check=False,
     )
+
+
+def test_load_environment_falls_back_to_script_dir_env(tmp_path: Path, monkeypatch) -> None:
+    current_dir = tmp_path / "current"
+    script_dir = tmp_path / "script"
+    current_dir.mkdir()
+    script_dir.mkdir()
+    script_dir.joinpath(".env").write_text("GEMINI_API_KEY=fallback-key\n", encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "import-key")
+    monkeypatch.chdir(current_dir)
+
+    module = load_module()
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    module.load_environment(current_dir=current_dir, script_dir=script_dir)
+
+    assert os.environ["GEMINI_API_KEY"] == "fallback-key"
+
+
+def test_load_environment_keeps_current_dir_env_over_script_dir_env(
+    tmp_path: Path, monkeypatch
+) -> None:
+    current_dir = tmp_path / "current"
+    script_dir = tmp_path / "script"
+    current_dir.mkdir()
+    script_dir.mkdir()
+    current_dir.joinpath(".env").write_text("GEMINI_API_KEY=current-key\n", encoding="utf-8")
+    script_dir.joinpath(".env").write_text("GEMINI_API_KEY=fallback-key\n", encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "import-key")
+    monkeypatch.chdir(current_dir)
+
+    module = load_module()
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    module.load_environment(current_dir=current_dir, script_dir=script_dir)
+
+    assert os.environ["GEMINI_API_KEY"] == "current-key"
 
 
 def write_fake_google_genai(package_root: Path) -> Path:
@@ -188,6 +224,13 @@ def write_fake_google_prices(prices_path: Path) -> Path:
             {
                 "vendor": "google",
                 "models": [
+                    {
+                        "id": "gemini-3-flash-preview",
+                        "name": "Gemini 3 Flash Preview",
+                        "price_history": [
+                            {"input": 2.0, "output": 12.0, "input_cached": None}
+                        ],
+                    },
                     {
                         "id": "gemini-3-1-pro-preview",
                         "name": "Gemini 3.1 Pro <=200k",
@@ -620,11 +663,12 @@ def test_script_reports_duplicate_transcript_sections(tmp_path: Path) -> None:
 
 
 def test_script_requires_gemini_api_key_when_transcription_needed(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = tmp_path / "transcribe_calls.py"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     prompt_file = tmp_path / "prompt.md"
 
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "transcribe_calls.py", script_path)
     input_dir.mkdir()
     output_dir.mkdir()
     (input_dir / "call.opus").write_bytes(b"audio")

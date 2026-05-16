@@ -13,7 +13,9 @@
 
 Examples:
   podcast.py notes.md --dry-run
+  podcast.py notes.md --output episode.mp3
   podcast.py notes.md --output episode.opus
+  podcast.py notes.md --parallel 8
   podcast.py notes.md --dry-run --format json | jaq .speaker_voices
   podcast.py --describe | jaq .
 """
@@ -21,6 +23,7 @@ Examples:
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
@@ -78,7 +81,18 @@ FRONTMATTER_RE = re.compile(r"\A---\s*\n(?P<body>.*?\n?)---\s*\n?", re.DOTALL)
 SPEAKER_RE = re.compile(r"^\s*(?P<raw>\S+)\s*:\s*(?P<text>.*)$")
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help=__doc__)
-load_dotenv(dotenv_path=Path.cwd() / ".env")
+
+
+def load_environment(current_dir: Path | None = None, script_dir: Path | None = None) -> None:
+    """Load current .env first, then script-directory .env for a missing Gemini key."""
+    current_dir = current_dir or Path.cwd()
+    script_dir = script_dir or Path(__file__).resolve().parent
+    load_dotenv(dotenv_path=current_dir / ".env")
+    if not os.environ.get("GEMINI_API_KEY"):
+        load_dotenv(dotenv_path=script_dir / ".env")
+
+
+load_environment()
 
 
 @dataclass(frozen=True)
@@ -94,7 +108,7 @@ def log(message: str) -> None:
 
 def default_output_path() -> Path:
     """Return the timestamped default output path."""
-    return Path(f"podcast-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.opus")
+    return Path(f"podcast-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp3")
 
 
 def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
@@ -198,14 +212,54 @@ def build_gemini_payload(segment: Segment, voice: str) -> dict[str, Any]:
     }
 
 
-def cache_key(segment: Segment, voice: str, model: str) -> str:
+def audio_format(output_path: Path) -> str:
+    """Return the output audio format from the filename suffix."""
+    suffix = output_path.suffix.lower()
+    if suffix in {".mp3", ".opus"}:
+        return suffix.removeprefix(".")
+    raise typer.BadParameter("--output must end in .mp3 or .opus")
+
+
+def codec_args(format_name: str) -> list[str]:
+    """Return ffmpeg args tuned for compact mono voice audio."""
+    if format_name == "opus":
+        return [
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "12k",
+            "-ac",
+            "1",
+            "-application",
+            "voip",
+            "-vbr",
+            "on",
+            "-compression_level",
+            "10",
+        ]
+    if format_name == "mp3":
+        return [
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "16k",
+            "-ac",
+            "1",
+            "-ar",
+            "22050",
+        ]
+    raise typer.BadParameter(f"Unsupported audio format: {format_name}")
+
+
+def cache_key(segment: Segment, voice: str, model: str, format_name: str) -> str:
     """Hash all request inputs that affect the cached segment audio."""
     payload = {
         "model": model,
         "voice": voice,
         "text": segment.text,
         "prompt_version": 1,
-        "audio_format": "opus",
+        "audio_format": format_name,
+        "codec_args": codec_args(format_name),
         "pcm": {"format": "s16le", "rate": 24000, "channels": 1},
     }
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
@@ -250,7 +304,9 @@ def request_gemini_audio(segment: Segment, voice: str, model: str) -> bytes:
     """Call Gemini and return raw PCM audio bytes."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise typer.BadParameter("GEMINI_API_KEY is not set in .env or the environment")
+        raise typer.BadParameter(
+            "GEMINI_API_KEY is not set in the environment, current .env, or script-directory .env"
+        )
 
     response = httpx.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
@@ -264,8 +320,8 @@ def request_gemini_audio(segment: Segment, voice: str, model: str) -> bytes:
     return base64.b64decode(audio_b64)
 
 
-def render_pcm_to_opus(audio_pcm: bytes, output_path: Path) -> None:
-    """Convert Gemini raw 24kHz mono PCM to an Opus segment."""
+def render_pcm_to_audio(audio_pcm: bytes, output_path: Path, format_name: str) -> None:
+    """Convert Gemini raw 24kHz mono PCM to a compressed audio segment."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pcm_path: Path | None = None
     try:
@@ -287,10 +343,7 @@ def render_pcm_to_opus(audio_pcm: bytes, output_path: Path) -> None:
                 "1",
                 "-i",
                 str(pcm_path),
-                "-c:a",
-                "libopus",
-                "-b:a",
-                "48k",
+                *codec_args(format_name),
                 str(output_path),
             ],
             check=True,
@@ -300,7 +353,7 @@ def render_pcm_to_opus(audio_pcm: bytes, output_path: Path) -> None:
             pcm_path.unlink()
 
 
-def stitch_segments(segment_paths: list[Path], output_path: Path) -> None:
+def stitch_segments(segment_paths: list[Path], output_path: Path, format_name: str) -> None:
     """Concatenate segment files into the final podcast."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     list_path: Path | None = None
@@ -324,10 +377,7 @@ def stitch_segments(segment_paths: list[Path], output_path: Path) -> None:
                 "0",
                 "-i",
                 str(list_path),
-                "-c:a",
-                "libopus",
-                "-b:a",
-                "48k",
+                *codec_args(format_name),
                 str(output_path),
             ],
             check=True,
@@ -337,14 +387,34 @@ def stitch_segments(segment_paths: list[Path], output_path: Path) -> None:
             list_path.unlink()
 
 
+def generate_segment(
+    *,
+    index: int,
+    total: int,
+    segment: Segment,
+    voice: str,
+    model: str,
+    format_name: str,
+    segment_path: Path,
+) -> Path:
+    """Generate one uncached segment and return its path."""
+    log(f"{index}/{total} generating {segment.speaker} ({voice})")
+    audio_pcm = request_gemini_audio(segment, voice, model)
+    render_pcm_to_audio(audio_pcm, segment_path, format_name)
+    return segment_path
+
+
 def render_podcast(
     markdown_path: Path,
     output_path: Path,
     model: str,
     cache_dir: Path,
     dry_run: bool,
+    parallel: int,
 ) -> dict[str, Any]:
     """Parse Markdown, generate cached segments, and stitch the final audio."""
+    if parallel < 1:
+        raise typer.BadParameter("--parallel must be at least 1")
     cleanup_cache(cache_dir)
     frontmatter, body = split_frontmatter(markdown_path.read_text(encoding="utf-8"))
     configured_speakers = frontmatter.get("speakers", {})
@@ -355,12 +425,15 @@ def render_podcast(
 
     segments = parse_segments(body)
     voice_map = assign_voices(segments, configured_speakers)
+    format_name = audio_format(output_path)
     result = {
         "status": "dry-run" if dry_run else "ok",
         "input": str(markdown_path.resolve()),
         "output": str(output_path.resolve()),
+        "audio_format": format_name,
         "model": model,
         "cache_dir": str(cache_dir.resolve()),
+        "parallel": parallel,
         "item_count": len(segments),
         "speaker_voices": voice_map,
         "items": [
@@ -376,25 +449,40 @@ def render_podcast(
 
     log("Speaker voices: " + ", ".join(f"{speaker}={voice}" for speaker, voice in voice_map.items()))
     log(f"Items to generate: {len(segments)}")
+    log(f"Parallel workers: {parallel}")
     if dry_run:
         return result
 
     segment_dir = cache_dir / "segments"
     segment_paths = []
+    missing_tasks: dict[Path, dict[str, Any]] = {}
     for index, segment in enumerate(segments, start=1):
         voice = voice_map[segment.speaker]
-        segment_path = segment_dir / f"{cache_key(segment, voice, model)}.opus"
+        segment_path = segment_dir / f"{cache_key(segment, voice, model, format_name)}.{format_name}"
         segment_paths.append(segment_path)
-        prefix = f"{index}/{len(segments)}"
         if segment_path.exists():
-            log(f"{prefix} cache hit {segment.speaker} ({voice})")
+            log(f"{index}/{len(segments)} cache hit {segment.speaker} ({voice})")
             continue
-        log(f"{prefix} generating {segment.speaker} ({voice})")
-        audio_pcm = request_gemini_audio(segment, voice, model)
-        render_pcm_to_opus(audio_pcm, segment_path)
+        missing_tasks.setdefault(
+            segment_path,
+            {
+                "index": index,
+                "total": len(segments),
+                "segment": segment,
+                "voice": voice,
+                "model": model,
+                "format_name": format_name,
+                "segment_path": segment_path,
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=parallel) as executor:
+        futures = [executor.submit(generate_segment, **task) for task in missing_tasks.values()]
+        for future in as_completed(futures):
+            future.result()
 
     log(f"Stitching {len(segment_paths)} segments -> {output_path}")
-    stitch_segments(segment_paths, output_path)
+    stitch_segments(segment_paths, output_path, format_name)
     return result
 
 
@@ -407,14 +495,17 @@ def describe() -> dict[str, Any]:
         "environment": ["GEMINI_API_KEY"],
         "options": {
             "markdown_file": "Required path to the input Markdown file.",
-            "--output": "Output audio path. Defaults to podcast-YYYY-MM-DD-HH-MM-SS.opus.",
+            "--output": "Output audio path. Defaults to podcast-YYYY-MM-DD-HH-MM-SS.mp3. Use .opus for Opus.",
             "--model": f"Gemini TTS model. Default: {DEFAULT_MODEL}.",
+            "--parallel": "Number of parallel segment generators. Default: 4.",
             "--dry-run": "Parse and report work without calling Gemini or ffmpeg.",
             "--format": "text or json.",
         },
         "examples": [
             "podcast.py notes.md --dry-run",
+            "podcast.py notes.md --output episode.mp3",
             "podcast.py notes.md --output episode.opus",
+            "podcast.py notes.md --parallel 8",
             "podcast.py notes.md --dry-run --format json | jaq .speaker_voices",
         ],
     }
@@ -423,9 +514,10 @@ def describe() -> dict[str, Any]:
 @app.command()
 def main(
     markdown_file: Path | None = typer.Argument(None, dir_okay=False, help="Input Markdown file."),
-    output: Path | None = typer.Option(None, "--output", "-o", help="Output .opus path."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output .mp3 or .opus path."),
     model: str = typer.Option(DEFAULT_MODEL, "--model", help="Gemini TTS model."),
     cache_dir: Path = typer.Option(DEFAULT_CACHE_DIR, "--cache-dir", help="Cache directory."),
+    parallel: int = typer.Option(4, "--parallel", "-j", help="Parallel segment generators."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Parse only; do not call Gemini or ffmpeg."),
     output_format: str = typer.Option("text", "--format", help="text or json."),
     show_describe: bool = typer.Option(False, "--describe", help="Print machine-readable CLI contract."),
@@ -434,7 +526,9 @@ def main(
 
     Examples:
       podcast.py notes.md --dry-run
+      podcast.py notes.md --output episode.mp3
       podcast.py notes.md --output episode.opus
+      podcast.py notes.md --parallel 8
       podcast.py notes.md --dry-run --format json | jaq .speaker_voices
       podcast.py --describe | jaq .
     """
@@ -454,6 +548,7 @@ def main(
         model=model,
         cache_dir=cache_dir.expanduser(),
         dry_run=dry_run,
+        parallel=parallel,
     )
     if output_format == "json":
         print(json.dumps(result, indent=2))

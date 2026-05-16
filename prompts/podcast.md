@@ -87,4 +87,20 @@ Allow resuming if interrupted by ensuring that intermediate files are cached and
 
 Begin by writing test cases against a dry-run (without actual TTS generation) and then implement the actual generation. Make sure it works by also testing a small real input.
 
+---
+
+I made a few changes to the ffmpeg invocation. Retain them.
+
+Just make one change: switch to .mp3 as the default output format instead of .opus, but allow .opus as an option.
+
+In both cases, aim for maximum compression for voice audio. For opus, I use `-c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10` which to me is good enough. Use the equivalent for MP3.
+
+---
+
+If GEMINI_API_KEY is not set in the environment or the current .env, fall back to the .env in the script directory.
+
+---
+
+Allow generating in parallel. Allow configuring the number of parallel processes using the CLI arguments. Default to 4.
+
 <!-- codex resume 019e267c-a215-7911-acb7-c165938e34da --yolo -->
