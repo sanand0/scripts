@@ -1,0 +1,837 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["playwright>=1.52", "typer>=0.12"]
+# ///
+"""Back up WhatsApp Web conversations through Chrome DevTools Protocol.
+
+Examples:
+  backupwhatsapp.py --limit 5
+  backupwhatsapp.py --conversation "Family" --conversation "Notes" --format jsonl
+  backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor
+  backupwhatsapp.py --describe | jaq .
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime as dt
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import typer
+from playwright.async_api import Browser, Page, async_playwright
+
+app = typer.Typer(add_completion=False, help=__doc__)
+
+OUT_DIR = Path("~/Documents/data/whatsapp").expanduser()
+CACHE_DIR = Path("~/.cache/sanand-scripts/backupwhatsapp").expanduser()
+SCRAPER = Path("/home/sanand/code/tools/whatsappscraper/whatsappscraper.min.js")
+CDP_URL = "http://localhost:9222"
+CHAT_LIST_SELECTOR = "#pane-side"
+MAIN_SELECTOR = "div#main"
+CHAT_ID_JS = r"""
+(root) => {
+  const seen = new WeakSet();
+  const normalize = (value) => {
+    const text = String(value || "").replace(/\u200b/g, "").trim();
+    if (!text) return "";
+    const match = text.match(/^([^@\s]+@(?:c\.us|g\.us|lid))$/i);
+    if (match) return match[1];
+    if (/^[a-z0-9._:-]{6,}$/i.test(text)) return text;
+    return "";
+  };
+  const fromChat = (chat) => normalize(chat?.__x_id?._serialized || chat?.id?._serialized || chat?.__x_id?.user || chat?.id?.user);
+  const scan = (value, depth = 0) => {
+    if (!value || depth > 6) return "";
+    if (typeof value === "string") return "";
+    if (typeof value !== "object" && typeof value !== "function") return "";
+    if (seen.has(value)) return "";
+    seen.add(value);
+    const direct = fromChat(value);
+    if (direct) return direct;
+    for (const key of Object.getOwnPropertyNames(value).slice(0, 80)) {
+      if (/^(child|sibling|return|alternate|stateNode|_debug|dependencies|memoizedState|updateQueue|ref|refs|containerInfo)$/i.test(key)) continue;
+      let next;
+      try { next = value[key]; } catch { continue; }
+      if (/^(chat|contact|contactId|wid|jid|id|__x_id)$/i.test(key)) {
+        const id = fromChat(next) || normalize(next?._serialized || next?.user || next);
+        if (id) return id;
+      }
+      const found = scan(next, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  };
+  for (const selector of [
+    "[data-chat-id]",
+    "[data-contact-id]",
+    "[data-jid]",
+    "#main header [data-chat-id]",
+    "#main header [data-contact-id]",
+    "#main header [data-jid]",
+  ]) {
+    const node = (root || document).querySelector?.(selector);
+    const id = normalize(node?.getAttribute("data-chat-id") || node?.getAttribute("data-contact-id") || node?.getAttribute("data-jid"));
+    if (id) return id;
+  }
+  for (const node of [root, root?.querySelector?.("header"), document.querySelector("div#main header")].filter(Boolean)) {
+    for (const prop of Object.getOwnPropertyNames(node).filter((key) => /reactFiber|reactProps/i.test(key))) {
+      const id = scan(node[prop]);
+      if (id) return id;
+    }
+  }
+  return "";
+}
+"""
+CHAT_LIST_JS = r"""
+() => {
+  const pane = document.querySelector("#pane-side");
+  if (!pane) return { error: "WhatsApp chat list not found. Open https://web.whatsapp.com/ first." };
+  const chatIdFor = %CHAT_ID_JS%;
+  const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')]
+    .filter((row) => row.offsetParent && row.innerText.trim());
+  const timePattern = /^(?:\d{1,2}:\d{2}(?:\s?[ap]m)?|today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[a-z]{3,9}\s+\d{1,2})$/i;
+  return {
+    scrollTop: pane.scrollTop,
+    clientHeight: pane.clientHeight,
+    scrollHeight: pane.scrollHeight,
+    chats: rows.map((row, index) => {
+      const lines = row.innerText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+      const titled = [...row.querySelectorAll("[title]")]
+        .map((node) => node.getAttribute("title") || "")
+        .map((text) => text.trim())
+        .filter((text) => text && !timePattern.test(text));
+      const title = titled[0] || lines.find((line) => !timePattern.test(line)) || "";
+      const lastActiveText = [...lines].reverse().find((line) => timePattern.test(line)) || "";
+      const conversationId = chatIdFor(row);
+      return { index, title, conversationId, lastActiveText, preview: lines.slice(0, 5).join(" | ") };
+    }).filter((chat) => chat.title),
+  };
+}
+""".replace("%CHAT_ID_JS%", CHAT_ID_JS)
+CLICK_CHAT_JS = r"""
+(title) => {
+  const pane = document.querySelector("#pane-side");
+  const titleNode = [...pane.querySelectorAll("[title]")]
+    .find((node) => node.getAttribute("title") === title);
+  const row = titleNode?.closest('[role="listitem"], [role="row"]');
+  if (!titleNode || !row) return false;
+  titleNode.scrollIntoView({ block: "center" });
+  for (const target of [titleNode, row]) {
+    target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+    target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+    target.click();
+  }
+  return true;
+}
+"""
+SCROLL_HISTORY_JS = r"""
+({ cutoff, maxMessages, maxRounds, settleMs }) => new Promise(async (resolve) => {
+  const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+  const seen = Object.create(null);
+  const richness = (value) => {
+    if (value === null || value === undefined || value === "" || value === false) return 0;
+    if (typeof value === "string") return value.length;
+    if (Array.isArray(value)) return value.length;
+    if (typeof value === "object") return Object.keys(value).length;
+    return 1;
+  };
+  const merge = (oldRow, newRow) => {
+    const row = { ...(oldRow || {}) };
+    for (const [key, value] of Object.entries(newRow)) {
+      if (richness(value) >= richness(row[key])) row[key] = value;
+    }
+    return row;
+  };
+  const parseClock = (value) => {
+    const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})(?:\s*([ap]m))?$/i);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const meridiem = match[3]?.toLowerCase();
+    if (meridiem) {
+      hours %= 12;
+      if (meridiem === "pm") hours += 12;
+    }
+    return { hours, minutes };
+  };
+  const parseDateLabel = (value) => {
+    const text = String(value || "").trim();
+    const now = new Date();
+    const atEnd = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 0);
+    if (/^today$/i.test(text)) return atEnd(now);
+    if (/^yesterday$/i.test(text)) return atEnd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+    const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const weekday = weekdays.indexOf(text.toLowerCase());
+    if (weekday >= 0) {
+      const days = (now.getDay() - weekday + 7) % 7 || 7;
+      return atEnd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+    }
+    const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (match) return atEnd(new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
+    return null;
+  };
+  const messageIdFromDataId = (value) => {
+    const packed = String(value || "").match(/^(?:true|false)_[^@]+@[^_]+_([^_]+)/i);
+    return packed ? packed[1] : String(value || "");
+  };
+  const visibleTimeForRow = (row) => [...row.querySelectorAll('[dir="auto"]')]
+    .map((node) => node.textContent.trim())
+    .filter((text) => parseClock(text))
+    .at(-1);
+  const fallbackText = (row, clock) => {
+    const lines = String(row.innerText || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => line !== clock);
+    if (!lines.length) return {};
+    const author = lines.length > 1 && !/^(forwarded|forwarded many times|photo|video|pdf|document|voice message|this message was deleted)$/i.test(lines[0])
+      ? lines[0]
+      : undefined;
+    const text = lines.filter((line) => !/^\+?\d[\d\s().-]{6,}$/.test(line)).join("\n").trim();
+    return { ...(author ? { author } : {}), ...(text ? { text } : {}) };
+  };
+  const rowsFromDateChips = () => {
+    const times = Object.create(null);
+    const rows = Object.create(null);
+    const main = document.querySelector("div#main");
+    let currentDate = null;
+    for (const node of main?.querySelectorAll("div, span") || []) {
+      const row = node.matches?.('[role="row"]') ? node : null;
+      if (row) {
+        const dataId = row.querySelector("[data-id]")?.getAttribute("data-id");
+        const clock = visibleTimeForRow(row);
+        const parsed = parseClock(clock);
+        if (dataId && currentDate && parsed) {
+          const when = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), parsed.hours, parsed.minutes, 0, 0);
+          const messageId = messageIdFromDataId(dataId);
+          times[messageId] = when.toISOString();
+          rows[messageId] = {
+            messageId,
+            time: when.toISOString(),
+            ...(row.querySelector(".message-out") ? { isOutgoing: true } : {}),
+            ...fallbackText(row, clock),
+          };
+        }
+        continue;
+      }
+      if (node.querySelector?.("[data-id]")) continue;
+      const text = node.innerText?.trim();
+      if (!text || text.length > 20) continue;
+      const date = parseDateLabel(text);
+      if (date) currentDate = date;
+    }
+    return { times, rows };
+  };
+  const gather = () => {
+    const corrected = rowsFromDateChips();
+    const messages = (globalThis.whatsappscraper?.whatsappMessages(document) || [])
+      .filter((msg) => msg.messageId);
+    for (const msg of messages) {
+      if (corrected.times[msg.messageId]) msg.time = corrected.times[msg.messageId];
+    }
+    const messageIds = new Set(messages.map((msg) => msg.messageId));
+    for (const row of Object.values(corrected.rows)) {
+      if (!messageIds.has(row.messageId) && (row.text || row.author)) messages.push(row);
+    }
+    for (const msg of messages) seen[msg.messageId] = merge(seen[msg.messageId], msg);
+    return Object.values(seen);
+  };
+  const scrollers = [...document.querySelectorAll("div#main div")]
+    .filter((el) => el.scrollHeight > el.clientHeight + 200);
+  const scroller = scrollers.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+  if (!scroller) return resolve({ rounds: 0, reason: "no-history-scroller", messages: gather() });
+  let bottomJumps = 0;
+  for (; bottomJumps < 80; bottomJumps += 1) {
+    const button = document.querySelector('button[aria-label="Scroll to bottom"]');
+    if (!button) break;
+    button.click();
+    await sleep(settleMs);
+  }
+  for (let jump = 0; jump < 4; jump += 1) {
+    scroller.scrollTop = scroller.scrollHeight;
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await sleep(settleMs);
+  }
+  let stale = 0;
+  let previous = "";
+  let reason = "max-rounds";
+  let rounds = 0;
+  for (; rounds < maxRounds; rounds += 1) {
+    const messages = gather();
+    const oldest = messages.map((msg) => msg.time).filter(Boolean).sort()[0] || "";
+    const signature = `${scroller.scrollTop}:${scroller.scrollHeight}:${messages.length}:${oldest}`;
+    if (maxMessages && messages.length >= maxMessages) {
+      reason = "message-limit-reached";
+      break;
+    }
+    if (cutoff && oldest && oldest <= cutoff) {
+      reason = "cutoff-reached";
+      break;
+    }
+    if (signature === previous) stale += 1;
+    else stale = 0;
+    if (stale >= 4) {
+      reason = "plateau";
+      break;
+    }
+    previous = signature;
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    await sleep(settleMs);
+  }
+  gather();
+  resolve({ bottomJumps, rounds, reason, messages: Object.values(seen) });
+})
+"""
+
+
+def eprint(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def state_path() -> Path:
+    return CACHE_DIR / "checked.json"
+
+
+def load_checked_state() -> dict[str, Any]:
+    path = state_path()
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def write_checked_state(state: dict[str, Any]) -> None:
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+
+
+def parse_time(value: str) -> dt.datetime:
+    text = value.strip()
+    if not text:
+        raise ValueError("empty time")
+    if match := re.fullmatch(r"(\d+)([dhm])", text, re.I):
+        amount, unit = int(match[1]), match[2].lower()
+        delta = {"d": dt.timedelta(days=amount), "h": dt.timedelta(hours=amount), "m": dt.timedelta(minutes=amount)}[unit]
+        return dt.datetime.now(dt.UTC) - delta
+    if match := re.fullmatch(r"(\d+)\s+months?\s+ago", text, re.I):
+        return dt.datetime.now(dt.UTC) - dt.timedelta(days=30 * int(match[1]))
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        text += "T00:00:00"
+    parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
+    return parsed.astimezone(dt.UTC)
+
+
+def parse_chat_list_time(value: str) -> dt.datetime | None:
+    text = value.strip().lower()
+    now = dt.datetime.now(dt.UTC).astimezone()
+    if not text:
+        return None
+    if match := re.fullmatch(r"(\d{1,2}):(\d{2})(?:\s?([ap]m))?", text):
+        hour = int(match[1])
+        minute = int(match[2])
+        meridiem = match[3]
+        if meridiem:
+            hour %= 12
+            if meridiem == "pm":
+                hour += 12
+        return now.replace(hour=hour, minute=minute, second=0, microsecond=0).astimezone(dt.UTC)
+    if text == "today":
+        return now.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(dt.UTC)
+    if text == "yesterday":
+        return (now - dt.timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=0).astimezone(dt.UTC)
+    weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    if text in weekdays:
+        days = (now.weekday() - weekdays.index(text)) % 7 or 7
+        return (now - dt.timedelta(days=days)).replace(hour=23, minute=59, second=59, microsecond=0).astimezone(dt.UTC)
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            parsed = dt.datetime.strptime(text.title(), fmt)
+            return parsed.replace(hour=23, minute=59, second=59, tzinfo=now.tzinfo).astimezone(dt.UTC)
+        except ValueError:
+            pass
+    for fmt in ("%Y %b %d", "%Y %B %d"):
+        try:
+            parsed = dt.datetime.strptime(f"{now.year} {text.title()}", fmt)
+            return parsed.replace(hour=23, minute=59, second=59, tzinfo=now.tzinfo).astimezone(dt.UTC)
+        except ValueError:
+            pass
+    return None
+
+
+def safe_name(value: str, fallback: str = "untitled", limit: int = 180) -> str:
+    name = re.sub(r"[/\\:\0-\x1f]+", " ", value)
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    if not name:
+        name = fallback
+    return name[:limit]
+
+
+def filename_for(title: str, conversation_id: str = "") -> Path:
+    name = safe_name(title)
+    if conversation_id:
+        safe_id = safe_name(conversation_id, "unknown", 96)
+        return OUT_DIR / f"{name[:160]} [{safe_id}].jsonl"
+    return OUT_DIR / f"{name}.jsonl"
+
+
+def files_for_id(conversation_id: str) -> list[Path]:
+    if not conversation_id:
+        return []
+    safe_id = safe_name(conversation_id, "unknown", 96)
+    return sorted(OUT_DIR.glob(f"* [{safe_id}].jsonl"))
+
+
+def path_for(title: str, conversation_id: str = "") -> Path:
+    if conversation_id:
+        matches = files_for_id(conversation_id)
+        if matches:
+            return matches[0]
+        return filename_for(title, conversation_id)
+    return filename_for(title)
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
+    tmp.write_text("".join(compact_json(row) + "\n" for row in rows))
+    tmp.replace(path)
+    sync_mtime_to_latest_message(path, rows)
+
+
+def sync_mtime_to_latest_message(path: Path, rows: list[dict[str, Any]] | None = None) -> dt.datetime | None:
+    latest = max_message_time(rows if rows is not None else load_jsonl(path))
+    if latest is None:
+        return None
+    stamp = latest.timestamp()
+    os.utime(path, (stamp, stamp))
+    return latest
+
+
+def backup_paths() -> list[Path]:
+    return sorted([*OUT_DIR.glob("*.jsonl"), *OUT_DIR.glob("*.json")])
+
+
+def oldest_backup_mtime() -> dt.datetime | None:
+    times = [dt.datetime.fromtimestamp(path.stat().st_mtime, dt.UTC) for path in backup_paths()]
+    return min(times) if times else None
+
+
+def chat_key(title: str, conversation_id: str) -> str:
+    return conversation_id or f"title:{title}"
+
+
+def chat_state(chat: dict[str, Any], list_time: dt.datetime | None, local_since: dt.datetime | None) -> dict[str, Any]:
+    return {
+        "title": chat["title"],
+        "conversationId": chat.get("conversationId") or "",
+        "lastActiveText": chat.get("lastActiveText") or "",
+        "listTime": list_time.isoformat() if list_time else "",
+        "localLatestTime": local_since.isoformat() if local_since else "",
+        "checkedAt": dt.datetime.now(dt.UTC).isoformat(),
+    }
+
+
+def already_checked(state: dict[str, Any], key: str, chat: dict[str, Any], list_time: dt.datetime | None) -> bool:
+    row = state.get(key)
+    if not row:
+        return False
+    return row.get("lastActiveText") == (chat.get("lastActiveText") or "") and row.get("listTime") == (list_time.isoformat() if list_time else "")
+
+
+def merge_jsonl_files(target: Path, sources: list[Path]) -> None:
+    rows: dict[str, dict[str, Any]] = {}
+    for path in [target, *sources]:
+        for row in load_jsonl(path):
+            key = row_key(row)
+            rows[key] = merge_row(rows.get(key, {}), row)
+    if rows:
+        write_jsonl(target, sorted(rows.values(), key=sort_key))
+    for source in sources:
+        if source.exists() and source != target:
+            source.unlink()
+
+
+def migrate_path(title: str, conversation_id: str) -> Path:
+    target = path_for(title, conversation_id)
+    legacy = filename_for(title)
+    sources = [legacy] if legacy.exists() and legacy != target else []
+    extra = [path for path in files_for_id(conversation_id) if path != target]
+    if sources or extra:
+        merge_jsonl_files(target, [*sources, *extra])
+    return target
+
+
+def row_key(row: dict[str, Any]) -> str:
+    if row.get("messageId"):
+        return f"id:{row['messageId']}"
+    return "fallback:" + compact_json({key: row.get(key) for key in ["time", "author", "text", "mediaType"]})
+
+
+def richness(value: Any) -> int:
+    if value in (None, "", [], {}, False):
+        return 0
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, (list, dict)):
+        return len(value)
+    return 1
+
+
+def merge_row(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(old)
+    for key, value in new.items():
+        if richness(value) >= richness(merged.get(key)):
+            merged[key] = value
+    return merged
+
+
+def without_run_fields(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in row.items() if key != "scrapedAt"}
+
+
+def sort_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (str(row.get("time") or ""), str(row.get("messageId") or ""))
+
+
+def max_message_time(rows: list[dict[str, Any]]) -> dt.datetime | None:
+    times = []
+    for row in rows:
+        if row.get("time"):
+            try:
+                times.append(parse_time(str(row["time"])))
+            except ValueError:
+                pass
+    return max(times) if times else None
+
+
+def in_range(row: dict[str, Any], since: dt.datetime | None, until: dt.datetime | None) -> bool:
+    if not row.get("time"):
+        return since is None and until is None
+    try:
+        when = parse_time(str(row["time"]))
+    except ValueError:
+        return since is None and until is None
+    return (since is None or when >= since) and (until is None or when < until)
+
+
+def filtered_messages(messages: list[dict[str, Any]], since: dt.datetime | None, until: dt.datetime | None, max_messages: int) -> list[dict[str, Any]]:
+    rows = [message for message in messages if in_range(message, since, until)]
+    if not max_messages or len(rows) <= max_messages:
+        return rows
+    return sorted(rows, key=sort_key, reverse=True)[:max_messages]
+
+
+def update_conversation(path: Path, title: str, conversation_id: str, messages: list[dict[str, Any]], since: dt.datetime | None, until: dt.datetime | None, max_messages: int) -> int:
+    existing = {row_key(row): row for row in load_jsonl(path)}
+    scraped_at = dt.datetime.now(dt.UTC).isoformat()
+    changed = 0
+    if conversation_id:
+        for key, row in existing.items():
+            if row.get("conversationId") != conversation_id:
+                existing[key] = {**row, "conversationId": conversation_id}
+                changed += 1
+    for message in filtered_messages(messages, since, until, max_messages):
+        row = {**message, "conversationTitle": title, "conversationId": conversation_id, "scrapedAt": scraped_at}
+        key = row_key(row)
+        current = existing.get(key)
+        merged = merge_row(current or {}, row)
+        if current and without_run_fields(current) == without_run_fields(merged):
+            continue
+        if current != merged:
+            changed += 1
+        existing[key] = merged
+    write_jsonl(path, sorted(existing.values(), key=sort_key))
+    return changed
+
+
+def describe() -> dict[str, Any]:
+    return {
+        "name": "backupwhatsapp.py",
+        "output": "~/Documents/data/whatsapp/{conversation title} [{immutable WhatsApp chat id}].jsonl",
+        "primary_key": "messageId",
+        "conversation_key": "conversationId",
+        "cdp": CDP_URL,
+        "filters": ["--conversation", "--name", "--updated-since", "--updated-until", "--since", "--until", "--max-messages", "--limit"],
+        "examples": [
+            "backupwhatsapp.py --limit 5",
+            "backupwhatsapp.py --conversation Family --format jsonl",
+            "backupwhatsapp.py --since 2026-05-01 --until 2026-05-17",
+        ],
+    }
+
+
+async def whatsapp_page(browser: Browser) -> Page:
+    for context in browser.contexts:
+        for page in context.pages:
+            if "web.whatsapp.com" in page.url:
+                await page.bring_to_front()
+                return page
+    raise RuntimeError("No WhatsApp Web tab found. Open https://web.whatsapp.com/ in a CDP-enabled browser first.")
+
+
+async def inject_scraper(page: Page, scraper: Path) -> None:
+    code = scraper.read_text()
+    await page.evaluate(
+        """async (src) => {
+          if (globalThis.whatsappscraper?.whatsappMessages) return;
+          const blob = new Blob([src], { type: "text/javascript" });
+          const url = URL.createObjectURL(blob);
+          try {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = url;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        }""",
+        code,
+    )
+
+
+async def current_chat_id(page: Page) -> str:
+    return await page.evaluate(f"() => ({CHAT_ID_JS})(document.querySelector('div#main') || document)")
+
+
+async def list_chats(page: Page) -> dict[str, Any]:
+    data = await page.evaluate(CHAT_LIST_JS)
+    if data.get("error"):
+        raise RuntimeError(data["error"])
+    return data
+
+
+async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = None) -> list[dict[str, Any]]:
+    await page.wait_for_selector(CHAT_LIST_SELECTOR, timeout=10000)
+    await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
+    await page.wait_for_timeout(400)
+    seen: dict[str, dict[str, Any]] = {}
+    stale = 0
+    for _ in range(max_scan):
+        data = await list_chats(page)
+        before = len(seen)
+        for chat in data["chats"]:
+            seen.setdefault(chat["title"], chat)
+        if len(seen) == before:
+            stale += 1
+        else:
+            stale = 0
+        visible_times = [parse_chat_list_time(chat.get("lastActiveText", "")) for chat in data["chats"]]
+        oldest_visible = min([when for when in visible_times if when is not None], default=None)
+        if stop_at and oldest_visible and oldest_visible <= stop_at:
+            break
+        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4 or stale >= 3:
+            break
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.wait_for_timeout(500)
+    await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
+    await page.wait_for_timeout(400)
+    return list(seen.values())
+
+
+async def open_chat(page: Page, title: str, max_scan: int) -> bool:
+    await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
+    await page.wait_for_timeout(250)
+    for _ in range(max_scan):
+        data = await list_chats(page)
+        for chat in data["chats"]:
+            if chat["title"] == title:
+                if not await page.evaluate(CLICK_CHAT_JS, title):
+                    return False
+                await page.wait_for_selector(MAIN_SELECTOR, timeout=10000)
+                await page.wait_for_timeout(1200)
+                return True
+        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
+            break
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.wait_for_timeout(500)
+    return False
+
+
+async def scrape_open_chat(page: Page, cutoff: dt.datetime | None, max_messages: int, max_rounds: int, settle_ms: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    await inject_scraper(page, SCRAPER)
+    cutoff_text = cutoff.isoformat() if cutoff else ""
+    scroll = await page.evaluate(SCROLL_HISTORY_JS, {"cutoff": cutoff_text, "maxMessages": max_messages, "maxRounds": max_rounds, "settleMs": settle_ms})
+    messages = scroll.pop("messages", [])
+    unique = {row_key(row): row for row in messages if row.get("messageId")}
+    conversation_id = await current_chat_id(page)
+    for row in unique.values():
+        if conversation_id:
+            row.setdefault("userId", conversation_id)
+    return list(unique.values()), {**scroll, "conversation_id": conversation_id}
+
+
+async def run_backup(
+    cdp_url: str,
+    conversations: set[str],
+    name: str,
+    since: dt.datetime | None,
+    until: dt.datetime | None,
+    updated_since: dt.datetime | None,
+    updated_until: dt.datetime | None,
+    max_messages: int,
+    limit: int,
+    max_scan: int,
+    max_scroll_rounds: int,
+    settle_ms: int,
+    dry_run: bool,
+    format: str,
+) -> None:
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp(cdp_url)
+        page = await whatsapp_page(browser)
+        await inject_scraper(page, SCRAPER)
+        incremental_run = not (conversations or name or updated_since or updated_until or since or until)
+        checked_state = load_checked_state() if incremental_run else {}
+        chats = await iter_chats(page, max_scan, oldest_backup_mtime() if incremental_run else None)
+        selected = []
+        for chat in chats:
+            title = chat["title"]
+            conversation_id = chat.get("conversationId") or ""
+            key = chat_key(title, conversation_id)
+            path = path_for(title, conversation_id)
+            existing = load_jsonl(path)
+            local_since = max_message_time(existing)
+            list_time = parse_chat_list_time(chat.get("lastActiveText", ""))
+            effective_since = since or local_since
+            matched = (not conversations or title in conversations) and (not name or name.lower() in title.lower())
+            date_matched = (updated_since is None or list_time is None or list_time >= updated_since) and (updated_until is None or list_time is None or list_time < updated_until)
+            stale = not path.exists() or list_time is None or local_since is None or list_time > local_since
+            checked = incremental_run and stale and already_checked(checked_state, key, chat, list_time)
+            if matched and date_matched and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
+                selected.append({**chat, "path": path, "since": effective_since, "local_rows": len(existing), "list_time": list_time, "local_since": local_since})
+            if limit and len(selected) >= limit:
+                break
+        if not selected and conversations:
+            missing = conversations - {chat["title"] for chat in chats}
+            if missing:
+                raise RuntimeError(f"conversation(s) not found in scanned chat list: {', '.join(sorted(missing))}")
+
+        for pos, chat in enumerate(selected, 1):
+            title = chat["title"]
+            path = chat["path"]
+            summary = {"conversation": title, "conversation_id": chat.get("conversationId") or "", "path": str(path), "event": "planned" if dry_run else "updated"}
+            if dry_run:
+                emit(summary, format)
+                continue
+            eprint(f"{pos}/{len(selected)}: {title}")
+            if not await open_chat(page, title, max_scan):
+                emit({**summary, "event": "skipped", "reason": "could-not-open"}, format)
+                continue
+            messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
+            conversation_id = scroll.get("conversation_id") or chat.get("conversationId") or ""
+            path = migrate_path(title, conversation_id) if conversation_id else path
+            summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
+            kept = filtered_messages(messages, since, until, max_messages)
+            if not messages:
+                if incremental_run:
+                    checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], chat["local_since"])
+                    write_checked_state(checked_state)
+                emit({**summary, "event": "skipped", "reason": scroll.get("reason", "no-messages"), "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
+                continue
+            changed = update_conversation(path, title, conversation_id, messages, since, until, max_messages)
+            if incremental_run:
+                local_since = max_message_time(load_jsonl(path))
+                checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], local_since)
+                write_checked_state(checked_state)
+            emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "scroll": scroll}, format)
+        await browser.close()
+
+
+def emit(event: dict[str, Any], format: str) -> None:
+    if format == "jsonl":
+        print(compact_json(event), flush=True)
+        return
+    bits = [event["event"], event["conversation"]]
+    if event.get("rows_changed") is not None:
+        bits.append(f"changed={event['rows_changed']}")
+    if event.get("messages_seen") is not None:
+        bits.append(f"seen={event['messages_seen']}")
+    if event.get("reason"):
+        bits.append(str(event["reason"]))
+    bits.append(f"-> {event['path']}")
+    print(": ".join(bits), flush=True)
+
+
+@app.command(help=__doc__)
+def main(
+    conversation: list[str] = typer.Option(None, "--conversation", "-c", help="Exact conversation title to back up. Repeatable."),
+    name: str = typer.Option("", "--name", help="Case-insensitive substring filter on conversation titles."),
+    since: str = typer.Option("", "--since", help="Inclusive message start: ISO, YYYY-MM-DD, 7d, 12h, or '2 months ago'."),
+    until: str = typer.Option("", "--until", help="Exclusive message end: ISO or YYYY-MM-DD. Defaults to open-ended."),
+    updated_since: str = typer.Option("", "--updated-since", help="Inclusive chat-list latest-message start."),
+    updated_until: str = typer.Option("", "--updated-until", help="Exclusive chat-list latest-message end."),
+    max_messages: int = typer.Option(0, "--max-messages", min=0, help="Maximum newest messages to update per conversation after date filtering."),
+    limit: int = typer.Option(0, "--limit", "-n", min=0, help="Maximum conversations to process after filtering."),
+    cdp_url: str = typer.Option(CDP_URL, "--cdp-url", help="Chrome DevTools Protocol URL."),
+    out_dir: Path = typer.Option(OUT_DIR, "--out-dir", help="Directory for per-conversation JSONL files."),
+    scraper: Path = typer.Option(SCRAPER, "--scraper", help="Built whatsappscraper.min.js bundle."),
+    max_scan: int = typer.Option(120, "--max-scan", help="Maximum chat-list scroll pages to scan."),
+    max_scroll_rounds: int = typer.Option(200, "--max-scroll-rounds", help="Maximum upward history scrolls per conversation."),
+    settle_ms: int = typer.Option(900, "--settle-ms", help="Delay after each history scroll in milliseconds."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List conversations that would be backed up."),
+    format: str = typer.Option("text", "--format", help="text or jsonl."),
+    describe_schema: bool = typer.Option(False, "--describe", help="Print machine-readable CLI/schema description and exit."),
+) -> None:
+    if describe_schema:
+        print(compact_json(describe()))
+        return
+    if format not in {"text", "jsonl"}:
+        raise typer.BadParameter("--format must be text or jsonl")
+    if not scraper.exists():
+        raise typer.BadParameter(f"scraper bundle not found: {scraper}")
+    if since and until and parse_time(since) >= parse_time(until):
+        raise typer.BadParameter("--since must be before --until")
+    if updated_since and updated_until and parse_time(updated_since) >= parse_time(updated_until):
+        raise typer.BadParameter("--updated-since must be before --updated-until")
+    globals()["OUT_DIR"] = out_dir.expanduser()
+    globals()["SCRAPER"] = scraper.expanduser()
+    try:
+        asyncio.run(
+            run_backup(
+                cdp_url,
+                set(conversation or []),
+                name,
+                parse_time(since) if since else None,
+                parse_time(until) if until else None,
+                parse_time(updated_since) if updated_since else None,
+                parse_time(updated_until) if updated_until else None,
+                max_messages,
+                limit,
+                max_scan,
+                max_scroll_rounds,
+                settle_ms,
+                dry_run,
+                format,
+            )
+        )
+    except Exception as exc:
+        typer.echo(f"backupwhatsapp.py: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
+if __name__ == "__main__":
+    app()

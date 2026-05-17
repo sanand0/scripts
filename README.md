@@ -1,4 +1,4 @@
-# Setup
+# Scripts
 
 These are personal productivity utilities that simplify my workflow on Windows (Cygwin) and Linux. These are in 2 places:
 
@@ -44,7 +44,7 @@ Here are the setup details for my laptops.
 
 # Scripts
 
-- [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
+- [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. By default it fills pending days through yesterday. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.

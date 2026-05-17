@@ -8,7 +8,7 @@
 Examples:
   activities.py --date 2026-05-14 --dry-run
   activities.py --days 3 --limit-per-source 25
-  activities.py --sources calendar,email,commit | moor
+  activities.py --sources calendar,email,commit --dry-run | moor
   activities.py --describe | jaq .
 """
 
@@ -75,6 +75,7 @@ LEISURE_QUERY_RE = re.compile(
 )
 CODE_PROMPT_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
 EMAIL_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
+REPORT_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.tsv$")
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,36 @@ def day_bounds(day: dt.date) -> tuple[dt.datetime, dt.datetime]:
 
 def parse_day(value: str | None) -> dt.date:
     return local_now().date() if not value else dt.date.fromisoformat(value)
+
+
+def yesterday() -> dt.date:
+    return local_now().date() - dt.timedelta(days=1)
+
+
+def existing_report_days(output_dir: Path) -> list[dt.date]:
+    root = output_dir.expanduser()
+    if not root.exists():
+        return []
+    return sorted(dt.date.fromisoformat(path.stem) for path in root.iterdir() if REPORT_NAME_RE.match(path.name))
+
+
+def default_day_range(output_dir: Path) -> tuple[dt.date, dt.date] | None:
+    last_day = yesterday()
+    days = existing_report_days(output_dir)
+    if not days:
+        return last_day - dt.timedelta(days=6), last_day
+    first_day = max(days) + dt.timedelta(days=1)
+    if first_day > last_day:
+        return None
+    return first_day, last_day
+
+
+def requested_day_range(date: str | None, days: int | None, output_dir: Path) -> tuple[dt.date, dt.date] | None:
+    if date is None and days is None:
+        return default_day_range(output_dir)
+    last_day = parse_day(date) if date else yesterday()
+    count = days or 1
+    return last_day - dt.timedelta(days=count - 1), last_day
 
 
 def clean_text(value: Any) -> str:
@@ -761,14 +792,15 @@ def describe() -> dict[str, Any]:
         "columns": ["Time", "Type", "Activity"],
         "sources": sorted(COLLECTORS),
         "default_sources": DEFAULT_SOURCES.split(","),
+        "default_date_range": "Pending days after the latest YYYY-MM-DD.tsv in output_dir through yesterday; if none exist, the last 7 days ending yesterday.",
         "extension_point": "Add a collect_<source>(Context) function and register it in COLLECTORS.",
     }
 
 
 @app.callback(invoke_without_command=True)
 def main(
-    date: str | None = typer.Option(None, "--date", help="Last local day to generate, YYYY-MM-DD. Default: today."),
-    days: int = typer.Option(1, "--days", min=1, help="Generate this many days ending at --date."),
+    date: str | None = typer.Option(None, "--date", help="Last local day to generate, YYYY-MM-DD. Default with --days: yesterday."),
+    days: int | None = typer.Option(None, "--days", min=1, help="Generate this many days ending at --date. Default: pending days through yesterday."),
     sources: str = typer.Option(DEFAULT_SOURCES, "--sources", help="Comma/space separated sources."),
     output_dir: Path = typer.Option(OUT_ROOT, "--output-dir", help="Directory for YYYY-MM-DD.tsv reports."),
     limit_per_source: int = typer.Option(500, "--limit-per-source", min=1, help="Maximum rows from each source per day."),
@@ -781,19 +813,23 @@ def main(
         return
 
     selected_sources = parse_sources(sources)
+    day_range = requested_day_range(date, days, output_dir)
+    if day_range is None:
+        eprint(f"nothing to do: reports are current through {yesterday().isoformat()}")
+        return
     if "browser" in selected_sources and not no_browser_sync:
         eprint("syncing browser history...")
         sync_browser_history()
     generated_at = local_now()
-    last_day = parse_day(date)
-    first_day = last_day - dt.timedelta(days=days - 1)
+    first_day, last_day = day_range
     first_start, _first_end = day_bounds(first_day)
     _last_start, last_end = day_bounds(last_day)
     if "email" in selected_sources:
         preload_email(first_start, last_end)
     if "code-prompt" in selected_sources:
         preload_code_prompts(first_start, last_end)
-    for offset in range(days - 1, -1, -1):
+    total_days = (last_day - first_day).days + 1
+    for offset in range(total_days - 1, -1, -1):
         day = last_day - dt.timedelta(days=offset)
         start, end = day_bounds(day)
         rows = rows_for_day(Context(day, start, end, limit_per_source, "browser" in selected_sources), selected_sources)

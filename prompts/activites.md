@@ -1,5 +1,23 @@
 # activities
 
+## Make it repeatable, 14 May 2026
+
+<!--
+
+cd ~/code/scripts/
+codex --model gpt-5.5 --config model_reasoning_effort=high
+
+-->
+
+Modify `activities.py` so that by default, it doesn't run for the current day, but runs for all pending days since the last run (or the last 7 days if there is no previous run) until yesterday.
+This ensures that I can run it at any point to update it, and it doesn't update the current day which may be incomplete.
+
+Also, fill up all the gaps in the activity logs - specifically between 2026-04-01.tsv and 2026-05-01.tsv.
+
+<!-- codex resume 019e358b-20d2-7333-a841-70c8b40ce0c4 -->
+
+## Initial script, 14 May 2026
+
 <!--
 
 cd ~/code/scripts/
