@@ -13,14 +13,16 @@
 
 import subprocess
 from fastmcp import FastMCP, Context
+from fastmcp.server.dependencies import get_context
 
 # Initialize the server
 mcp = FastMCP("Remote shell commands")
 
 
 @mcp.tool()
-async def bash(commands: str, ctx: Context) -> str:
+async def bash(commands: str, timeout_ms: int = 30_000) -> str:
     """Runs multiline bash script. Use fd, ug, rga, sd, sg, jaq, gdu, uv, node, ffmpeg, git, ..."""
+    ctx: Context = get_context()
     await ctx.info(f"bash: {commands}")
     try:
         result = subprocess.run(
@@ -29,7 +31,7 @@ async def bash(commands: str, ctx: Context) -> str:
             executable="/bin/bash",
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout_ms / 1000,
         )
     except Exception as e:
         return str(e)

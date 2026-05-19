@@ -420,7 +420,7 @@ def process_file(
         return result
 
     if count_content_lines(text) < MIN_CONTENT_LINES:
-        result["skipped_reason"] = f"trivial content"
+        result["skipped_reason"] = "trivial content"
         return result
 
     updates: dict = {}
@@ -487,7 +487,8 @@ def main(
         console.print("[red]GEMINI_API_KEY not found in environment or .env[/red]")
         raise typer.Exit(1)
 
-    use_json = fmt == "json" or (fmt == "auto" and not sys.stdout.isatty())
+    quiet = os.environ.get("DAILY_ACTIVITIES_QUIET") == "1"
+    use_json = fmt == "json" or (fmt == "auto" and not quiet and not sys.stdout.isatty())
     files = resolve_files(patterns or [], content_set)
     if not files:
         msg = f"No files matched: {patterns}"
@@ -511,7 +512,8 @@ def main(
                 status = result["status"]
                 name = result["name"]
                 if status == "skipped":
-                    console.print(f"[dim]SKIP {name}: {result['skipped_reason']}[/dim]")
+                    if not quiet:
+                        console.print(f"[dim]SKIP {name}: {result['skipped_reason']}[/dim]")
                 elif status == "error":
                     console.print(f"[red]ERROR {name}: {result.get('error')}[/red]")
                 else:

@@ -76,6 +76,7 @@ TYPE_MIMES = {
     "pdf": {"application/pdf"},
     "folder": {FOLDER_MIME},
 }
+GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 
 app = typer.Typer(add_completion=False, no_args_is_help=False, help=__doc__)
 
@@ -86,6 +87,11 @@ def fail(message: str) -> None:
 
 def eprint(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def useful_stderr(text: str) -> str:
+    lines = [line for line in text.splitlines() if not line.startswith(GWS_NOISE_PREFIXES)]
+    return "\n".join(lines)
 
 
 def compact_json(value: Any) -> str:
@@ -189,7 +195,11 @@ def run_gws(args: list[str], *, config_dir: str | None = None, dry_run: bool = F
     env = os.environ.copy()
     if config_dir:
         env["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"] = config_dir
-    result = subprocess.run(cmd, env=env, check=True, stdout=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, env=env, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if stderr := useful_stderr(result.stderr):
+        eprint(stderr)
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     return result.stdout
 
 

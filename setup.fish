@@ -304,6 +304,10 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
+# Notes utilities
+# -----------------------------------------------
+abbr actions 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 10); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
+
 # Audio/video
 # ----------------------------------------------
 

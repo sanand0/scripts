@@ -1,5 +1,21 @@
 # MCP Server
 
+## Add timeout, 18 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Allow mcpserver.py bash MCP to accept a timeout_ms parameter.
+
+---
+
+OpenAI reported: "The Local MCP schema exposed here still does not accept timeout_ms, so I’m using smaller line-numbered reads without that argument."
+
+Why is that? Check the docs and fix it.
+
 ## Read only server, 12 Apr 2026
 
 Convert mcpserver.py into a TUI app. It should:

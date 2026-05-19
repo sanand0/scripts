@@ -42,7 +42,7 @@ HTML_TAG_RE = re.compile(r"<[^>]+>")
 COMMIT_TIMESTAMP_RE = re.compile(r"^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M|\d{4}-\d{2}-\d{2})")
 SUBJECT_PREFIX_RE = re.compile(r"^((re|fw|fwd):\s*)+", re.I)
 SELF_EMAILS = {"s.anand@gramener.com", "root.node@gmail.com"}
-DEFAULT_SOURCES = "calendar,email,commit,github-commit,browser,code-prompt"
+DEFAULT_SOURCES = "calendar,email,commit,github-commit,browser,code-prompt,shell"
 BOILERPLATE_MARKERS = (
     "________________________________________________________________________________",
     "microsoft teams meeting",
@@ -61,6 +61,31 @@ NOISY_PROMPT_PREFIXES = (
     "the following is the codex agent history whose request action you are assessing",
 )
 GENERIC_AI_TITLES = {"chatgpt", "claude", "codex"}
+FISH_HISTORY_BURST_MINUTES = 15
+SHELL_COMMAND_MAX_CHARS = 220
+SHELL_NOISE_RE = re.compile(
+    r"^(?:"
+    r"cd\b|z\b|l\b|ls\b|ll\b|la\b|pwd\b|clear\b|history\b|exit\b|jobs\b|fg\b|bg\b|"
+    r"which\b|type\b|command -v\b|abbr\b|alias\b|set -[glUx]\b|"
+    r"moor\b|less\b|more\b|head\b|tail\b|cat\b"
+    r")"
+)
+SHELL_SENSITIVE_RE = re.compile(
+    r"(\b(secrets?|passwords?|passwd|tokens?|api[_-]?keys?|oauth|authorization|bearer|client[_-]?secret)\b|(?:^|[\s/])\.env\b)",
+    re.I,
+)
+SHELL_SIGNAL_RE = re.compile(
+    r"^(?:"
+    r"code\b|codex\b|claude\b|llm\b|agent\b|"
+    r"git (?:commit|push|pull|merge|rebase|tag|switch|checkout|status|diff|show)\b|"
+    r"gh\b|gws\b|bq\b|gcloud\b|curl\b|w3m\b|lynx\b|"
+    r"uv(?:x| run)?\b|npm\b|npx\b|just\b|make\b|pytest\b|ruff\b|dprint\b|"
+    r".*\.py\b|"
+    r"duckdb\b|sqlite3\b|qsv\b|csvq\b|jaq\b|yq\b|jq\b|ug\b|rg\b|rga\b|fd\b|sg\b|"
+    r"ffmpeg\b|melt\b|magick\b|pandoc\b|pdfcpu\b|qpdf\b|pdftoppm\b|pdfplumber\b|yt-dlp\b|"
+    r"rclone\b|rsync\b|scp\b|ssh\b|7zz\b|tar\b|zip\b|unzip\b"
+    r")"
+)
 LEISURE_DOMAINS = {
     "netflix.com",
     "primevideo.com",
@@ -75,7 +100,9 @@ LEISURE_QUERY_RE = re.compile(
 )
 CODE_PROMPT_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
 EMAIL_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
+SHELL_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
 REPORT_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.tsv$")
+GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 
 
 @dataclass(frozen=True)
@@ -101,6 +128,11 @@ Collector = Callable[[Context], list[Activity]]
 
 def eprint(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
+
+
+def useful_stderr(text: str) -> str:
+    lines = [line for line in text.splitlines() if not line.startswith(GWS_NOISE_PREFIXES)]
+    return "\n".join(lines)
 
 
 def local_now() -> dt.datetime:
@@ -160,6 +192,15 @@ def trim(value: Any, max_chars: int = 220) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 1].rstrip() + "..."
+
+
+def trim_middle(value: Any, max_chars: int = 220) -> str:
+    text = clean_text(value)
+    if len(text) <= max_chars:
+        return text
+    head_chars = int(max_chars * 0.58)
+    tail_chars = max_chars - head_chars - 5
+    return text[:head_chars].rstrip() + " ... " + text[-tail_chars:].lstrip()
 
 
 def join_parts(parts: list[str]) -> str:
@@ -266,7 +307,14 @@ def compact_json(value: Any) -> str:
 
 
 def command_json(args: list[str]) -> Any:
-    result = subprocess.run(args, check=True, stdout=subprocess.PIPE, text=True)
+    if args[0] == "gws":
+        result = subprocess.run(args, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if stderr := useful_stderr(result.stderr):
+            eprint(stderr)
+        if result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, args, result.stdout, result.stderr)
+    else:
+        result = subprocess.run(args, check=True, stdout=subprocess.PIPE, text=True)
     text = result.stdout.strip()
     try:
         return json.loads(text or "{}")
@@ -678,6 +726,105 @@ def collect_code_prompts(ctx: Context) -> list[Activity]:
     return activities[: ctx.limit_per_source]
 
 
+def clean_shell_command(command: str) -> str:
+    text = command.replace("\x00", " ")
+    text = re.sub(r"\s*(?:\n|&&|\|\|)\s*", "; ", text)
+    text = re.sub(r"\s*;\s*", "; ", text)
+    return NOISE_SPACE_RE.sub(" ", text).strip(" ;")
+
+
+def is_signal_shell_command(command: str) -> bool:
+    lowered = command.casefold()
+    if lowered.startswith("#"):
+        return False
+    if SHELL_SENSITIVE_RE.search(command):
+        return False
+    if "history" in lowered and not re.search(r"\b(?:git|agentlog|activities)\b", lowered):
+        return False
+    if SHELL_NOISE_RE.match(lowered):
+        return False
+    return bool(SHELL_SIGNAL_RE.search(lowered) or "|" in command or ">" in command)
+
+
+def shell_command_score(command: str) -> int:
+    lowered = command.casefold()
+    score = 0
+    scoring = [
+        (r"\bgit (commit|push|merge|rebase|tag)\b", 7),
+        (r"\b(transcribe_calls|backupmeet|backupwhatsapp|mcpserver|activities|browsing_history)\.py\b", 6),
+        (r"\b(gws|bq|gcloud|gh|rclone|ffmpeg|melt|pandoc|yt-dlp)\b", 5),
+        (r"\b(uv run|uvx|npm run|npx|just|pytest|ruff|dprint)\b", 4),
+        (r"\b(duckdb|sqlite3|qsv|csvq|jaq|yq|jq|ug|rg|rga|fd|sg)\b", 3),
+        (r"\b(code|codex|claude|llm)\b", 2),
+    ]
+    for pattern, points in scoring:
+        if re.search(pattern, lowered):
+            score += points
+    if "|" in command or ">" in command:
+        score += 1
+    if re.match(r"^(git status|git diff|git show)\b", lowered):
+        score -= 2
+    if len(command) > 260:
+        score += 1
+    return score
+
+
+def preload_shell_commands(start: dt.datetime, end: dt.datetime) -> None:
+    global SHELL_CACHE
+    if SHELL_CACHE and SHELL_CACHE[0] <= start and SHELL_CACHE[1] >= end:
+        return
+    result = subprocess.run(
+        ["fish", "-lc", 'history --show-time="%s " --null --max 50000'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        eprint(f"warning: skipped fish history: {result.stderr.decode(errors='replace').strip()}")
+        SHELL_CACHE = (start, end, [])
+        return
+    eprint("preloading fish shell history...")
+    rows = []
+    for record in result.stdout.split(b"\0"):
+        if not record.strip():
+            continue
+        head, _, body = record.partition(b" ")
+        try:
+            when = dt.datetime.fromtimestamp(int(head), start.tzinfo).astimezone()
+        except ValueError:
+            continue
+        if not (start <= when < end):
+            continue
+        command = clean_shell_command(body.decode(errors="replace"))
+        if not command or not is_signal_shell_command(command):
+            continue
+        rows.append(Activity(when, "shell", command, "fish-history", f"fish:{int(when.timestamp())}:{command[:80]}"))
+    rows.sort(key=lambda item: item.when)
+    SHELL_CACHE = (start, end, rows)
+
+
+def collect_shell(ctx: Context) -> list[Activity]:
+    if SHELL_CACHE is None or SHELL_CACHE[0] > ctx.start or SHELL_CACHE[1] < ctx.end:
+        preload_shell_commands(ctx.start, ctx.end)
+    commands = [row for row in (SHELL_CACHE[2] if SHELL_CACHE else []) if ctx.start <= row.when < ctx.end]
+    bursts: list[list[Activity]] = []
+    for command in commands:
+        if not bursts or (command.when - bursts[-1][-1].when).total_seconds() > FISH_HISTORY_BURST_MINUTES * 60:
+            bursts.append([command])
+        else:
+            bursts[-1].append(command)
+    activities = []
+    for burst in bursts:
+        commands_by_text = {row.activity: row for row in burst}
+        ordered_commands = list(commands_by_text)
+        samples = sorted(sorted(ordered_commands, key=shell_command_score, reverse=True)[:3], key=ordered_commands.index)
+        more = len(ordered_commands) - len(samples)
+        suffix = "" if more <= 0 else f"; +{more} more"
+        activity = trim_middle("CLI: " + "; ".join(samples) + suffix, SHELL_COMMAND_MAX_CHARS)
+        activities.append(Activity(burst[0].when, "shell", activity, "fish-history", f"fish-burst:{int(burst[0].when.timestamp())}"))
+    return activities[: ctx.limit_per_source]
+
+
 COLLECTORS: dict[str, Collector] = {
     "calendar": collect_calendar,
     "email": collect_email,
@@ -685,6 +832,7 @@ COLLECTORS: dict[str, Collector] = {
     "github-commit": collect_github_commits,
     "browser": collect_browser,
     "code-prompt": collect_code_prompts,
+    "shell": collect_shell,
 }
 
 
@@ -828,6 +976,8 @@ def main(
         preload_email(first_start, last_end)
     if "code-prompt" in selected_sources:
         preload_code_prompts(first_start, last_end)
+    if "shell" in selected_sources:
+        preload_shell_commands(first_start, last_end)
     total_days = (last_day - first_day).days + 1
     for offset in range(total_days - 1, -1, -1):
         day = last_day - dt.timedelta(days=offset)

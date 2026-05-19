@@ -1,5 +1,22 @@
 # backupwhatsapp.py
 
+## Efficiency, 19 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -v /home/sanand/code/tools/whatsappscraper:/home/sanand/code/tools/whatsappscraper:ro -v /home/sanand/Documents/data/whatsapp:/home/sanand/Documents/data/whatsapp
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify backupwhatsapp.py to ensure that:
+
+- When I update first thing in the morning, the conversation list shows "Yesterday" as the last updated time, not the actual time. That triggers unnecessary scanning of conversations and messages. Check if there is a smarter way to do this. For example, checking for unread messages as a signal, checking if conversation lists are sorted by time in which case we can skip starting from the first conversation that has no new content (or going down a few further to be safe). Of course, to do this, you need to verify if the conversations are, in fact, reliably sorted, and plant a diagnostic in the script to report if that's not the case in the future - letting me know to revise the script revisiting this assumption.
+- If I go to a different time zone (Singapore, India, Europe, US, ...) the timing detection still works - especially from the conversation list
+
+Run and test.
+
+<!-- codex resume 019e3e1c-ceaa-7573-8c06-dd9839d21655 --yolo -->
+
 ## Tweaks, 17 May 2026
 
 <!--

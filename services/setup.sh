@@ -45,6 +45,18 @@ check_units() {
       -g "Failed|FAILURE|failed|error|Error|warning|Warning|Input/output|Cannot" \
       "${journal_args[@]}" || true
   fi
+
+  echo
+  echo "== daily-activities prerequisites =="
+  command -v nmcli >/dev/null && echo "nmcli: ok" || echo "nmcli: missing; bandwidth-heavy jobs will be skipped"
+  command -v rsync >/dev/null && echo "rsync: ok" || echo "rsync: missing"
+  command -v rclone >/dev/null && echo "rclone: ok" || echo "rclone: missing"
+  [[ -r "$HOME/.config/rclone/rclone.conf" ]] && echo "rclone config: ok" || echo "rclone config: missing at $HOME/.config/rclone/rclone.conf"
+  if [[ -n "${SSH_AUTH_SOCK:-}" && -S "${SSH_AUTH_SOCK:-}" ]]; then
+    echo "ssh agent: $SSH_AUTH_SOCK"
+  else
+    echo "ssh agent: not imported; daily-activities will try common user-session sockets"
+  fi
 }
 
 if [[ "${1-}" == "check" ]]; then

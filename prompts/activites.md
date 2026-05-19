@@ -1,5 +1,31 @@
 # activities
 
+## Include fish scripts, 18 May 2026
+
+<!--
+
+cd ~/code/scripts/
+codex --model gpt-5.5 --config model_reasoning_effort=high
+
+-->
+
+I'd like to modify `activities.py` to also include `fish` CLI history via `history --show-time`, condensing the commands into a single line, whitespace-compacted and trimmed, semicolon-merged, truncated in the middle to a reasonable length suitable for AI agents to understand and consistent with the rest of `activities.py`.
+
+Think about whether it will make it too noisy to include all commands. If so, based on my history, what would be most apt to include that will give AI agents a good understanding of my activities, maximizing signal over noise - e.g. a summary along with relevant details of some kind?
+
+Before modifying activities.py, implement and run your approach and show me what it looks like for a few diversely active days. I'll guide based on that. THEN you can patch activities.py to include this.
+
+---
+
+The burst-level approach seems fine. Maybe 15-minute instead of 25-minute bursts?
+Should we trim in the middle, or at least preserve the last command? You decide.
+As for `DEFAULT_SOURCES` vs `--sources shell` I leave that to you.
+
+Go ahead, implement and test.
+Revise/patch existing ~/Documents/activities/*.tsv files to include shell as well.
+
+<!-- codex resume 019e39fa-027a-7533-836f-b194365f8381 -->
+
 ## Make it repeatable, 14 May 2026
 
 <!--

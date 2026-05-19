@@ -1,0 +1,15 @@
+[Unit]
+Description=Run daily-activities with catch-up
+
+[Timer]
+# 1:15am local time, after the other early daily timers.
+OnCalendar=*-*-* 01:15
+# run on next wake if missed
+Persistent=true
+# group wakeups to save power
+AccuracySec=10m
+# stagger a bit after wake
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

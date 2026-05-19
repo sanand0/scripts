@@ -31,6 +31,7 @@ MEET_NAMES = "(name contains 'Recording' or name contains 'Transcript' or name c
 FIELDS = "nextPageToken,files(id,name,mimeType,createdTime,modifiedTime,size,parents,webViewLink)"
 FFMPEG = "ffmpeg -hide_banner -stats -v warning -i".split()
 OPUS = "-c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10".split()
+GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 
 
 @dataclass
@@ -131,6 +132,24 @@ class Archive:
         return self.complete() and (not self.opus or self.opus.exists() and self.opus.stat().st_size > 0)
 
 
+def avoid_output_collisions(archives: list[Archive], calls: Path) -> list[Archive]:
+    counts: dict[Path, int] = {}
+    for archive in archives:
+        counts[archive.output] = counts.get(archive.output, 0) + 1
+    if all(count == 1 for count in counts.values()):
+        return archives
+
+    unique = []
+    for archive in archives:
+        if counts[archive.output] == 1:
+            unique.append(archive)
+            continue
+        output = archive.output.with_stem(f"{archive.output.stem} [{archive.file.id}]")
+        opus = calls / f"{output.stem}.opus" if archive.opus else None
+        unique.append(Archive(archive.file, output, opus))
+    return unique
+
+
 def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     for name, default in {"account": ACCOUNT, "config-dir": CONFIG_DIR, "dest": DEST_DIR, "calls-dir": CALLS_DIR, "older-than": "7d"}.items():
@@ -158,6 +177,15 @@ def clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip(" .")
 
 
+def quiet_daily_activities() -> bool:
+    return os.environ.get("DAILY_ACTIVITIES_QUIET") == "1"
+
+
+def useful_stderr(text: str) -> str:
+    lines = [line for line in text.splitlines() if not line.startswith(GWS_NOISE_PREFIXES)]
+    return "\n".join(lines)
+
+
 def day_start(spec: str) -> str:
     if match := re.fullmatch(r"(\d+)d", spec):
         day = datetime.now(UTC) - timedelta(days=int(match.group(1)))
@@ -177,7 +205,20 @@ def run_gws(args: list[str], config_dir: Path, output: Path | None = None) -> st
         output.parent.mkdir(parents=True, exist_ok=True)
         args = [*args, "--output", output.name]
         cwd = output.parent
-    return subprocess.run(["gws", *args], check=True, cwd=cwd, env=env, stdout=subprocess.PIPE, text=True).stdout
+    result = subprocess.run(
+        ["gws", *args],
+        check=False,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if stderr := useful_stderr(result.stderr):
+        print(stderr, file=sys.stderr)
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, ["gws", *args], result.stdout, result.stderr)
+    return result.stdout
 
 
 def gws_json(args: list[str], config_dir: Path) -> Any:
@@ -264,19 +305,52 @@ def delete_or_warn(archive: Archive, config_dir: Path, parent_cache: dict[str, d
         return "archived-delete-failed"
 
 
+def summary_event(events: list[dict[str, Any]], matched: int, checked: int, dry_run: bool, account: str, before: str, after: str) -> dict[str, Any]:
+    statuses = [event["status"] for event in events]
+    archived = sum(status in {"archived", "archived-delete-failed"} for status in statuses)
+    return {
+        "event": "summary",
+        "matched": matched,
+        "checked": checked,
+        "archived": archived,
+        "deleted": statuses.count("archived"),
+        "delete_failed": statuses.count("archived-delete-failed"),
+        "skipped_existing": statuses.count("skipped-existing"),
+        "planned": statuses.count("dry-run"),
+        "dry_run": dry_run,
+        "account": account,
+        "before": before,
+        "after": after,
+    }
+
+
 def emit(format_: str, event: dict[str, Any]) -> None:
     if format_ == "json":
         print(json_compact(event))
+    elif quiet_daily_activities() and event["event"] == "skipped":
+        return
     elif event["event"] == "summary":
-        print(f"summary: matched={event['matched']} processed={event['processed']} dry_run={int(event['dry_run'])}")
+        print(
+            "summary: "
+            f"matched={event['matched']} checked={event['checked']} archived={event['archived']} "
+            f"deleted={event['deleted']} delete_failed={event['delete_failed']} "
+            f"skipped_existing={event['skipped_existing']} planned={event['planned']} "
+            f"dry_run={int(event['dry_run'])}"
+        )
     else:
         opus = f"; opus: {event['opus']}" if event.get("opus") else ""
-        print(f"{event['status']}: {event['source_name']} -> {event['output']}{opus}")
+        label = {
+            "archived": "archived",
+            "archived-delete-failed": "archived; delete failed",
+            "dry-run": "planned",
+            "skipped-existing": "skipped existing",
+        }.get(event["status"], event["status"])
+        print(f"{label}: {event['source_name']} -> {event['output']}{opus}")
 
 
 def main() -> None:
     args = cli()
-    format_ = args.format or ("text" if sys.stdout.isatty() else "json")
+    format_ = args.format or "text"
     for tool in ["gws", *([] if args.dry_run else ["ffmpeg"])]:
         if not shutil.which(tool):
             fail(f"missing dependency: {tool}")
@@ -285,14 +359,18 @@ def main() -> None:
     before = day_start(args.before or args.older_than)
     after = day_start(args.after) if args.after else ""
     if format_ == "text":
-        print(f"account: {actual}\nquery: {query_for(before, after)}")
+        if not quiet_daily_activities():
+            print(f"account: {actual}\nquery: {query_for(before, after)}")
 
     matched = [
         file
         for file in discover(args.config_dir, before, after)
         if eligible(file) and (not args.name or args.name.lower() in file.name.lower()) and file.matches_type(args.type)
     ]
-    archives = [Archive.for_file(file, args.dest, args.calls_dir) for file in matched[: args.limit]]
+    archives = avoid_output_collisions(
+        [Archive.for_file(file, args.dest, args.calls_dir) for file in matched[: args.limit]],
+        args.calls_dir,
+    )
     if archives and not args.dry_run and not args.yes:
         if not sys.stdin.isatty():
             fail("refusing to delete Drive files without --yes in non-interactive mode")
@@ -300,18 +378,25 @@ def main() -> None:
             fail("aborted")
 
     parent_cache: dict[str, dict[str, Any]] = {}
+    events = []
     for archive in archives:
         if archive.done():
-            emit(format_, archive.event("skipped-existing", "skipped"))
+            event = archive.event("skipped-existing", "skipped")
+            events.append(event)
+            emit(format_, event)
             continue
         if args.dry_run:
-            emit(format_, archive.event("dry-run", "planned"))
+            event = archive.event("dry-run", "planned")
+            events.append(event)
+            emit(format_, event)
             continue
         download(archive, args.config_dir)
         convert(archive)
-        emit(format_, archive.event(delete_or_warn(archive, args.config_dir, parent_cache), "archived"))
+        event = archive.event(delete_or_warn(archive, args.config_dir, parent_cache), "archived")
+        events.append(event)
+        emit(format_, event)
 
-    emit(format_, {"event": "summary", "matched": len(matched), "processed": len(archives), "dry_run": args.dry_run, "account": actual, "before": before, "after": after})
+    emit(format_, summary_event(events, len(matched), len(archives), args.dry_run, actual, before, after))
 
 
 if __name__ == "__main__":

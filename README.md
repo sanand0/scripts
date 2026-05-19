@@ -125,6 +125,7 @@ Here are the setup details for my laptops.
 `services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
 
 - `consolidate-transcripts-daily.*`: Consolidate transcript learnings
+- `daily-activities.*`: Run daily activity reports, metadata summarizers, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files

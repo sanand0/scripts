@@ -1,0 +1,14 @@
+[Unit]
+Description=Run daily activity and backup jobs
+Wants=network-online.target
+After=network-online.target
+OnFailure=timer-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/sanand/code/scripts/daily-activities
+WorkingDirectory=/home/sanand
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/.local/share/mise/shims:/home/sanand/bin
+Environment=HOME=/home/sanand
+Environment=XDG_CONFIG_HOME=/home/sanand/.config
+Environment=RCLONE_CONFIG=/home/sanand/.config/rclone/rclone.conf

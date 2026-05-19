@@ -23,6 +23,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import typer
 from playwright.async_api import Browser, Page, async_playwright
@@ -35,6 +36,7 @@ SCRAPER = Path("/home/sanand/code/tools/whatsappscraper/whatsappscraper.min.js")
 CDP_URL = "http://localhost:9222"
 CHAT_LIST_SELECTOR = "#pane-side"
 MAIN_SELECTOR = "div#main"
+INCREMENTAL_SORT_SAFETY = 6
 CHAT_ID_JS = r"""
 (root) => {
   const seen = new WeakSet();
@@ -94,13 +96,78 @@ CHAT_LIST_JS = r"""
   const pane = document.querySelector("#pane-side");
   if (!pane) return { error: "WhatsApp chat list not found. Open https://web.whatsapp.com/ first." };
   const chatIdFor = %CHAT_ID_JS%;
+  const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  const pad = (value) => String(value).padStart(2, "0");
+  const localDay = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const endOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 0);
+  const parseClock = (text) => {
+    const match = String(text || "").trim().match(/^(\d{1,2}):(\d{2})(?:\s?([ap]m))?$/i);
+    if (!match) return null;
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const meridiem = match[3]?.toLowerCase();
+    if (meridiem) {
+      hours %= 12;
+      if (meridiem === "pm") hours += 12;
+    }
+    return { hours, minutes };
+  };
+  const monthNames = "jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december";
+  const parseListTime = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return {};
+    const now = new Date();
+    const clock = parseClock(text);
+    if (clock) {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), clock.hours, clock.minutes, 0, 0);
+      return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    if (/^today$/i.test(text)) {
+      const date = endOfDay(now);
+      return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    if (/^yesterday$/i.test(text)) {
+      const date = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+      return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const weekday = weekdays.indexOf(text.toLowerCase());
+    if (weekday >= 0) {
+      const days = (now.getDay() - weekday + 7) % 7 || 7;
+      const date = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+      return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    const numeric = text.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+    if (numeric) {
+      let year = numeric[3] ? Number(numeric[3]) : now.getFullYear();
+      if (year < 100) year += 2000;
+      const date = endOfDay(new Date(year, Number(numeric[2]) - 1, Number(numeric[1])));
+      return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    const month = text.match(new RegExp(`^(${monthNames})\\s+(\\d{1,2})$`, "i"));
+    if (month) {
+      const date = endOfDay(new Date(`${month[1]} ${month[2]}, ${now.getFullYear()}`));
+      if (!Number.isNaN(date.getTime())) return { iso: date.toISOString(), localDay: localDay(date) };
+    }
+    return {};
+  };
+  const unreadFor = (row) => {
+    const label = [
+      row.getAttribute("aria-label") || "",
+      ...[...row.querySelectorAll("[aria-label]")].map((node) => node.getAttribute("aria-label") || ""),
+    ].join(" ");
+    const unread = /\bunread\b/i.test(label);
+    const count = label.match(/(\d+)\s+unread/i);
+    return { unread, unreadCount: count ? Number(count[1]) : (unread ? 1 : 0), unreadText: label.trim() };
+  };
   const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')]
     .filter((row) => row.offsetParent && row.innerText.trim());
-  const timePattern = /^(?:\d{1,2}:\d{2}(?:\s?[ap]m)?|today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|[a-z]{3,9}\s+\d{1,2})$/i;
+  const timePattern = new RegExp(`^(?:\\d{1,2}:\\d{2}(?:\\s?[ap]m)?|today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?|(?:${monthNames})\\s+\\d{1,2})$`, "i");
   return {
     scrollTop: pane.scrollTop,
     clientHeight: pane.clientHeight,
     scrollHeight: pane.scrollHeight,
+    browserTimeZone,
     chats: rows.map((row, index) => {
       const lines = row.innerText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
       const titled = [...row.querySelectorAll("[title]")]
@@ -110,17 +177,31 @@ CHAT_LIST_JS = r"""
       const title = titled[0] || lines.find((line) => !timePattern.test(line)) || "";
       const lastActiveText = [...lines].reverse().find((line) => timePattern.test(line)) || "";
       const conversationId = chatIdFor(row);
-      return { index, title, conversationId, lastActiveText, preview: lines.slice(0, 5).join(" | ") };
+      const parsed = parseListTime(lastActiveText);
+      const unread = unreadFor(row);
+      return {
+        index,
+        title,
+        conversationId,
+        lastActiveText,
+        lastActiveTime: parsed.iso || "",
+        lastActiveDay: parsed.localDay || "",
+        browserTimeZone,
+        ...unread,
+        preview: lines.slice(0, 5).join(" | "),
+      };
     }).filter((chat) => chat.title),
   };
 }
 """.replace("%CHAT_ID_JS%", CHAT_ID_JS)
 CLICK_CHAT_JS = r"""
-(title) => {
+({ title, conversationId }) => {
   const pane = document.querySelector("#pane-side");
-  const titleNode = [...pane.querySelectorAll("[title]")]
-    .find((node) => node.getAttribute("title") === title);
-  const row = titleNode?.closest('[role="listitem"], [role="row"]');
+  const chatIdFor = %CHAT_ID_JS%;
+  const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')];
+  const row = rows.find((candidate) => conversationId && chatIdFor(candidate) === conversationId)
+    || rows.find((candidate) => [...candidate.querySelectorAll("[title]")].some((node) => node.getAttribute("title") === title));
+  const titleNode = row?.querySelector(`[title="${CSS.escape(title)}"]`) || row?.querySelector("[title]") || row;
   if (!titleNode || !row) return false;
   titleNode.scrollIntoView({ block: "center" });
   for (const target of [titleNode, row]) {
@@ -130,7 +211,7 @@ CLICK_CHAT_JS = r"""
   }
   return true;
 }
-"""
+""".replace("%CHAT_ID_JS%", CHAT_ID_JS)
 SCROLL_HISTORY_JS = r"""
 ({ cutoff, maxMessages, maxRounds, settleMs }) => new Promise(async (resolve) => {
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -446,6 +527,8 @@ def chat_state(chat: dict[str, Any], list_time: dt.datetime | None, local_since:
         "title": chat["title"],
         "conversationId": chat.get("conversationId") or "",
         "lastActiveText": chat.get("lastActiveText") or "",
+        "lastActiveDay": chat.get("lastActiveDay") or "",
+        "browserTimeZone": chat.get("browserTimeZone") or "",
         "listTime": list_time.isoformat() if list_time else "",
         "localLatestTime": local_since.isoformat() if local_since else "",
         "checkedAt": dt.datetime.now(dt.UTC).isoformat(),
@@ -456,7 +539,65 @@ def already_checked(state: dict[str, Any], key: str, chat: dict[str, Any], list_
     row = state.get(key)
     if not row:
         return False
-    return row.get("lastActiveText") == (chat.get("lastActiveText") or "") and row.get("listTime") == (list_time.isoformat() if list_time else "")
+    if row.get("lastActiveText") == (chat.get("lastActiveText") or "") and row.get("listTime") == (list_time.isoformat() if list_time else ""):
+        return True
+    return bool(row.get("lastActiveDay") and row.get("lastActiveDay") == (chat.get("lastActiveDay") or ""))
+
+
+def chat_list_time(chat: dict[str, Any]) -> dt.datetime | None:
+    if chat.get("lastActiveTime"):
+        try:
+            return parse_time(str(chat["lastActiveTime"]))
+        except ValueError:
+            pass
+    return parse_chat_list_time(chat.get("lastActiveText", ""))
+
+
+def local_day(when: dt.datetime, time_zone: str) -> str:
+    try:
+        zone = ZoneInfo(time_zone) if time_zone else dt.datetime.now().astimezone().tzinfo
+    except ZoneInfoNotFoundError:
+        zone = dt.datetime.now().astimezone().tzinfo
+    return when.astimezone(zone).date().isoformat()
+
+
+def known_no_new_content(chat: dict[str, Any], checked_state: dict[str, Any]) -> bool:
+    if int(chat.get("unreadCount") or 0) > 0:
+        return False
+    title = chat["title"]
+    conversation_id = chat.get("conversationId") or ""
+    path = path_for(title, conversation_id)
+    if not path.exists():
+        return False
+    local_since = max_message_time(load_jsonl(path))
+    if local_since is None:
+        return False
+    list_time = chat_list_time(chat)
+    if list_time and list_time <= local_since:
+        return True
+    key = chat_key(title, conversation_id)
+    if already_checked(checked_state, key, chat, list_time):
+        return True
+    return bool(chat.get("lastActiveDay") and chat["lastActiveDay"] == local_day(local_since, chat.get("browserTimeZone") or ""))
+
+
+def sorted_time_violation(chats: list[dict[str, Any]]) -> dict[str, Any] | None:
+    previous_chat: dict[str, Any] | None = None
+    previous_time: dt.datetime | None = None
+    for chat in chats:
+        when = chat_list_time(chat)
+        if when is None:
+            continue
+        if previous_time and when > previous_time:
+            return {
+                "previous": previous_chat,
+                "previousTime": previous_time.isoformat(),
+                "current": chat,
+                "currentTime": when.isoformat(),
+            }
+        previous_chat = chat
+        previous_time = when
+    return None
 
 
 def merge_jsonl_files(target: Path, sources: list[Path]) -> None:
@@ -624,25 +765,45 @@ async def list_chats(page: Page) -> dict[str, Any]:
     return data
 
 
-async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = None) -> list[dict[str, Any]]:
+async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = None, checked_state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     await page.wait_for_selector(CHAT_LIST_SELECTOR, timeout=10000)
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(400)
     seen: dict[str, dict[str, Any]] = {}
     stale = 0
+    warned_unsorted = False
     for _ in range(max_scan):
         data = await list_chats(page)
         before = len(seen)
         for chat in data["chats"]:
-            seen.setdefault(chat["title"], chat)
+            seen.setdefault(chat.get("conversationId") or chat["title"], chat)
         if len(seen) == before:
             stale += 1
         else:
             stale = 0
-        visible_times = [parse_chat_list_time(chat.get("lastActiveText", "")) for chat in data["chats"]]
+        ordered = list(seen.values())
+        if checked_state is not None:
+            violation = sorted_time_violation(ordered)
+            if violation and not warned_unsorted:
+                warned_unsorted = True
+                previous = violation["previous"] or {}
+                current = violation["current"] or {}
+                eprint(
+                    "warning: WhatsApp chat list may not be sorted by latest message time; "
+                    f"{previous.get('title', '?')}={violation['previousTime']} appears before "
+                    f"{current.get('title', '?')}={violation['currentTime']}. "
+                    "Incremental early-stop is disabled for this run."
+                )
+        visible_times = [chat_list_time(chat) for chat in data["chats"]]
         oldest_visible = min([when for when in visible_times if when is not None], default=None)
         if stop_at and oldest_visible and oldest_visible <= stop_at:
             break
+        if checked_state is not None and not warned_unsorted:
+            covered_tail = 0
+            for chat in ordered:
+                covered_tail = covered_tail + 1 if known_no_new_content(chat, checked_state) else 0
+            if covered_tail >= INCREMENTAL_SORT_SAFETY:
+                break
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4 or stale >= 3:
             break
         await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
@@ -652,14 +813,14 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
     return list(seen.values())
 
 
-async def open_chat(page: Page, title: str, max_scan: int) -> bool:
+async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int) -> bool:
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(250)
     for _ in range(max_scan):
         data = await list_chats(page)
         for chat in data["chats"]:
-            if chat["title"] == title:
-                if not await page.evaluate(CLICK_CHAT_JS, title):
+            if (conversation_id and chat.get("conversationId") == conversation_id) or (not conversation_id and chat["title"] == title):
+                if not await page.evaluate(CLICK_CHAT_JS, {"title": title, "conversationId": conversation_id}):
                     return False
                 await page.wait_for_selector(MAIN_SELECTOR, timeout=10000)
                 await page.wait_for_timeout(1200)
@@ -706,21 +867,20 @@ async def run_backup(
         await inject_scraper(page, SCRAPER)
         incremental_run = not (conversations or name or updated_since or updated_until or since or until)
         checked_state = load_checked_state() if incremental_run else {}
-        chats = await iter_chats(page, max_scan, oldest_backup_mtime() if incremental_run else None)
+        chats = await iter_chats(page, max_scan, oldest_backup_mtime() if incremental_run else None, checked_state if incremental_run else None)
         selected = []
         for chat in chats:
             title = chat["title"]
             conversation_id = chat.get("conversationId") or ""
-            key = chat_key(title, conversation_id)
             path = path_for(title, conversation_id)
             existing = load_jsonl(path)
             local_since = max_message_time(existing)
-            list_time = parse_chat_list_time(chat.get("lastActiveText", ""))
+            list_time = chat_list_time(chat)
             effective_since = since or local_since
             matched = (not conversations or title in conversations) and (not name or name.lower() in title.lower())
             date_matched = (updated_since is None or list_time is None or list_time >= updated_since) and (updated_until is None or list_time is None or list_time < updated_until)
             stale = not path.exists() or list_time is None or local_since is None or list_time > local_since
-            checked = incremental_run and stale and already_checked(checked_state, key, chat, list_time)
+            checked = incremental_run and stale and known_no_new_content(chat, checked_state)
             if matched and date_matched and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
                 selected.append({**chat, "path": path, "since": effective_since, "local_rows": len(existing), "list_time": list_time, "local_since": local_since})
             if limit and len(selected) >= limit:
@@ -738,11 +898,15 @@ async def run_backup(
                 emit(summary, format)
                 continue
             eprint(f"{pos}/{len(selected)}: {title}")
-            if not await open_chat(page, title, max_scan):
+            expected_id = chat.get("conversationId") or ""
+            if not await open_chat(page, title, expected_id, max_scan):
                 emit({**summary, "event": "skipped", "reason": "could-not-open"}, format)
                 continue
             messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
             conversation_id = scroll.get("conversation_id") or chat.get("conversationId") or ""
+            if expected_id and conversation_id and conversation_id != expected_id:
+                emit({**summary, "event": "skipped", "reason": f"opened-different-conversation:{conversation_id}", "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
+                continue
             path = migrate_path(title, conversation_id) if conversation_id else path
             summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
             kept = filtered_messages(messages, since, until, max_messages)
