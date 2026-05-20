@@ -65,6 +65,7 @@ Here are the setup details for my laptops.
 - [gitget](gitget) clones a git repository and copies specific paths to local directories.
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote.
 - [githubscore.py](githubscore.py) evaluates GitHub developer quality.
+- [googleconnections.py](googleconnections.py) lists apps connected to the Google Account in a CDP browser on port 9222, including URL, app name, access time, permissions, and connection ID. Defaults to TSV sorted by URL; use `googleconnections.py --format csv` for CSV or `googleconnections.py --format jsonl --limit 5` for a small structured sample.
 - [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py).
 - [gwslog.py](gwslog.py) shows recent Google Drive changes through `gws`, with cached folder paths and shared-drive names.
   - Recent Docs: `gwslog.py --since 7d --type doc`

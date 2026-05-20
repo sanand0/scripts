@@ -1,5 +1,7 @@
 # Summarize
 
+## More tweaks, 20 May 2026
+
 <!--
 cd /home/sanand/code/scripts
 dev.sh -v /home/sanand/Dropbox/notes/transcripts:/home/sanand/Dropbox/notes/transcripts \
@@ -7,7 +9,31 @@ dev.sh -v /home/sanand/Dropbox/notes/transcripts:/home/sanand/Dropbox/notes/tran
 claude --dangerously-skip-permissions
 -->
 
-## Refactor, 01 May 2026, #TODO
+Modify `summarize.py` minimally so that:
+
+1. It processes the latest files (whether blog posts or transcripts) first. For example, instead of going in this order:
+
+SKIP 2026-05-17 ...
+SKIP 2026-05-18 ...
+UPDATED 2026-05-19 ...
+UPDATED 2026-05-20 ...
+
+... it should go in the reverse order. By latest, I mean based on file name in the case of transcripts and directory name in the case of blogs.
+
+2. It does not summarize transcripts that have an empty `## Transcript` section or anything under, say, 200 characters.
+
+Run and test.
+
+<!-- claude --resume 1e7df57c-d2bf-480b-984e-3a397685b21b -->
+
+## Refactor, 01 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Dropbox/notes/transcripts:/home/sanand/Dropbox/notes/transcripts \
+  -v /home/sanand/code/blog:/home/sanand/code/blog
+claude --dangerously-skip-permissions
+-->
 
 Convert `summarize_transcripts.py` into `summarize.py` that can summarize not just transcripts at `/home/sanand/Dropbox/notes/transcripts/` but also blog posts and pages under `/home/sanand/code/blog/{posts,pages}/`.
 

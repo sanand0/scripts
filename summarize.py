@@ -98,6 +98,7 @@ class ContentSet:
     fields: list[FieldDef]
     default_globs: list[str] = field(default_factory=lambda: ["*.md"])
     meta_position: str = "before"  # "before": meta keys first; "after": meta keys last
+    skip_if: Callable[[str], str | None] | None = None
 
     @property
     def meta_keys(self) -> list[str]:
@@ -259,6 +260,17 @@ def count_content_lines(text: str) -> int:
     return sum(1 for ln in text.splitlines() if (s := ln.strip()) and not s.startswith("#"))
 
 
+MIN_TRANSCRIPT_CHARS = 200
+
+
+def _transcript_skip(body: str) -> str | None:
+    """Skip if ## Transcript section is missing or under MIN_TRANSCRIPT_CHARS chars."""
+    m = re.search(r'^## Transcript\s*$', body, re.MULTILINE)
+    if not m or len(body[m.end():].strip()) < MIN_TRANSCRIPT_CHARS:
+        return "empty transcript"
+    return None
+
+
 # ── Content set registry ───────────────────────────────────────────────────────
 # To add a new content set: define FieldDefs and append a ContentSet below.
 
@@ -272,6 +284,7 @@ CONTENT_SETS: list[ContentSet] = [
             "(e.g. \"Anand: Send slides to Vikram\", \"Team: Review dashboard by Friday\").\n"
             "For 'people': include only clearly named speakers — no placeholders.\n\n"
         ),
+        skip_if=_transcript_skip,
         fields=[
             FieldDef(
                 name="summary",
@@ -421,6 +434,10 @@ def process_file(
 
     if count_content_lines(text) < MIN_CONTENT_LINES:
         result["skipped_reason"] = "trivial content"
+        return result
+
+    if content_set.skip_if and (reason := content_set.skip_if(body)):
+        result["skipped_reason"] = reason
         return result
 
     updates: dict = {}
@@ -574,13 +591,13 @@ def resolve_files(patterns: list[str], content_set: ContentSet) -> list[Path]:
             files.extend(Path(p) for p in glob_module.glob(
                 str(content_set.base_dir / g), recursive=True
             ))
-        return sorted(set(files))
+        return sorted(set(files), reverse=True)
 
     files = []
     for pattern in patterns:
         root = pattern if pattern.startswith("/") else str(Path(".") / pattern)
         files.extend(Path(f) for f in glob_module.glob(root, recursive=True))
-    return sorted(set(files))
+    return sorted(set(files), reverse=True)
 
 
 if __name__ == "__main__":
