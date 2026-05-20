@@ -89,7 +89,44 @@ def test_default_output_is_mp3(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["audio_format"] == "mp3"
-    assert payload["output"].endswith(".mp3")
+    output_path = Path(payload["output"])
+    assert output_path.suffix == ".mp3"
+    assert output_path.name.startswith("script-")
+
+
+def test_default_output_uses_markdown_basename(tmp_path: Path) -> None:
+    input_path = tmp_path / "weekly.notes.md"
+    input_path.write_text(SAMPLE, encoding="utf-8")
+
+    result = RUNNER.invoke(podcast.app, [str(input_path), "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 0, result.stdout
+    output_path = Path(json.loads(result.stdout)["output"])
+    assert output_path.name.startswith("weekly.notes-")
+    assert output_path.suffix == ".mp3"
+
+
+def test_unexpected_gemini_response_logs_full_body(monkeypatch, capsys) -> None:
+    body = {"candidates": [{"finishReason": "SAFETY", "safetyRatings": [{"blocked": True}]}]}
+
+    def fake_post(*args, **kwargs):
+        return podcast.httpx.Response(
+            200,
+            json=body,
+            request=podcast.httpx.Request("POST", "https://example.test/generateContent"),
+        )
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(podcast.httpx, "post", fake_post)
+
+    try:
+        podcast.request_gemini_audio(podcast.Segment("Alex", "Hello"), "Algieba", "test-model")
+    except RuntimeError as exc:
+        assert "inline audio data" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert json.dumps(body, separators=(",", ":")) in capsys.readouterr().err
 
 
 def test_describe_does_not_require_input_file() -> None:

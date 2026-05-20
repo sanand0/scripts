@@ -303,7 +303,7 @@ flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to
 flatpak install -y flathub org.localsend.localsend_app          # LocalSend - P2P file sharing over LAN
 flatpak install -y flathub com.bitwarden.desktop                # Bitwarden - Password manager
 flatpak install -y com.github.taiko2k.tauonmb                   # Tauon Music Box - Music player with advanced library management
-sudo flatpak override com.github.taiko2k.tauonmb --filesystem=/home/sanand/Music   # Allow Tauon Music Box to access music files
+sudo flatpak override com.github.taiko2k.tauonmb --filesystem=/home/sanand/Music --filesystem=/home/sanand/code/quizzes   # Allow Tauon Music Box to access music files
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"

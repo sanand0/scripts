@@ -106,9 +106,9 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def default_output_path() -> Path:
-    """Return the timestamped default output path."""
-    return Path(f"podcast-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp3")
+def default_output_path(markdown_path: Path) -> Path:
+    """Return a timestamped MP3 path based on the Markdown filename."""
+    return Path(f"{markdown_path.stem}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp3")
 
 
 def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
@@ -294,6 +294,11 @@ def raise_for_status_with_body(response: httpx.Response) -> None:
         raise
 
 
+def extract_audio_data(result: dict[str, Any]) -> str:
+    """Return base64 audio data from a Gemini response."""
+    return result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+
+
 @retry(
     retry=retry_if_exception(is_retryable),
     stop=stop_after_attempt(3),
@@ -316,7 +321,12 @@ def request_gemini_audio(segment: Segment, voice: str, model: str) -> bytes:
     )
     raise_for_status_with_body(response)
     result = response.json()
-    audio_b64 = result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+    try:
+        audio_b64 = extract_audio_data(result)
+    except (KeyError, IndexError, TypeError) as exc:
+        log(build_gemini_payload(segment, voice)),
+        log(response.text)
+        raise RuntimeError("Gemini response did not include inline audio data") from exc
     return base64.b64decode(audio_b64)
 
 
@@ -495,7 +505,7 @@ def describe() -> dict[str, Any]:
         "environment": ["GEMINI_API_KEY"],
         "options": {
             "markdown_file": "Required path to the input Markdown file.",
-            "--output": "Output audio path. Defaults to podcast-YYYY-MM-DD-HH-MM-SS.mp3. Use .opus for Opus.",
+            "--output": "Output audio path. Defaults to MARKDOWN-BASENAME-YYYY-MM-DD-HH-MM-SS.mp3. Use .opus for Opus.",
             "--model": f"Gemini TTS model. Default: {DEFAULT_MODEL}.",
             "--parallel": "Number of parallel segment generators. Default: 4.",
             "--dry-run": "Parse and report work without calling Gemini or ffmpeg.",
@@ -544,7 +554,7 @@ def main(
 
     result = render_podcast(
         markdown_file,
-        output or default_output_path(),
+        output or default_output_path(markdown_file),
         model=model,
         cache_dir=cache_dir.expanduser(),
         dry_run=dry_run,

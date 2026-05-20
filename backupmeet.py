@@ -61,6 +61,10 @@ class DriveFile:
         return datetime.fromisoformat(self.modified.replace("Z", "+00:00")).timestamp()
 
     @property
+    def created_ts(self) -> float:
+        return datetime.fromisoformat(self.created.replace("Z", "+00:00")).timestamp()
+
+    @property
     def date(self) -> str:
         if match := re.search(r"20\d{2}\D+[01]?\d\D+[0-3]?\d", self.name):
             y, m, d = re.split(r"\D+", match.group(0))[:3]
@@ -240,8 +244,12 @@ def verify_account(config_dir: Path, account: str) -> str:
 
 
 def query_for(before: str, after: str) -> str:
-    query = f"trashed=false and mimeType != '{FOLDER}' and {MEET_NAMES} and createdTime < '{before}'"
-    return f"{query} and createdTime >= '{after}'" if after else query
+    clauses = ["trashed=false", "'me' in owners", f"mimeType != '{FOLDER}'", MEET_NAMES]
+    if before:
+        clauses.append(f"createdTime < '{before}'")
+    if after:
+        clauses.append(f"createdTime >= '{after}'")
+    return " and ".join(clauses)
 
 
 def discover(config_dir: Path, before: str, after: str) -> list[DriveFile]:
@@ -291,31 +299,36 @@ def drive_path(file: DriveFile, config_dir: Path, cache: dict[str, dict[str, Any
     return "/".join(reversed(parts))
 
 
+def old_enough_to_delete(file: DriveFile, delete_before: str) -> bool:
+    return file.created_ts < datetime.fromisoformat(delete_before.replace("Z", "+00:00")).timestamp()
+
+
 def delete_or_warn(archive: Archive, config_dir: Path, parent_cache: dict[str, dict[str, Any]]) -> str:
     try:
-        run_gws(["drive", "files", "delete", "--params", json_compact({"fileId": archive.file.id})], config_dir)
-        return "archived"
+        location = drive_path(archive.file, config_dir, parent_cache)
     except subprocess.CalledProcessError:
-        try:
-            location = drive_path(archive.file, config_dir, parent_cache)
-        except subprocess.CalledProcessError:
-            location = archive.file.name
+        location = archive.file.name
+    print(f"deleting: {location}", file=sys.stderr)
+    try:
+        run_gws(["drive", "files", "delete", "--params", json_compact({"fileId": archive.file.id})], config_dir)
+        return "deleted"
+    except subprocess.CalledProcessError:
         link = f" ({archive.file.url})" if archive.file.url else ""
         print(f"delete failed: manually delete Drive file: {location}{link}", file=sys.stderr)
-        return "archived-delete-failed"
+        return "delete-failed"
 
 
 def summary_event(events: list[dict[str, Any]], matched: int, checked: int, dry_run: bool, account: str, before: str, after: str) -> dict[str, Any]:
     statuses = [event["status"] for event in events]
-    archived = sum(status in {"archived", "archived-delete-failed"} for status in statuses)
+    archived = sum(status.startswith("archived") for status in statuses)
     return {
         "event": "summary",
         "matched": matched,
         "checked": checked,
         "archived": archived,
-        "deleted": statuses.count("archived"),
-        "delete_failed": statuses.count("archived-delete-failed"),
-        "skipped_existing": statuses.count("skipped-existing"),
+        "deleted": sum(status.endswith("-deleted") for status in statuses),
+        "delete_failed": sum(status.endswith("-delete-failed") for status in statuses),
+        "skipped_existing": sum(status.startswith("skipped-existing") for status in statuses),
         "planned": statuses.count("dry-run"),
         "dry_run": dry_run,
         "account": account,
@@ -341,9 +354,12 @@ def emit(format_: str, event: dict[str, Any]) -> None:
         opus = f"; opus: {event['opus']}" if event.get("opus") else ""
         label = {
             "archived": "archived",
+            "archived-deleted": "archived; deleted source",
             "archived-delete-failed": "archived; delete failed",
             "dry-run": "planned",
             "skipped-existing": "skipped existing",
+            "skipped-existing-deleted": "skipped existing; deleted source",
+            "skipped-existing-delete-failed": "skipped existing; delete failed",
         }.get(event["status"], event["status"])
         print(f"{label}: {event['source_name']} -> {event['output']}{opus}")
 
@@ -356,11 +372,12 @@ def main() -> None:
             fail(f"missing dependency: {tool}")
 
     actual = verify_account(args.config_dir, args.account)
-    before = day_start(args.before or args.older_than)
+    before = day_start(args.before) if args.before else ""
     after = day_start(args.after) if args.after else ""
+    delete_before = day_start(args.older_than)
     if format_ == "text":
         if not quiet_daily_activities():
-            print(f"account: {actual}\nquery: {query_for(before, after)}")
+            print(f"account: {actual}\nquery: {query_for(before, after)}\ndelete older than: {delete_before}")
 
     matched = [
         file
@@ -371,17 +388,14 @@ def main() -> None:
         [Archive.for_file(file, args.dest, args.calls_dir) for file in matched[: args.limit]],
         args.calls_dir,
     )
-    if archives and not args.dry_run and not args.yes:
-        if not sys.stdin.isatty():
-            fail("refusing to delete Drive files without --yes in non-interactive mode")
-        if input(f"Archive and permanently delete {len(archives)} Drive files from {args.account}? Type yes: ") != "yes":
-            fail("aborted")
-
     parent_cache: dict[str, dict[str, Any]] = {}
     events = []
     for archive in archives:
         if archive.done():
-            event = archive.event("skipped-existing", "skipped")
+            status = "skipped-existing"
+            if not args.dry_run and old_enough_to_delete(archive.file, delete_before):
+                status = f"{status}-{delete_or_warn(archive, args.config_dir, parent_cache)}"
+            event = archive.event(status, "skipped")
             events.append(event)
             emit(format_, event)
             continue
@@ -392,7 +406,10 @@ def main() -> None:
             continue
         download(archive, args.config_dir)
         convert(archive)
-        event = archive.event(delete_or_warn(archive, args.config_dir, parent_cache), "archived")
+        status = "archived"
+        if old_enough_to_delete(archive.file, delete_before):
+            status = f"{status}-{delete_or_warn(archive, args.config_dir, parent_cache)}"
+        event = archive.event(status, "archived")
         events.append(event)
         emit(format_, event)
 

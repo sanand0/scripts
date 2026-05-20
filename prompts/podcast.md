@@ -1,5 +1,35 @@
 # podcast
 
+## Revise podcast script, 19 May 2026
+
+<!--
+
+cd ~/code/scripts
+dev.sh \
+  -v /home/sanand/code/generative-ai-group/:/home/sanand/code/generative-ai-group/:ro \
+  -v /home/sanand/code/sanand0/week/:/home/sanand/code/sanand0/week/:ro
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify `podcast.py` as follows:
+
+First, if the output filename is not specified, default to the base name of the Markdown file specified, with a timestamp suffix for uniqueness, and with the .mp3 extension.
+
+Second, if we get an unexpected result in the response, like the one below, then log the full response body for debugging instead of just raising a KeyError:
+
+```
+│ /home/sanand/code/scripts/podcast.py:319 in request_gemini_audio                                                                                               │
+│                                                                                                                                                                │
+│   316 │   )                                                                                                                                                    │
+│   317 │   raise_for_status_with_body(response)                                                                                                                 │
+│   318 │   result = response.json()                                                                                                                             │
+│ ❱ 319 │   audio_b64 = result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]                                                                     │
+│   320 │   return base64.b64decode(audio_b64)                                                                                                                   │
+
+KeyError: 'content'
+```
+<!-- codex resume 019e3f5a-3145-7da0-9cf6-b84eee8d0742 -->
+
 ## Create podcast script, 14 May 2026
 
 <!--

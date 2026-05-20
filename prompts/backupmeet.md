@@ -1,5 +1,7 @@
 # Backup Meet
 
+## Only my meets, 20 May 2026
+
 <!--
 
 cd /home/sanand/code/scripts
@@ -10,7 +12,27 @@ codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 
 -->
 
+Modify `backupmeet.py` to only backup my Google Meet recordings and transcripts - not those shared with me (and won't take up my disk space).
+
+Ensure that the default behavior is to backup ALL meet recordings and transcripts (not just those older than 1 week) but delete only those older than 1 week. This way I can run it more frequently without worrying about missing recordings.
+
+Do not ask permissions to delete. Just print the path being deleted and proceed.
+
+Run and test.
+
+<!-- codex resume 019e432d-a687-7701-acba-da12447e18ca --yolo -->
+
 ## Generate script, 01 May 2026
+
+<!--
+
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/Meet\ Recordings/:/home/sanand/Documents/Meet\ Recordings/ \
+  -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/ \
+  -v /home/sanand/.config/gws-root.node@gmail.com/:/home/sanand/.config/gws-root.node@gmail.com/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+
+-->
 
 Write a script `backupmeet` that uses `gws` CLI and connects to my Google Drive as root.node@gmail.com, copies my Google Meet meeting recordings and transcripts (older than 1 week by default) into `/home/sanand/Documents/Meet Recordings/`, and deletes them.
 
