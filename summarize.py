@@ -486,9 +486,10 @@ def main(
     patterns:  Optional[list[str]]    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
     model:     str                    = typer.Option("gemini-3-flash-preview", help="Gemini model ID"),
     workers:   int                    = typer.Option(4, "--workers", help="Parallel API workers"),
-    dry_run:   bool                   = typer.Option(False, "--dry-run", help="Show changes without writing"),
-    force:     bool                   = typer.Option(False, "--force",   help="Re-process all fields via API"),
-    fmt:       str                    = typer.Option("auto", "--format",  help="Output: text|json|auto"),
+    dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
+    force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
+    fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
+    verbose:   bool                   = typer.Option(False, "--verbose", "-v", help="Show skipped files"),
 ) -> None:
     """Add AI-generated metadata to content files (transcripts, blog posts, etc.)."""
     if content_set_name not in CONTENT_SET_MAP:
@@ -529,7 +530,7 @@ def main(
                 status = result["status"]
                 name = result["name"]
                 if status == "skipped":
-                    if not quiet:
+                    if verbose:
                         console.print(f"[dim]SKIP {name}: {result['skipped_reason']}[/dim]")
                 elif status == "error":
                     console.print(f"[red]ERROR {name}: {result.get('error')}[/red]")

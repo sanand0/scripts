@@ -33,6 +33,8 @@ DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 30.0
 CHUNK_OVERLAP_SECONDS = 1.0
 FRIENDLY_CHUNK_MINUTES = (30.0, 25.0, 20.0, 15.0)
+CHUNK_CONTEXT_MAX_LINES = 40
+CHUNK_CONTEXT_MAX_CHARS = 12_000
 PRICES_URL = "https://raw.githubusercontent.com/simonw/llm-prices/refs/heads/main/data/google.json"
 AUDIO_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm"}
 CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
@@ -41,6 +43,7 @@ TRANSCRIPT_PART_SEPARATOR = "\n\n---\n\n"
 TRANSCRIPT_LINE_RE = re.compile(
     r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[\d{2}:\d{2}(?::\d{2})?\])? .+"
 )
+SPEAKER_LINE_RE = re.compile(r"^\*\*(?P<speaker>[^*\n]+?)(?:\*\*:?|:\*\*)")
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?\n?)---\n?", re.DOTALL)
 TRANSCRIPT_SECTION_RE = re.compile(
     r"(?ms)^##\s+Transcript\s*$\n?(?P<body>.*?)(?=^##\s+|\Z)"
@@ -551,15 +554,62 @@ def plan_audio_chunks(audio_path: Path, chunk_minutes: float) -> tuple[float, li
     return duration, windows
 
 
-def build_chunk_user_prompt(user_prompt: str | None, chunk_index: int, chunk_count: int) -> str:
+def extract_speaker_labels(transcript: str) -> list[str]:
+    """Return speaker labels in first-seen order from transcript lines."""
+    speakers: list[str] = []
+    seen: set[str] = set()
+    for line in transcript.splitlines():
+        match = SPEAKER_LINE_RE.match(line.strip())
+        if not match:
+            continue
+        speaker = match.group("speaker").strip()
+        if speaker and speaker not in seen:
+            speakers.append(speaker)
+            seen.add(speaker)
+    return speakers
+
+
+def transcript_tail(transcript: str) -> str:
+    """Return a bounded recent transcript excerpt for chunk-to-chunk continuity."""
+    lines = [line.rstrip() for line in transcript.splitlines() if line.strip()]
+    tail = "\n".join(lines[-CHUNK_CONTEXT_MAX_LINES:])
+    if len(tail) <= CHUNK_CONTEXT_MAX_CHARS:
+        return tail
+    return tail[-CHUNK_CONTEXT_MAX_CHARS:].lstrip()
+
+
+def build_prior_chunk_context(previous_transcripts: list[str]) -> str | None:
+    """Return compact context from prior chunks for speaker and topic continuity."""
+    if not previous_transcripts:
+        return None
+    speakers = extract_speaker_labels("\n".join(previous_transcripts))
+    speaker_context = ", ".join(speakers) if speakers else "unknown"
+    recent_context = transcript_tail(previous_transcripts[-1])
+    if not recent_context:
+        return None
+    return (
+        "Context from earlier chunks, for speaker-label continuity and ambiguity resolution only.\n"
+        f"Known speaker labels so far: {speaker_context}\n\n"
+        "Recent transcript excerpt from the immediately preceding chunk:\n"
+        f"{recent_context}\n\n"
+        "Use these labels and topics when they match the current audio. "
+        "Do not repeat or summarize this context; transcribe only the current audio chunk."
+    )
+
+
+def build_chunk_user_prompt(
+    user_prompt: str | None,
+    chunk_index: int,
+    chunk_count: int,
+    prior_chunk_context: str | None = None,
+) -> str:
     """Add chunk context so Gemini knows this audio is only one part of the call."""
     chunk_prompt = (
         f"This audio is part {chunk_index}/{chunk_count} of a longer recording. "
         "Transcribe this part faithfully; the final transcript will concatenate all parts in order."
     )
-    if not user_prompt:
-        return chunk_prompt
-    return f"{user_prompt}\n\n{chunk_prompt}"
+    prompt_parts = [part for part in (user_prompt, prior_chunk_context, chunk_prompt) if part]
+    return "\n\n".join(prompt_parts)
 
 
 def build_patch_command(
@@ -736,7 +786,14 @@ def transcribe_audio(
             result = transcribe_single_audio(
                 chunk_path,
                 system_prompt=system_prompt,
-                user_prompt=build_chunk_user_prompt(user_prompt, chunk_index=index, chunk_count=chunk_count),
+                user_prompt=build_chunk_user_prompt(
+                    user_prompt,
+                    chunk_index=index,
+                    chunk_count=chunk_count,
+                    prior_chunk_context=build_prior_chunk_context(
+                        [previous.transcript for previous in transcripts]
+                    ),
+                ),
                 model=model,
                 client=client,
                 pricing=pricing,

@@ -107,8 +107,12 @@ def log(message: str) -> None:
 
 
 def default_output_path(markdown_path: Path) -> Path:
-    """Return a timestamped MP3 path based on the Markdown filename."""
-    return Path(f"{markdown_path.stem}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp3")
+    """Return a default MP3 path based on the Markdown filename."""
+    output_path = markdown_path.with_suffix(".mp3")
+    if not output_path.exists():
+        return output_path
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    return output_path.with_name(f"{output_path.stem}-{timestamp}.mp3")
 
 
 def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
@@ -505,7 +509,7 @@ def describe() -> dict[str, Any]:
         "environment": ["GEMINI_API_KEY"],
         "options": {
             "markdown_file": "Required path to the input Markdown file.",
-            "--output": "Output audio path. Defaults to MARKDOWN-BASENAME-YYYY-MM-DD-HH-MM-SS.mp3. Use .opus for Opus.",
+            "--output": "Output audio path. Defaults to MARKDOWN-BASENAME.mp3, with a timestamp if that exists. Use .opus for Opus.",
             "--model": f"Gemini TTS model. Default: {DEFAULT_MODEL}.",
             "--parallel": "Number of parallel segment generators. Default: 4.",
             "--dry-run": "Parse and report work without calling Gemini or ffmpeg.",

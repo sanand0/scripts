@@ -6,6 +6,7 @@ OnFailure=timer-failure-notify@%n.service
 
 [Service]
 Type=oneshot
+ExecStartPre=/bin/sleep 60
 ExecStart=/home/sanand/code/scripts/daily-activities
 WorkingDirectory=/home/sanand
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/.local/share/mise/shims:/home/sanand/bin

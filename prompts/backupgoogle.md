@@ -8,6 +8,41 @@ codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 
 -->
 
+## Allow scope failures, 22 May 2026
+
+If gws fails with insufficient authentication scopes, allow it to continue and just print the error.
+This is because I may not have all the scopes enabled for all accounts, and I want to get whatever data I can instead of failing completely.
+
+```
+error[api]: Request had insufficient authentication scopes.
+│ /home/sanand/code/scripts/backupgoogle.py:126 in gws_json                                                                                                      │
+│                                                                                                                                                                │
+│   123                                                                                                                                                          │
+│   124                                                                                                                                                          │
+│   125 def gws_json(args: list[str], *, config_dir: str = "") -> Any:                                                                                           │
+│ ❱ 126 │   text = run_gws([*args, "--format", "json"], config_dir=config_dir).strip()                                                                           │
+│   127 │   try:                                                                                                                                                 │
+│   128 │   │   return json.loads(text or "{}")                                                                                                                  │
+│   129 │   except json.JSONDecodeError:                                                                                                                         │
+│                                                                                                                                                                │
+│ /home/sanand/code/scripts/backupgoogle.py:121 in run_gws                                                                                                       │
+│                                                                                                                                                                │
+│   118 │   if stderr := useful_stderr(result.stderr):                                                                                                           │
+│   119 │   │   eprint(stderr)                                                                                                                                   │
+│   120 │   if result.returncode:                                                                                                                                │
+│ ❱ 121 │   │   raise subprocess.CalledProcessError(result.returncode, ["gws", *args], result.stdout, result.stderr)                                             │
+│   122 │   return result.stdout                                                                                                                                 │
+│   123                                                                                                                                                          │
+│   124                                                                                                                                                          │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+CalledProcessError: Command '['gws', 'chat', 'spaces', 'list', '--params', '{"pageSize":1000}', '--page-all', '--page-limit', '50', '--format', 'json']' returned
+non-zero exit status 1.
+```
+
+Test by running: `backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com/`
+
+<!-- codex resume 019e4d4a-c55b-7002-b0d1-2cf0bd17cdee --yolo -->
+
 ## Generate script, 14 May 2026
 
 Write an agent-friendly CLI `backupgoogle.py` that uses `gws` CLI and connects to my Google Chat, Calendar, Mail, and updates a local text backup of the contents.

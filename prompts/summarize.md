@@ -1,5 +1,16 @@
 # Summarize
 
+## Quieter, 25 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Dropbox/notes/transcripts:/home/sanand/Dropbox/notes/transcripts \
+  -v /home/sanand/code/blog:/home/sanand/code/blog
+claude --dangerously-skip-permissions
+-->
+
+Modify `summarize.py` to be quieter. Unless requested, don't print what was skipped. run and test.
+
 ## More tweaks, 20 May 2026
 
 <!--

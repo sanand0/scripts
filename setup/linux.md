@@ -281,7 +281,7 @@ cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magi
 cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/latest/download/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
 cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/latest/download/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
 cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar -xj pngquant  # pngquant - PNG image compressor
-cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/latest/download/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription
+cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/latest/download/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription. Ctrl+Shift+D to dictate.
 cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o ttyd && chmod +x ttyd   # ttyd - Terminal sharing on web
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager

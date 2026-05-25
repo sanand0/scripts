@@ -71,6 +71,11 @@ def useful_stderr(text: str) -> str:
     return "\n".join(lines)
 
 
+def insufficient_scopes(exc: subprocess.CalledProcessError) -> bool:
+    text = f"{exc.stdout}\n{exc.stderr}".lower()
+    return "insufficient authentication scopes" in text
+
+
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -490,7 +495,16 @@ def main(
         if source not in selected:
             continue
         eprint(f"{source}: collecting")
-        rows = collectors[source]()
+        try:
+            rows = collectors[source]()
+        except subprocess.CalledProcessError as exc:
+            if not insufficient_scopes(exc):
+                raise
+            summary = {"source": source, "account": account, "rows_updated": 0, "skipped": True, "error": "insufficient authentication scopes"}
+            summaries.append(summary)
+            eprint(f"{source}: skipped ({summary['error']})")
+            print(compact_json(summary) if format == "jsonl" else f"{source}: skipped ({summary['error']})")
+            continue
         count = update_jsonl(account_dir / f"{source}.jsonl", rows)
         summary = {"source": source, "account": account, "rows_updated": count, "path": str(account_dir / f"{source}.jsonl")}
         summaries.append(summary)

@@ -1,5 +1,22 @@
 # services
 
+## Handle errors, 21 May 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Go through the logs from `daily-activities` via `journalctl --user -u daily-activities.service`.
+What errors did it face - especially today?
+Is there an easy way to fix that error? If it's a simple fix with just a few lines of code change, go ahead. Else let me know and I'll decide whether to fix it now or later.
+
+---
+
+The problem may be that the network is not fully active as soon as my laptop wakes. A cleaner fix would be to wait for a minute after the laptop wakes before triggering the service - rather than gws retries.
+
+<!-- codex resume 019e47b7-2f4d-7423-993c-eb0a9c3a7e77 -->
+
 ## Improve logging, 19 May 2026
 
 <!--

@@ -1,5 +1,18 @@
 # podcast
 
+## Revise podcast output, 21 May 2026
+
+<!--
+
+cd ~/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Minimally modify `podcast.py` so that, if the output file is not specified, default to the same filename as the input Markdown file but with a `.mp3` extension if that target doesn't exist, and append a timestamp only if it exists.
+
+<!-- codex resume 019e49f1-1867-7e72-a50a-904f880dc2ed --yolo -->
+
 ## Revise podcast script, 19 May 2026
 
 <!--

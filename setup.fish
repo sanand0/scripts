@@ -176,6 +176,7 @@ abbr --add demosync    rclone bisync ~/Documents/straive-demos straive-demos:str
 abbr --add privatesync   rclone bisync ~/r2/private r2:private $_RCLONE_BISYNC_OPTIONS
 # files bucket is deployed at https://files.s-anand.net/ and is public - typically assets linked from my blog
 abbr --add filessync     rclone bisync ~/r2/files r2:files $_RCLONE_BISYNC_OPTIONS
+abbr --add mediasync     rclone bisync ~/r2/media r2:media $_RCLONE_BISYNC_OPTIONS
 abbr --add redirectsync  rclone bisync ~/r2/redirect r2:redirect $_RCLONE_BISYNC_OPTIONS
 
 # Back up files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
@@ -766,7 +767,7 @@ end
 # -frame_duration 60 is more efficient for music than the default 20 or 40 ms
 function opusmusic --description "opus *.mp4 converts it to *.opus (music quality)"
     for file in $argv
-        ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
+        ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -cpu-used 8 -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
     end
 end
 

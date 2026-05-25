@@ -9,7 +9,8 @@ and can run a health check.
 - `consolidate-transcripts-daily.*`: runs `consolidate_transcripts.py` from the
   transcripts notes directory every day around 12:05am.
 - `daily-activities.*`: runs `daily-activities` every day around 1:15am. That
-  wrapper runs:
+  service waits 60 seconds before the wrapper starts, so catch-up runs after
+  wake have a little time for network setup. The wrapper runs:
   - `activities.py`, which already refreshes/queries `browsing_history.py`.
   - `backupgoogle.py`, only on an unmetered connection.
   - `backupmeet.py --yes`, only on an unmetered connection.

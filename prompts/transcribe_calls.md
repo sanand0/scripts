@@ -1,21 +1,35 @@
 # Transcribe Calls
 
+## Improve context, 22 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
+   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify `transcribe_calls.py` to pass context to the next chunk in case of multiple chunks, so that when the next chunk transcribes, it can infer who is speaking (diarization) and what they're talking about (ambiguity resolution) better.
+
+One way is to summarize the latest transcript chunk and pass it as additional context to the next chunk. Or the full transcript. Or snippets. Or ... there may be other ways. Search online, analyze the transcripts (/home/sanand/Dropbox/notes/transcripts/), find where the transcripts will need most help, think of the best ways of implementing it, compare the likely cost increase (quantitatively, over a typical month) and the likely improvement (best informed guess), and share your results, including which one you recommend implementing. You may run tests if you need to.
+
+<!-- codex resume 019e4e40-af3e-7153-8bfa-3a1879b5ca34 --yolo -->
+
 ## Revision, 16 May 2026
 
 <!--
-
 cd /home/sanand/code/scripts
 dev.sh
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
-
 -->
 
 Modify `transcribe_calls.py` to load GEMINI_API_KEY from the script's .env file if it exists, if it's missing in the environment even after the PWD's load_dotenv().
 
+<!-- codex resume 019e2e93-fa2d-7031-97eb-f3439eb6443b --yolo -->
+
 ## Revision, 05 May 2026
 
 <!--
-
 cd /home/sanand/code/scripts
 dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
    -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \
@@ -32,7 +46,6 @@ If it's a trivial issue, then fix the script minimally so that it doesn't report
 ## Setup, 16 Mar 2026 (Copilot Yolo - gpt-5.4 xhigh)
 
 <!--
-
 cd /home/sanand/code/scripts
 dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
    -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/:ro \

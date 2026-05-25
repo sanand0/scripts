@@ -9,6 +9,7 @@ Examples:
   activities.py --date 2026-05-14 --dry-run
   activities.py --days 3 --limit-per-source 25
   activities.py --sources calendar,email,commit --dry-run | moor
+  activities.py --patch-only --patch-sources whatsapp
   activities.py --describe | jaq .
 """
 
@@ -36,13 +37,14 @@ ROOT = Path(__file__).resolve().parent
 CODE_ROOT = Path("~/code").expanduser()
 OUT_ROOT = Path("~/Documents/activities").expanduser()
 BROWSER_DB = Path("~/Documents/data/browsing-history.db").expanduser()
+WHATSAPP_ROOT = Path("~/Documents/data/whatsapp").expanduser()
 CODEX_SESSIONS = Path("~/.codex/sessions").expanduser()
 NOISE_SPACE_RE = re.compile(r"\s+")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 COMMIT_TIMESTAMP_RE = re.compile(r"^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M|\d{4}-\d{2}-\d{2})")
 SUBJECT_PREFIX_RE = re.compile(r"^((re|fw|fwd):\s*)+", re.I)
 SELF_EMAILS = {"s.anand@gramener.com", "root.node@gmail.com"}
-DEFAULT_SOURCES = "calendar,email,commit,github-commit,browser,code-prompt,shell"
+DEFAULT_SOURCES = "calendar,email,commit,github-commit,browser,code-prompt,shell,whatsapp"
 BOILERPLATE_MARKERS = (
     "________________________________________________________________________________",
     "microsoft teams meeting",
@@ -63,6 +65,7 @@ NOISY_PROMPT_PREFIXES = (
 GENERIC_AI_TITLES = {"chatgpt", "claude", "codex"}
 FISH_HISTORY_BURST_MINUTES = 15
 SHELL_COMMAND_MAX_CHARS = 220
+WHATSAPP_CALL_RE = re.compile(r"^(?:missed )?(?:voice|video) call$", re.I)
 SHELL_NOISE_RE = re.compile(
     r"^(?:"
     r"cd\b|z\b|l\b|ls\b|ll\b|la\b|pwd\b|clear\b|history\b|exit\b|jobs\b|fg\b|bg\b|"
@@ -300,6 +303,12 @@ def parse_iso(value: str) -> dt.datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=local_now().tzinfo)
     return parsed.astimezone()
+
+
+def parse_time_label(value: str, day: dt.date) -> dt.datetime:
+    parsed = dt.datetime.strptime(value.strip().lower(), "%I:%M %p").time()
+    start, _end = day_bounds(day)
+    return dt.datetime.combine(day, parsed, tzinfo=start.tzinfo)
 
 
 def compact_json(value: Any) -> str:
@@ -825,6 +834,44 @@ def collect_shell(ctx: Context) -> list[Activity]:
     return activities[: ctx.limit_per_source]
 
 
+def is_whatsapp_call(row: dict[str, Any]) -> bool:
+    text_lines = str(row.get("text") or "").splitlines()
+    first_line = text_lines[0].strip() if text_lines else ""
+    author = clean_text(row.get("author"))
+    return bool(WHATSAPP_CALL_RE.match(first_line) or WHATSAPP_CALL_RE.match(author))
+
+
+def whatsapp_activity(row: dict[str, Any]) -> Activity | None:
+    if not is_whatsapp_call(row):
+        return None
+    when = parse_iso(str(row.get("time") or ""))
+    title = trim(row.get("conversationTitle") or row.get("userId") or "WhatsApp", 90)
+    kind = clean_text(row.get("author")) or clean_text(row.get("text")).splitlines()[0]
+    direction = "outgoing " if row.get("isOutgoing") else ""
+    source_id = f"whatsapp:{row.get('conversationId') or row.get('userId') or ''}:{row.get('messageId') or when.isoformat()}"
+    return Activity(when, "whatsapp", f"{direction}{kind.casefold()} with {title}", "whatsapp", source_id)
+
+
+def iter_whatsapp_calls(start: dt.datetime, end: dt.datetime) -> list[Activity]:
+    activities: list[Activity] = []
+    if not WHATSAPP_ROOT.exists():
+        return activities
+    for path in sorted(WHATSAPP_ROOT.glob("*.jsonl")):
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                activity = whatsapp_activity(json.loads(line))
+                if activity is not None and start <= activity.when < end:
+                    activities.append(activity)
+    activities.sort(key=lambda item: item.when, reverse=True)
+    return activities
+
+
+def collect_whatsapp(ctx: Context) -> list[Activity]:
+    return iter_whatsapp_calls(ctx.start, ctx.end)[: ctx.limit_per_source]
+
+
 COLLECTORS: dict[str, Collector] = {
     "calendar": collect_calendar,
     "email": collect_email,
@@ -833,7 +880,9 @@ COLLECTORS: dict[str, Collector] = {
     "browser": collect_browser,
     "code-prompt": collect_code_prompts,
     "shell": collect_shell,
+    "whatsapp": collect_whatsapp,
 }
+PATCHABLE_SOURCES = {"browser", "calendar", "code-prompt", "email", "shell", "whatsapp"}
 
 
 def parse_sources(value: str) -> list[str]:
@@ -844,8 +893,31 @@ def parse_sources(value: str) -> list[str]:
     return sources
 
 
+def parse_patch_sources(value: str, selected_sources: list[str]) -> list[str]:
+    if value in {"auto", "all"}:
+        candidates = selected_sources if value == "auto" else sorted(PATCHABLE_SOURCES)
+        return [source for source in candidates if source in PATCHABLE_SOURCES]
+    sources = [part.strip() for part in value.replace(" ", ",").split(",") if part.strip()]
+    bad = sorted(set(sources) - PATCHABLE_SOURCES)
+    if bad:
+        skipped = sorted(set(COLLECTORS) - PATCHABLE_SOURCES)
+        raise typer.BadParameter(
+            f"source(s) cannot be patched yet: {', '.join(bad)}. Patchable: {', '.join(sorted(PATCHABLE_SOURCES))}. Skipped: {', '.join(skipped)}"
+        )
+    return sources
+
+
 def sync_browser_history() -> None:
     subprocess.run([str(ROOT / "browsing_history.py"), "--sync-only"], check=True)
+
+
+def preload_sources(sources: list[str], start: dt.datetime, end: dt.datetime) -> None:
+    if "email" in sources:
+        preload_email(start, end)
+    if "code-prompt" in sources:
+        preload_code_prompts(start, end)
+    if "shell" in sources:
+        preload_shell_commands(start, end)
 
 
 def dedupe(activities: list[Activity]) -> list[Activity]:
@@ -868,7 +940,7 @@ def compress_bursts(rows: list[Activity]) -> list[Activity]:
             previous = compressed[-1]
             same = previous.type == item.type and previous.activity == item.activity
             close = (item.when - previous.when).total_seconds() <= 20 * 60
-            if same and close:
+            if item.type != "whatsapp" and same and close:
                 counts[-1] += 1
                 continue
         compressed.append(item)
@@ -894,6 +966,14 @@ def rows_for_day(ctx: Context, sources: list[str]) -> list[Activity]:
             rows = [row for row in rows if row.source_id not in local_commit_shas]
         activities.extend(rows)
     return annotate_contextual_rows(dedupe(activities))
+
+
+def patch_rows_for_day(ctx: Context, sources: list[str]) -> list[Activity]:
+    activities: list[Activity] = []
+    for source in sources:
+        eprint(f"{ctx.day}: collecting {source}...")
+        activities.extend(COLLECTORS[source](ctx))
+    return sorted(activities, key=lambda row: (row.when, row.type, row.activity))
 
 
 def annotate_contextual_rows(rows: list[Activity]) -> list[Activity]:
@@ -923,6 +1003,65 @@ def write_report(path: Path, day: dt.date, rows: list[Activity], generated_at: d
     temp.replace(path)
 
 
+def read_report(path: Path, day: dt.date) -> list[Activity]:
+    rows: list[Activity] = []
+    with path.open(encoding="utf-8", newline="") as handle:
+        data = [line for line in handle if not line.startswith("#")]
+    for index, row in enumerate(csv.DictReader(data, dialect="excel-tab")):
+        if not row.get("Time") or not row.get("Type"):
+            continue
+        when = parse_time_label(row["Time"], day)
+        rows.append(Activity(when, row["Type"], row.get("Activity", ""), "report", f"report:{path.name}:{index}"))
+    return rows
+
+
+def patch_reports(output_dir: Path, sources: list[str], generated_at: dt.datetime, limit_per_source: int) -> int:
+    root = output_dir.expanduser()
+    days = existing_report_days(root)
+    if not days or not sources:
+        return 0
+    first_start, _first_end = day_bounds(days[0])
+    _last_start, last_end = day_bounds(days[-1])
+    preload_sources(sources, first_start, last_end)
+    patch_types = set(sources)
+    patched = 0
+    for day in days:
+        path = root / f"{day.isoformat()}.tsv"
+        old_rows = read_report(path, day)
+        start, end = day_bounds(day)
+        ctx = Context(day, start, end, limit_per_source, "browser" in sources)
+        new_rows = patch_rows_for_day(ctx, sources)
+        old_patch_rows = [row for row in old_rows if row.type in patch_types]
+        if not old_patch_rows and not new_rows:
+            continue
+        rows = merge_patch_rows(old_rows, new_rows, patch_types)
+        old_snapshot = report_snapshot(old_rows)
+        new_snapshot = report_snapshot(rows)
+        if old_snapshot == new_snapshot:
+            continue
+        write_report(path, day, rows, generated_at)
+        patched += 1
+        counts = ", ".join(f"{source}={sum(1 for row in new_rows if row.type == source)}" for source in sources)
+        eprint(f"patched {path} ({counts})")
+    return patched
+
+
+def merge_patch_rows(old_rows: list[Activity], new_rows: list[Activity], patch_types: set[str]) -> list[Activity]:
+    rows = [row for row in old_rows if row.type not in patch_types]
+    seen = {(row.when, row.type, row.activity) for row in rows}
+    for row in new_rows:
+        key = (row.when, row.type, row.activity)
+        if key in seen:
+            continue
+        rows.append(row)
+        seen.add(key)
+    return sorted(rows, key=lambda row: (row.when, row.type, row.activity))
+
+
+def report_snapshot(rows: list[Activity]) -> list[tuple[str, str, str]]:
+    return [(time_label(row.when), row.type, row.activity) for row in rows]
+
+
 def print_report(day: dt.date, rows: list[Activity], generated_at: dt.datetime) -> None:
     print(f"# DATE={date_comment(day)}")
     print(f"# GENERATED_AT={generated_at.isoformat(timespec='seconds')}")
@@ -941,6 +1080,9 @@ def describe() -> dict[str, Any]:
         "sources": sorted(COLLECTORS),
         "default_sources": DEFAULT_SOURCES.split(","),
         "default_date_range": "Pending days after the latest YYYY-MM-DD.tsv in output_dir through yesterday; if none exist, the last 7 days ending yesterday.",
+        "patchable_sources": sorted(PATCHABLE_SOURCES),
+        "patch": "Use --patch-only after late-arriving source data lands to refresh source rows in existing reports without regenerating everything.",
+        "unpatchable_sources": sorted(set(COLLECTORS) - PATCHABLE_SOURCES),
         "extension_point": "Add a collect_<source>(Context) function and register it in COLLECTORS.",
     }
 
@@ -954,6 +1096,9 @@ def main(
     limit_per_source: int = typer.Option(500, "--limit-per-source", min=1, help="Maximum rows from each source per day."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the first report to stdout instead of writing files."),
     no_browser_sync: bool = typer.Option(False, "--no-browser-sync", help="Do not refresh browsing-history.db before browser queries."),
+    patch: bool = typer.Option(True, "--patch/--no-patch", help="Refresh patchable source rows in existing reports before generating new days."),
+    patch_only: bool = typer.Option(False, "--patch-only", help="Only refresh patchable source rows in existing reports, then exit."),
+    patch_sources: str = typer.Option("auto", "--patch-sources", help="Patch sources: auto, all, or comma/space list. Patchable: browser, calendar, code-prompt, email, shell, whatsapp."),
     show_describe: bool = typer.Option(False, "--describe", help="Print machine-readable CLI metadata and exit."),
 ) -> None:
     if show_describe:
@@ -961,23 +1106,28 @@ def main(
         return
 
     selected_sources = parse_sources(sources)
+    selected_patch_sources = parse_patch_sources(patch_sources, selected_sources)
+    generated_at = local_now()
+    if "browser" in selected_patch_sources and (patch or patch_only) and not dry_run and not no_browser_sync:
+        eprint("syncing browser history...")
+        sync_browser_history()
+    if not dry_run and (patch or patch_only):
+        patched = patch_reports(output_dir, selected_patch_sources, generated_at, limit_per_source)
+        eprint(f"patch complete: {patched} report(s) updated")
+    if patch_only:
+        return
     day_range = requested_day_range(date, days, output_dir)
     if day_range is None:
         eprint(f"nothing to do: reports are current through {yesterday().isoformat()}")
         return
-    if "browser" in selected_sources and not no_browser_sync:
+    browser_synced = "browser" in selected_patch_sources and (patch or patch_only) and not dry_run and not no_browser_sync
+    if "browser" in selected_sources and not browser_synced and not no_browser_sync:
         eprint("syncing browser history...")
         sync_browser_history()
-    generated_at = local_now()
     first_day, last_day = day_range
     first_start, _first_end = day_bounds(first_day)
     _last_start, last_end = day_bounds(last_day)
-    if "email" in selected_sources:
-        preload_email(first_start, last_end)
-    if "code-prompt" in selected_sources:
-        preload_code_prompts(first_start, last_end)
-    if "shell" in selected_sources:
-        preload_shell_commands(first_start, last_end)
+    preload_sources(selected_sources, first_start, last_end)
     total_days = (last_day - first_day).days + 1
     for offset in range(total_days - 1, -1, -1):
         day = last_day - dt.timedelta(days=offset)

@@ -1,5 +1,26 @@
 # activities
 
+## Include WhatsApp calls, 24 May 2026
+
+<!--
+
+cd ~/code/scripts/
+codex --model gpt-5.5
+
+-->
+
+Modify `activities.py` to also include WhatsApp calls based on ~/Documents/data/whatsapp/.
+Keep in mind that the WhatsApp activities will likely be updated AFTER `activities.py` runs for a day, so include a mechanism to patch in WhatsApp activities into the existing activity log for a day when they come in, without needing to re-run the whole thing again.
+Patch in the WhatsApp call activities into all past activity logs.
+
+---
+
+This kind of patching would be relevant for ALL sources, not just WhatsApp. Generalize it for all sources in an elegant, extensible way.
+(If some sources are not easy to patch in for any reason, it's OK to leave them out for now. Design for generalized patching and implement what's feasible now.)
+Run and test.
+
+<!-- codex resume 019e5886-4e10-76c1-aac6-e57dd1338785 -->
+
 ## Include fish scripts, 18 May 2026
 
 <!--
