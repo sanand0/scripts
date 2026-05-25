@@ -1,13 +1,29 @@
 # freeslots.py
 
-## Initial script, 20 May 2026
+## Revisions, 25 May 2026
 
 <!--
-
 cd ~/code/scripts
 dev.sh
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
 
+When I run `freeslots.py --since 2026-05-27 --days 1` I get no free slots. But I see plenty of freeslots on my calendar for 27 May 2026.
+
+What's happening and how do we fix this? Try and fix the general problem, not just the specific issue. Fix elegantly. Usually, great fixes reduce code while reducing bugs!
+
+---
+
+The holidays may not be relevant for the time zones I'm looking at. Modify the script to NOT ignore holidays but include them in the "If none of the above are suitable" section, mentioning them as a holiday (and mentioning WHAT holiday it is).
+
+<!-- codex resume 019e5d8c-00d6-72b1-9906-3f4f313357be --yolo -->
+
+## Initial script, 20 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
 I'm often asked, "Could you suggest a few free slots for a meeting?"

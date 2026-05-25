@@ -1,5 +1,27 @@
 # backupwhatsapp.py
 
+## Reconciliation, 25 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -v /home/sanand/code/tools/whatsappscraper:/home/sanand/code/tools/whatsappscraper:ro -v /home/sanand/Documents/data/whatsapp:/home/sanand/Documents/data/whatsapp
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+I ran `backupwhatsapp.py` and it updated several chats - see `/home/sanand/Documents/data/whatsapp/changes-2026-05-25.md` for the list.
+
+I'm entirely sure that barring the first few (not sure how many) conversations, the rest were NOT updated, i.e. the script says there are changes but there couldn't have been. It's also notable that the changed and seen values are the same. I suspect that it's because something changed in the DOM.
+
+I pressed Ctrl+C near 56/97 - so the conversations up to that would have been updated but not those after that, I think. So you might have a record of some conversations with the old content vs new content.
+
+Go through it. Find out what's changed. (It's been a few hours since I last ran, so there may be some new conversations that have come up. These would likely be near the top.)
+
+Modify the script so that, if there are DOM changes (or even otherwise), I don't lose information. This is important. I don't want newer scripts ERASING or reducing information I've already collected. Maybe some kind of history / versioning that's lightweight? Think about what's the cleanest way to do it keeping in mind that AI agents will be running `grep` on these files and we want them to be token-friendly.
+
+If there are any other ways to make it more robust, do so
+
+<!-- codex resume 019e5d55-7466-7b60-bee3-d7aaa063673a --yolo -->
+
 ## Efficiency, 19 May 2026
 
 <!--

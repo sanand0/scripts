@@ -37,6 +37,8 @@ CDP_URL = "http://localhost:9222"
 CHAT_LIST_SELECTOR = "#pane-side"
 MAIN_SELECTOR = "div#main"
 INCREMENTAL_SORT_SAFETY = 6
+RUN_FIELDS = {"scrapedAt"}
+METADATA_FIELDS = {"conversationTitle", "conversationId", "userId"}
 CHAT_ID_JS = r"""
 (root) => {
   const seen = new WeakSet();
@@ -500,6 +502,20 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     sync_mtime_to_latest_message(path, rows)
 
 
+def history_path(path: Path) -> Path:
+    return path.parent / ".history" / f"{path.stem}.history.jsonl"
+
+
+def append_history(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    audit_path = history_path(path)
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    with audit_path.open("a", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(compact_json(row) + "\n")
+
+
 def sync_mtime_to_latest_message(path: Path, rows: list[dict[str, Any]] | None = None) -> dt.datetime | None:
     latest = max_message_time(rows if rows is not None else load_jsonl(path))
     if latest is None:
@@ -605,7 +621,7 @@ def merge_jsonl_files(target: Path, sources: list[Path]) -> None:
     for path in [target, *sources]:
         for row in load_jsonl(path):
             key = row_key(row)
-            rows[key] = merge_row(rows.get(key, {}), row)
+            rows[key], _ = merge_row(rows.get(key, {}), row)
     if rows:
         write_jsonl(target, sorted(rows.values(), key=sort_key))
     for source in sources:
@@ -639,16 +655,31 @@ def richness(value: Any) -> int:
     return 1
 
 
-def merge_row(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+def merged_value(key: str, old: Any, new: Any) -> tuple[Any, bool]:
+    if key in RUN_FIELDS:
+        return new, old != new
+    if key in METADATA_FIELDS:
+        return (new, True) if richness(new) > richness(old) else (old, False)
+    if richness(new) > richness(old):
+        return new, True
+    return old, False
+
+
+def merge_row(old: dict[str, Any], new: dict[str, Any]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     merged = dict(old)
+    conflicts: dict[str, dict[str, Any]] = {}
     for key, value in new.items():
-        if richness(value) >= richness(merged.get(key)):
-            merged[key] = value
-    return merged
+        current = merged.get(key)
+        selected, changed = merged_value(key, current, value)
+        if changed:
+            merged[key] = selected
+        elif key not in RUN_FIELDS and richness(value) and current not in (None, "", [], {}, False) and current != value:
+            conflicts[key] = {"kept": current, "incoming": value}
+    return merged, conflicts
 
 
 def without_run_fields(row: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in row.items() if key != "scrapedAt"}
+    return {key: value for key, value in row.items() if key not in RUN_FIELDS}
 
 
 def sort_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -686,22 +717,45 @@ def filtered_messages(messages: list[dict[str, Any]], since: dt.datetime | None,
 def update_conversation(path: Path, title: str, conversation_id: str, messages: list[dict[str, Any]], since: dt.datetime | None, until: dt.datetime | None, max_messages: int) -> int:
     existing = {row_key(row): row for row in load_jsonl(path)}
     scraped_at = dt.datetime.now(dt.UTC).isoformat()
+    history: list[dict[str, Any]] = []
     changed = 0
     if conversation_id:
         for key, row in existing.items():
             if row.get("conversationId") != conversation_id:
+                history.append(
+                    {
+                        "archivedAt": scraped_at,
+                        "reason": "metadata-update",
+                        "path": str(path),
+                        "rowKey": key,
+                        "messageId": row.get("messageId") or "",
+                        "fields": {"conversationId": {"kept": row.get("conversationId"), "incoming": conversation_id}},
+                    }
+                )
                 existing[key] = {**row, "conversationId": conversation_id}
                 changed += 1
     for message in filtered_messages(messages, since, until, max_messages):
         row = {**message, "conversationTitle": title, "conversationId": conversation_id, "scrapedAt": scraped_at}
         key = row_key(row)
         current = existing.get(key)
-        merged = merge_row(current or {}, row)
+        merged, conflicts = merge_row(current or {}, row)
+        if current and conflicts:
+            history.append(
+                {
+                    "archivedAt": scraped_at,
+                    "reason": "conflict-kept-existing",
+                    "path": str(path),
+                    "rowKey": key,
+                    "messageId": row.get("messageId") or "",
+                    "fields": conflicts,
+                }
+            )
         if current and without_run_fields(current) == without_run_fields(merged):
             continue
         if current != merged:
             changed += 1
         existing[key] = merged
+    append_history(path, history)
     write_jsonl(path, sorted(existing.values(), key=sort_key))
     return changed
 
@@ -712,6 +766,7 @@ def describe() -> dict[str, Any]:
         "output": "~/Documents/data/whatsapp/{conversation title} [{immutable WhatsApp chat id}].jsonl",
         "primary_key": "messageId",
         "conversation_key": "conversationId",
+        "history": "~/Documents/data/whatsapp/.history/{conversation file stem}.history.jsonl",
         "cdp": CDP_URL,
         "filters": ["--conversation", "--name", "--updated-since", "--updated-until", "--since", "--until", "--max-messages", "--limit"],
         "examples": [

@@ -266,45 +266,53 @@ def holiday_calendar(zone: dt.tzinfo, start: dt.datetime, end: dt.datetime) -> h
     return holidays.country_holidays(country, years=years)
 
 
-def is_nonworking_day(
+def filter_weekends(
+    slots: list[tuple[dt.datetime, dt.datetime]],
+    my_zone: dt.tzinfo,
+    requested_zone: dt.tzinfo,
+    *,
+    include_weekends: bool,
+) -> list[tuple[dt.datetime, dt.datetime]]:
+    if include_weekends:
+        return slots
+    return [
+        (start, end)
+        for start, end in slots
+        if start.astimezone(my_zone).date().weekday() < 5 and start.astimezone(requested_zone).date().weekday() < 5
+    ]
+
+
+def holiday_names(
     value: dt.datetime,
     my_zone: dt.tzinfo,
     requested_zone: dt.tzinfo,
     my_holidays: holidays.HolidayBase | None,
     requested_holidays: holidays.HolidayBase | None,
-    *,
-    include_weekends: bool,
-    include_holidays: bool,
-) -> bool:
-    dates = [(value.astimezone(my_zone).date(), my_holidays), (value.astimezone(requested_zone).date(), requested_holidays)]
-    if not include_weekends and any(day.weekday() >= 5 for day, _ in dates):
-        return True
-    return not include_holidays and any(calendar is not None and day in calendar for day, calendar in dates)
+) -> list[str]:
+    out = []
+    for zone, calendar in [(my_zone, my_holidays), (requested_zone, requested_holidays)]:
+        if calendar is None:
+            continue
+        day = value.astimezone(zone).date()
+        if name := calendar.get(day):
+            label = f"{name} ({abbrev(zone, value)})"
+            if label not in out:
+                out.append(label)
+    return out
 
 
-def filter_nonworking(
+def split_holidays(
     slots: list[tuple[dt.datetime, dt.datetime]],
     my_zone: dt.tzinfo,
     requested_zone: dt.tzinfo,
     my_holidays: holidays.HolidayBase | None,
     requested_holidays: holidays.HolidayBase | None,
-    *,
-    include_weekends: bool,
-    include_holidays: bool,
-) -> list[tuple[dt.datetime, dt.datetime]]:
-    return [
-        (start, end)
-        for start, end in slots
-        if not is_nonworking_day(
-            start,
-            my_zone,
-            requested_zone,
-            my_holidays,
-            requested_holidays,
-            include_weekends=include_weekends,
-            include_holidays=include_holidays,
-        )
-    ]
+) -> tuple[list[tuple[dt.datetime, dt.datetime]], list[tuple[dt.datetime, dt.datetime]]]:
+    regular, holiday = [], []
+    for slot in slots:
+        target = holiday if holiday_names(slot[0], my_zone, requested_zone, my_holidays, requested_holidays) else regular
+        target.append(slot)
+    return regular, holiday
 
 
 def limit_per_day(slots: list[tuple[dt.datetime, dt.datetime]], requested_zone: dt.tzinfo, per_day: int) -> list[tuple[dt.datetime, dt.datetime]]:
@@ -333,13 +341,18 @@ def fmt_time(value: dt.datetime, zone: dt.tzinfo) -> str:
     return value.astimezone(zone).strftime("%-I:%M %p").lower()
 
 
-def fmt_slot(slot: tuple[dt.datetime, dt.datetime], requested_zone: dt.tzinfo, my_zone: dt.tzinfo) -> str:
+def fmt_slot(row: dict[str, Any], requested_zone: dt.tzinfo, my_zone: dt.tzinfo) -> str:
+    slot = (row["start_dt"], row["end_dt"])
     start, end = slot
     requested = f"{fmt_time(start, requested_zone)} - {fmt_time(end, requested_zone)} {abbrev(requested_zone, start)}"
     if zone_key(requested_zone) == zone_key(my_zone):
-        return f"{fmt_date(start, requested_zone)}: {requested}"
-    mine = f"{fmt_time(start, my_zone)} - {fmt_time(end, my_zone)} {abbrev(my_zone, start)}"
-    return f"{fmt_date(start, requested_zone)}: {requested} ({mine})"
+        text = f"{fmt_date(start, requested_zone)}: {requested}"
+    else:
+        mine = f"{fmt_time(start, my_zone)} - {fmt_time(end, my_zone)} {abbrev(my_zone, start)}"
+        text = f"{fmt_date(start, requested_zone)}: {requested} ({mine})"
+    if holiday := row.get("holiday"):
+        text = f"{text} - holiday: {holiday}"
+    return text
 
 
 def render_text(result: dict[str, Any], requested_zone: dt.tzinfo, my_zone: dt.tzinfo) -> str:
@@ -355,30 +368,37 @@ def render_text(result: dict[str, Any], requested_zone: dt.tzinfo, my_zone: dt.t
         "Preferred slots:",
     ]
     preferred = result["preferred_slots"]
-    lines.extend(fmt_slot((row["start_dt"], row["end_dt"]), requested_zone, my_zone) for row in preferred)
+    lines.extend(fmt_slot(row, requested_zone, my_zone) for row in preferred)
     if not preferred:
         lines.append("None")
     lines.extend(["", "If none of the above are suitable:"])
     additional = result["additional_slots"]
-    lines.extend(fmt_slot((row["start_dt"], row["end_dt"]), requested_zone, my_zone) for row in additional)
+    lines.extend(fmt_slot(row, requested_zone, my_zone) for row in additional)
     if not additional:
         lines.append("None")
     return "\n".join(lines)
 
 
-def serialise_slots(slots: list[tuple[dt.datetime, dt.datetime]], requested_zone: dt.tzinfo, my_zone: dt.tzinfo) -> list[dict[str, Any]]:
+def serialise_slots(
+    slots: list[tuple[dt.datetime, dt.datetime]],
+    requested_zone: dt.tzinfo,
+    my_zone: dt.tzinfo,
+    my_holidays: holidays.HolidayBase | None,
+    requested_holidays: holidays.HolidayBase | None,
+) -> list[dict[str, Any]]:
     rows = []
     for start, end in slots:
-        rows.append(
-            {
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "requested": f"{fmt_date(start, requested_zone)} {fmt_time(start, requested_zone)}-{fmt_time(end, requested_zone)} {abbrev(requested_zone, start)}",
-                "mine": f"{fmt_date(start, my_zone)} {fmt_time(start, my_zone)}-{fmt_time(end, my_zone)} {abbrev(my_zone, start)}",
-                "start_dt": start,
-                "end_dt": end,
-            }
-        )
+        row = {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "requested": f"{fmt_date(start, requested_zone)} {fmt_time(start, requested_zone)}-{fmt_time(end, requested_zone)} {abbrev(requested_zone, start)}",
+            "mine": f"{fmt_date(start, my_zone)} {fmt_time(start, my_zone)}-{fmt_time(end, my_zone)} {abbrev(my_zone, start)}",
+            "start_dt": start,
+            "end_dt": end,
+        }
+        if names := holiday_names(start, my_zone, requested_zone, my_holidays, requested_holidays):
+            row["holiday"] = ", ".join(names)
+        rows.append(row)
     return rows
 
 
@@ -395,8 +415,8 @@ def describe() -> dict[str, Any]:
             "their_preferred_hours": "9am-6pm",
             "their_extended_hours": "8am-7pm",
             "slots_per_day": 3,
-            "weekends": "excluded unless --include-weekends",
-            "holidays": "excluded for known countries unless --include-holidays",
+            "weekends": "excluded unless --include-weekends or a one-day explicit date is requested",
+            "holidays": "shown in fallback slots with the holiday name",
         },
         "examples": [
             "freeslots.py --timezone UK --days 7",
@@ -419,8 +439,7 @@ def main(
     duration: int = typer.Option(30, "--duration", min=1, help="Minimum meeting length in minutes."),
     limit: int = typer.Option(20, "--limit", "-n", min=1, help="Maximum slots to print in each section."),
     slots_per_day: int = typer.Option(3, "--slots-per-day", min=1, help="Maximum slots per requested-time-zone day. Longest slots win."),
-    include_weekends: bool = typer.Option(False, "--include-weekends", help="Include Saturdays and Sundays."),
-    include_holidays: bool = typer.Option(False, "--include-holidays", help="Include recognized holidays for known time-zone countries."),
+    include_weekends: bool = typer.Option(False, "--include-weekends", help="Include Saturdays and Sundays. One-day explicit searches include them automatically."),
     calendar: str = typer.Option("primary", "--calendar", help="Calendar ID for Google Calendar freebusy."),
     config_dir: str = typer.Option("", "--config-dir", help="Override GOOGLE_WORKSPACE_CLI_CONFIG_DIR for gws."),
     fmt: str = typer.Option("text", "--format", help="Output format: text|json."),
@@ -441,6 +460,8 @@ def main(
     end = parse_date(until, my_zone, default=start + dt.timedelta(days=days))
     if start >= end:
         fail("--since must be before --until")
+    explicit_one_day = since is not None and end - start <= dt.timedelta(days=1)
+    include_weekends = include_weekends or explicit_one_day
 
     preferred = intersect(
         dated_windows(start, end, my_zone, parse_hours(my_hours)),
@@ -456,29 +477,13 @@ def main(
     additional_free = long_enough(subtract(extended_free, preferred_free), duration)
     my_holidays = holiday_calendar(my_zone, start, end)
     requested_holidays = holiday_calendar(requested_zone, start, end)
-    preferred_free = limit_per_day(
-        filter_nonworking(
-            preferred_free,
-            my_zone,
-            requested_zone,
-            my_holidays,
-            requested_holidays,
-            include_weekends=include_weekends,
-            include_holidays=include_holidays,
-        ),
-        requested_zone,
-        slots_per_day,
-    )
+    preferred_free = filter_weekends(preferred_free, my_zone, requested_zone, include_weekends=include_weekends)
+    additional_free = filter_weekends(additional_free, my_zone, requested_zone, include_weekends=include_weekends)
+    preferred_free, holiday_preferred = split_holidays(preferred_free, my_zone, requested_zone, my_holidays, requested_holidays)
+    additional_free = additional_free + holiday_preferred
+    preferred_free = limit_per_day(preferred_free, requested_zone, slots_per_day)
     additional_free = limit_per_day(
-        filter_nonworking(
-            additional_free,
-            my_zone,
-            requested_zone,
-            my_holidays,
-            requested_holidays,
-            include_weekends=include_weekends,
-            include_holidays=include_holidays,
-        ),
+        additional_free,
         requested_zone,
         slots_per_day,
     )
@@ -490,10 +495,9 @@ def main(
         "start_dt": start,
         "end_dt": end,
         "include_weekends": include_weekends,
-        "include_holidays": include_holidays,
         "slots_per_day": slots_per_day,
-        "preferred_slots": serialise_slots(preferred_free[:limit], requested_zone, my_zone),
-        "additional_slots": serialise_slots(additional_free[:limit], requested_zone, my_zone),
+        "preferred_slots": serialise_slots(preferred_free[:limit], requested_zone, my_zone, my_holidays, requested_holidays),
+        "additional_slots": serialise_slots(additional_free[:limit], requested_zone, my_zone, my_holidays, requested_holidays),
     }
     if fmt == "json":
         result["start"] = result.pop("start_dt").isoformat()
