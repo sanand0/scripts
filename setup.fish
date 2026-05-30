@@ -53,7 +53,7 @@ export GREP_OPTIONS='--color=auto'
 # Set up fzf
 export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-cwd-prefix'
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-export FZF_DEFAULT_OPTS='--layout=reverse --preview "moor --style=numbers --color=always --line-range :500 {}"'
+export FZF_DEFAULT_OPTS='--layout=reverse'
 
 # Basic commands and aliases
 # -----------------------------------------------

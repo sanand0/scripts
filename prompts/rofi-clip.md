@@ -2,8 +2,15 @@
 
 ## Add emojis, 30 Mar 2026
 
+<!--
+cd ~/code/scripts; dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
 Update `rofi-clip.sh` to include a "Shorthand to Emoji" command. This should convert all emoji shorthand notations to their corresponding emojis. For example, ":smile:" becomes "😄", ":heart:" becomes "❤️", ":thumbsup:" becomes "👍", and so on.
 Test to verify.
+
+<!-- codex resume 019e7835-36b4-7a50-a087-532e7a56967a --yolo -->
 
 ## Add slugs, 17 Mar 2026 (Copilot Yolo - GPT 5.4 xhigh)
 
