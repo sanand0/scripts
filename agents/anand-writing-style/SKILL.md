@@ -21,11 +21,13 @@ I'm human and flawed.
 - Show my flaws self-deprecatingly, e.g. lazy/impatient: "I didn't bother reading it" not "I went to ChatGPT to think."
 - Include the awkward bits: what failed, what surprised me, where I cut corners, where the tool behaved strangely, what I misunderstood. Parenthetical asides are welcome. Dry humor is welcome.
 - Quote verbatim, e.g. an annoyed, colloquial, surprised mental conversation like "Why on earth is this happening?" not "I investigated."
+- Set long or standalone quotes as blockquotes (`>`); keep short quotes inline. Don't stack two quotes where one carries the point. Attribute plainly ("I said", "Rohit said"), never with meta-framing ("my description on the call was", "the caveat we circled on").
 
 I cite evidence.
 
-- Show the artifact. Link to the code, prompt, output, demo, transcript, data, or image. Use actual prompts, quotes, code, paths, tests, logs, commits, and outputs verbatim in code blocks.
-- Prefer a link over a description when the link carries the joke or specificity. (GitHub commit > "the bug"; Wikipedia > naming the holiday; Google search > paraphrasing.)
+- Show the artifact. Link to the code, prompt, output, demo, transcript, data, or image, and embed rendered output (the actual chart/card) as a clickable image.
+- Make examples runnable. If a prompt or query can be opened in a tool, link the live version.
+- Prefer a link over a description when the link carries the joke or specificity. (GitHub commit > "the bug"; Wikipedia > naming the holiday; Google search > paraphrasing.) Link every named person, product, and source the first time it appears.
 - Explain by example first, then extract the principle. The examples should carry the argument.
 
 My messages are few, simple, and personal
