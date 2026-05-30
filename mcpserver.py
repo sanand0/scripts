@@ -48,8 +48,9 @@ def log_bash_command(commands: str, output: str) -> None:
 
 @mcp.tool()
 async def bash(commands: str, timeout_ms: int = 30_000) -> str:
-    """Runs multiline bash script. Use fd, ug, rga, sd, sg, jaq, gdu, uv, node, ffmpeg, git, ...
-/tmp/ for temp files"""
+    """Runs multiline bash script.
+CLI tools include: curl, fd, ug, rga, jaq, sd, sg, git, gh, uv, agent-browser, duckdb, sqlite3, ...
+Use /tmp/ to write temp files"""
     ctx: Context = get_context()
     await ctx.info(f"bash: {commands}")
     try:
