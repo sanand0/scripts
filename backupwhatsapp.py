@@ -36,7 +36,8 @@ SCRAPER = Path("/home/sanand/code/tools/whatsappscraper/whatsappscraper.min.js")
 CDP_URL = "http://localhost:9222"
 CHAT_LIST_SELECTOR = "#pane-side"
 MAIN_SELECTOR = "div#main"
-INCREMENTAL_SORT_SAFETY = 6
+INCREMENTAL_SORT_SAFETY = 4
+INCREMENTAL_LOOKBACK_DAYS = 3
 RUN_FIELDS = {"scrapedAt"}
 METADATA_FIELDS = {"conversationTitle", "conversationId", "userId"}
 CHAT_ID_JS = r"""
@@ -529,9 +530,14 @@ def backup_paths() -> list[Path]:
     return sorted([*OUT_DIR.glob("*.jsonl"), *OUT_DIR.glob("*.json")])
 
 
-def oldest_backup_mtime() -> dt.datetime | None:
+def latest_backup_mtime() -> dt.datetime | None:
     times = [dt.datetime.fromtimestamp(path.stat().st_mtime, dt.UTC) for path in backup_paths()]
-    return min(times) if times else None
+    return max(times) if times else None
+
+
+def incremental_stop_time() -> dt.datetime | None:
+    latest = latest_backup_mtime()
+    return latest - dt.timedelta(days=INCREMENTAL_LOOKBACK_DAYS) if latest else None
 
 
 def chat_key(title: str, conversation_id: str) -> str:
@@ -847,11 +853,12 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
                     "warning: WhatsApp chat list may not be sorted by latest message time; "
                     f"{previous.get('title', '?')}={violation['previousTime']} appears before "
                     f"{current.get('title', '?')}={violation['currentTime']}. "
-                    "Incremental early-stop is disabled for this run."
+                    "Consecutive-known-clean early-stop is disabled for this run."
                 )
         visible_times = [chat_list_time(chat) for chat in data["chats"]]
         oldest_visible = min([when for when in visible_times if when is not None], default=None)
         if stop_at and oldest_visible and oldest_visible <= stop_at:
+            eprint(f"incremental: stopping chat-list scan at {oldest_visible.date()} (older than buffered cutoff {stop_at.date()})")
             break
         if checked_state is not None and not warned_unsorted:
             covered_tail = 0
@@ -869,9 +876,7 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
 
 
 async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int) -> bool:
-    await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
-    await page.wait_for_timeout(250)
-    for _ in range(max_scan):
+    async def click_if_visible() -> bool | None:
         data = await list_chats(page)
         for chat in data["chats"]:
             if (conversation_id and chat.get("conversationId") == conversation_id) or (not conversation_id and chat["title"] == title):
@@ -880,10 +885,34 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
                 await page.wait_for_selector(MAIN_SELECTOR, timeout=10000)
                 await page.wait_for_timeout(1200)
                 return True
+        return None
+
+    visible = await click_if_visible()
+    if visible is not None:
+        return visible
+    for _ in range(max_scan):
+        data = await list_chats(page)
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
             break
         await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
         await page.wait_for_timeout(500)
+        visible = await click_if_visible()
+        if visible is not None:
+            return visible
+    await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
+    await page.wait_for_timeout(250)
+    visible = await click_if_visible()
+    if visible is not None:
+        return visible
+    for _ in range(max_scan):
+        data = await list_chats(page)
+        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
+            break
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.wait_for_timeout(500)
+        visible = await click_if_visible()
+        if visible is not None:
+            return visible
     return False
 
 
@@ -922,7 +951,13 @@ async def run_backup(
         await inject_scraper(page, SCRAPER)
         incremental_run = not (conversations or name or updated_since or updated_until or since or until)
         checked_state = load_checked_state() if incremental_run else {}
-        chats = await iter_chats(page, max_scan, oldest_backup_mtime() if incremental_run else None, checked_state if incremental_run else None)
+        stop_at = incremental_stop_time() if incremental_run else None
+        if stop_at:
+            eprint(
+                f"incremental: scanning chat list until {stop_at.date()} "
+                f"(latest local backup minus {INCREMENTAL_LOOKBACK_DAYS}d buffer; use explicit filters to override)"
+            )
+        chats = await iter_chats(page, max_scan, stop_at, checked_state if incremental_run else None)
         selected = []
         for chat in chats:
             title = chat["title"]

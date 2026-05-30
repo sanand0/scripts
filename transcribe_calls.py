@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["google-genai>=1.67.0", "python-dotenv>=1.0.1", "typer>=0.12"]
+# dependencies = ["google-genai>=1.67.0", "python-dotenv>=1.0.1", "pyyaml>=6.0.2", "typer>=0.12"]
 # ///
 """Transcribe audio files into Markdown call notes."""
 
@@ -25,6 +25,7 @@ from urllib.request import urlopen
 from dotenv import dotenv_values, load_dotenv
 from google import genai
 import typer
+import yaml
 
 DEFAULT_INPUT_DIR = Path("/home/sanand/Documents/calls")
 DEFAULT_OUTPUT_DIR = Path("/home/sanand/Dropbox/notes/transcripts")
@@ -95,10 +96,10 @@ def build_note_prompt(system_prompt: str, user_prompt: str | None = None) -> str
     return system_prompt.strip()
 
 
-def resolve_patch_prompts(
+def resolve_transcription_prompts(
     system_prompt: str, stored_prompt: str | None, user_prompt: str | None
 ) -> tuple[str, str | None]:
-    """Return `(system_prompt, user_prompt)` to use for a patch operation."""
+    """Return `(system_prompt, user_prompt)` using CLI, stored, then default context."""
     if user_prompt is not None:
         return system_prompt, user_prompt
     if not stored_prompt:
@@ -137,21 +138,15 @@ def extract_prompt_metadata(markdown: str) -> str | None:
     match = FRONTMATTER_RE.match(markdown)
     if not match:
         return None
-    lines = match.group("body").splitlines()
-    for index, line in enumerate(lines):
-        if not line.startswith("prompt:"):
-            continue
-        value = line[len("prompt:") :].strip()
-        if not value.startswith(("|", ">")):
-            return None
-        block: list[str] = []
-        for continuation in lines[index + 1 :]:
-            if continuation.startswith((" ", "\t")):
-                block.append(continuation[2:] if continuation.startswith("  ") else continuation.lstrip())
-            else:
-                break
-        return "\n".join(block).rstrip()
-    return None
+    frontmatter = yaml.safe_load(match.group("body")) or {}
+    if not isinstance(frontmatter, dict) or "prompt" not in frontmatter:
+        return None
+    prompt = frontmatter["prompt"]
+    if prompt is None:
+        return None
+    if isinstance(prompt, str):
+        return prompt.rstrip()
+    return str(prompt).rstrip()
 
 
 def set_prompt_metadata(markdown: str, prompt: str) -> str:
@@ -959,8 +954,8 @@ def main(
                 typer.echo(f"No invalid transcript sections found in {output_path.name}")
                 continue
         note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
-        transcription_system_prompt, effective_user_prompt = resolve_patch_prompts(
-            system_prompt, stored_prompt if patch_mode else None, cleaned_user_prompt
+        transcription_system_prompt, effective_user_prompt = resolve_transcription_prompts(
+            system_prompt, stored_prompt, cleaned_user_prompt
         )
         action = (
             f"patch section {patch_section}"

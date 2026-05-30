@@ -156,8 +156,6 @@ def parse_segments(markdown: str) -> list[Segment]:
             current_lines = [match.group("text")]
         elif current_speaker is not None:
             current_lines.append(line)
-        elif line.strip():
-            raise typer.BadParameter(f"Text before first speaker label: {line[:80]}")
 
     flush()
     if not segments:

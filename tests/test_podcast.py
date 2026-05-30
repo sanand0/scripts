@@ -48,6 +48,22 @@ def test_parse_markdown_segments_and_frontmatter() -> None:
     assert voice_map == {"Alex": "Algieba", "Maya": "Kore"}
 
 
+def test_parse_segments_ignores_intro_before_first_speaker() -> None:
+    segments = podcast.parse_segments(
+        """# Episode notes
+<!-- producer note -->
+
+Alex: First spoken line.
+Maya: Second spoken line.
+"""
+    )
+
+    assert [(item.speaker, item.text) for item in segments] == [
+        ("Alex", "First spoken line."),
+        ("Maya", "Second spoken line."),
+    ]
+
+
 def test_dry_run_cli_reports_mapping_and_items(tmp_path: Path) -> None:
     input_path = tmp_path / "script.md"
     input_path.write_text(SAMPLE, encoding="utf-8")

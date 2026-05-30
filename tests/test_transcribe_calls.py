@@ -358,7 +358,7 @@ def test_extract_prompt_metadata_reads_block_scalar() -> None:
     assert extracted == "Focus on action items"
 
 
-def test_extract_prompt_metadata_ignores_legacy_inline_prompt_value() -> None:
+def test_extract_prompt_metadata_reads_inline_prompt_value() -> None:
     module = load_module()
     markdown = (
         "---\n"
@@ -367,7 +367,7 @@ def test_extract_prompt_metadata_ignores_legacy_inline_prompt_value() -> None:
         "# Demo\n"
     )
 
-    assert module.extract_prompt_metadata(markdown) is None
+    assert module.extract_prompt_metadata(markdown) == "Focus on action items"
 
 
 def test_find_invalid_transcript_sections_returns_bad_part_indices() -> None:
@@ -444,12 +444,22 @@ def test_build_chunk_user_prompt_appends_part_context() -> None:
     assert "part 2/4 of a longer recording" in prompt
 
 
-def test_resolve_patch_prompts_uses_stored_prompt_as_user_context() -> None:
+def test_resolve_transcription_prompts_uses_stored_prompt_as_user_context() -> None:
     module = load_module()
 
-    prompts = module.resolve_patch_prompts("System prompt text", "Stored patch prompt", None)
+    prompts = module.resolve_transcription_prompts("System prompt text", "Stored patch prompt", None)
 
     assert prompts == ("System prompt text", "Stored patch prompt")
+
+
+def test_resolve_transcription_prompts_prefers_cli_prompt() -> None:
+    module = load_module()
+
+    prompts = module.resolve_transcription_prompts(
+        "System prompt text", "Stored patch prompt", "CLI prompt"
+    )
+
+    assert prompts == ("System prompt text", "CLI prompt")
 
 
 def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path) -> None:
@@ -785,6 +795,58 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
     assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in result.stdout
 
 
+def test_script_uses_existing_frontmatter_prompt_for_pending_transcript(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "test.opus").write_bytes(
+        (Path(__file__).resolve().parents[1] / "tests" / "test.opus").read_bytes()
+    )
+    (output_dir / "test.md").write_text(
+        "---\n"
+        "prompt: Pending note context from YAML\n"
+        "---\n\n"
+        "# test\n\n"
+        "- Existing notes stay intact.\n\n"
+        "## Transcript\n",
+        encoding="utf-8",
+    )
+    prompt_file.write_text("System prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "12"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    transcript = (output_dir / "test.md").read_text(encoding="utf-8")
+    assert "- Existing notes stay intact." in transcript
+    assert "Transcript for test.opus" in transcript
+    assert "prompt: |-\n  Pending note context from YAML" in transcript
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "SYSTEM_PROMPT\tSystem prompt text" in log_text
+    assert "USER_PROMPT\tPending note context from YAML" in log_text
+
+
 def test_script_skips_missing_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
     input_dir = tmp_path / "calls"
@@ -979,8 +1041,8 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "long.part002.opus" in genai_log
     assert "long.part003.opus" in genai_log
     assert "USER_PROMPT\tThis audio is part 1/3 of a longer recording." in genai_log
-    assert "USER_PROMPT\tThis audio is part 2/3 of a longer recording." in genai_log
-    assert "USER_PROMPT\tThis audio is part 3/3 of a longer recording." in genai_log
+    assert "This audio is part 2/3 of a longer recording." in genai_log
+    assert "This audio is part 3/3 of a longer recording." in genai_log
 
 
 def test_script_warns_when_chunk_response_does_not_look_like_transcript(tmp_path: Path) -> None:

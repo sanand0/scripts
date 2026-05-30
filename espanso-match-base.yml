@@ -69,11 +69,9 @@ matches:
     force_clipboard: true
     replace: |
       <!--
-
       cd $PWD
       dev.sh
       codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
-
       -->
 
   - trigger: "-claude"
@@ -81,11 +79,9 @@ matches:
     force_clipboard: true
     replace: |
       <!--
-
       cd $PWD
       dev.sh
       claude --dangerously-skip-permissions --model claude-sonnet-4.6 --effort medium
-
       -->
 
   - trigger: "-copilot"
@@ -93,11 +89,9 @@ matches:
     force_clipboard: true
     replace: |
       <!--
-
       cd $PWD
       dev.sh
       copilot --yolo --model claude-sonnet-4.6
-
       -->
 
   # Print the output of a shell command

@@ -1,5 +1,20 @@
 # Transcribe Calls
 
+## Use prompt when available, 22 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
+   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Ensure `transcribe_calls.py` uses the `prompt:` YAML frontmatter if available. The priority is: CLI `--prompt` > YAML frontmatter > default prompt.
+
+Run and test on any pending `/home/sanand/Documents/calls/*.opus` whose corresponding transcripts have a `prompt:` key in the YAML frontmatter. Verify that the `prompt:` key is being used as context for the transcription.
+
+<!-- codex resume 019e7324-9cae-70e1-8ffb-41b103674dce --yolo -->
+
 ## Improve context, 22 May 2026
 
 <!--

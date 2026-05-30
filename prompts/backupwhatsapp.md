@@ -1,5 +1,30 @@
 # backupwhatsapp.py
 
+## Optimization, 29 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -v /home/sanand/code/tools/whatsappscraper:/home/sanand/code/tools/whatsappscraper:ro -v /home/sanand/Documents/data/whatsapp:/home/sanand/Documents/data/whatsapp
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+`backupwhatsapp.py` needs two improvements:
+
+1. It scans too far back in the past, which is unnecessary. For example, I've been running it daily, and yet when I ran it today, it scanned conversations all the way back to "bbdaily" which was last updated on 13 Mar 2026. Today is 29 May 2026. Conversation dates are visible ("Yesterday", "Wednesday", "13/03/2026", etc.) It should make a reasonable judgement (with buffer) that a conversation that's WELL before the last updated conversation need not be scanned unless the options explicitly say so. When running `backupwhatsapp.py` without options, this should be the default behavior. This will make it much faster to run every one or three days.
+2. It scrolls the conversation list every time from the start even when the conversation list shows the next conversation to be scanned. When scanning the previous conversation, it has already scrolled to a certain point, and the next conversation, very likely, is visible just below that. Modify it so that it checks if scrolling is required before scrolling there.
+
+Read `prompts/backupwhatsapp.md` for how the prompting has evolved - it might help.
+
+Run and test.
+
+---
+
+Why is 14 days a good default buffer? Based on the "inter-conversation duration" distribution, what do you infer and can this be limited to about 4 conversations with a 95% confidence?
+
+---
+
+Go ahead, change the current from 14 to 3 and lower INCREMENTAL_SORT_SAFETY from 6 to 4.
+
 ## Reconciliation, 25 May 2026
 
 <!--

@@ -1,12 +1,12 @@
-For non-trivial tasks, define the user-visible invariant: "done means ___"; verify that invariant before claiming success.
-Treat constraints as soft preferences unless safety, privacy, data loss, credentials, or the current request makes them hard; surface any constraint that filters, skips, blocks, or deletes.
+For non-trivial tasks, define what done means and verify before claiming success.
+Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). If a constraint filters, skips, blocks, or deletes, surface it.
 Prefer simple, rerunnable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
 
 Always prefix shell commands with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
 
 Available tools:
 
-fd, ug, rga, sd
+fd --max-depth 3 --type f, ug, rga, sd
 sg (ast-grep: code search), dprint
 git, gh
 curl, w3m, lynx, websocat, wscat

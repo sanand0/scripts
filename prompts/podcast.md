@@ -1,9 +1,20 @@
 # podcast
 
+## Revise podcast parsing, 21 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Minimally modify `podcast.py` so that any leading comments, headings, etc. are ignored. In other words, ignore content until the first line that matches the format of a speaker line. Test it.
+
+<!-- codex resume 019e6251-efb7-7f33-9cfc-64cb23dc0604 --yolo -->
+
 ## Revise podcast output, 21 May 2026
 
 <!--
-
 cd ~/code/scripts
 dev.sh
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
@@ -16,7 +27,6 @@ Minimally modify `podcast.py` so that, if the output file is not specified, defa
 ## Revise podcast script, 19 May 2026
 
 <!--
-
 cd ~/code/scripts
 dev.sh \
   -v /home/sanand/code/generative-ai-group/:/home/sanand/code/generative-ai-group/:ro \

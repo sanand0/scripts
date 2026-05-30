@@ -564,8 +564,8 @@ Wayland enables smooth scrolling and touch gestures. (But it has problems with a
 sudo sed -i 's/#WaylandEnable=false/WaylandEnable=true/' /etc/gdm3/custpsom.conf; sudo systemctl restart gdm3
 ```
 
-Log out. select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in
-Test via `echo $XDG_SESSION_TYPE` (should be wayland, not x11)
+Log out, select the user, select the settings icon at the bottom right, select "Ubuntu on Wayland". Then log in.
+Test via `echo $XDG_SESSION_TYPE` (wayland|x11)
 
 Notes
 
@@ -754,7 +754,17 @@ Desktop
 
 ## Notes
 
-### 13 Feb 2026.
+### 29 May 2026
+
+Undo change made on 13 Feb 2026 and set `GRUB_DEFAULT=0` based on advice from [`/home/sanand/code/infra/docker-nvidia-issue`](https://github.com/sanand0/infra/tree/main/docker-nvidia-issue)
+
+- Using `GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux 6.14.0-37-generic"` caused Ubuntu to boot Linux `6.14.0-37-generic`.
+- But a recent package upgrade installed NVIDIA kernel module only for `6.17.0-29-generic`.
+- I forgot why I set the `GRUB_DEFAULT` to a specific kernel version. Some NVIDIA driver issue, I think. Now, it seems fine, so I'm reverting to the default `GRUB_DEFAULT=0` which boots the latest kernel.
+
+**Lesson**: Wait a bit before upgrades.
+
+### 13 Feb 2026
 
 ```bash
 sudo nano /etc/default/grub

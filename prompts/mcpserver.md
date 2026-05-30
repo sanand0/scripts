@@ -1,5 +1,23 @@
 # MCP Server
 
+## Log requests, 28 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Minimally modify mcpserver.py to log all bash commands it receives as well as the output it sends.
+
+Log this in ~/.local/share/sanand-scripts/mcpserver/$TIMESTAMP.md (for the current user.)
+
+Begin with a H1 heading mentioning the timestamp. Log the command in a code block. Log the output in another code block.
+
+Run and test.
+
+<!-- codex resume 019e6bff-f16b-7e61-806d-0626863ae517 --yolo -->
+
 ## Add timeout, 18 May 2026
 
 <!--

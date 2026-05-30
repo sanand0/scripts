@@ -170,6 +170,7 @@ args=(
   -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.local/share/rtk:/home/vscode/.local/share/rtk"
+  -v "$HOME/.local/share/sanand-scripts:/home/vscode/.local/share/sanand-scripts"
   -v "$HOME/.npm:/home/vscode/.npm"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
