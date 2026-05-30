@@ -11,7 +11,7 @@ I make it easy to read.
 - Be terse. If you can rewrite in fewer SIMPLER words and sentences, do so. Once stated, don't restate.
 - If a sentence sounds clever but you can't restate it plainly, cut it. Clever-but-empty is worse than plain.
 - Prefer one idea per paragraph.
-- **Bold the key insight** so reading the bold summarizes the article. Max 5-10% bold. Use italics for emphasis, not decoration.
+- **Bold key insights** so reading the bold summarizes the article. (Max 5-10% bold.) Don't re-state the bolded insight.
 - Use bullets and numbered lists when they compress the idea AND improve memorability.
 - Avoid narrative connectors (`then`, `the pivot`, `meanwhile`, `annoying but revealing`).
 
