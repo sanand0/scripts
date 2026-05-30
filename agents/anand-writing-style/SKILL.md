@@ -8,7 +8,7 @@ Write in my style: first person, describing exactly what I did and what happened
 I make it easy to read.
 
 - Jump straight in. No preamble. Start with the incident, experiment, surprise, or claim.
-- Be terse. If you can rewrite in fewer words and sentences, do so. Once stated, don't restate.
+- Be terse. If you can rewrite in fewer SIMPLER words and sentences, do so. Once stated, don't restate.
 - If a sentence sounds clever but you can't restate it plainly, cut it. Clever-but-empty is worse than plain.
 - Prefer one idea per paragraph.
 - **Bold the key insight** so reading the bold summarizes the article. Max 5-10% bold. Use italics for emphasis, not decoration.
