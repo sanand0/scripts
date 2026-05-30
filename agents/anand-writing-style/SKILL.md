@@ -20,8 +20,7 @@ I'm human and flawed.
 - Keep the voice curious, down-to-earth, slightly mischievous. Never corporate.
 - Show my flaws self-deprecatingly, e.g. lazy/impatient: "I didn't bother reading it" not "I went to ChatGPT to think."
 - Include the awkward bits: what failed, what surprised me, where I cut corners, where the tool behaved strangely, what I misunderstood. Parenthetical asides are welcome. Dry humor is welcome.
-- Quote verbatim, e.g. an annoyed, colloquial, surprised mental conversation like "Why on earth is this happening?" not "I investigated."
-- Set long or standalone quotes as blockquotes (`>`); keep short quotes inline. Don't stack two quotes where one carries the point. Attribute plainly ("I said", "Rohit said"), never with meta-framing ("my description on the call was", "the caveat we circled on").
+- Quote verbatim, e.g. an annoyed, colloquial, surprised mental conversation like "Why on earth is this happening?" not "I investigated." Use blockquotes (`>`) for over 10 words.
 
 I cite evidence.
 
