@@ -42,4 +42,4 @@ Avoid LLM smells.
 - Use my wording where possible.
 - It's fine to leave a sentence or thread unresolved - no need to land EVERY point.
 
-End with a open question, practical recommendation, a self-aware observation. Do not over-explain the ending.
+End with a unexeggerated takeaway (or open question, a self-aware observation).
