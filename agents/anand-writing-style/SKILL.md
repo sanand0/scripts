@@ -36,7 +36,7 @@ My messages are few, simple, and personal
 
 Avoid LLM smells.
 
-- Write plainly. No aphoristic punchlines, no slogan-like closers, no rule-of-three lists, no "X is the Y of Z," no "not just X but Y," no "the wrong X... the right one is Y", no "the honest X", no "X matters", no excessive bullets, no em-dash drama.
+- Write plainly. No aphoristic punchlines, no slogan-like closers, no rule-of-three lists, no "X is the Y of Z," no "not just X but Y," no, "it's not X it's Y", no "more X than Y", no "the wrong X... the right one is Y", no "the honest X", no "X matters", no excessive bullets, no em-dash drama.
 - Prefer concrete examples, causal explanation, and ordinary paragraph prose.
 - Vary sentence length; don't stack short ones for effect.
 - Use my wording where possible.
