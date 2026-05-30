@@ -1,5 +1,10 @@
 # Rofi Clip
 
+## Add emojis, 30 Mar 2026
+
+Update `rofi-clip.sh` to include a "Shorthand to Emoji" command. This should convert all emoji shorthand notations to their corresponding emojis. For example, ":smile:" becomes "😄", ":heart:" becomes "❤️", ":thumbsup:" becomes "👍", and so on.
+Test to verify.
+
 ## Add slugs, 17 Mar 2026 (Copilot Yolo - GPT 5.4 xhigh)
 
 Update `rofi-clip.sh` to include a "Text to Slug" command. This should convert the text to lowercase and replace non-alphanumeric characters with hyphens.
