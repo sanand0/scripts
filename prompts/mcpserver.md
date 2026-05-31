@@ -2,6 +2,10 @@
 
 ## Run Cloudflare tunnel, 28 May 2026
 
+Modify `mcpserver.py` to run the Cloudflare tunnel if it is not already running, and stop it when the server stops (only if the script started it): `cloudflared tunnel run --token $CLOUDFLARE_TUNNEL_MCP_TOKEN`
+
+It should load CLOUDFLARE_TUNNEL_MCP_TOKEN from the .env in the script directory.
+
 ## Log requests, 28 May 2026
 
 <!--
