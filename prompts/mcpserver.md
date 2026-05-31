@@ -1,5 +1,7 @@
 # MCP Server
 
+## Run Cloudflare tunnel, 28 May 2026
+
 ## Log requests, 28 May 2026
 
 <!--
