@@ -13,6 +13,8 @@ and can run a health check.
   wake have a little time for network setup. The wrapper runs:
   - `activities.py`, which already refreshes/queries `browsing_history.py`.
   - `backupgoogle.py`, only on an unmetered connection.
+  - `backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com`,
+    only on an unmetered connection.
   - `backupmeet.py --yes`, only on an unmetered connection.
   - `/home/sanand/code/summary.py`.
   - `summarize.py blog`.

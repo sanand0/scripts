@@ -435,6 +435,23 @@ def test_find_base_transcript_path_only_for_trailing_single_digit() -> None:
     assert module.find_base_transcript_path(output_dir, "2025-09-10 VIA Talks") is None
 
 
+def test_iter_audio_files_can_return_newest_filename_first(tmp_path: Path) -> None:
+    module = load_module()
+    input_dir = tmp_path / "calls"
+    input_dir.mkdir()
+    for name in (
+        "2026-05-29 Older.opus",
+        "2026-05-31 Newest.opus",
+        "2026-05-30 Middle.wav",
+        "notes.txt",
+    ):
+        (input_dir / name).write_bytes(b"audio")
+
+    files = list(module.iter_audio_files(input_dir, "*.opus", newest_first=True))
+
+    assert [path.name for path in files] == ["2026-05-31 Newest.opus", "2026-05-29 Older.opus"]
+
+
 def test_build_chunk_user_prompt_appends_part_context() -> None:
     module = load_module()
 
@@ -845,6 +862,106 @@ def test_script_uses_existing_frontmatter_prompt_for_pending_transcript(tmp_path
     log_text = log_path.read_text(encoding="utf-8")
     assert "SYSTEM_PROMPT\tSystem prompt text" in log_text
     assert "USER_PROMPT\tPending note context from YAML" in log_text
+
+
+def test_default_run_processes_prompted_pending_opus_files_newest_first(tmp_path: Path) -> None:
+    source_script = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = tmp_path / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    missing_prompt_file = tmp_path / "missing-default-prompt.md"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    for name in (
+        "2026-05-31 Newest.opus",
+        "2026-05-30 Middle.wav",
+        "2026-05-29 Older.opus",
+        "2026-05-28 No Prompt.opus",
+        "2026-05-27 Done.opus",
+    ):
+        (input_dir / name).write_bytes(b"audio")
+    for stem in ("2026-05-31 Newest", "2026-05-29 Older"):
+        (output_dir / f"{stem}.md").write_text(
+            "---\n"
+            f"prompt: Prompt for {stem}\n"
+            "---\n\n"
+            f"# {stem}\n\n"
+            "## Transcript\n",
+            encoding="utf-8",
+        )
+    (output_dir / "2026-05-28 No Prompt.md").write_text(
+        "# 2026-05-28 No Prompt\n\n## Transcript\n",
+        encoding="utf-8",
+    )
+    (output_dir / "2026-05-27 Done.md").write_text(
+        "---\n"
+        "prompt: Already done\n"
+        "---\n\n"
+        "# 2026-05-27 Done\n\n"
+        "## Transcript\n\n"
+        "**Speaker**: [00:01] line 1\n",
+        encoding="utf-8",
+    )
+
+    script_text = source_script.read_text(encoding="utf-8")
+    script_text = script_text.replace(
+        'Path("/home/sanand/Documents/calls")',
+        f'Path({str(input_dir)!r})',
+        1,
+    )
+    script_text = script_text.replace(
+        'Path("/home/sanand/Dropbox/notes/transcripts")',
+        f'Path({str(output_dir)!r})',
+        1,
+    )
+    script_text = script_text.replace(
+        'Path("/home/sanand/code/blog/pages/prompts/transcribe-call-recording.md")',
+        f'Path({str(missing_prompt_file)!r})',
+        1,
+    )
+    script_path.write_text(script_text, encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "12"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(script_path, env=env, cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    log_lines = log_path.read_text(encoding="utf-8").splitlines()
+    audio_lines = [line for line in log_lines if line.startswith("AUDIO\t")]
+    assert audio_lines == [
+        f"AUDIO\t{input_dir / '2026-05-31 Newest.opus'}",
+        f"AUDIO\t{input_dir / '2026-05-29 Older.opus'}",
+    ]
+    assert "USER_PROMPT\tPrompt for 2026-05-31 Newest" in log_lines
+    assert "USER_PROMPT\tPrompt for 2026-05-29 Older" in log_lines
+    assert "SYSTEM_PROMPT\tTranscribe" in log_lines
+    assert "created=0 updated=2 skipped=0 errors=0" in result.stdout
+    assert "Transcript for 2026-05-31 Newest.opus" in (output_dir / "2026-05-31 Newest.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Transcript for 2026-05-29 Older.opus" in (output_dir / "2026-05-29 Older.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Transcript for 2026-05-28 No Prompt.opus" not in (
+        output_dir / "2026-05-28 No Prompt.md"
+    ).read_text(encoding="utf-8")
+    assert not (output_dir / "2026-05-30 Middle.md").exists()
 
 
 def test_script_skips_missing_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
