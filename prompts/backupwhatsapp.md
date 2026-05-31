@@ -1,5 +1,15 @@
 # backupwhatsapp.py
 
+## Optimization, 31 May 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -v /home/sanand/code/tools/whatsappscraper:/home/sanand/code/tools/whatsappscraper:ro -v /home/sanand/Documents/data/whatsapp:/home/sanand/Documents/data/whatsapp
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Optimize `backupwhatsapp.py`. See why the dates on WhatsApp in CDP are not sorted (e.g. my hunch is that community group messages )
+
 ## Optimization, 29 May 2026
 
 <!--
