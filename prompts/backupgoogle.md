@@ -1,14 +1,44 @@
 # Backup Google
 
-<!--
+## Migrate emails, 03 Jun 2026
 
+<!--
 cd /home/sanand/code/scripts
 dev.sh -v /home/sanand/Documents/data/:/home/sanand/Documents/data/
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
-
 -->
 
+My email ID used to be `s.anand@gramener.com` but because of a Straive re-branding exercise it is now `s.anand@straive.com`. It's the same account - just a different email ID.
+
+`backupgoogle.py` used to update the archive at `/home/sanand/Documents/data/s.anand@gramener.com/` but now it updates `/home/sanand/Documents/data/s.anand@straive.com/`.
+
+Merge these archives into `/home/sanand/Documents/data/s.anand@straive.com/`. That is all contents of the former should be present in the latter, with no duplicates. The `backupgoogle.py` script should continue to work with the new email ID.
+
+Ensure you make backups before you do this. Test that there are no duplicates and all contents of the former AND latter are present in final archives.
+
+It's possible that some IDs (e.g. the email ID or other IDs) may change due to the transition. If these are not independently meaningful and they can be transformed (e.g. all you need to do is replace s.anand@gramener.com with s.anand@straive.com and that'll resolve conflicts), then do that.
+
+If there are any other problems you see, think about how best to resolve them and ask me the most important questions in the clearest way, with examples, so that I can guide you.
+
+Make sure we can revert to the original state if needed.
+
+No need to run `backupgoogle.py`.
+
+---
+
+Run `backupgoogle.py` with a few variations (e.g. different dates / filters) to test that it updates the new archive correctly and doesn't create duplicates.
+For example, you might test for a range we already have data for and confirm that new new rows are created.
+There may be other tests you could think of, if required.
+
+<!-- codex resume 019e8d66-b8e1-7aa3-9cd7-545bc612c880 --yolo -->
+
 ## Allow scope failures, 22 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/data/:/home/sanand/Documents/data/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
 
 If gws fails with insufficient authentication scopes, allow it to continue and just print the error.
 This is because I may not have all the scopes enabled for all accounts, and I want to get whatever data I can instead of failing completely.
@@ -44,6 +74,12 @@ Test by running: `backupgoogle.py --config-dir /home/sanand/.config/gws-root.nod
 <!-- codex resume 019e4d4a-c55b-7002-b0d1-2cf0bd17cdee --yolo -->
 
 ## Generate script, 14 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/data/:/home/sanand/Documents/data/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
 
 Write an agent-friendly CLI `backupgoogle.py` that uses `gws` CLI and connects to my Google Chat, Calendar, Mail, and updates a local text backup of the contents.
 

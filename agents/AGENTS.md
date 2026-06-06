@@ -1,6 +1,7 @@
 For non-trivial tasks, define what done means and verify before claiming success.
-Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). If a constraint filters, skips, blocks, or deletes, surface it.
-Prefer simple, rerunnable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
+Test what you need - permissions, credentials, network/write access - and surface blockers early.
+Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). Push back if you disagree. Tell me when constraints filter, skip, block, or delete. 
+Prefer simple, resumable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
 
 Always prefix shell commands with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
 
@@ -24,8 +25,13 @@ Prefer gws > gcloud > code
 
 Execution:
 
-Run independent reads/searches/checks in parallel when safe.
-Delegate long-running or separable investigations to sub-agents, but verify their outputs before relying on them.
-Test permissions, credentials, `.env`, network access, and write access early.
-Increase timeouts proactively for commands that are expected to succeed.
-For 20+ tool calls or long tasks, maintain a short visible progress log or checklist.
+Run independent reads/searches/checks in parallel when safe
+Delegate to sub-agents if the task needs a smarter/cheaper model, less input context (independent testing), or less output context (parallel experiments) 
+Increase timeouts proactively for commands that are expected to succeed
+For 20+ tool calls or long tasks, maintain a short visible progress log or checklist
+
+After execution:
+
+If there were failures, apply log-agent-failures/SKILL.md
+If it was a complex task, apply the post-mortem/SKILL.md
+

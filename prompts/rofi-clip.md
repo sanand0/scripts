@@ -1,5 +1,26 @@
 # Rofi Clip
 
+## Use sans-serif unicode font, 06 Jun 2026
+
+<!--
+cd ~/code/scripts; dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Minimally modify `rofi-clip.sh` Markdown -> Unicode to convert **bold** to 𝗯𝗼𝗹𝗱 instead of 𝐛𝐨𝐥𝐝.
+
+## Add emojis, 30 Mar 2026
+
+<!--
+cd ~/code/scripts; dev.sh
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Update `rofi-clip.sh` to include a "Shorthand to Emoji" command. This should convert all emoji shorthand notations to their corresponding emojis. For example, ":smile:" becomes "😄", ":heart:" becomes "❤️", ":thumbsup:" becomes "👍", and so on.
+Test to verify.
+
+<!-- codex resume 019e7835-36b4-7a50-a087-532e7a56967a --yolo -->
+
 ## Add slugs, 17 Mar 2026 (Copilot Yolo - GPT 5.4 xhigh)
 
 Update `rofi-clip.sh` to include a "Text to Slug" command. This should convert the text to lowercase and replace non-alphanumeric characters with hyphens.

@@ -1,5 +1,26 @@
 # MCP Server
 
+## Run Cloudflare tunnel, 28 May 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Minimally modify `mcpserver.py` to run the Cloudflare tunnel if it is not already running, and stop it when the server stops (only if the script started it): `cloudflared tunnel run --token $CLOUDFLARE_TUNNEL_MCP_TOKEN`
+In case there are multiple tunnels running, check if the one matching the token is running (though the exact command parameters may be different - so check the process name and see if the token is present in the command).
+It should load CLOUDFLARE_TUNNEL_MCP_TOKEN from the .env in the script directory.
+
+---
+
+If `mcpserver.py` is terminated by a Ctrl+C, or killed in other ways, will the tunnel stop? When will it stop and when will it not?
+
+---
+
+Make sure cloudflared logs are saved via `cloudflared tunnel --logfile ~/.local/share/sanand-scripts/mcpserver-cloudflared/YYYY-MM-DD-HH-MM-SS.jsonl run --token $CLOUDFLARE_TUNNEL_MCP_TOKEN`
+
+<!-- Note: CLOUDFLARE_TUNNEL_MCP_TOKEN was later renamed to CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN -->
+
 ## Log requests, 28 May 2026
 
 <!--
@@ -109,7 +130,74 @@ The callback URL ChatGPT gave me varies based on the MCP Server URL. I set it to
 The result of `curl -s https://sanand.us.auth0.com/.well-known/openid-configuration` is:
 
 ```json
-{"issuer":"https://sanand.us.auth0.com/","authorization_endpoint":"https://sanand.us.auth0.com/authorize","token_endpoint":"https://sanand.us.auth0.com/oauth/token","device_authorization_endpoint":"https://sanand.us.auth0.com/oauth/device/code","userinfo_endpoint":"https://sanand.us.auth0.com/userinfo","mfa_challenge_endpoint":"https://sanand.us.auth0.com/mfa/challenge","jwks_uri":"https://sanand.us.auth0.com/.well-known/jwks.json","registration_endpoint":"https://sanand.us.auth0.com/oidc/register","revocation_endpoint":"https://sanand.us.auth0.com/oauth/revoke","scopes_supported":["openid","profile","offline_access","name","given_name","family_name","nickname","email","email_verified","picture","created_at","identities","phone","address"],"response_types_supported":["code","token","id_token","code token","code id_token","token id_token","code token id_token"],"code_challenge_methods_supported":["S256","plain"],"response_modes_supported":["query","fragment","form_post"],"subject_types_supported":["public"],"token_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post","private_key_jwt"],"token_endpoint_auth_signing_alg_values_supported":["RS256","RS384","PS256"],"claims_supported":["aud","auth_time","created_at","email","email_verified","exp","family_name","given_name","iat","identities","iss","name","nickname","phone_number","picture","sub"],"request_uri_parameter_supported":false,"request_parameter_supported":false,"backchannel_authentication_endpoint":"https://sanand.us.auth0.com/bc-authorize","backchannel_token_delivery_modes_supported":["poll"],"id_token_signing_alg_values_supported":["HS256","RS256","PS256"],"end_session_endpoint":"https://sanand.us.auth0.com/oidc/logout","global_token_revocation_endpoint":"https://sanand.us.auth0.com/oauth/global-token-revocation/connection/{connectionName}","global_token_revocation_endpoint_auth_methods_supported":["global-token-revocation+jwt"],"dpop_signing_alg_values_supported":["ES256"]}
+{
+  "issuer": "https://sanand.us.auth0.com/",
+  "authorization_endpoint": "https://sanand.us.auth0.com/authorize",
+  "token_endpoint": "https://sanand.us.auth0.com/oauth/token",
+  "device_authorization_endpoint": "https://sanand.us.auth0.com/oauth/device/code",
+  "userinfo_endpoint": "https://sanand.us.auth0.com/userinfo",
+  "mfa_challenge_endpoint": "https://sanand.us.auth0.com/mfa/challenge",
+  "jwks_uri": "https://sanand.us.auth0.com/.well-known/jwks.json",
+  "registration_endpoint": "https://sanand.us.auth0.com/oidc/register",
+  "revocation_endpoint": "https://sanand.us.auth0.com/oauth/revoke",
+  "scopes_supported": [
+    "openid",
+    "profile",
+    "offline_access",
+    "name",
+    "given_name",
+    "family_name",
+    "nickname",
+    "email",
+    "email_verified",
+    "picture",
+    "created_at",
+    "identities",
+    "phone",
+    "address"
+  ],
+  "response_types_supported": [
+    "code",
+    "token",
+    "id_token",
+    "code token",
+    "code id_token",
+    "token id_token",
+    "code token id_token"
+  ],
+  "code_challenge_methods_supported": ["S256", "plain"],
+  "response_modes_supported": ["query", "fragment", "form_post"],
+  "subject_types_supported": ["public"],
+  "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
+  "token_endpoint_auth_signing_alg_values_supported": ["RS256", "RS384", "PS256"],
+  "claims_supported": [
+    "aud",
+    "auth_time",
+    "created_at",
+    "email",
+    "email_verified",
+    "exp",
+    "family_name",
+    "given_name",
+    "iat",
+    "identities",
+    "iss",
+    "name",
+    "nickname",
+    "phone_number",
+    "picture",
+    "sub"
+  ],
+  "request_uri_parameter_supported": false,
+  "request_parameter_supported": false,
+  "backchannel_authentication_endpoint": "https://sanand.us.auth0.com/bc-authorize",
+  "backchannel_token_delivery_modes_supported": ["poll"],
+  "id_token_signing_alg_values_supported": ["HS256", "RS256", "PS256"],
+  "end_session_endpoint": "https://sanand.us.auth0.com/oidc/logout",
+  "global_token_revocation_endpoint": "https://sanand.us.auth0.com/oauth/global-token-revocation/connection/{connectionName}",
+  "global_token_revocation_endpoint_auth_methods_supported": ["global-token-revocation+jwt"],
+  "dpop_signing_alg_values_supported": ["ES256"]
+}
 ```
 
 ---

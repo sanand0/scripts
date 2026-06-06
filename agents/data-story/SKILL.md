@@ -46,9 +46,9 @@ Charts and maps should be **revelatory, not decorative** — placed *in the mome
 
 ## 4 - Interactions
 
-Use tooltips, popups, interactions, and animations as informative and engaging aids when appropriate.
+Use tooltips, popups, interactions, and animations as aids to help the user understand the story better.
 
-**Tooltips** are for:
+**Tooltips** are for immediate context.
 
 - Context about non-obvious terms or phrases (only if relevant and useful)
 - Additional context about references (where possible)
@@ -58,7 +58,7 @@ Use tooltips, popups, interactions, and animations as informative and engaging a
   - Debounce on hover. Only 1 tooltip at a time.
   - Do not show tooltips where the tooltips add no meaningful value or additional information beyond the text.
 
-**Popups** are for:
+**Popups** are for digging deeper into rabbit holes.
 
 - Citations. Search for and include references. Cite the key point from the reference and link to it.
 - Files. Link liberally to files as supporting evidence.
@@ -71,7 +71,7 @@ Use tooltips, popups, interactions, and animations as informative and engaging a
   - Standardize the format of these popups so users know what to expect. Reuse popups by archetype.
 - Guidelines: Trap keyboard focus inside. Contain scrolling. Show loading state when required. Use a consistent anatomy.
 
-**Interactions** may include:
+**Interactions** help see the data from a different perspective.
 
 - Filters & search.
 - Sliders that allow users to adjust assumptions, scenarios, etc. and see the impact in real time. Keep input & output close - without scrolling.
@@ -79,7 +79,7 @@ Use tooltips, popups, interactions, and animations as informative and engaging a
 - Brushing and linking. Select a region in one chart to highlight related data nearby.
 - Also: Trails, Cursor morphing, Magnetic snapping, Intertial scrolling/panning, Contextual axis transitions, etc.
 
-**Animated SVGs** are for:
+**Animated SVGs** explain complex dynamics.
 
 - Explaining processes, mechanisms, workflows, etc. The aim is to make users FEEL the process. One glance should give them an intuitive understanding of how it works, even before they read the accompanying text. Show how things are connected, what data flows from where to where, how elements, interact, etc.
 - Guidelines: Use GPU-friendly rendering (transform, opacity). Sequence multiple animations deliverately. Respect `prefers-reducted-motion`.
@@ -111,7 +111,7 @@ Surprising findings need staging. Slow down at the moment of revelation — give
 
 Embed implications *in the narrative flow* — don't save them for a bullet list at the end. Be specific: "This suggests reallocating onboarding resources to the first 72 hours" beats "investment in early customer experience may be warranted." End on a forward-looking note — what changes, what gets investigated, what gets tried.
 
-## 7 — Honest Caveats
+## 7 — Caveats
 
 Acknowledge limitations *without undermining the story*. The detective doesn't refuse to name a suspect because the case isn't perfect — they state their confidence level and move forward.
 

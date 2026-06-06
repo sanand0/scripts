@@ -18,7 +18,8 @@ Link for:
   ```
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code/memory): `~/.claude/CLAUDE.md`
   ```bash
-  printf "@$HOME/code/scripts/agents/AGENTS.md\n\n@AGENTS.md" > ~/.claude/CLAUDE.md
+  printf "Claude stalls when generating large text at one shot (e.g. HTML). Generate as chunks or layered edits of max 100KB, save, check, iterate.\n\n" > ~/.claude/CLAUDE.md
+  printf "@$HOME/code/scripts/agents/AGENTS.md\n\n@AGENTS.md\n" >> ~/.claude/CLAUDE.md
   ln -s ~/code/scripts/agents ~/.claude/skills
   ```
 - [GitHub Copilot](https://code.visualstudio.com/docs/copilot/copilot-customization#_custom-instructions): `~/.copilot/copilot-instructions.md`

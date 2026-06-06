@@ -178,10 +178,14 @@ if [[ -n "${DAILY_ACTIVITIES_TEST_JOBS:-}" ]]; then
 else
   run_job "activities" "$UV" run /home/sanand/code/scripts/activities.py || failures=$((failures + 1))
   run_unmetered_job "backupgoogle" "$UV" run /home/sanand/code/scripts/backupgoogle.py || failures=$((failures + 1))
+  run_unmetered_job "backupgoogle-personal" "$UV" run /home/sanand/code/scripts/backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com || failures=$((failures + 1))
   run_unmetered_job "backupmeet" "$UV" run /home/sanand/code/scripts/backupmeet.py --yes || failures=$((failures + 1))
   run_job "summary" "$UV" run /home/sanand/code/summary.py || failures=$((failures + 1))
   run_job "summarize-blog" "$UV" run /home/sanand/code/scripts/summarize.py blog || failures=$((failures + 1))
   run_job "summarize-transcript" "$UV" run /home/sanand/code/scripts/summarize.py transcript || failures=$((failures + 1))
+  run_unmetered_job "rclone-files" "$RCLONE" bisync "$HOME/r2/files" r2:files "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
+  run_unmetered_job "rclone-private" "$RCLONE" bisync "$HOME/r2/private" r2:private "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
+  run_unmetered_job "rclone-redirect" "$RCLONE" bisync "$HOME/r2/redirect" r2:redirect "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
   run_unmetered_job "hetznerbackup" "$RSYNC" -az --info=stats2,name1 \
     "$HOME/Documents/audio" \
     "$HOME/Documents/bcg" \
@@ -196,9 +200,6 @@ else
     "$HOME/Documents/talks" \
     "$HOME/Pictures" \
     hetzner:/home/ || failures=$((failures + 1))
-  run_unmetered_job "rclone-files" "$RCLONE" bisync "$HOME/r2/files" r2:files "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
-  run_unmetered_job "rclone-private" "$RCLONE" bisync "$HOME/r2/private" r2:private "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
-  run_unmetered_job "rclone-redirect" "$RCLONE" bisync "$HOME/r2/redirect" r2:redirect "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
 fi
 
 if [[ "$failures" -gt 0 ]]; then

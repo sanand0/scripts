@@ -146,6 +146,7 @@ die() {
 
 declare -a MENU_LABELS=(
     "Unicode → ASCII                (curly quotes, em-dash, …)"
+    "Shorthand to Emoji             (:smile: → 😄)"
     "Text to Slug                  (lowercase, ascii, hyphens)"
     "Markdown → Unicode             (bold/italic for LinkedIn)"
     "Markdown → Rich text           (paste into Docs, Notion)"
@@ -171,6 +172,7 @@ declare -a MENU_LABELS=(
 
 declare -A MENU_FNS=(
     ["Unicode → ASCII                (curly quotes, em-dash, …)"]="transform_unicode_to_ascii"
+    ["Shorthand to Emoji             (:smile: → 😄)"]="transform_shorthand_to_emoji"
     ["Text to Slug                  (lowercase, ascii, hyphens)"]="transform_text_to_slug"
     ["Markdown → Unicode             (bold/italic for LinkedIn)"]="transform_md_to_unicode"
     ["Markdown → Rich text           (paste into Docs, Notion)"]="transform_md_to_richtext"
@@ -230,6 +232,18 @@ PYEOF
 
 transform_unicode_to_ascii() {
     normalize_text_to_ascii
+}
+
+transform_shorthand_to_emoji() {
+    with_input_file uvx --quiet --with emoji python - <<'PYEOF'
+import sys
+from pathlib import Path
+
+import emoji
+
+text = Path(sys.argv[1]).read_text(encoding='utf-8')
+sys.stdout.write(emoji.emojize(text, language='alias'))
+PYEOF
 }
 
 transform_text_to_slug() {
@@ -320,8 +334,11 @@ transform_date_us() {
 transform_md_to_unicode() {
     # LinkedIn bold: map ASCII letters/digits to Mathematical Sans-Serif Bold block.
     # Italic: Mathematical Sans-Serif Italic block.
-    # This is a pure Python char-map; no external deps.
-    echo "$INPUT" | unidown -i -
+    echo "$INPUT" | unidown -i - | uv run --no-project python -c '
+import sys
+ranges = ((0x1D400, 0x1D5D4, 26), (0x1D41A, 0x1D5EE, 26), (0x1D7CE, 0x1D7EC, 10))
+print(sys.stdin.read().translate({src + i: dst + i for src, dst, size in ranges for i in range(size)}), end="")
+'
 }
 
 transform_strip_links() {

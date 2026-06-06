@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  git stage-repo [OPTIONS] CHILD_REPO
+
+Stage a committed snapshot of a child Git repository into the current parent repo.
+
+Default behavior:
+  - CHILD_REPO must be a Git repository.
+  - CHILD_REPO must be clean unless --allow-dirty is used.
+  - The staged prefix defaults to CHILD_REPO's path relative to the parent repo.
+  - Existing parent index entries under the prefix are replaced.
+  - Nothing is committed.
+
+Options:
+  --ref REF          Snapshot this child ref instead of HEAD.
+  --prefix PATH      Stage the child tree under this path in the parent repo.
+  --allow-dirty      Allow a dirty child working tree. Snapshot still uses REF/HEAD.
+  --force            Allow replacing a suspicious existing parent path.
+  --dry-run          Show what would be staged, but do not modify the parent index.
+  -h, --help         Show this help.
+
+Examples:
+  git stage-repo wikipedia-parquet
+  git stage-repo ../wikipedia-parquet --prefix wikipedia-parquet
+  git stage-repo wikipedia-parquet --ref main --dry-run
+EOF
+}
+
+die() {
+  printf 'git-stage-repo: error: %s\n' "$*" >&2
+  exit 1
+}
+
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+quote_pathspec() {
+  # Print a shell-quoted pathspec suitable for diagnostics only.
+  printf '%q' "$1"
+}
+
+ref='HEAD'
+prefix=''
+allow_dirty=0
+force=0
+dry_run=0
+child=''
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --ref)
+      [ "$#" -ge 2 ] || die "--ref requires an argument"
+      ref=$2
+      shift 2
+      ;;
+    --ref=*)
+      ref=${1#--ref=}
+      shift
+      ;;
+    --prefix)
+      [ "$#" -ge 2 ] || die "--prefix requires an argument"
+      prefix=$2
+      shift 2
+      ;;
+    --prefix=*)
+      prefix=${1#--prefix=}
+      shift
+      ;;
+    --allow-dirty)
+      allow_dirty=1
+      shift
+      ;;
+    --force)
+      force=1
+      shift
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      if [ -n "$child" ]; then
+        die "only one CHILD_REPO may be supplied"
+      fi
+      child=$1
+      shift
+      ;;
+  esac
+done
+
+if [ "$#" -gt 0 ]; then
+  if [ -n "$child" ]; then
+    die "only one CHILD_REPO may be supplied"
+  fi
+  child=$1
+  shift
+  [ "$#" -eq 0 ] || die "only one CHILD_REPO may be supplied"
+fi
+
+[ -n "$child" ] || { usage >&2; exit 2; }
+[ -n "$ref" ] || die "--ref cannot be empty"
+
+need_cmd git
+need_cmd mktemp
+need_cmd awk
+
+parent_top=$(git rev-parse --show-toplevel 2>/dev/null) || die "current directory is not inside a parent Git repository"
+parent_git_dir=$(git rev-parse --git-dir 2>/dev/null) || die "cannot determine parent .git directory"
+parent_git_dir=$(cd "$parent_git_dir" && pwd -P)
+parent_top=$(cd "$parent_top" && pwd -P)
+
+# Resolve child path. It may be relative to the user's current directory, not the repo root.
+if [ -d "$child" ]; then
+  child_abs=$(cd "$child" && pwd -P)
+else
+  die "child path does not exist or is not a directory: $child"
+fi
+
+child_top=$(git -C "$child_abs" rev-parse --show-toplevel 2>/dev/null) || die "child path is not inside a Git repository: $child"
+child_top=$(cd "$child_top" && pwd -P)
+
+if [ "$child_abs" != "$child_top" ]; then
+  die "CHILD_REPO must be the child repo root, not a subdirectory: $child"
+fi
+
+if [ "$child_top" = "$parent_top" ]; then
+  die "child repo is the same as the parent repo"
+fi
+
+child_git_dir=$(git -C "$child_top" rev-parse --git-dir 2>/dev/null) || die "cannot determine child .git directory"
+child_git_dir=$(cd "$child_top" && cd "$child_git_dir" && pwd -P)
+
+if [ "$child_git_dir" = "$parent_git_dir" ]; then
+  die "child repo appears to share the parent .git directory"
+fi
+
+# Default prefix is the child's path relative to the parent root, but only if nested under it.
+if [ -z "$prefix" ]; then
+  case "$child_top/" in
+    "$parent_top"/*)
+      prefix=${child_top#"$parent_top"/}
+      ;;
+    *)
+      die "--prefix is required when CHILD_REPO is outside the parent repo"
+      ;;
+  esac
+fi
+
+# Normalize prefix as a Git path: no leading ./, no leading slash, no trailing slash.
+prefix=${prefix#./}
+prefix=${prefix%/}
+[ -n "$prefix" ] || die "prefix cannot be empty"
+case "$prefix" in
+  /*) die "prefix must be relative, not absolute: $prefix" ;;
+  .|..|../*|*/../*|*/..) die "prefix must not contain .. components: $prefix" ;;
+  .git|.git/*|*/.git|*/.git/*) die "prefix must not contain .git components: $prefix" ;;
+esac
+
+# Refuse prefixes that are inside the real nested child .git directory path if child is nested.
+# This should be impossible with sane inputs, but catches dangerous mistakes.
+case "$prefix/" in
+  .git/*) die "prefix cannot be inside .git" ;;
+esac
+
+# Require parent index to be free of unrelated staged changes, because read-tree modifies the index.
+# This can be relaxed later, but conservative behavior is safer for a minimal tool.
+if ! git -C "$parent_top" diff --cached --quiet; then
+  die "parent repo already has staged changes; commit or unstage them first"
+fi
+
+if [ "$allow_dirty" -eq 0 ]; then
+  dirty=$(git -C "$child_top" status --porcelain=v1 --untracked-files=normal)
+  if [ -n "$dirty" ]; then
+    printf '%s\n' "$dirty" >&2
+    die "child repo has uncommitted changes; commit/stash them or pass --allow-dirty"
+  fi
+fi
+
+# Resolve the child commit and tree.
+child_commit=$(git -C "$child_top" rev-parse --verify "$ref^{commit}" 2>/dev/null) || die "child ref is not a commit: $ref"
+child_short=$(git -C "$child_top" rev-parse --short=12 "$child_commit")
+child_tree=$(git -C "$child_top" rev-parse --verify "$child_commit^{tree}" 2>/dev/null) || die "cannot resolve tree for child ref: $ref"
+
+# Reject nested submodules/gitlinks inside the child by default. They would reintroduce the complexity
+# this command is intended to avoid.
+if git -C "$child_top" ls-tree -r "$child_commit" | awk '$2 == "commit" { found=1 } END { exit found ? 0 : 1 }'; then
+  die "child tree contains gitlinks/submodules; not supported by default"
+fi
+
+# Is the staging prefix the actual nested child working tree?
+nested_at_prefix=0
+if [ -e "$parent_top/$prefix" ]; then
+  prefix_abs=$(cd "$(dirname "$parent_top/$prefix")" && pwd -P)/$(basename "$prefix")
+  if [ "$prefix_abs" = "$child_top" ]; then
+    nested_at_prefix=1
+  fi
+fi
+
+# If the prefix exists in the parent working tree but is not the same path as the child repo,
+# require --force before replacing index entries there unless it is already parent-tracked.
+if [ "$force" -eq 0 ] && [ -e "$parent_top/$prefix" ] && [ "$nested_at_prefix" -eq 0 ]; then
+  # Allow it if already tracked in the parent. This is normal for repeated snapshots.
+  if ! git -C "$parent_top" ls-files --error-unmatch -- "$prefix" >/dev/null 2>&1 && \
+     [ -z "$(git -C "$parent_top" ls-files -- "$prefix/")" ]; then
+    die "prefix exists but is not tracked by parent; pass --force to replace index entries: $prefix"
+  fi
+fi
+
+checkout_prefix_from_index() {
+  # Rebuild the parent working tree prefix from the index. This is only needed when
+  # the child repo is outside the parent and the prefix is a separate snapshot path.
+  local path
+  rm -rf -- "$parent_top/$prefix"
+  mkdir -p -- "$(dirname "$parent_top/$prefix")"
+  git -C "$parent_top" ls-files -z -- "$prefix" "$prefix/" |
+    while IFS= read -r -d '' path; do
+      git -C "$parent_top" checkout-index -f -u -- "$path"
+    done
+}
+
+if [ "$dry_run" -eq 1 ]; then
+  tmp_index=$(mktemp)
+  trap 'rm -f "$tmp_index"' EXIT
+  cp "$parent_git_dir/index" "$tmp_index" 2>/dev/null || :
+
+  (
+    export GIT_INDEX_FILE=$tmp_index
+    git -C "$parent_top" fetch --quiet "$child_top" "$child_commit"
+    git -C "$parent_top" rm -r --cached --ignore-unmatch -- "$prefix" >/dev/null
+    git -C "$parent_top" read-tree --prefix="$prefix/" "$child_tree"
+    printf 'Would stage %s at %s from %s\n' "$prefix" "$child_short" "$child_top"
+    git -C "$parent_top" diff --cached --stat -- "$prefix"
+  )
+  exit 0
+fi
+
+# Import child objects locally into the parent object database, then replace index entries under prefix.
+git -C "$parent_top" fetch --quiet "$child_top" "$child_commit"
+git -C "$parent_top" rm -r --cached --ignore-unmatch -- "$prefix" >/dev/null
+git -C "$parent_top" read-tree --prefix="$prefix/" "$child_tree"
+
+if [ "$nested_at_prefix" -eq 0 ]; then
+  checkout_prefix_from_index
+fi
+
+printf 'Staged %s at %s from %s\n' "$prefix" "$child_short" "$child_top"
+git -C "$parent_top" diff --cached --stat -- "$prefix" || true
+printf '\nNext:\n  git diff --cached -- %s\n  git commit -m %s\n' "$(quote_pathspec "$prefix")" "$(quote_pathspec "Snapshot $prefix at $child_short")"

@@ -1,5 +1,15 @@
 # services
 
+## Back up personal GMail, 31 May 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+`daily-activities` runs backupgoogle.py. This backs up my email from s.anand@gramener.com.
+Add another activity to run it with `--config-dir` as `/home/sanand/.config/gws-root.node@gmail.com` so that it'll back up my personal email as well.
+
 ## Handle errors, 21 May 2026
 
 <!--

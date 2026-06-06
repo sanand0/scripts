@@ -1,12 +1,48 @@
 # activities
 
+## Include coding agent prompts, 02 Jun 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-5.5
+-->
+
+Update `activities.py` to include my prompts to coding agents, truncated reasonably in the middle into one line (max: 300 characters). Type can be codex/claude-code/copilot. See `agentlog.py` if that helps. Do the minimal code change to just extract the user problems and include them.
+Patch in the coding agent prompts into all past activity logs. (See if you can implement this via the generalized patching mechanism, e.g. implemented for WhatsApp activities / personal email activities).
+Run and test for a small batch of days and if it works, patch for all days this year.
+
+<!-- codex resume 019e860f-1398-7872-bedd-d06bf507b470 -->
+
+## Include personal email, 01 Jun 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-5.5
+-->
+
+Modify `activities.py` to include using `gws` CLI for emails (not calendar events) from my personal email by using the environment variable `GOOGLE_WORKSPACE_CLI_CONFIG_DIR=~/.config/gws-root.node@gmail.com`.
+Patch in the personal email activities into all past activity logs. (See if you can implement this via the generalized patching mechanism, e.g. implemented for WhatsApp activities)
+Run and test for a small batch of days and if it works, patch for all days this year.
+
+<!-- codex resume 019e8086-a5eb-7791-8906-6bb974b69e40 -->
+
+## Update mtimes, 31 May 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-5.5
+-->
+
+Modify `activities.py` to set the mtime of the generated file to the midnight of the date of the activities, in the current time zone.
+Update the mtimes of all files in `~/Documents/activities/` to the midnight of their respective dates in the current time zone.
+
+<!-- codex resume 019e7d62-1f9e-7473-9e9e-8cc607d10762 -->
+
 ## Include WhatsApp calls, 24 May 2026
 
 <!--
-
 cd ~/code/scripts/
 codex --model gpt-5.5
-
 -->
 
 Modify `activities.py` to also include WhatsApp calls based on ~/Documents/data/whatsapp/.

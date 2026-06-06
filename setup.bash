@@ -156,7 +156,8 @@ if [[ -z $SUBLIMEREPL_AC_IP ]]; then
 fi
 
 # Load all environment variables
-source "/c/Dropbox/scripts/.env"
+# source "/c/Dropbox/scripts/.env"
+eval "$(sops --decrypt /c/Dropbox/scripts/.env)"
 
 ## Aliases
 # ---------------------------------------------------------------------

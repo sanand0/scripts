@@ -216,3 +216,9 @@
     diff-so-fancy = true
     # Avoid side-by-side diffs: reduces readable width too much
     side-by-side = false
+[credential "https://github.com"]
+	helper = 
+	helper = !/home/sanand/.local/share/mise/installs/github-cli/2.83.1/gh_2.83.1_linux_amd64/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/home/sanand/.local/share/mise/installs/github-cli/2.83.1/gh_2.83.1_linux_amd64/bin/gh auth git-credential

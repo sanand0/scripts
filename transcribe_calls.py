@@ -18,20 +18,20 @@ import shlex
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from dotenv import dotenv_values, load_dotenv
-from google import genai
 import typer
-import yaml
 
 DEFAULT_INPUT_DIR = Path("/home/sanand/Documents/calls")
 DEFAULT_OUTPUT_DIR = Path("/home/sanand/Dropbox/notes/transcripts")
 DEFAULT_PROMPT_FILE = Path("/home/sanand/code/blog/pages/prompts/transcribe-call-recording.md")
+DEFAULT_SYSTEM_PROMPT = "Transcribe"
 DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 30.0
+DEFAULT_GLOB_PATTERN = "*"
+DEFAULT_PENDING_GLOB_PATTERN = "*.opus"
 CHUNK_OVERLAP_SECONDS = 1.0
 FRIENDLY_CHUNK_MINUTES = (30.0, 25.0, 20.0, 15.0)
 CHUNK_CONTEXT_MAX_LINES = 40
@@ -55,6 +55,8 @@ app = typer.Typer(add_completion=False, no_args_is_help=False, help=__doc__)
 
 def load_environment(current_dir: Path | None = None, script_dir: Path | None = None) -> None:
     """Load current .env first, then script-directory .env for a missing Gemini key."""
+    from dotenv import dotenv_values, load_dotenv
+
     current_dir = current_dir or Path.cwd()
     script_dir = script_dir or Path(__file__).resolve().parent
     load_dotenv(dotenv_path=current_dir / ".env")
@@ -62,9 +64,6 @@ def load_environment(current_dir: Path | None = None, script_dir: Path | None = 
         api_key = dotenv_values(script_dir / ".env").get("GEMINI_API_KEY")
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
-
-
-load_environment()
 
 
 @dataclass(frozen=True)
@@ -135,6 +134,8 @@ def strip_prompt_metadata(frontmatter_body: str) -> str:
 
 def extract_prompt_metadata(markdown: str) -> str | None:
     """Return the stored prompt metadata from the note frontmatter, if present."""
+    import yaml
+
     match = FRONTMATTER_RE.match(markdown)
     if not match:
         return None
@@ -168,6 +169,19 @@ def extract_system_prompt(markdown: str) -> str:
     if not prompt:
         raise ValueError("System prompt is empty.")
     return prompt
+
+
+def load_system_prompt(prompt_file: Path) -> str:
+    """Return the configured system prompt, falling back for the historical default path."""
+    if prompt_file.is_file():
+        return extract_system_prompt(prompt_file.read_text(encoding="utf-8"))
+    if prompt_file == DEFAULT_PROMPT_FILE:
+        typer.echo(
+            f"WARNING default prompt file missing: {prompt_file}; using built-in system prompt {DEFAULT_SYSTEM_PROMPT!r}.",
+            err=True,
+        )
+        return DEFAULT_SYSTEM_PROMPT
+    raise typer.BadParameter(f"Prompt file does not exist: {prompt_file}")
 
 
 def has_transcript_content(markdown: str) -> bool:
@@ -263,9 +277,9 @@ def looks_like_transcript(transcript: str, min_matching_lines: int = 5) -> bool:
     return count_matching_transcript_lines(transcript) >= min_matching_lines
 
 
-def iter_audio_files(input_dir: Path, pattern: str) -> Iterable[Path]:
-    """Yield supported audio files matching the glob pattern in name order."""
-    for path in sorted(input_dir.glob(pattern)):
+def iter_audio_files(input_dir: Path, pattern: str, *, newest_first: bool = False) -> Iterable[Path]:
+    """Yield supported audio files matching the glob pattern in filename order."""
+    for path in sorted(input_dir.glob(pattern), key=lambda path: path.name, reverse=newest_first):
         if path.is_file() and path.suffix.lower() in AUDIO_SUFFIXES:
             yield path
 
@@ -296,6 +310,12 @@ def read_existing_note(note_path: Path) -> tuple[bool, str, int]:
     if transcript_sections > 1:
         raise RuntimeError(f"{note_path.name}: document has multiple ## Transcript sections")
     return True, markdown, transcript_sections
+
+
+def has_prompted_pending_note(audio_path: Path, output_dir: Path) -> bool:
+    """Return True when the matching note has prompt metadata but no transcript."""
+    had_output, markdown, _ = read_existing_note(output_dir / f"{audio_path.stem}.md")
+    return had_output and extract_prompt_metadata(markdown) is not None and not has_transcript_content(markdown)
 
 
 def normalize_model_id(model_id: str) -> str:
@@ -408,11 +428,21 @@ def combine_usage_costs(costs: list[UsageCost]) -> UsageCost:
     )
 
 
-def build_client() -> genai.Client:
+@lru_cache(maxsize=1)
+def load_genai() -> Any:
+    """Import Gemini only on paths that need the API client."""
+    from google import genai
+
+    return genai
+
+
+def build_client() -> Any:
     """Create a Gemini client from GEMINI_API_KEY loaded via dotenv."""
+    load_environment()
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set.")
+    genai = load_genai()
     return genai.Client(api_key=api_key)
 
 
@@ -694,10 +724,11 @@ def transcribe_single_audio(
     system_prompt: str,
     user_prompt: str | None,
     model: str,
-    client: genai.Client,
+    client: Any,
     pricing: dict[str, dict[str, object]],
 ) -> TranscriptionResult:
     """Upload one audio file to Gemini and return the transcription text."""
+    genai = load_genai()
     try:
         uploaded_file = client.files.upload(file=audio_path)
         contents: list[object] = [uploaded_file]
@@ -722,7 +753,7 @@ def transcribe_audio(
     system_prompt: str,
     user_prompt: str | None,
     model: str,
-    client: genai.Client,
+    client: Any,
     pricing: dict[str, dict[str, object]],
     chunk_minutes: float,
     patch_section: int | None = None,
@@ -846,7 +877,7 @@ def main(
         help="Chunk size in minutes for splitting long audio before transcription.",
     ),
     glob_pattern: str = typer.Option(
-        "*",
+        DEFAULT_GLOB_PATTERN,
         "--glob",
         help="Glob pattern, relative to the input folder, for filtering audio files.",
     ),
@@ -861,8 +892,6 @@ def main(
         raise typer.BadParameter(f"Input folder does not exist: {input_dir}")
     if prompt_file.suffix.lower() != ".md":
         raise typer.BadParameter(f"Prompt file must be Markdown: {prompt_file}")
-    if not prompt_file.is_file():
-        raise typer.BadParameter(f"Prompt file does not exist: {prompt_file}")
     if output_dir.exists() and not output_dir.is_dir():
         raise typer.BadParameter(f"Output path is not a directory: {output_dir}")
     if patch_invalid_sections and patch_section is not None:
@@ -870,11 +899,38 @@ def main(
     if (patch_section is not None or patch_invalid_sections) and dry_run:
         raise typer.BadParameter("Patch options cannot be used with --dry-run.")
 
-    system_prompt = extract_system_prompt(prompt_file.read_text(encoding="utf-8"))
+    default_pending_mode = (
+        input_dir == DEFAULT_INPUT_DIR
+        and output_dir == DEFAULT_OUTPUT_DIR
+        and prompt_file == DEFAULT_PROMPT_FILE
+        and glob_pattern == DEFAULT_GLOB_PATTERN
+        and user_prompt is None
+        and patch_section is None
+        and not patch_invalid_sections
+    )
+    effective_glob_pattern = DEFAULT_PENDING_GLOB_PATTERN if default_pending_mode else glob_pattern
+    newest_first = default_pending_mode
+    system_prompt_cache: str | None = None
+
+    def get_system_prompt() -> str:
+        nonlocal system_prompt_cache
+        if system_prompt_cache is None:
+            system_prompt_cache = load_system_prompt(prompt_file)
+        return system_prompt_cache
+
     cleaned_user_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
-    audio_files = list(iter_audio_files(input_dir, pattern=glob_pattern))
+    audio_files = list(iter_audio_files(input_dir, pattern=effective_glob_pattern, newest_first=newest_first))
+    if default_pending_mode:
+        audio_files = [
+            audio_path for audio_path in audio_files if has_prompted_pending_note(audio_path, output_dir)
+        ]
     if not audio_files:
-        typer.echo(f"No audio files found in {input_dir} matching {glob_pattern!r}")
+        if default_pending_mode:
+            typer.echo(
+                f"No prompted pending .opus files found in {input_dir} with matching notes in {output_dir}"
+            )
+            raise typer.Exit(0)
+        typer.echo(f"No audio files found in {input_dir} matching {effective_glob_pattern!r}")
         raise typer.Exit(0)
     if (patch_section is not None or patch_invalid_sections) and len(audio_files) != 1:
         raise typer.BadParameter("Patch options require exactly one matching audio file.")
@@ -892,7 +948,7 @@ def main(
     skipped = 0
     failures: list[str] = []
     total = len(audio_files)
-    client: genai.Client | None = None
+    client: Any | None = None
     pricing: dict[str, dict[str, object]] | None = None
     total_cost_usd = 0.0
     patch_mode = patch_section is not None or patch_invalid_sections
@@ -920,7 +976,13 @@ def main(
 
         target_sections: list[int] = []
         stored_prompt = extract_prompt_metadata(existing_markdown) if had_output else None
-        desired_prompt = build_note_prompt(system_prompt, cleaned_user_prompt)
+        if default_pending_mode:
+            if not had_output or not stored_prompt or has_transcript_content(existing_markdown):
+                skipped += 1
+                continue
+            desired_prompt = stored_prompt
+        else:
+            desired_prompt = build_note_prompt(get_system_prompt(), cleaned_user_prompt)
         if not patch_mode and has_transcript_content(existing_markdown):
             if cleaned_user_prompt is None or stored_prompt == desired_prompt:
                 skipped += 1
@@ -953,10 +1015,6 @@ def main(
                 skipped += 1
                 typer.echo(f"No invalid transcript sections found in {output_path.name}")
                 continue
-        note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
-        transcription_system_prompt, effective_user_prompt = resolve_transcription_prompts(
-            system_prompt, stored_prompt, cleaned_user_prompt
-        )
         action = (
             f"patch section {patch_section}"
             if patch_section is not None
@@ -979,6 +1037,11 @@ def main(
                 f"[{index}/{total}] dry-run {action} {audio_path.name} -> {output_path.name}{note}{stats}"
             )
             continue
+
+        note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
+        transcription_system_prompt, effective_user_prompt = resolve_transcription_prompts(
+            get_system_prompt(), stored_prompt, cleaned_user_prompt
+        )
 
         if client is None:
             try:

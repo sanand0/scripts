@@ -1,6 +1,7 @@
 __pycache__/
 .vscode/
 .venv/
+.cache/
 .tmp.*
 .env
 node_modules/

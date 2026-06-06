@@ -118,6 +118,7 @@ eval "$($HOME/.local/bin/mise env -s bash)"
 # Install mise tools. Update: mise upgrade. Remove: mise unuse -g TOOL_NAME. List tools: mise list. Registry: https://mise.jdx.dev/registry.html
 mise use -g 'github:direnv/direnv[bin=direnv]'  # direnv - Auto-loads env vars & mise environments when cd-ing into a project directory
 mise use -g 'github:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep that searches PDFs, Office docs, EPUBs, zip files
+mise use -g age                       # age - Modern, simple encryption for files & backups (tar | age)
 mise use -g ast-grep                  # ast-grep - AST-based code search and rewriting tool
 mise use -g aws-cli                   # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
 mise use -g bat                       # bat - cat clone with syntax highlighting 🟡 exploring moor since keyboard-based wrapping is missing
@@ -175,6 +176,7 @@ mise use -g ripgrep                   # ripgrep - Fast grep alternative
 mise use -g sd                        # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
 mise use -g shfmt                     # shfmt - Shell script formatter
 mise use -g starship                  # starship - Fast, customizable shell prompt
+mise use -g sops                      # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
 mise use -g ubi:jtroo/kanata          # kanata - Keyboard remapper (doesn't work with github: prefix due to multiple binaries)
 mise use -g websocat                  # websocat - WebSocket client (will be v4.0 when released)
 mise use -g xh                        # xh - Friendly HTTP client (curl/httpie alternative)
@@ -192,8 +194,6 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g github:chmln/sd                  # sd - Modern sed with simple, regex-based search/replace; safer & more intuitive for one-liners
 # mise use -g github:cloudflare/workers-sdk    # wrangler - Cloudflare Workers & Pages CLI for building & deploying serverless apps
 # mise use -g github:dalance/procs             # procs - Modern ps alternative with rich, searchable process info
-# mise use -g github:FiloSottile/age           # age - Modern, simple encryption for files & backups (tar | age)
-# mise use -g github:getsops/sops              # sops - Encrypt/decrypt YAML/JSON/TOML env configs using age; perfect for Git
 # mise use -g github:gitleaks/gitleaks         # gitleaks - Scan repos for accidentally committed API keys/tokens
 # mise use -g github:hadolint/hadolint         # hadolint - Dockerfile linter; catches layering & security mistakes
 # mise use -g github:hatoo/oha                 # oha - Fast HTTP load tester; quick benchmarks for “FastAPI vs Node” style experiments
@@ -216,6 +216,7 @@ npm install -g codex@latest                   # codex - AI code assistant CLI
 npm install -g remark-cli remark-inline-links # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
 npm install -g trash-cli@latest               # trash - Move files to trash instead of deleting
 npm install -g agent-browser@latest           # agent-browser - Allow AI coding agents to use the browser
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent  # pi - customizable AI coding agent
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
@@ -302,8 +303,6 @@ flatpak install -y flathub org.onlyoffice.desktopeditors        # ONLYOFFICE - O
 flatpak install -y org.gnome.NetworkDisplays                    # Cast screen to Miracast devices. Run `flatpak run org.gnome.NetworkDisplays`
 flatpak install -y flathub org.localsend.localsend_app          # LocalSend - P2P file sharing over LAN
 flatpak install -y flathub com.bitwarden.desktop                # Bitwarden - Password manager
-flatpak install -y com.github.taiko2k.tauonmb                   # Tauon Music Box - Music player with advanced library management
-sudo flatpak override com.github.taiko2k.tauonmb --filesystem=/home/sanand/Music --filesystem=/home/sanand/code/quizzes   # Allow Tauon Music Box to access music files
 
 # Install espanso - Text expander. Alt + Space to trigger.
 if test "$XDG_SESSION_TYPE" = "wayland"
@@ -322,7 +321,11 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
 # Install Zed
-curl -f https://zed.dev/install.sh | sh
+# curl -f https://zed.dev/install.sh | sh
+
+# Install Antigravity CLI
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+# Then, I manually deleted the ~/.local/bin additions to $PATH in ~/.profile and ~/.config/fish/setup.fish
 
 # NVIDIA Container Toolkit - GPU support in Docker
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-key™️ring.gpg
@@ -483,7 +486,7 @@ llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin ll
 llm models default gpt-5-mini
 ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 
-# Copy Touchegg gestures config. You may need to run Touche before AND after the command.
+# Copy Touchegg gestures config. You may need to run Touche before AND after the command. Changing this might require re-login or re-boot. #TODO Figure out how to reload.
 ln -s ~/code/scripts/touchegg.conf ~/.config/touchegg/touchegg.conf
 
 # Set up rclone
@@ -620,6 +623,7 @@ mise use -g usql  # Prefer DuckDB
 
 Other deprecations:
 
+- Tauon Music Box: `flatpak install -y com.github.taiko2k.tauonmb; sudo flatpak override com.github.taiko2k.tauonmb --filesystem=/home/sanand/Music --filesystem=/home/sanand/code/quizzes`. It stops songs mid-way and doesn't play automatically when launched (glitchy). Switched back to VLC.
 - [Atuin](https://docs.atuin.sh/guide/installation/): `curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh`. It interferes with VS Code's terminal sticky scroll, and not _that_ useful.
 - Guake. `sudo apt install guake`. VS Code terminal was good enough and I wasn't using it.
 - Peek instead of ScreenToGIF: `sudo apt install peek`. It lags and partially hangs every time. Gnome's screen recorder works fine to create videos.

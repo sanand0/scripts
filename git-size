@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""Show the logical size of changes that `git add <repo-root>` would stage.
+
+For each path whose state relative to HEAD would change after staging the whole
+repository, prints:
+  status    A/M/D from HEAD to working tree
+  lines     lines added minus lines deleted (text diffs only; binary is '-')
+  bytes     current working-tree payload size in bytes, or 0 for deletes
+  path      repo-relative path
+
+Install as `git-size` somewhere on PATH, then run either `git-size` or `git size`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+
+@dataclass
+class Row:
+    status: str
+    lines: Optional[int]
+    bytes: int
+    path: str
+
+
+def git(args: list[str], *, cwd: str | None = None, check: bool = True) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )
+
+
+def git_text(args: list[str], *, cwd: str | None = None, check: bool = True) -> str:
+    return git(args, cwd=cwd, check=check).stdout.decode("utf-8", "surrogateescape").strip()
+
+
+def nul_list(data: bytes) -> list[str]:
+    if not data:
+        return []
+    return [p.decode("utf-8", "surrogateescape") for p in data.rstrip(b"\0").split(b"\0")]
+
+
+def count_lines_in_bytes(data: bytes) -> int:
+    if not data:
+        return 0
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
+
+
+def line_count(path: Path) -> Optional[int]:
+    """Return a text-ish line count, or None for likely binary/unreadable files."""
+    try:
+        if path.is_symlink():
+            data = os.readlink(path).encode()
+            return None if b"\0" in data else count_lines_in_bytes(data)
+        with path.open("rb") as f:
+            sample = f.read(8192)
+            if b"\0" in sample:
+                return None
+            data = sample + f.read()
+    except OSError:
+        return None
+    return count_lines_in_bytes(data)
+
+
+def payload_size(path: Path) -> int:
+    """Approximate bytes Git would store for this worktree path before compression/filters."""
+    try:
+        if path.is_symlink():
+            return len(os.readlink(path).encode())
+        if path.is_file():
+            return path.stat().st_size
+        # Submodules/gitlinks and embedded repositories are represented by a commit id,
+        # not by the directory contents in the parent repository.
+        if path.is_dir():
+            return 0
+    except OSError:
+        pass
+    return 0
+
+
+def parse_numstat(data: bytes) -> dict[str, Optional[int]]:
+    """Parse `git diff --numstat -z` into {path: added-deleted or None for binary}."""
+    result: dict[str, Optional[int]] = {}
+    for rec in data.split(b"\0"):
+        if not rec:
+            continue
+        parts = rec.split(b"\t", 2)
+        if len(parts) != 3:
+            continue
+        add_b, del_b, path_b = parts
+        path = path_b.decode("utf-8", "surrogateescape")
+        if add_b == b"-" or del_b == b"-":
+            result[path] = None
+        else:
+            try:
+                result[path] = int(add_b) - int(del_b)
+            except ValueError:
+                result[path] = None
+    return result
+
+
+def has_head(root: str) -> bool:
+    return git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=root, check=False).returncode == 0
+
+
+def head_paths(root: str) -> set[str]:
+    return set(nul_list(git(["ls-tree", "-r", "-z", "--name-only", "HEAD"], cwd=root).stdout))
+
+
+def changed_paths_vs_head(root: str) -> set[str]:
+    # --no-renames makes a move look like delete+add, matching what gets staged.
+    data = git(["diff", "--no-renames", "--name-only", "-z", "HEAD", "--"], cwd=root).stdout
+    return set(nul_list(data))
+
+
+def untracked_paths(root: str) -> set[str]:
+    data = git(["ls-files", "--others", "--exclude-standard", "-z"], cwd=root).stdout
+    return set(nul_list(data))
+
+
+def initial_paths(root: str) -> set[str]:
+    data = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root).stdout
+    return set(nul_list(data))
+
+
+def status_for(path: str, root: str, paths_in_head: set[str]) -> str:
+    exists_in_head = path in paths_in_head
+    exists_in_worktree = (Path(root) / path).exists() or (Path(root) / path).is_symlink()
+    if exists_in_head and not exists_in_worktree:
+        return "D"
+    if not exists_in_head and exists_in_worktree:
+        return "A"
+    return "M"
+
+
+def collect(root: str) -> list[Row]:
+    root_path = Path(root)
+    rows: list[Row] = []
+
+    if not has_head(root):
+        for path in sorted(initial_paths(root)):
+            full = root_path / path
+            if not full.exists() and not full.is_symlink():
+                continue
+            rows.append(Row("A", line_count(full), payload_size(full), path))
+        return rows
+
+    in_head = head_paths(root)
+    numstat = parse_numstat(git(["diff", "--no-renames", "--numstat", "-z", "HEAD", "--"], cwd=root).stdout)
+
+    paths = changed_paths_vs_head(root) | untracked_paths(root)
+    for path in sorted(paths):
+        full = root_path / path
+        status = "A" if path not in in_head else status_for(path, root, in_head)
+        if status == "D":
+            size = 0
+            net = numstat.get(path)
+        elif path in numstat:
+            size = payload_size(full)
+            net = numstat[path]
+        else:
+            # Untracked files are absent from git diff output.
+            size = payload_size(full)
+            net = line_count(full)
+        rows.append(Row(status, net, size, path))
+    return rows
+
+
+def print_table(rows: list[Row]) -> None:
+    total_net = sum(r.lines for r in rows if r.lines is not None)
+    total_bytes = sum(r.bytes for r in rows)
+    binary_count = sum(1 for r in rows if r.lines is None)
+
+    print("STAT     LINES      BYTES PATH")
+    for r in rows:
+        net = f"{'-':>12s}" if r.lines is None else f"{r.lines:>+12,d}"
+        print(f"{r.status} {net} {r.bytes:>10,d} {r.path}")
+    suffix = f"; {binary_count} binary/unknown net-lines omitted" if binary_count else ""
+    print(f"SUM {total_net:>+10,d} {total_bytes:>10,d} {len(rows)} file(s){suffix}")
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Show net line and byte size of changes that `git add <repo-root>` would stage."
+    )
+    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    args = parser.parse_args(argv)
+
+    try:
+        root = git_text(["rev-parse", "--show-toplevel"])
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(e.stderr.decode("utf-8", "replace") or "not a git repository\n")
+        return 2
+
+    rows = collect(root)
+    if args.json:
+        payload = {
+            "repo_root": root,
+            "files": [
+                {"status": r.status, "lines": r.lines, "bytes": r.bytes, "path": r.path}
+                for r in rows
+            ],
+            "total": {
+                "lines": sum(r.lines for r in rows if r.lines is not None),
+                "bytes": sum(r.bytes for r in rows),
+                "files": len(rows),
+                "binary_or_unknown_files": sum(1 for r in rows if r.lines is None),
+            },
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print_table(rows)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

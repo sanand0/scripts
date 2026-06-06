@@ -1,7 +1,8 @@
 # Create a development container with commonly used tools
 # Build can take ~15 min
 
-FROM mcr.microsoft.com/devcontainers/base:ubuntu
+# 01 Jun 2026: Review after 01 July 2026 (monthly) to see if Playwright is released for ubuntu-26.04 and re-pin.
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -30,6 +31,9 @@ RUN apt-get update \
     bubblewrap \
     xxd \
   && rm -rf /var/lib/apt/lists/*
+
+# dev.sh passes GID 992 (render/GPU device - ollama?). Avoid warning about missing group name.
+RUN getent group 992 >/dev/null || groupadd --gid 992 render
 
 # Make /home/sanand point to /home/vscode (symlink; hard links for dirs aren’t supported)
 RUN ln -s /home/vscode /home/sanand
@@ -68,6 +72,7 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   mise use -g \
   ast-grep \
   bat \
+  cloudflared \
   deno \
   duckdb \
   fd \
@@ -123,14 +128,15 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "29 May 2026: Updating agents and fast-moving agent tools"; \
+  echo "05 Jun 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \
-  npm install -g @google/gemini-cli; \
+  npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest; \
   mise reshim node \
   '
-# No need to install claude since ~/.local/share/claude is shared
+# No need to install claude since ~/.local/share/claude is shared. Run `claude update` periodically
+# agy (antigravity-cli) is also from host. But you need to run `agy` once inside container to log in. #TODO Not sure where credentials are saved.
 
 # Default back to root for image setup; we'll run as UID 1000 at runtime
 USER root

@@ -28,6 +28,10 @@ source $HOME/apps/global/.venv/bin/activate.fish
 # unset for fish
 abbr unset 'set --erase'
 
+# Secrets configuration with sops and age
+export SOPS_EDITOR='code --wait'
+export SOPS_CONFIG="$HOME/Dropbox/scripts/.sops.yaml"
+
 # uv configuration to allow Codex, etc. to use uv
 export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
 export UV_CACHE_DIR="$HOME/.cache/uv"
@@ -53,7 +57,7 @@ export GREP_OPTIONS='--color=auto'
 # Set up fzf
 export FZF_DEFAULT_COMMAND='fd --type f --follow --exclude node_modules --strip-cwd-prefix'
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-export FZF_DEFAULT_OPTS='--layout=reverse --preview "moor --style=numbers --color=always --line-range :500 {}"'
+export FZF_DEFAULT_OPTS='--layout=reverse'
 
 # Basic commands and aliases
 # -----------------------------------------------
@@ -219,7 +223,7 @@ abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
 function secret --description "Extract secret from .env"
-    awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' $HOME/Dropbox/scripts/.env | string trim -c '"'
+    sops --decrypt "$HOME/Dropbox/scripts/.env" | awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' | string trim -c '"'
     # Slower version using python-dotenv
     # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
 end
@@ -733,7 +737,7 @@ end
 
 # Start CloudFlare Tunnel at mcp.s-anand.net.
 # https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/tunnels
-abbr --add cloudflaremcp 'cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_MCP_TOKEN)'
+abbr --add cloudflaremcp 'cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN)'
 
 # Run MCP server at mcp.s-anand.net
 function mcpserver --description "mcpserver $DIR1 $DIR2 ... runs Docker MCP with bash tool + read-only access to directories"

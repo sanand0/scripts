@@ -15,6 +15,7 @@
 #
 # Pass docker-run flags BEFORE `--`, and command args AFTER `--`:
 #   dev.sh -v ~/dir:/home/vscode/dir:ro -- codex
+#   dev.sh -p ~/dir,~/data:ro,/tmp -- codex
 #   dev.sh -e OPENAI_API_KEY=... -- codex --help
 #
 # Run tools/scripts in your current repo path (mounted as the same $PWD):
@@ -26,9 +27,6 @@ set -euo pipefail
 IMAGE_TAG="dev:latest"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="${SCRIPT_DIR}/dev.dockerfile"
-# Optional host-only secret source. The script must still run cleanly when this
-# file does not exist, because not every machine has the Dropbox layout.
-ENV_FILE="${HOME}/Dropbox/scripts/.env"
 
 # GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build rebuilds and exits. Extra args are passed to `docker build`.
 # GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build --no-cache re-builds without cache.
@@ -46,19 +44,43 @@ fi
 # Create history file if missing
 touch $HOME/.cache/dev-sh.bash-history
 
+expand_path_mount() {
+  local entry="$1"
+  local path="${entry%%:*}"
+  local mode="${entry#"$path"}"
+  path="${path/#\~/$HOME}"
+  [[ "$path" != "/" ]] && path="${path%/}"
+  printf '%s:%s%s\n' "$path" "$path" "$mode"
+}
+
 # Split CLI args: before `--` -> docker run args, after `--` -> container command args
 docker_run_args=()
 container_cmd_args=()
 target=docker
+path_mounts=()
 
-for arg in "$@"; do
+while [[ $# -gt 0 ]]; do
+  arg="$1"
+  shift
   if [[ "$target" == docker && "$arg" == "--" ]]; then
     target=cmd
     continue
   fi
 
   if [[ "$target" == docker ]]; then
-    docker_run_args+=("$arg")
+    if [[ "$arg" == "-p" ]]; then
+      if [[ $# -eq 0 ]]; then
+        printf 'ERROR: -p requires a comma-separated path list\n' >&2
+        exit 2
+      fi
+      IFS=, read -ra path_mounts <<< "${1-}"
+      shift
+      for path_mount in "${path_mounts[@]}"; do
+        docker_run_args+=(-v "$(expand_path_mount "$path_mount")")
+      done
+    else
+      docker_run_args+=("$arg")
+    fi
   else
     container_cmd_args+=("$arg")
   fi
@@ -115,13 +137,6 @@ if [[ -S /var/run/docker.sock ]]; then
   fi
 fi
 
-# Prefer an explicitly exported token, but allow a local secrets file for the
-# author's machine. Avoid hard-failing when neither is present.
-github_token_value="${GITHUB_TOKEN-}"
-if [[ -z "$github_token_value" && -f "$ENV_FILE" ]]; then
-  github_token_value="$(awk -F= -v k="GITHUB_PERSONAL_ACCESS_TOKEN" '$1==k{print substr($0,index($0,"=")+1);exit}' "$ENV_FILE")"
-fi
-
 args=(
   --rm                          # auto-remove container on exit
   -it                           # interactive TTY
@@ -137,6 +152,7 @@ args=(
   -e TERM="${TERM:-xterm-256color}"         # terminal type for colors
   -e COLORTERM="${COLORTERM:-truecolor}"    # 24-bit color hint
   -e LANG="${LANG:-en_US.UTF-8}"            # UTF-8 locale
+  -e PATH="/home/sanand/code/scripts:/home/vscode/apps/global/.venv/bin:/home/vscode/.cargo/bin:/home/vscode/.local/overrides:/home/vscode/.local/share/mise/shims:/home/vscode/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   # Timezone
   -v /etc/localtime:/etc/localtime:ro
   -v /etc/timezone:/etc/timezone:ro
@@ -172,9 +188,12 @@ args=(
   -v "$HOME/.local/share/rtk:/home/vscode/.local/share/rtk"
   -v "$HOME/.local/share/sanand-scripts:/home/vscode/.local/share/sanand-scripts"
   -v "$HOME/.npm:/home/vscode/.npm"
+  -v "$HOME/.gemini:/home/vscode/.gemini"
+  -v "$HOME/.pi:/home/vscode/.pi"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json:ro"
+  -v "$HOME/Documents/data/agents:/home/vscode/Documents/data/agents" # Agents data
   "${font_mount_args[@]}"
   # X11 forwarding for GUI apps
   -e DISPLAY=$DISPLAY
@@ -201,12 +220,13 @@ args=(
   --mount type=bind,source="$HOME/.cache/dev-sh.bash-history",target=/home/vscode/.bash_history
   -v "$PWD:$PWD"                                # mount CWD at same path
   -w "$PWD"                                     # start in CWD
+  -e PWD="$PWD"                                 # keep logical /home/sanand/... path across the image symlink
   # Add AI API keys if defined
   -e AIPIPE_TOKEN="${AIPIPE_TOKEN-}"
   -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY-}"
   -e DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY-}"
   -e GEMINI_API_KEY="${GEMINI_API_KEY-}"
-  -e GITHUB_TOKEN="${github_token_value}"
+  -e GITHUB_TOKEN="${GITHUB_TOKEN-}"
   -e OPENAI_API_KEY="${OPENAI_API_KEY-}"
   -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY-}"
 )

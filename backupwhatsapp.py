@@ -38,6 +38,8 @@ CHAT_LIST_SELECTOR = "#pane-side"
 MAIN_SELECTOR = "div#main"
 INCREMENTAL_SORT_SAFETY = 4
 INCREMENTAL_LOOKBACK_DAYS = 3
+INCREMENTAL_PAST_CUTOFF_PAGES = 2
+CHAT_LIST_SCROLL_PAGE_FACTOR = 1.5
 RUN_FIELDS = {"scrapedAt"}
 METADATA_FIELDS = {"conversationTitle", "conversationId", "userId"}
 CHAT_ID_JS = r"""
@@ -603,7 +605,8 @@ def known_no_new_content(chat: dict[str, Any], checked_state: dict[str, Any]) ->
     return bool(chat.get("lastActiveDay") and chat["lastActiveDay"] == local_day(local_since, chat.get("browserTimeZone") or ""))
 
 
-def sorted_time_violation(chats: list[dict[str, Any]]) -> dict[str, Any] | None:
+def sorted_time_violations(chats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    violations = []
     previous_chat: dict[str, Any] | None = None
     previous_time: dt.datetime | None = None
     for chat in chats:
@@ -611,15 +614,15 @@ def sorted_time_violation(chats: list[dict[str, Any]]) -> dict[str, Any] | None:
         if when is None:
             continue
         if previous_time and when > previous_time:
-            return {
-                "previous": previous_chat,
-                "previousTime": previous_time.isoformat(),
-                "current": chat,
-                "currentTime": when.isoformat(),
-            }
+            violations.append({"previous": previous_chat, "previousTime": previous_time.isoformat(), "current": chat, "currentTime": when.isoformat()})
         previous_chat = chat
         previous_time = when
-    return None
+    return violations
+
+
+def newest_chat_time(chats: list[dict[str, Any]]) -> dt.datetime | None:
+    times = [chat_list_time(chat) for chat in chats]
+    return max([when for when in times if when is not None], default=None)
 
 
 def merge_jsonl_files(target: Path, sources: list[Path]) -> None:
@@ -833,42 +836,55 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
     seen: dict[str, dict[str, Any]] = {}
     stale = 0
     warned_unsorted = False
+    past_cutoff_pages = 0
     for _ in range(max_scan):
         data = await list_chats(page)
         before = len(seen)
+        new_chats = []
         for chat in data["chats"]:
-            seen.setdefault(chat.get("conversationId") or chat["title"], chat)
+            key = chat.get("conversationId") or chat["title"]
+            if key in seen:
+                continue
+            seen[key] = chat
+            new_chats.append(chat)
         if len(seen) == before:
             stale += 1
         else:
             stale = 0
         ordered = list(seen.values())
         if checked_state is not None:
-            violation = sorted_time_violation(ordered)
-            if violation and not warned_unsorted:
+            violations = sorted_time_violations(ordered)
+            if violations and not warned_unsorted:
                 warned_unsorted = True
+                violation = max(violations, key=lambda row: parse_time(row["currentTime"]) - parse_time(row["previousTime"]))
                 previous = violation["previous"] or {}
                 current = violation["current"] or {}
                 eprint(
-                    "warning: WhatsApp chat list may not be sorted by latest message time; "
+                    "warning: WhatsApp chat list has out-of-order latest-message dates; "
                     f"{previous.get('title', '?')}={violation['previousTime']} appears before "
                     f"{current.get('title', '?')}={violation['currentTime']}. "
-                    "Consecutive-known-clean early-stop is disabled for this run."
+                    "Using paged cutoff safety instead of sorted-list early-stop."
                 )
-        visible_times = [chat_list_time(chat) for chat in data["chats"]]
-        oldest_visible = min([when for when in visible_times if when is not None], default=None)
-        if stop_at and oldest_visible and oldest_visible <= stop_at:
-            eprint(f"incremental: stopping chat-list scan at {oldest_visible.date()} (older than buffered cutoff {stop_at.date()})")
-            break
-        if checked_state is not None and not warned_unsorted:
+        newest_new = newest_chat_time(new_chats)
+        if stop_at and new_chats and newest_new and newest_new <= stop_at:
+            past_cutoff_pages += 1
+            if past_cutoff_pages >= INCREMENTAL_PAST_CUTOFF_PAGES:
+                eprint(
+                    f"incremental: stopping chat-list scan after {past_cutoff_pages} newly discovered pages "
+                    f"at or before {newest_new.date()} (buffered cutoff {stop_at.date()})"
+                )
+                break
+        elif new_chats:
+            past_cutoff_pages = 0
+        if checked_state is not None and stop_at is None and not warned_unsorted:
             covered_tail = 0
             for chat in ordered:
                 covered_tail = covered_tail + 1 if known_no_new_content(chat, checked_state) else 0
             if covered_tail >= INCREMENTAL_SORT_SAFETY:
                 break
-        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4 or stale >= 3:
+        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4 or stale >= 10:
             break
-        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, f"(pane) => pane.scrollTop += pane.clientHeight * {CHAT_LIST_SCROLL_PAGE_FACTOR}")
         await page.wait_for_timeout(500)
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(400)
@@ -894,7 +910,7 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
         data = await list_chats(page)
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
             break
-        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, f"(pane) => pane.scrollTop += pane.clientHeight * {CHAT_LIST_SCROLL_PAGE_FACTOR}")
         await page.wait_for_timeout(500)
         visible = await click_if_visible()
         if visible is not None:
@@ -908,7 +924,7 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
         data = await list_chats(page)
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
             break
-        await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop += pane.clientHeight * 0.85")
+        await page.eval_on_selector(CHAT_LIST_SELECTOR, f"(pane) => pane.scrollTop += pane.clientHeight * {CHAT_LIST_SCROLL_PAGE_FACTOR}")
         await page.wait_for_timeout(500)
         visible = await click_if_visible()
         if visible is not None:
@@ -969,9 +985,10 @@ async def run_backup(
             effective_since = since or local_since
             matched = (not conversations or title in conversations) and (not name or name.lower() in title.lower())
             date_matched = (updated_since is None or list_time is None or list_time >= updated_since) and (updated_until is None or list_time is None or list_time < updated_until)
+            incremental_window = not incremental_run or stop_at is None or list_time is None or list_time > stop_at
             stale = not path.exists() or list_time is None or local_since is None or list_time > local_since
             checked = incremental_run and stale and known_no_new_content(chat, checked_state)
-            if matched and date_matched and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
+            if matched and date_matched and incremental_window and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
                 selected.append({**chat, "path": path, "since": effective_since, "local_rows": len(existing), "list_time": list_time, "local_since": local_since})
             if limit and len(selected) >= limit:
                 break

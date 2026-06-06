@@ -1,5 +1,20 @@
 # Transcribe Calls
 
+## Optimize and simplify, 31 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
+   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify `transcribe_calls.py` so that when run without parameters, it transcribes untranscribed audio files in `/home/sanand/Documents/calls/*.opus` (based on filename, not modified time) that have a `prompt:` key in them, most recent first.
+
+Also, make sure it has a fast start. For some reason, it's pretty slow to start. Find out why and fix.
+
+<!-- codex resume 019e7c4b-3ecf-77c3-89e3-300d88a9dc0e --yolo -->
+
 ## Use prompt when available, 22 May 2026
 
 <!--
