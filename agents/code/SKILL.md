@@ -3,20 +3,18 @@ name: code
 description: ALWAYS follow this style when writing Python / JavaScript code
 ---
 
-- Ask if the success criteria is unclear
 - Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries
-- Write readable code. Keep happy path linear and obvious. Write flow first, then fill in code. Name intuitively
+- Keep happy path linear and obvious. Write flow first, then fill in code
 - Keep code short
   - Data over code: Structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
   - DRY: Helpers for repeated logic, precompute shared intermediates
   - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
-  - YAGNI: Skip unused imports, variables, and code
 - Change existing code minimally. Retain existing comments. Follow existing style
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
 - Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
 - When tests exist, or writing new code, add new failing tests first (including edge cases). Keep tests fast
 - Test web pages with screenshots (for layout, overlaps, contrast) _AND_ DOM (for interactions, navigation) before finalizing
-- Log status & progress for long tasks (>5s)
+- Log status & progress for long tasks (>5s). Log _before_ action.
 - Make scripts re-startable if interrupted
 - Check latest docs for fast moving packages
 
@@ -55,14 +53,13 @@ Prefer modern HTML:
 
 Preferred JS style:
 
-- Use CSS libraries. Minimize custom CSS
 - Hyphenated HTML class/ID names (id="user-id" not id="userId")
-- Use modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
-- Avoid TypeScript, but enable `// @ts-check`. `.d.ts` is OK for packages
+- Modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
+- No TypeScript, but `// @ts-check`. `.d.ts` is OK for packages
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
 
 Preferred libs: d3, hljs, lit-html, marked, partial-json
 
-Debug front-end apps with agent-browser or Playwright via CDP on localhost:9222.
-For single-page HTML files try `file://` before spinning up a server.
+Debug front-end apps with agent-browser, rodney, Playwright via CDP on localhost:9222.
+For single-page HTML files try `file://` if a server may not be needed.

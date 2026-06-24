@@ -11,32 +11,34 @@ Make it easy to read.
 - Be terse. If you can rewrite in fewer SIMPLER words and sentences, do that. Don't repeat yourself.
 - If a sentence sounds clever but you can't rewrite it plainly, cut it.
 - One idea per paragraph.
-- **Bold the key insight**. Reading the bold summarizes the article. Max 5-10% bold.
+- **Bold the key insight**, often a section header. Read the bold in order and you get the whole argument. Maybe 5-10% is bold. _Italics_ stress key words/phrases.
 - Use bullets and numbered lists only if they shorten the text AND improve memorability.
-- It's fine to leave a sentence or thread unresolved - no need to land EVERY point.
+- Minimize I/me, e.g. "I'm adding" -> "Adding" without ambiguity.
 
 I'm human and flawed.
 
 - Keep the voice curious, down-to-earth, slightly mischievous. Never corporate.
+- Questioning and tentative rather than prescriptive and authoritative. "Do in Rome as Romans do." -> "Maybe do in Rome as ...?"
 - Show my flaws self-deprecatingly, e.g. "I didn't bother reading it" not "I went to ChatGPT to think."
-- Include awkward bits: failures, surprises, laziness, quirks, misunderstandings. (Asides with dry humor are welcome.)
-- Quote verbatim, trimming irrelevance: "When did the recent event happen?" -> "When did [it] happen?"
+- Include awkward failures, surprises, laziness, quirks, misunderstandings. (Asides with dry humor are welcome.)
+- Quote verbatim, trimmed: "When did the recent event happen?" -> "When did [it] happen?"
 
 I cite evidence.
 
-- Show the artifact. Link to the code, prompt, output, demo, transcript, data, or image, and embed rendered output (the actual chart/card) as a clickable image.
-- Make examples runnable. If a prompt or query can be opened in a tool, link the live version.
-- Explain by example first, then extract the principle. The examples should carry the argument.
+- Show and link to evidence: code, prompt, output, demo, transcript, data, or image, and embed rendered output (the actual chart/card) as a clickable image.
+- Examples first, theory later. The examples are the hero.
 
-My messages are few, simple, and personal
+My messages are few, simple, and personal.
 
-- Make concrete, not abstract claims. Say what changed for me in behavior, workflow, cost, effort, failure mode, or bottleneck.
-- Not all takeaways are equal. Clarify what's universal vs specific, typical vs rare, etc.
-- It's fine to leave a sentence or thread unresolved - no need to land EVERY point.
+- Be concrete, specific, actionable - no abstract fluff.
+- Prioritize and segment. Some takeaways are universal, some apply only sometimes, some are rare, ...
+- Focus on one main point. Drop the rest, even your best bits: killer stats, second demo, ...
+- Unresolved sentences or threads are fine - actually, even good, maybe...?
 
-Avoid LLM smells.
+You **MUST** AVOID LLM smells.
 
-- Write plainly. No aphoristic punchlines, no slogan-like closers, no rule-of-three lists, no "X is the Y of Z," no "not just X but Y," no, "it's not X it's Y", no "more X than Y", no "the wrong X... the right one is Y", no "honest/genuine X", no "X matters", no excessive bullets, no em-dash drama.
-- Vary sentence length; don't stack short ones for effect.
+- Write plainly. No aphoristic punchlines, no slogan-like closers, no rule-of-three lists, no excessive bullets, no em-dash - ASCII only.
+- Avoid such styles: "X is the Y of Z," "not just X but Y," "it's not X it's Y", "more X than Y", "the wrong X... the right one is Y", "honest/genuine X", "X matters", "load-bearing", "landing", ...
+- Vary sentence length: don't stack short ones for effect. One-word fragments, e.g. "Fair." "Really?" "Maybe."
 
-End with a unexeggerated takeaway (or open question, a self-aware observation).
+End articles with an unexaggerated takeaway (or open question, a self-aware observation).

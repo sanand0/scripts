@@ -1,5 +1,41 @@
 # Summarize
 
+## Don't summarize SKILL.md, 20 Jun 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -p ~/Dropbox/notes/transcripts,~/code/blog
+claude --dangerously-skip-permissions
+-->
+
+Update `summarize.py blog` to skip SKILL.md files.
+
+<!-- claude --resume 69a829ec-e6de-48e8-bb17-1967c387d9f9 --dangerously-skip-permissions -->
+
+## Summaries are lists, 10 Jun 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -p ~/Dropbox/notes/transcripts,~/code/blog
+claude --dangerously-skip-permissions
+-->
+
+/model fable
+
+---
+
+I changed `summarize.py` line 291-292 to make the `summary` field a list rather than a string.
+Verify that the change is right. Make any related changes required.
+Go through the existing summaries (transcript AND blog) and update them to be lists of who-said-what summaries, breaking it up by sentence.
+Since this is a one-off change, write a temporary script, test it on a few samples, inspect, fix what's required, run on a larger sample, fix what's required, ... and update them all.
+Use sub-agents as required.
+
+---
+
+Correction - this should not apply to blog description. Only transcript summary.
+
+<!-- claude --resume 6c46d604-88f9-4a6e-a705-c7bf7136225c -->
+
 ## Quieter, 25 May 2026
 
 <!--

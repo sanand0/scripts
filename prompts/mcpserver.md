@@ -1,5 +1,16 @@
 # MCP Server
 
+## Add logs and trim, 19 Jun 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Update mcpserver.py so that if the output contains lines longer than 50KB, trim it in the middle to 50KB with the first 49KB and then a `... [trimmed to 50KB/line] ...` and then the rest. Also update the MCP server logs at `~/.local/share/sanand-scripts/mcpserver` so that when a connection is made or closed, it logs ALL the request information (including headers) in a timestamped Markdown file. Also, when each command is logged as Markdown, also add a `## Request` section below the `## Command` section with headers or any other metadata sent along with the request - other than the command.
+
+<!-- codex resume 019edd64-dfca-76d1-a231-59bcc83312c0 -->
+
 ## Run Cloudflare tunnel, 28 May 2026
 
 <!--

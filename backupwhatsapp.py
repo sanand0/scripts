@@ -667,6 +667,8 @@ def richness(value: Any) -> int:
 def merged_value(key: str, old: Any, new: Any) -> tuple[Any, bool]:
     if key in RUN_FIELDS:
         return new, old != new
+    if key == "reactions":
+        return new, old != new
     if key in METADATA_FIELDS:
         return (new, True) if richness(new) > richness(old) else (old, False)
     if richness(new) > richness(old):

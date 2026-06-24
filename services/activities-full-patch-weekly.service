@@ -1,15 +1,14 @@
 [Unit]
-Description=Run daily activity and backup jobs
+Description=Fully patch historical activity reports weekly
 Wants=network-online.target
 After=network-online.target
 OnFailure=timer-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/usr/bin/sleep 60
-ExecStart=/home/sanand/code/scripts/daily-activities
+ExecStartPre=/usr/bin/mkdir -p /home/sanand/.cache/sanand-scripts/daily-activities
+ExecStart=/usr/bin/flock -n /home/sanand/.cache/sanand-scripts/daily-activities/run.lock /home/sanand/.local/bin/uv run /home/sanand/code/scripts/activities.py --patch-only --patch-days 0
 WorkingDirectory=/home/sanand
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/.local/share/mise/shims:/home/sanand/bin
 Environment=HOME=/home/sanand
 Environment=XDG_CONFIG_HOME=/home/sanand/.config
-Environment=RCLONE_CONFIG=/home/sanand/.config/rclone/rclone.conf

@@ -70,6 +70,7 @@ NOISY_PROMPT_PREFIXES = (
 GENERIC_AI_TITLES = {"chatgpt", "claude", "codex"}
 FISH_HISTORY_BURST_MINUTES = 15
 SHELL_COMMAND_MAX_CHARS = 220
+DEFAULT_PATCH_DAYS = 7
 WHATSAPP_CALL_RE = re.compile(r"^(?:missed )?(?:voice|video) call$", re.I)
 SHELL_NOISE_RE = re.compile(
     r"^(?:"
@@ -1102,11 +1103,13 @@ def read_report(path: Path, day: dt.date) -> list[Activity]:
     return rows
 
 
-def patch_reports(output_dir: Path, sources: list[str], generated_at: dt.datetime, limit_per_source: int) -> int:
+def patch_reports(output_dir: Path, sources: list[str], generated_at: dt.datetime, limit_per_source: int, patch_days: int) -> int:
     root = output_dir.expanduser()
     days = existing_report_days(root)
     if not days or not sources:
         return 0
+    if patch_days:
+        days = days[-patch_days:]
     first_start, _first_end = day_bounds(days[0])
     _last_start, last_end = day_bounds(days[-1])
     preload_sources(sources, first_start, last_end)
@@ -1170,8 +1173,9 @@ def describe() -> dict[str, Any]:
         "sources": sorted(COLLECTORS),
         "default_sources": DEFAULT_SOURCES.split(","),
         "default_date_range": "Pending days after the latest YYYY-MM-DD.tsv in output_dir through yesterday; if none exist, the last 7 days ending yesterday.",
+        "default_patch_days": DEFAULT_PATCH_DAYS,
         "patchable_sources": sorted(PATCHABLE_SOURCES),
-        "patch": "Use --patch-only after late-arriving source data lands to refresh source rows in existing reports without regenerating everything.",
+        "patch": f"Refresh the latest {DEFAULT_PATCH_DAYS} reports by default. Use --patch-only --patch-days 0 for a full historical refresh.",
         "unpatchable_sources": sorted(set(COLLECTORS) - PATCHABLE_SOURCES),
         "extension_point": "Add a collect_<source>(Context) function and register it in COLLECTORS.",
     }
@@ -1188,6 +1192,7 @@ def main(
     no_browser_sync: bool = typer.Option(False, "--no-browser-sync", help="Do not refresh browsing-history.db before browser queries."),
     patch: bool = typer.Option(True, "--patch/--no-patch", help="Refresh patchable source rows in existing reports before generating new days."),
     patch_only: bool = typer.Option(False, "--patch-only", help="Only refresh patchable source rows in existing reports, then exit."),
+    patch_days: int = typer.Option(DEFAULT_PATCH_DAYS, "--patch-days", min=0, help="Number of latest reports to patch. 0 patches all reports."),
     patch_sources: str = typer.Option(
         "auto",
         "--patch-sources",
@@ -1206,7 +1211,7 @@ def main(
         eprint("syncing browser history...")
         sync_browser_history()
     if not dry_run and (patch or patch_only):
-        patched = patch_reports(output_dir, selected_patch_sources, generated_at, limit_per_source)
+        patched = patch_reports(output_dir, selected_patch_sources, generated_at, limit_per_source, patch_days)
         eprint(f"patch complete: {patched} report(s) updated")
     if patch_only:
         return

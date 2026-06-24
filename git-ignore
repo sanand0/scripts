@@ -1,0 +1,7 @@
+# Save this file as ~/.config/git/ignore
+# These files are always ignored by git - across all repos.
+
+**/.claude/settings.local.json
+.vite/
+.git.bak/
+.qdrant-initialized

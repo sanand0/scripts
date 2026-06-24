@@ -130,6 +130,9 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         handle.write(f"SYSTEM_PROMPT\\t{getattr(config, 'system_instruction', '')}\\n")
                         if user_prompts:
                             handle.write(f"USER_PROMPT\\t{user_prompts[0]}\\n")
+                    error_files = os.environ.get("FAKE_GENAI_ERROR_FILES", "").split(",")
+                    if Path(audio.file).name in error_files:
+                        raise APIError(f"forced error for {Path(audio.file).name}")
                     prompt_tokens = int(os.environ.get("FAKE_PROMPT_TOKENS", "100"))
                     output_tokens = int(os.environ.get("FAKE_OUTPUT_TOKENS", "50"))
                     thought_tokens = int(os.environ.get("FAKE_THOUGHT_TOKENS", "0"))
@@ -1162,6 +1165,74 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "This audio is part 3/3 of a longer recording." in genai_log
 
 
+def test_script_resumes_chunked_transcription_from_one_day_cache(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+    cache_dir = tmp_path / "cache"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    (input_dir / "long.opus").write_bytes(b"audio")
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["FAKE_GENAI_ERROR_FILES"] = "long.part003.opus"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["TRANSCRIBE_CALLS_CACHE_DIR"] = str(cache_dir)
+    env.pop("GEMINI_API_KEY", None)
+
+    first = run_script(script_path, input_dir, output_dir, prompt_file, "--chunk", "30", env=env, cwd=tmp_path)
+    assert first.returncode == 1
+    assert "forced error for long.part003.opus" in first.stderr
+    assert len(list(cache_dir.glob("*.json"))) == 2
+
+    env.pop("FAKE_GENAI_ERROR_FILES")
+    second = run_script(script_path, input_dir, output_dir, prompt_file, "--chunk", "30", env=env, cwd=tmp_path)
+    assert second.returncode == 0, second.stderr
+    assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in second.stdout
+    genai_log = log_path.read_text(encoding="utf-8")
+    audio_requests = [line for line in genai_log.splitlines() if line.startswith("AUDIO\t")]
+    assert len(audio_requests) == 4
+    assert sum("long.part001.opus" in line for line in audio_requests) == 1
+    assert sum("long.part002.opus" in line for line in audio_requests) == 1
+    assert sum("long.part003.opus" in line for line in audio_requests) == 2
+    transcript = (output_dir / "long.md").read_text(encoding="utf-8")
+    assert "Transcript for long.part001.opus line 1" in transcript
+    assert "Transcript for long.part002.opus line 1" in transcript
+    assert "Transcript for long.part003.opus line 1" in transcript
+
+
+def test_cleanup_chunk_cache_removes_only_expired_json(tmp_path: Path) -> None:
+    module = load_module()
+    fresh = tmp_path / "fresh.json"
+    expired = tmp_path / "expired.json"
+    unrelated = tmp_path / "keep.txt"
+    for path in (fresh, expired, unrelated):
+        path.write_text("x", encoding="utf-8")
+    os.utime(expired, (100, 100))
+
+    removed = module.cleanup_chunk_cache(tmp_path, now=module.CHUNK_CACHE_TTL_SECONDS + 101)
+
+    assert removed == 1
+    assert fresh.exists()
+    assert not expired.exists()
+    assert unrelated.exists()
+
+
 def test_script_warns_when_chunk_response_does_not_look_like_transcript(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
     input_dir = tmp_path / "calls"
@@ -1415,6 +1486,57 @@ def test_script_dry_run_reports_duration_and_chunks_without_side_effects(tmp_pat
     assert (output_dir / "long.md").read_text(encoding="utf-8") == existing_note
     assert not ffmpeg_log_path.exists()
     assert not genai_log_path.exists()
+
+
+def test_script_list_changes_broadly_reports_actions_without_probing_or_writing(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    prompt_file = tmp_path / "prompt.md"
+    bin_dir = tmp_path / "bin"
+    ffprobe_log_path = tmp_path / "ffprobe.log"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    bin_dir.mkdir()
+    (bin_dir / "ffprobe").write_text(
+        f"#!/usr/bin/env bash\nprintf called > {ffprobe_log_path}\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "ffprobe").chmod(0o755)
+    for name in ("create.opus", "done.opus", "update.wav"):
+        (input_dir / name).write_bytes(b"audio")
+    (output_dir / "done.md").write_text(
+        "# done\n\n## Transcript\n\nExisting transcript\n",
+        encoding="utf-8",
+    )
+    existing_update = "# update\n\n## Notes\n\nNeeds transcript\n"
+    (output_dir / "update.md").write_text(existing_update, encoding="utf-8")
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env.pop("GEMINI_API_KEY", None)
+
+    result = run_script(
+        script_path,
+        input_dir,
+        output_dir,
+        prompt_file,
+        "--list-changes",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        f"create\t{input_dir / 'create.opus'}\t{output_dir / 'create.md'}",
+        f"update\t{input_dir / 'update.wav'}\t{output_dir / 'update.md'}",
+    ]
+    assert result.stderr.strip() == "changes=2 errors=0"
+    assert not (output_dir / "create.md").exists()
+    assert (output_dir / "update.md").read_text(encoding="utf-8") == existing_update
+    assert not ffprobe_log_path.exists()
 
 
 def test_script_rejects_chunk_size_at_or_below_overlap(tmp_path: Path) -> None:

@@ -6,11 +6,12 @@ and can run a health check.
 
 ## Services
 
-- `consolidate-transcripts-daily.*`: runs `consolidate_transcripts.py` from the
-  transcripts notes directory every day around 12:05am.
+- `activities-full-patch-weekly.*`: refreshes all patchable sources in every
+  historical activity report on Sunday mornings. Daily runs patch only the
+  latest seven reports, so older late-arriving data may take up to a week to
+  appear.
 - `daily-activities.*`: runs `daily-activities` every day around 1:15am. That
-  service waits 60 seconds before the wrapper starts, so catch-up runs after
-  wake have a little time for network setup. The wrapper runs:
+  service's wrapper runs:
   - `activities.py`, which already refreshes/queries `browsing_history.py`.
   - `backupgoogle.py`, only on an unmetered connection.
   - `backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com`,
@@ -27,8 +28,25 @@ and can run a health check.
 - `trending-repo-weekly.*`: updates trending GitHub repos on Sunday mornings.
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
-- `*.service.disabled`: reference units that are intentionally not installed by
-  `setup.sh`.
+- `*.{service,timer}.disabled`: reference units that are intentionally not
+  installed by `setup.sh`. This includes the retired
+  `consolidate-transcripts-daily.*` units.
+
+## Disabled Units
+
+Renaming a unit with a `.disabled` suffix prevents `setup.sh` from installing
+or enabling it. To remove a previously installed timer from the user systemd
+manager after renaming its files, stop it and remove its stale links:
+
+```bash
+systemctl --user stop consolidate-transcripts-daily.timer
+rm -f ~/.config/systemd/user/consolidate-transcripts-daily.{service,timer}
+rm -f ~/.config/systemd/user/timers.target.wants/consolidate-transcripts-daily.timer
+systemctl --user daemon-reload
+```
+
+To reactivate it, remove the `.disabled` suffixes from both files and run
+`./setup.sh`.
 
 ## Install Or Check
 
@@ -42,6 +60,22 @@ Run from this directory:
 `setup.sh` refuses to overwrite non-symlink unit files under
 `~/.config/systemd/user/`. If systemd is running an old copied unit, move that
 file aside and re-run setup so the repo version is linked.
+
+## Run manually
+
+```bash
+# Reload if edited
+systemctl --user daemon-reload
+
+# Run once
+systemctl --user start daily-activities.service
+
+# Watch it run
+journalctl --user -u daily-activities.service -f
+
+# Check the result
+systemctl --user status daily-activities.service
+```
 
 ## Logs
 

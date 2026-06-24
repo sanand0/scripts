@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
+import hashlib
 import json
 import math
 import os
@@ -17,6 +18,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.error import URLError
@@ -32,6 +34,8 @@ DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 30.0
 DEFAULT_GLOB_PATTERN = "*"
 DEFAULT_PENDING_GLOB_PATTERN = "*.opus"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "sanand-scripts" / "transcribe_calls" / "chunks"
+CHUNK_CACHE_TTL_SECONDS = 24 * 60 * 60
 CHUNK_OVERLAP_SECONDS = 1.0
 FRIENDLY_CHUNK_MINUTES = (30.0, 25.0, 20.0, 15.0)
 CHUNK_CONTEXT_MAX_LINES = 40
@@ -49,6 +53,7 @@ FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?\n?)---\n?", re.DOTALL)
 TRANSCRIPT_SECTION_RE = re.compile(
     r"(?ms)^##\s+Transcript\s*$\n?(?P<body>.*?)(?=^##\s+|\Z)"
 )
+TRANSCRIPT_CONTENT_RG_PATTERN = r"^##\s+Transcript\s*$\n(?:\s*\n)*(?!##\s+)\S"
 
 app = typer.Typer(add_completion=False, no_args_is_help=False, help=__doc__)
 
@@ -318,6 +323,63 @@ def has_prompted_pending_note(audio_path: Path, output_dir: Path) -> bool:
     return had_output and extract_prompt_metadata(markdown) is not None and not has_transcript_content(markdown)
 
 
+def find_notes_with_transcript_content(output_dir: Path) -> set[Path]:
+    """Return transcript notes with content using one fast batch scan."""
+    if not output_dir.exists():
+        return set()
+    result = subprocess.run(
+        [
+            "rg",
+            "-l",
+            "-U",
+            "-P",
+            TRANSCRIPT_CONTENT_RG_PATTERN,
+            "--glob",
+            "*.md",
+            "--",
+            str(output_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        detail = result.stderr.strip() or f"rg exited {result.returncode}"
+        raise RuntimeError(f"Failed to scan transcript notes: {detail}")
+    return {Path(line) for line in result.stdout.splitlines()}
+
+
+def emit_change_list(audio_files: list[Path], output_dir: Path, user_prompt: str | None) -> None:
+    """Emit broad create/update actions as TSV without probing audio."""
+    completed_notes = find_notes_with_transcript_content(output_dir)
+    changes = 0
+    failures: list[str] = []
+    for audio_path in audio_files:
+        output_path = output_dir / f"{audio_path.stem}.md"
+        base_output_path = find_base_transcript_path(output_dir, audio_path.stem)
+        if base_output_path in completed_notes:
+            continue
+        if output_path in completed_notes and user_prompt is None:
+            continue
+        try:
+            had_output, markdown, _ = read_existing_note(output_path)
+        except RuntimeError as exc:
+            failures.append(str(exc))
+            typer.echo(f"ERROR {exc}", err=True)
+            continue
+        if has_transcript_content(markdown):
+            if user_prompt is None or extract_prompt_metadata(markdown) == user_prompt:
+                continue
+            action = "update-metadata"
+        else:
+            action = "update" if had_output else "create"
+        typer.echo(f"{action}\t{audio_path}\t{output_path}")
+        changes += 1
+    typer.echo(f"changes={changes} errors={len(failures)}", err=True)
+    if failures:
+        raise typer.Exit(1)
+
+
 def normalize_model_id(model_id: str) -> str:
     """Normalize model identifiers so pricing ids and requested model names match."""
     return re.sub(r"-+", "-", model_id.strip().lower().replace(".", "-"))
@@ -426,6 +488,70 @@ def combine_usage_costs(costs: list[UsageCost]) -> UsageCost:
         total_tokens=sum(cost.total_tokens for cost in costs),
         cost_usd=sum(cost.cost_usd for cost in costs),
     )
+
+
+def chunk_cache_path(
+    cache_dir: Path,
+    audio_path: Path,
+    window: tuple[float, float],
+    chunk_index: int,
+    chunk_count: int,
+    model: str,
+    system_prompt: str,
+    user_prompt: str | None,
+) -> Path:
+    """Return the cache path for one exact chunk transcription request."""
+    stat = audio_path.stat()
+    cache_key = json.dumps(
+        {
+            "audio": str(audio_path.resolve()),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "window": window,
+            "chunk_index": chunk_index,
+            "chunk_count": chunk_count,
+            "model": model,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+        },
+        sort_keys=True,
+    ).encode()
+    return cache_dir / f"{hashlib.sha256(cache_key).hexdigest()}.json"
+
+
+def cleanup_chunk_cache(
+    cache_dir: Path,
+    *,
+    now: float | None = None,
+    ttl_seconds: int = CHUNK_CACHE_TTL_SECONDS,
+) -> int:
+    """Remove expired chunk transcript cache files and return the count."""
+    if not cache_dir.is_dir():
+        return 0
+    cutoff = (now if now is not None else time.time()) - ttl_seconds
+    expired = [path for path in cache_dir.glob("*.json") if path.stat().st_mtime < cutoff]
+    for path in expired:
+        path.unlink()
+    return len(expired)
+
+
+def read_cached_chunk(cache_path: Path) -> TranscriptionResult | None:
+    """Return a cached chunk transcript with zero new usage."""
+    if not cache_path.is_file():
+        return None
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    return TranscriptionResult(
+        transcript=payload["transcript"],
+        usage=UsageCost(prompt_tokens=0, output_tokens=0, total_tokens=0, cost_usd=0.0),
+    )
+
+
+def write_cached_chunk(cache_path: Path, transcript: str) -> None:
+    """Persist one successful chunk transcript."""
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = cache_path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps({"transcript": transcript}), encoding="utf-8")
+    temp_path.replace(cache_path)
 
 
 @lru_cache(maxsize=1)
@@ -759,6 +885,7 @@ def transcribe_audio(
     patch_section: int | None = None,
     windows: list[tuple[float, float]] | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    cache_dir: Path | None = None,
 ) -> TranscriptionResult:
     """Transcribe audio directly or through chunked ffmpeg splits."""
     if windows is None:
@@ -809,21 +936,40 @@ def transcribe_audio(
         for index, chunk_path in target_chunks:
             if progress_callback is not None:
                 progress_callback(index, chunk_count)
-            result = transcribe_single_audio(
-                chunk_path,
-                system_prompt=system_prompt,
-                user_prompt=build_chunk_user_prompt(
-                    user_prompt,
+            chunk_user_prompt = build_chunk_user_prompt(
+                user_prompt,
+                chunk_index=index,
+                chunk_count=chunk_count,
+                prior_chunk_context=build_prior_chunk_context(
+                    [previous.transcript for previous in transcripts]
+                ),
+            )
+            cache_path = (
+                chunk_cache_path(
+                    cache_dir,
+                    audio_path,
+                    windows[index - 1],
                     chunk_index=index,
                     chunk_count=chunk_count,
-                    prior_chunk_context=build_prior_chunk_context(
-                        [previous.transcript for previous in transcripts]
-                    ),
-                ),
-                model=model,
-                client=client,
-                pricing=pricing,
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=chunk_user_prompt,
+                )
+                if cache_dir is not None and patch_section is None
+                else None
             )
+            result = read_cached_chunk(cache_path) if cache_path is not None else None
+            if result is None:
+                result = transcribe_single_audio(
+                    chunk_path,
+                    system_prompt=system_prompt,
+                    user_prompt=chunk_user_prompt,
+                    model=model,
+                    client=client,
+                    pricing=pricing,
+                )
+                if cache_path is not None:
+                    write_cached_chunk(cache_path, result.transcript)
             if not looks_like_transcript(result.transcript):
                 warnings.append(
                     InvalidTranscriptWarning(
@@ -886,6 +1032,11 @@ def main(
         "--dry-run",
         help="List work, duration, and chunk count without calling Gemini or ffmpeg, and without writing files.",
     ),
+    list_changes: bool = typer.Option(
+        False,
+        "--list-changes",
+        help="Quickly list all create/update actions as TSV without probing audio, calling Gemini, or writing files.",
+    ),
 ) -> None:
     """Transcribe every missing call recording in the input folder."""
     if not input_dir.is_dir():
@@ -898,6 +1049,14 @@ def main(
         raise typer.BadParameter("--patch-invalid-sections cannot be used with --patch-section.")
     if (patch_section is not None or patch_invalid_sections) and dry_run:
         raise typer.BadParameter("Patch options cannot be used with --dry-run.")
+    if (patch_section is not None or patch_invalid_sections) and list_changes:
+        raise typer.BadParameter("Patch options cannot be used with --list-changes.")
+    if dry_run and list_changes:
+        raise typer.BadParameter("--dry-run cannot be used with --list-changes.")
+
+    chunk_cache_dir = Path(os.environ.get("TRANSCRIBE_CALLS_CACHE_DIR", DEFAULT_CACHE_DIR))
+    if not dry_run and not list_changes:
+        cleanup_chunk_cache(chunk_cache_dir)
 
     default_pending_mode = (
         input_dir == DEFAULT_INPUT_DIR
@@ -907,6 +1066,7 @@ def main(
         and user_prompt is None
         and patch_section is None
         and not patch_invalid_sections
+        and not list_changes
     )
     effective_glob_pattern = DEFAULT_PENDING_GLOB_PATTERN if default_pending_mode else glob_pattern
     newest_first = default_pending_mode
@@ -939,6 +1099,10 @@ def main(
         raise typer.BadParameter(
             f"Duplicate audio basenames would collide in output: {joined}"
         )
+
+    if list_changes:
+        emit_change_list(audio_files, output_dir, cleaned_user_prompt)
+        return
 
     if not dry_run:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1090,6 +1254,7 @@ def main(
                 patch_section=(target_sections[0] if patch_invalid_sections else patch_section),
                 windows=windows,
                 progress_callback=log_progress,
+                cache_dir=chunk_cache_dir,
             )
         except RuntimeError as exc:
             failures.append(f"{audio_path.name}: {exc}")

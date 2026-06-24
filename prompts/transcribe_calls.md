@@ -1,17 +1,50 @@
 # Transcribe Calls
 
+## Add robustness, 14 Jun 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/calls:ro,~/Dropbox/notes/transcripts/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+I had the following problem with `transcribe_calls.py` a couple of times today.
+
+```
+❯ transcribe_calls.py
+[1/5] update 2026-06-12 Let AI take your exams IITM Paradox.opus -> 2026-06-12 Let AI take your exams IITM Paradox.md
+[2/5] update 2026-06-12 Let AI take your exams IITM Paradox.opus -> 2026-06-12 Let AI take your exams IITM Paradox.md
+[3/5] update 2026-06-12 Let AI take your exams IITM Paradox.opus -> 2026-06-12 Let AI take your exams IITM Paradox.md
+[4/5] update 2026-06-12 Let AI take your exams IITM Paradox.opus -> 2026-06-12 Let AI take your exams IITM Paradox.md
+[5/5] update 2026-06-12 Let AI take your exams IITM Paradox.opus -> 2026-06-12 Let AI take your exams IITM Paradox.md
+/home/sanand/.cache/uv/environments-v2/transcribe-calls-75928d59c75afcd0/lib/python3.12/site-packages/google/genai/_common.py:651: UserWarning: MALFORMED_RESPONSE is not a valid FinishReason
+  warnings.warn(f'{value} is not a valid {cls.__name__}')
+ERROR 2026-06-12 Let AI take your exams IITM Paradox.opus: Gemini returned empty output.
+created=0 updated=0 skipped=0 errors=1
+```
+
+Let's do two things:
+
+1. Cache chunk transcripts for a day so that if a portion errors out, we can resume. (The next call to transcribe_calls.py can remove expired cache files.)
+2. Find out why this error occurs. Would a google.genai package upgrade fix it? If so, upgrade. I'd rather not modify the code to handle this specific MALFORMED_RESPONSE error - and the current error handling approach is fine.
+
+<!-- codex resume 019ec49b-ec59-7921-ae9b-e754e1828991 -->
+
 ## Optimize and simplify, 31 May 2026
 
 <!--
-cd /home/sanand/code/scripts
-dev.sh -v /home/sanand/Documents/calls/:/home/sanand/Documents/calls/:ro \
-   -v /home/sanand/Dropbox/notes/transcripts/:/home/sanand/Dropbox/notes/transcripts/
+cd ~/code/scripts
+dev.sh -p ~/Documents/calls:ro,~/Dropbox/notes/transcripts/
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
 Modify `transcribe_calls.py` so that when run without parameters, it transcribes untranscribed audio files in `/home/sanand/Documents/calls/*.opus` (based on filename, not modified time) that have a `prompt:` key in them, most recent first.
 
 Also, make sure it has a fast start. For some reason, it's pretty slow to start. Find out why and fix.
+
+--- <!-- 10 Jun 2026 -->
+
+Earlier, just running `transcribe_calls.py --dry-run` would show the list of changes that would be made, e.g. which files would be updated, created, etc. Create a new agent-friendly CLI option that does the equivalent. Make sure this is fast and efficient.
 
 <!-- codex resume 019e7c4b-3ecf-77c3-89e3-300d88a9dc0e --yolo -->
 

@@ -56,6 +56,7 @@ Here are the setup details for my laptops.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
 - [ccusage](ccusage) shows Claude Code usage and reset times - if you're already logged into Claude Code CLI.
 - [chars](chars) lists non-ASCII characters in files.
+- [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, and submit/no-submit modes. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --no-submit "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
 - [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
 - [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
@@ -108,6 +109,7 @@ Here are the setup details for my laptops.
     - Pinch In 2 fingers: Zoom Out
     - Swipe Left 3 fingers: Back
     - Swipe Right 3 fingers: Forward
+- [timers](timers) picks a systemd user timer with `fzf`, sorted by its most recent run, then follows the activated service's journal.
 - [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
 - [transcribe_calls.py](transcribe_calls.py) transcribes missing audio call recordings from `~/Documents/calls` into Markdown notes under `~/Dropbox/notes/transcripts`, with chunking and patching for invalid transcript sections. Examples: `transcribe_calls.py --dry-run`, `transcribe_calls.py --glob "*.opus"`, `transcribe_calls.py --patch-invalid-sections`.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.

@@ -83,6 +83,7 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   github:jqnatividad/qsv \
   github:mithrandie/csvq \
   github:pdfcpu/pdfcpu \
+  github:casey/just \
   github:phiresky/ripgrep-all[extract_all=true] \
   github:rtk-ai/rtk \
   hugo \
@@ -128,7 +129,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "05 Jun 2026: Updating agents and fast-moving agent tools"; \
+  echo "23 Jun 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \

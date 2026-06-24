@@ -1,5 +1,33 @@
 # services
 
+## Archive unused, 07 Jun 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+I no longer need the services/consolidate-transcripts-daily service/timer. Minimally disable it - maybe moving it into a services/archive/ directory - or is there a better way, maybe just marking it disabled? Update services/README.md accordingly.
+
+<!-- codex resume 019ea0d5-c489-7283-9d76-db0e34f9c53d -->
+
+## Speed up, 06 Jun 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+`services/daily-activities.service` takes a long time and has an initial preloading step that takes a long time. Maybe others. Review the logs, see what are the steps that take the longest time, and suggest the top 5 fixes that have the highest time reduction impact with the least effort and functional impact.
+
+List these for me to review. Help me pick by sharing the extent of the change (e.g. LOC, simple/complex) and impact (risks) of the change
+
+---
+
+Implement #1 and #3. Run and test.
+
+<!-- codex resume 019e9b99-7036-7772-ae94-44f3dc23ccf9 -->
+
 ## Back up personal GMail, 31 May 2026
 
 <!--

@@ -1,0 +1,442 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["playwright>=1.52", "typer>=0.12"]
+# ///
+"""Open ChatGPT in a CDP browser, prepare a prompt, and optionally submit it.
+
+Examples:
+  chatgpt --dry-run --model gpt-5 "Summarize this"
+  chatgpt --inspect --connector-query drive --format json | jaq .
+  chatgpt --file report.pdf --project "Transcripts" "Analyze this file"
+  cat prompt.md | chatgpt --connector "Google Drive" --format json | jaq .
+  chatgpt --describe | jaq .
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+from typing import Any, Annotated
+from urllib.parse import urlencode
+
+import typer
+from playwright.async_api import Browser, Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+
+app = typer.Typer(add_completion=False, help=__doc__)
+
+CDP_URL = "http://localhost:9222"
+CHATGPT_URL = "https://chatgpt.com/"
+PROMPT_SELECTORS = [
+    "#prompt-textarea",
+    '[contenteditable="true"][role="textbox"][aria-label*="Chat"]',
+    'textarea[aria-label*="Chat"]',
+    'textarea[placeholder*="Ask"]',
+]
+SEND_SELECTORS = [
+    '[data-testid="send-button"]',
+    "#composer-submit-button",
+    'button[aria-label="Send prompt"]',
+    'button[aria-label*="Send"]',
+]
+FILE_INPUT_SELECTORS = [
+    'input#upload-files[type="file"]',
+    'input[type="file"]:not([accept*="image"])',
+]
+UI_TEXT_SCOPES = [
+    '[role="menu"]',
+    '[role="listbox"]',
+    '[role="dialog"]',
+    '[data-radix-popper-content-wrapper]',
+    "body",
+]
+
+
+def eprint(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def clean_label(value: str) -> str:
+    return " ".join(value.split()).strip()
+
+
+def unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result = []
+    for value in values:
+        text = clean_label(value)
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def chat_url(model: str | None) -> str:
+    if not model:
+        return CHATGPT_URL
+    return f"{CHATGPT_URL}?{urlencode({'model': model})}"
+
+
+def prompt_text(words: tuple[str, ...], stdin: str) -> str:
+    text = " ".join(words).strip() or stdin.strip()
+    if not text:
+        raise ValueError("prompt is required as arguments or stdin")
+    return text
+
+
+def validate_files(files: list[Path]) -> list[Path]:
+    resolved = []
+    for file in files:
+        path = file.expanduser().resolve()
+        if not path.exists():
+            raise ValueError(f"file not found: {file}")
+        if not path.is_file():
+            raise ValueError(f"not a file: {file}")
+        resolved.append(path)
+    return resolved
+
+
+def describe() -> dict[str, Any]:
+    return {
+        "name": "chatgpt",
+        "default_cdp_url": CDP_URL,
+        "source": CHATGPT_URL,
+        "actions": ["inspect", "new_tab", "project", "model", "reasoning", "connector", "file", "prompt", "submit"],
+        "formats": ["text", "json"],
+        "default_format": "text",
+        "input": {
+            "prompt": "Arguments are joined with spaces. If omitted, stdin is used.",
+            "files": "Repeat --file for attachments. Paths are validated before browser automation.",
+            "model": "Passed in the ChatGPT new-chat URL query.",
+            "connector": "Repeat --connector to select @ mentions from the composer suggestion UI.",
+            "pick": "Repeat --pick to click visible UI text after the page loads.",
+        },
+        "examples": [
+            'chatgpt --dry-run --model gpt-5 "Summarize this"',
+            "chatgpt --inspect --connector-query drive --format json | jaq .",
+            'chatgpt --file report.pdf --project "Transcripts" "Analyze this file"',
+            'cat prompt.md | chatgpt --connector "Google Drive" --format json | jaq .',
+        ],
+    }
+
+
+async def new_page(browser: Browser) -> Page:
+    if not browser.contexts:
+        raise RuntimeError("No CDP browser context found. Start Chrome/Edge with remote debugging on port 9222.")
+    page = await browser.contexts[0].new_page()
+    await page.bring_to_front()
+    return page
+
+
+async def visible_first(page: Page, selectors: list[str], name: str, timeout: int = 15000) -> Locator:
+    errors = []
+    for selector in selectors:
+        locator = page.locator(selector).first
+        try:
+            await locator.wait_for(state="visible", timeout=timeout)
+            return locator
+        except PlaywrightTimeoutError:
+            errors.append(selector)
+    raise RuntimeError(f"could not find {name}; tried: {', '.join(errors)}")
+
+
+async def click_text(page: Page, text: str, label: str, exact: bool = True, timeout: int = 5000) -> None:
+    candidates: list[Locator] = []
+    for scope in UI_TEXT_SCOPES:
+        candidates.append(page.locator(scope).get_by_text(text, exact=exact).first)
+    candidates.extend(
+        [
+            page.get_by_role("button", name=text, exact=exact).first,
+            page.get_by_role("link", name=text, exact=exact).first,
+            page.get_by_role("option", name=text, exact=exact).first,
+            page.get_by_label(text, exact=exact).first,
+        ]
+    )
+    for candidate in candidates:
+        try:
+            await candidate.click(timeout=timeout)
+            return
+        except PlaywrightTimeoutError:
+            continue
+    raise RuntimeError(f"could not click {label}: {text!r}")
+
+
+async def select_project(page: Page, project: str, settle_ms: int) -> None:
+    await click_text(page, project, "project")
+    await page.wait_for_timeout(settle_ms)
+    try:
+        await page.get_by_role("link", name="New chat", exact=True).first.click(timeout=3000)
+        await page.wait_for_timeout(settle_ms)
+    except PlaywrightTimeoutError:
+        pass
+
+
+async def select_reasoning(page: Page, reasoning: str, settle_ms: int) -> None:
+    opened = False
+    for current in ["Auto", "Low", "Medium", "High"]:
+        for candidate in [
+            page.get_by_role("button", name=current, exact=True).first,
+            page.locator("button").filter(has_text=current).first,
+        ]:
+            try:
+                await candidate.click(timeout=1500)
+                opened = True
+                break
+            except PlaywrightTimeoutError:
+                continue
+        if opened:
+            break
+    if not opened:
+        raise RuntimeError("could not find reasoning selector")
+    await page.wait_for_timeout(settle_ms)
+    await click_text(page, reasoning, "reasoning")
+    await page.wait_for_timeout(settle_ms)
+
+
+async def attach_files(page: Page, files: list[Path], settle_ms: int) -> None:
+    if not files:
+        return
+    paths = [str(file) for file in files]
+    for selector in FILE_INPUT_SELECTORS:
+        input_locator = page.locator(selector).first
+        try:
+            await input_locator.set_input_files(paths, timeout=5000)
+            await page.wait_for_timeout(settle_ms)
+            return
+        except PlaywrightTimeoutError:
+            continue
+    raise RuntimeError("could not find ChatGPT file input")
+
+
+async def fill_prompt(page: Page, text: str) -> Locator:
+    box = await visible_first(page, PROMPT_SELECTORS, "prompt box")
+    await box.click()
+    await box.fill(text)
+    return box
+
+
+async def add_connector(page: Page, box: Locator, connector: str, settle_ms: int) -> None:
+    await box.click()
+    await page.keyboard.type(f"@{connector}")
+    await page.wait_for_timeout(settle_ms)
+    try:
+        await click_text(page, connector, "connector", exact=False, timeout=3000)
+    except RuntimeError:
+        await page.keyboard.press("Enter")
+    await page.wait_for_timeout(settle_ms)
+    await page.keyboard.press("End")
+    await page.keyboard.press("Enter")
+
+
+async def submit_prompt(page: Page) -> None:
+    button = await visible_first(page, SEND_SELECTORS, "send button", timeout=10000)
+    await button.click()
+
+
+async def inspect_snapshot(page: Page) -> dict[str, Any]:
+    data = await page.evaluate(
+        """() => {
+          const text = el => (el.innerText || el.textContent || "").trim();
+          const attr = (el, name) => el.getAttribute(name) || "";
+          const visible = el => {
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+          };
+          const rows = selector => [...document.querySelectorAll(selector)].filter(visible).map(el => ({
+            tag: el.tagName.toLowerCase(),
+            text: text(el),
+            aria: attr(el, "aria-label"),
+            role: attr(el, "role"),
+            id: el.id || "",
+            testid: attr(el, "data-testid"),
+            href: el.href || "",
+            type: attr(el, "type"),
+            accept: attr(el, "accept"),
+          }));
+          const sidebar = rows('nav[aria-label="Chat history"] a, nav[aria-label="Chat history"] button, nav[aria-label="Chat history"] [role="button"]');
+          const controls = rows('button, a[role="button"], [role="button"], [role="option"], [role="menuitem"]');
+          const popups = rows('[role="menu"] *, [role="listbox"] *, [role="dialog"] *, [data-radix-popper-content-wrapper] *, [role="option"], [role="menuitem"]');
+          const inputs = rows('input, textarea, [contenteditable="true"]');
+          return {sidebar, controls, popups, inputs};
+        }"""
+    )
+    controls = data["controls"]
+    popups = data["popups"]
+    inputs = data["inputs"]
+    sidebar = data["sidebar"]
+    projects = unique(
+        row["text"]
+        for row in sidebar
+        if row["text"] and not row["href"] and row["text"] not in {"Projects", "Chats", "Pinned", "Recents"}
+    )
+    conversations = unique(row["text"] or row["aria"] for row in sidebar if row["href"] and "/c/" in row["href"])
+    buttons = unique(row["text"] or row["aria"] for row in controls if row["tag"] in {"button", "a", "div"})
+    popup_options = unique(row["text"] or row["aria"] for row in popups if row["role"] in {"option", "menuitem"} or row["text"])
+    file_inputs = [
+        {
+            "id": row["id"],
+            "testid": row["testid"],
+            "accept": row["accept"],
+        }
+        for row in inputs
+        if row["type"] == "file"
+    ]
+    prompt_inputs = [
+        {
+            "tag": row["tag"],
+            "id": row["id"],
+            "aria": row["aria"],
+            "testid": row["testid"],
+        }
+        for row in inputs
+        if row["id"] == "prompt-textarea" or "Chat" in row["aria"] or "Ask" in row["text"]
+    ]
+    return {
+        "url": page.url,
+        "projects": projects,
+        "conversations": conversations[:50],
+        "buttons": buttons,
+        "popup_options": popup_options,
+        "file_inputs": file_inputs,
+        "prompt_inputs": prompt_inputs,
+    }
+
+
+async def inspect_chat(cdp_url: str, model: str | None, connector_query: str | None, settle_ms: int) -> dict[str, Any]:
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp(cdp_url)
+        page = await new_page(browser)
+        try:
+            await page.goto(chat_url(model), wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(settle_ms)
+            if connector_query is not None:
+                box = await visible_first(page, PROMPT_SELECTORS, "prompt box")
+                await box.click()
+                await page.keyboard.type(f"@{connector_query}")
+                await page.wait_for_timeout(settle_ms)
+            snapshot = await inspect_snapshot(page)
+            snapshot["model"] = model
+            snapshot["connector_query"] = connector_query
+            snapshot["future_proofing"] = [
+                "Use inspect before relying on option names.",
+                "Use exact visible labels returned by inspect for --project, --connector, --reasoning, or --pick.",
+                "Use --pick as the generic escape hatch when ChatGPT renames a control.",
+            ]
+        finally:
+            await browser.close()
+    return snapshot
+
+
+async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp(request["cdp_url"])
+        page = await new_page(browser)
+        try:
+            await page.goto(chat_url(request["model"]), wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(request["settle_ms"])
+            if "login" in page.url or "auth.openai.com" in page.url:
+                raise RuntimeError("ChatGPT is not authenticated in the CDP browser. Log in manually, then rerun.")
+            if request["project"]:
+                await select_project(page, request["project"], request["settle_ms"])
+            for pick in request["picks"]:
+                await click_text(page, pick, "requested UI text", exact=False)
+                await page.wait_for_timeout(request["settle_ms"])
+            if request["reasoning"]:
+                await select_reasoning(page, request["reasoning"], request["settle_ms"])
+            await attach_files(page, request["files"], request["settle_ms"])
+            box = await fill_prompt(page, request["prompt"])
+            for connector in request["connectors"]:
+                await add_connector(page, box, connector, request["settle_ms"])
+            if request["submit"]:
+                await submit_prompt(page)
+                await page.wait_for_timeout(request["settle_ms"])
+            result = {
+                "url": page.url,
+                "title": await page.title(),
+                "submitted": request["submit"],
+                "files": [str(file) for file in request["files"]],
+                "model": request["model"],
+                "project": request["project"],
+                "connectors": request["connectors"],
+            }
+        finally:
+            await browser.close()
+    return result
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    prompt_words: Annotated[list[str] | None, typer.Argument(help="Prompt words. If omitted, stdin is used.")] = None,
+    describe_schema: Annotated[bool, typer.Option("--describe", help="Print machine-readable CLI metadata and exit.")] = False,
+    file: Annotated[list[Path] | None, typer.Option("--file", "-f", help="File to attach. Repeat for multiple files.")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="ChatGPT model slug/name for the new-chat URL.")] = None,
+    project: Annotated[str | None, typer.Option("--project", help="Visible project name to open before composing.")] = None,
+    connector: Annotated[list[str] | None, typer.Option("--connector", help="Connector/app name to add via @ mention. Repeatable.")] = None,
+    inspect_ui: Annotated[bool, typer.Option("--inspect", help="Inspect live ChatGPT labels and controls without submitting.")] = False,
+    connector_query: Annotated[str | None, typer.Option("--connector-query", help="With --inspect, type @QUERY before collecting popup options.")] = None,
+    reasoning: Annotated[str | None, typer.Option("--reasoning", help="Reasoning effort visible in the composer, e.g. Auto, Low, Medium, High.")] = None,
+    pick: Annotated[list[str] | None, typer.Option("--pick", help="Visible UI text to click after page load. Repeatable escape hatch.")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate and print the planned action without opening the browser.")] = False,
+    no_submit: Annotated[bool, typer.Option("--no-submit", help="Prepare the prompt in ChatGPT but do not submit.")] = False,
+    cdp_url: Annotated[str, typer.Option("--cdp-url", help="Chrome DevTools Protocol URL.")] = CDP_URL,
+    settle_ms: Annotated[int, typer.Option("--settle-ms", min=0, help="Delay after UI actions, in milliseconds.")] = 1200,
+    format: Annotated[str, typer.Option("--format", help="Output format: text or json.")] = "text",
+) -> None:
+    if describe_schema:
+        print(compact_json(describe()))
+        raise typer.Exit()
+    if ctx.invoked_subcommand is not None:
+        return
+    if format not in {"text", "json"}:
+        raise typer.BadParameter("--format must be text or json")
+    try:
+        if inspect_ui:
+            result = asyncio.run(inspect_chat(cdp_url, model, connector_query, settle_ms))
+            if format == "json":
+                print(compact_json(result))
+            else:
+                print(f"url\t{result['url']}")
+                for key in ["projects", "buttons", "popup_options", "file_inputs", "prompt_inputs"]:
+                    print(f"{key}\t{compact_json(result[key])}")
+            raise typer.Exit()
+        files = validate_files(file or [])
+        stdin = "" if sys.stdin.isatty() else sys.stdin.read()
+        text = prompt_text(tuple(prompt_words or ()), stdin)
+        request = {
+            "prompt": text,
+            "files": files,
+            "model": model,
+            "project": project,
+            "connectors": connector or [],
+            "reasoning": reasoning,
+            "picks": pick or [],
+            "submit": not no_submit and not dry_run,
+            "cdp_url": cdp_url,
+            "settle_ms": settle_ms,
+        }
+        if dry_run:
+            print(compact_json({**request, "files": [str(path) for path in files]}))
+            raise typer.Exit()
+        result = asyncio.run(prepare_chat(request))
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"chatgpt: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if format == "json":
+        print(compact_json(result))
+    else:
+        action = "submitted" if result["submitted"] else "prepared"
+        print(f"{action}: {result['url']}")
+
+
+if __name__ == "__main__":
+    app()

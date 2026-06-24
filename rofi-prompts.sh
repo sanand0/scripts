@@ -26,8 +26,9 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
-CACHE_VERSION="v3"
+CACHE_VERSION="v4"
 SKILLS_ROOT="$HOME/code/scripts/agents"
+BLOG_SKILLS_ROOT="$HOME/code/blog/pages/skills"
 SKILL_DESCRIPTION_MAX=44
 
 TARGET="$DEFAULT_TARGET"
@@ -213,6 +214,12 @@ discover_files() {
     done < <(find "$SKILLS_ROOT" -type f -name 'SKILL.md' -print0 | sort -z)
   fi
 
+  if [[ -d "$BLOG_SKILLS_ROOT" ]]; then
+    while IFS= read -r -d '' file; do
+      SKILL_FILES+=("$file")
+    done < <(find "$BLOG_SKILLS_ROOT" -maxdepth 2 -type f -name 'SKILL.md' -print0 | sort -z)
+  fi
+
   if [[ ${#FILES[@]} -eq 0 && ${#SKILL_FILES[@]} -eq 0 ]]; then
     echo "No markdown files found in: $TARGET"
     exit 1
@@ -258,9 +265,12 @@ cache_is_fresh() {
   for file in "${SKILL_FILES[@]}"; do
     [[ "$file" -nt "$cache_file" ]] && return 1
   done
-  if [[ -d "$SKILLS_ROOT" ]] && find "$SKILLS_ROOT" -type d -newer "$cache_file" -print -quit | read -r _; then
-    return 1
-  fi
+  local skill_root
+  for skill_root in "$SKILLS_ROOT" "$BLOG_SKILLS_ROOT"; do
+    if [[ -d "$skill_root" ]] && find "$skill_root" -type d -newer "$cache_file" -print -quit | read -r _; then
+      return 1
+    fi
+  done
 
   return 0
 }

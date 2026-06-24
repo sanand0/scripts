@@ -1,5 +1,19 @@
 # backupwhatsapp.py
 
+## Reduce conflicts, 07 Jun 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/code/tools/whatsappscraper:ro,~/Documents/data/whatsapp
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+`~/Documents/data/whatsapp/.history/` has several instances where the change is an change in the number of reactions. For example: `"fields":{"reactions":{"kept":"❤ 2","incoming":"❤ 3"}}}`. This is not important enough to back up the history.
+
+Minimally modify `backupwhatsapp.py` so that if the change is only in the reactions (increasing, decreasing, changing, whatever), it doesn't keep the older version and just updates it.
+
+<!-- codex resume 019e9fdb-64bd-7d33-9aa8-e512b3eae1ef --yolo -->
+
 ## Optimization, 31 May 2026
 
 <!--

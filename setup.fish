@@ -71,7 +71,7 @@ abbr --add giit git
 
 # Faster, better grep
 abbr --add grep ug
-abbr --add search ug -i --smart-case --bool -Q
+abbr --add search ug --smart-case --bool -Q --sort=rtime
 
 # Faster, better less (bat doesn't have keyboard shortcuts for wrapping, moor does)
 abbr --add less moor
@@ -132,6 +132,9 @@ abbr --add githubactivity 'GITHUB_TOKEN=(secret GITHUB_PERSONAL_ACCESS_TOKEN) gh
 
 # Color diffs
 abbr --add icdiff 'uvx --offline icdiff'
+
+# Display text in big letters. For example, watch 'ug question | wc -l | big'
+abbr --add big 'toilet -f mono12'
 
 # Jupyter Lab
 abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
@@ -642,9 +645,11 @@ function pasteit --description "Paste output into buffer. Usage: llm -t fish 'La
     commandline -f repaint
 end
 
-function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 100 lines, max 2000 chars per line'
+function trimdiff --description 'git diff | trimdiff 100 2000 100000 shows first/last 100 lines, max 2000 chars per line, 100K chars total'
     set -l N $argv[1]; test -z "$N"; and set N 100
     set -l C $argv[2]; test -z "$C"; and set C 2000
+    set -l M $argv[3]; test -z "$M"; and set M 100000
+
     awk -v N="$N" -v MAXC="$C" '
       BEGIN { H = N+0 ? N : 100; T = H }
       function pr(s){ if(length(s)>MAXC) s=substr(s,1,MAXC-3)"..."; print s }
@@ -663,7 +668,7 @@ function trimdiff --description 'git diff | trimdiff 100 2000 shows first/last 1
         else if(T>0){ buf[tailpos % T]=$0; tailpos++; if(tailn<T) tailn++ }
       }
       END { flush() }
-    '
+    ' | head -c "$M"
 end
 
 function livesync --description "Merge live branch into main (or specified) branch. Create new live branch."
@@ -735,24 +740,42 @@ function aimode --description "Example: aimode 'What is AI?' opens Google AI Mod
     open "https://www.google.com/search?udm=50&q=$encoded"
 end
 
-# Start CloudFlare Tunnel at mcp.s-anand.net.
-# https://dash.cloudflare.com/2c483e1dd66869c9554c6949a2d17d96/tunnels
-abbr --add cloudflaremcp 'cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN)'
+# NOTE: mcpserver is now like `dev.sh -p ~/code,~/r2:ro -- mcpserver.py`
+function pages --description "Serve current directory under a base path via Vite"
+    set base $argv[1]
+    test -n "$base"; or set base "/"
 
-# Run MCP server at mcp.s-anand.net
-function mcpserver --description "mcpserver $DIR1 $DIR2 ... runs Docker MCP with bash tool + read-only access to directories"
-    set -l mounts -v /home/sanand/code/scripts/:/home/sanand/code/scripts/:ro
-
-    for dir in $argv
-        set -l resolved (path resolve -- $dir)
-        if not test -d "$resolved"
-            echo "mcpserver: not a directory: $dir" >&2
-            return 1
-        end
-        set mounts $mounts -v "$resolved:$resolved:ro"
+    if not string match -q '/*' "$base"
+        set base "/$base"
+    end
+    if not string match -q '*/' "$base"
+        set base "$base/"
     end
 
-    dev.sh $mounts -- uv run /home/sanand/code/scripts/mcpserver.py
+    set port 9000
+    set host pages.s-anand.net
+    set started_cloudflared 0
+
+    if not pgrep -x cloudflared >/dev/null
+        set started_cloudflared 1
+        cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN) &
+        set cloudflared_pid $last_pid
+    end
+
+    env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=$host \
+        npx --yes vite . \
+        --host 127.0.0.1 \
+        --port $port \
+        --strictPort \
+        --base "$base"
+
+    set vite_status $status
+
+    if test $started_cloudflared -eq 1
+        kill $cloudflared_pid 2>/dev/null
+    end
+
+    return $vite_status
 end
 
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"

@@ -1,9 +1,10 @@
 For non-trivial tasks, define what done means and verify before claiming success.
 Test what you need - permissions, credentials, network/write access - and surface blockers early.
-Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). Push back if you disagree. Tell me when constraints filter, skip, block, or delete. 
+Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). Push back if you disagree. Tell me when constraints filter, skip, block, or delete.
 Prefer simple, resumable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
+For slow/large tasks, test on a sample, optimize, THEN scale.
 
-Always prefix shell commands with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
+Always prefix executables with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc. Not for shell builtins like test, command, ...
 
 Available tools:
 
@@ -26,7 +27,7 @@ Prefer gws > gcloud > code
 Execution:
 
 Run independent reads/searches/checks in parallel when safe
-Delegate to sub-agents if the task needs a smarter/cheaper model, less input context (independent testing), or less output context (parallel experiments) 
+Delegate to sub-agents if the task needs a smarter/cheaper model, less input context (independent testing), or less output context (parallel experiments)
 Increase timeouts proactively for commands that are expected to succeed
 For 20+ tool calls or long tasks, maintain a short visible progress log or checklist
 
@@ -34,4 +35,3 @@ After execution:
 
 If there were failures, apply log-agent-failures/SKILL.md
 If it was a complex task, apply the post-mortem/SKILL.md
-

@@ -97,6 +97,7 @@ class ContentSet:
     prompt: str
     fields: list[FieldDef]
     default_globs: list[str] = field(default_factory=lambda: ["*.md"])
+    exclude_names: list[str] = field(default_factory=list)  # basenames to skip (e.g. SKILL.md)
     meta_position: str = "before"  # "before": meta keys first; "after": meta keys last
     skip_if: Callable[[str], str | None] | None = None
 
@@ -288,9 +289,9 @@ CONTENT_SETS: list[ContentSet] = [
         fields=[
             FieldDef(
                 name="summary",
-                description="1-2 sentences naming key speakers and what they argued or decided.",
-                pydantic_type=str,
-                to_yaml=str,
+                description="3-8 who-said-what summaries of the most important items, one sentence each.",
+                pydantic_type=list[str],
+                to_yaml=list,
             ),
             FieldDef(
                 name="keywords",
@@ -308,7 +309,7 @@ CONTENT_SETS: list[ContentSet] = [
             ),
             FieldDef(
                 name="actions",
-                description='Action items as "Owner: Details" e.g. "Alok: Test GCS buckets". Empty list if none.',
+                description='ALL Action items as "Owner: Details" e.g. "Alok: Test GCS buckets". Empty list if none.',
                 pydantic_type=list[str],
                 to_yaml=list,
             ),
@@ -319,18 +320,16 @@ CONTENT_SETS: list[ContentSet] = [
         base_dir=Path("/home/sanand/code/blog"),
         prompt=(
             "Generate a description and keywords for this blog post's metadata.\n\n"
-            "Write the description in first person (\"I\") when the post is personal — "
-            "i.e. when the author did, found, built, or decided something. "
+            "Use first person (\"I\", never \"the author\") for personal posts. "
             "Use imperative or neutral voice only for instructional or concept posts. "
-            "Never use \"the author\". Be direct and conversational, not formal.\n\n"
+            "Be direct and conversational, not formal.\n\n"
         ),
         fields=[
             FieldDef(
                 name="description",
                 description=(
-                    "20-40 word main point or most useful takeaway. "
-                    "Prefer concrete ideas over framing. "
-                    "Use first person when the post is personal (author did/found/built something). "
+                    "20-40 word main point, preferably the most USEFUL takeaway or action item(s). "
+                    "Prefer concrete ideas over framing. A focused subset and examples beat vague completeness. "
                     "Include distinctive methods, domains, tools, or concepts when central."
                 ),
                 pydantic_type=str,
@@ -347,6 +346,7 @@ CONTENT_SETS: list[ContentSet] = [
             ),
         ],
         default_globs=["posts/**/*.md", "pages/**/*.md"],
+        exclude_names=["SKILL.md"],
         meta_position="after",
     ),
 ]
@@ -592,12 +592,15 @@ def resolve_files(patterns: list[str], content_set: ContentSet) -> list[Path]:
             files.extend(Path(p) for p in glob_module.glob(
                 str(content_set.base_dir / g), recursive=True
             ))
-        return sorted(set(files), reverse=True)
+    else:
+        files = []
+        for pattern in patterns:
+            root = pattern if pattern.startswith("/") else str(Path(".") / pattern)
+            files.extend(Path(f) for f in glob_module.glob(root, recursive=True))
 
-    files = []
-    for pattern in patterns:
-        root = pattern if pattern.startswith("/") else str(Path(".") / pattern)
-        files.extend(Path(f) for f in glob_module.glob(root, recursive=True))
+    if content_set.exclude_names:
+        excluded = set(content_set.exclude_names)
+        files = [f for f in files if f.name not in excluded]
     return sorted(set(files), reverse=True)
 
 

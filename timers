@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Pick a systemd user timer and follow its service journal.
+
+set -euo pipefail
+
+# fzf and jaq are installed through mise.
+eval "$(mise env -s bash)"
+
+relative_time() {
+	local seconds=$1 suffix=$2 value
+	((seconds < 0)) && seconds=$((-seconds))
+
+	if ((seconds < 60)); then
+		value="${seconds}s"
+	elif ((seconds < 3600)); then
+		value="$((seconds / 60))min"
+	elif ((seconds < 86400)); then
+		value="$((seconds / 3600))h"
+	else
+		value="$((seconds / 86400))d"
+	fi
+	printf '%s%s' "$suffix" "$value"
+}
+
+format_time() {
+	local timestamp=$1 now=$2 direction=$3 relative absolute
+	if ((timestamp <= 0)); then
+		printf 'never'
+		return
+	fi
+
+	if [[ $direction == past ]]; then
+		relative="$(relative_time "$((now - timestamp))" '') ago"
+	else
+		relative="$(relative_time "$((timestamp - now))" 'in ')"
+	fi
+	absolute="$(date --date="@$timestamp" '+%-d %b %Y, %-I:%M %P %Z')"
+	printf '%s (%s)' "$relative" "$absolute"
+}
+
+now=$(date +%s)
+choices=$(
+	systemctl --user list-timers --all --output=json |
+		jaq -r '.[] | [(.last // 0), (.next // 0), .unit, .activates] | @tsv' |
+		sort -t $'\t' -k1,1nr |
+		while IFS=$'\t' read -r last next timer service; do
+			printf '%s\t%s ran %s. Next: %s.\n' \
+				"$service" "$timer" \
+				"$(format_time "$((last / 1000000))" "$now" past)" \
+				"$(format_time "$((next / 1000000))" "$now" future)"
+		done
+)
+
+[[ -n $choices ]] || {
+	printf 'No user timers found.\n' >&2
+	exit 0
+}
+
+selected=$(fzf --delimiter=$'\t' --with-nth=2.. --prompt='Timer> ' <<<"$choices") || exit 0
+
+journalctl --user -u "${selected%%$'\t'*}" --since "3 days ago" --lines=all --follow

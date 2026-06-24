@@ -108,6 +108,7 @@ sudo apt install -y sox libsox-fmt-all  # sox - audio processing
 sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modification times from git history
 sudo apt install -y gromit-mpx          # gromit-mpx - On-screen annotation tool (F9 to toggle, F8/Shift F8 to undo/redo)
 sudo apt install -y unicode-data        # unicode-data - Unicode character database (for tv unicode)
+sudo apt install -y toilet toilet-fonts # toilet - CLI banner with color and Unicode support (figlet alternative)
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 
@@ -160,7 +161,7 @@ mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text |
 mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used
 mise use -g gum                       # gum - Stylish command-line prompts and scripts
-mise use -g hugo                      # Hugo - Fast static site generator
+mise use -g hugo-extended@latest      # Hugo - Fast static site generator
 mise use -g jaq                       # jaq - jq alternative with JIT compilation
 mise use -g jq                        # jq - JSON processor
 mise use -g lazydocker                # lazydocker - Terminal UI for Docker
@@ -369,6 +370,8 @@ ln -s $HOME /c
 # Create symlinks for versioned config files
 ln -s ~/code/scripts/.gitconfig ~/.gitconfig
 ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
+mkdir -p ~/.config/git
+ln -s ~/code/scripts/git-ignore ~/.config/git/ignore
 ln -s ~/Dropbox/scripts/.ssh ~/.ssh
 chmod og-r ~/.ssh/*
 printf '{"extends":["https://raw.githubusercontent.com/sanand0/scripts/refs/heads/live/dprint.jsonc", "/home/sanand/code/scripts/dprint.jsonc"]}' > ~/dprint.json
