@@ -1,5 +1,28 @@
 # Summarize
 
+## Add ideas to transcripts, 26 Jun 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -p ~/Dropbox/notes/transcripts,~/code/blog -- claude --dangerously-skip-permissions --model opus
+-->
+
+When running `summarize.py transcripts`, add an `ideas:` section to the YAML metadata. This should be a list of idas extracted from the transcript content AND any ideas or experiments that I could try that emerge from the transcript. Go through past transcripts (at least 10) to see where I have manually marked `#IDEA` in the transcripts, understand their nature and how they help me, and how they might emerge from the context of the transcript. Based on this, craft the prompt to extract ideas from the transcript content.
+
+Test on 5 transcripts that have `#IDEA` items AND transcript content, generating the `ideas` list. Review the output. See how well it aligns with my intent, how best to improve the prompt, and revise and iterate once. Then share the same 5 updated transcripts for my review.
+
+--- <!-- steering -->
+
+You can use the GEMINI_API_KEY in ~/code/scripts/.env
+
+---
+
+Update the models to include gemini-3.5-flash, gemini-3.1-flash-lite, gemini-3.1-pro-preview and update their prices. Use gemini-3.5-flash as the default model.
+
+Update all `2026-06-*.md` transcripts to include an `ideas:` section.
+
+<!-- claude --resume d6893bf0-1684-43f5-bb4c-cf7892163a09 --dangerously-skip-permissions -->
+
 ## Don't summarize SKILL.md, 20 Jun 2026
 
 <!--

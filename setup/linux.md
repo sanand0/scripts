@@ -112,6 +112,25 @@ sudo apt install -y toilet toilet-fonts # toilet - CLI banner with color and Uni
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 
+# Install and configure newsboat RSS reader
+sudo snap install newsboat
+mkdir -p ~/Documents/newsboat
+touch ~/Documents/newsboat/urls
+cat > ~/Documents/newsboat/config <<'EOF'
+auto-reload no
+reload-threads 4
+
+# Keep local archive
+max-items 0
+keep-articles-days 365
+
+# For sparse feeds, fetch linked page content as item content
+download-full-page yes
+
+# Open original article when needed
+browser "xdg-open %u"
+EOF
+
 # mise - Polyglot runtime manager for Node, Python, etc. | Update: mise self-update
 curl https://mise.run | sh
 eval "$($HOME/.local/bin/mise env -s bash)"
@@ -127,7 +146,7 @@ mise use -g caddy                     # caddy - Web server with automatic HTTPS
 mise use -g cloudflared               # cloudflared - Cloudflare Tunnel client
 mise use -g dasel                     # dasel - Query and modify JSON/YAML/TOML/XML/CSV
 mise use -g deno                      # Deno - Secure JavaScript and TypeScript runtime
-mise use -g difftastic                # difftastic - Syntax-aware diff tool for code and prose
+mise use -g difftastic                # difftastic - Syntax-aware diff tool for code and prose. Use `git ddiff`
 mise use -g duckdb                    # DuckDB - In-process SQL OLAP database
 mise use -g duf                       # duf - Disk usage utility with better formatting than df
 mise use -g eza                       # Better ls (replaces exa)
@@ -149,7 +168,7 @@ mise use -g github:imsnif/bandwhich   # bandwhich - Terminal network bandwidth u
 mise use -g github:ip7z/7zip          # 7zip - File archiver with high compression ratio
 mise use -g github:jqnatividad/qsv    # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g github:junegunn/fzf       # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
-mise use -g github:milisp/codexia     # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`
+mise use -g github:kenn-io/agentsview # agentsview serve for UI for local agent sessions
 mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g github:pnpm/pnpm          # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
@@ -161,7 +180,7 @@ mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text |
 mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used
 mise use -g gum                       # gum - Stylish command-line prompts and scripts
-mise use -g hugo-extended@latest      # Hugo - Fast static site generator
+mise use -g hugo-extended             # Hugo - Fast static site generator
 mise use -g jaq                       # jaq - jq alternative with JIT compilation
 mise use -g jq                        # jq - JSON processor
 mise use -g lazydocker                # lazydocker - Terminal UI for Docker
@@ -476,12 +495,16 @@ mkdir -p ~/.config/rofi; cat > ~/.config/rofi/config.rasi << 'EOF'
 window { height: 80%; }
 EOF
 
-# Install Fira Code font
+# Install fonts
 mkdir -p ~/.local/share/fonts
-curl -L https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz
+curl -sL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz
 tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts
-curl -L https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-Variable.zip -o ~/.local/share/fonts/MapleMono-Variable.zip
+curl -sL https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-Variable.zip -o ~/.local/share/fonts/MapleMono-Variable.zip
 unzip ~/.local/share/fonts/MapleMono-Variable.zip -d ~/.local/share/fonts
+curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Bold-Italic.ttf -o ~/.local/share/fonts/Consolas-Bold-Italic.ttf
+curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Bold.ttf -o ~/.local/share/fonts/Consolas-Bold.ttf
+curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Italic.ttf -o ~/.local/share/fonts/Consolas-Italic.ttf
+curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Regular.ttf -o ~/.local/share/fonts/Consolas-Regular.ttf
 fc-cache -fv ~/.local/share/fonts
 
 # Configure llm
@@ -620,7 +643,8 @@ MISE deprecations:
 mise use -g clickhouse  # Prefer DuckDB
 mise use -g fastfetch   # Prefer one-time use: mise x fastfetch -- fastfetch
 mise use -g oxipng      # Prefer webp / squoosh
-mise use -g github:Canop/broot   # broot - File browser with fuzzy search. Doesn't work: No binary in release
+mise use -g github:Canop/broot      # broot - File browser with fuzzy search. Doesn't work: No binary in release
+mise use -g github:milisp/codexia   # codexia - Codex / Claude log viewer. Desktop app. Run via `codexia.AppImage`. Feels complex and heavy. Switched to agentsview
 mise use -g usql  # Prefer DuckDB
 ```
 

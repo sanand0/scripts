@@ -56,13 +56,17 @@ MIN_CONTENT_LINES = 5
 
 # Pricing in $ per 1M tokens (input, output) — update as needed
 PRICING: dict[str, tuple[float, float]] = {
+    "gemini-3.5-flash":       (1.50,  9.00),
+    "gemini-3.1-flash-lite":  (0.25,  1.50),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
     "gemini-3-flash-preview": (0.075, 0.30),
     "gemini-3-pro-preview":   (1.25,  5.00),
     "gemini-2.5-flash":       (0.075, 0.30),
     "gemini-2.5-pro":         (1.25,  5.00),
     "gemini-2.0-flash":       (0.075, 0.30),
 }
-DEFAULT_PRICING = (0.075, 0.30)
+# Default price if user specifies a model not in PRICING dict
+DEFAULT_PRICING = (1.50,  9.00)
 
 
 # ── Field definition ────────────────────────────────────────────────────────────
@@ -250,6 +254,16 @@ def clean_people(people: list) -> list[str]:
     return [_clean_name(n) for n in people if _is_real_name(_clean_name(str(n).strip()))]
 
 
+def clean_ideas(ideas: list) -> list[str]:
+    """Strip a leading '#IDEA' tag / stray quotes the model may echo from the notes."""
+    out = []
+    for raw in ideas:
+        s = re.sub(r"^\s*#idea[:\s-]*", "", str(raw).strip(), flags=re.IGNORECASE).strip(" '\"")
+        if s:
+            out.append(s)
+    return out
+
+
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 def is_unprocessed(val: Any) -> bool:
@@ -283,7 +297,17 @@ CONTENT_SETS: list[ContentSet] = [
             "Analyze this meeting transcript and extract metadata.\n\n"
             "For 'actions': format each as \"Owner: Details of action\" "
             "(e.g. \"Anand: Send slides to Vikram\", \"Team: Review dashboard by Friday\").\n"
-            "For 'people': include only clearly named speakers — no placeholders.\n\n"
+            "For 'people': include only clearly named speakers — no placeholders.\n"
+            "For 'ideas': capture forward-looking sparks worth revisiting later — business or market "
+            "opportunities, product/venture concepts, experiments to try, provocative \"what if\" questions, "
+            "go-to-market or recruiting tactics, tooling ideas, and reusable principles. Include BOTH ideas "
+            "explicitly raised in the conversation AND fresh ones that emerge from its context. Lines the "
+            "note-taker already tagged with \"#IDEA\" are exactly this kind of spark — always carry those "
+            "forward (but drop the literal \"#IDEA\" tag from the text). Write the way the note-taker does: "
+            "terse, concrete, ~6-15 words, plain conversational English. A sentence fragment or a bare "
+            "question is good. NO preamble verbs like \"Leverage/Utilize/Implement\", no buzzwords, no "
+            "phrases-in-quotes, no two-clause explanations. Ideas are generative, not a recap of what was "
+            "said (that's 'summary') and not assigned to-dos (those are 'actions').\n\n"
         ),
         skip_if=_transcript_skip,
         fields=[
@@ -312,6 +336,21 @@ CONTENT_SETS: list[ContentSet] = [
                 description='ALL Action items as "Owner: Details" e.g. "Alok: Test GCS buckets". Empty list if none.',
                 pydantic_type=list[str],
                 to_yaml=list,
+            ),
+            FieldDef(
+                name="ideas",
+                description=(
+                    "3-10 forward-looking sparks worth revisiting — opportunities, product/venture concepts, "
+                    "experiments to try, provocative \"what if\" questions, go-to-market/recruiting tactics, "
+                    "tooling ideas, or reusable principles. Capture BOTH ideas explicitly raised (including any "
+                    "lines tagged \"#IDEA\", but omit that literal tag) AND fresh ones that emerge from the "
+                    "discussion. Each a terse, concrete one-liner of ~6-15 words in plain conversational English; "
+                    "a fragment or a bare question is fine. No \"Leverage/Utilize/Implement\" preambles, no "
+                    "buzzwords, no quoted phrases. Generative sparks, not a recap and not to-dos. Empty list if none."
+                ),
+                pydantic_type=list[str],
+                to_yaml=list,
+                clean=clean_ideas,
             ),
         ],
     ),
@@ -484,7 +523,7 @@ def process_file(
 def main(
     content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}"),
     patterns:  Optional[list[str]]    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
-    model:     str                    = typer.Option("gemini-3-flash-preview", help="Gemini model ID"),
+    model:     str                    = typer.Option("gemini-3.5-flash", help="Gemini model ID"),
     workers:   int                    = typer.Option(4, "--workers", help="Parallel API workers"),
     dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),

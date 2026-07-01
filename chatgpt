@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Annotated
 from urllib.parse import urlencode
@@ -41,6 +42,38 @@ SEND_SELECTORS = [
     'button[aria-label="Send prompt"]',
     'button[aria-label*="Send"]',
 ]
+COPY_SELECTORS = [
+    '[data-testid*="copy"]',
+    'button[aria-label="Copy"]',
+    'button[aria-label*="Copy"]',
+]
+ASSISTANT_COPY_TARGET_JS = """({prompt}) => {
+  const clean = text => (text || "").replace(/\\s+/g, " ").trim();
+  const target = clean(prompt);
+  document.querySelectorAll('[data-chatgpt-save-copy-target]').forEach(el =>
+    el.removeAttribute('data-chatgpt-save-copy-target')
+  );
+  const turns = [...document.querySelectorAll('[data-testid^="conversation-turn-"]')];
+  const userIndex = turns.findLastIndex(turn =>
+    turn.querySelector('[data-message-author-role="user"]') && clean(turn.innerText || turn.textContent).includes(target)
+  );
+  if (userIndex < 0) return false;
+  const root = turns.slice(userIndex + 1).find(turn => turn.querySelector('[data-message-author-role="assistant"]'));
+  if (!root) return false;
+  if (!(root.innerText || root.textContent || "").trim()) return false;
+  for (const selector of [
+    'button[data-testid="copy-turn-action-button"][aria-label*="Copy response" i]',
+    'button[aria-label*="Copy response" i]',
+    'button[data-testid="copy-turn-action-button"]',
+  ]) {
+    const button = root.querySelector(selector);
+    if (button && !button.disabled) {
+      button.setAttribute('data-chatgpt-save-copy-target', 'true');
+      return {text: root.innerText || root.textContent || ""};
+    }
+  }
+  return false;
+}"""
 FILE_INPUT_SELECTORS = [
     'input#upload-files[type="file"]',
     'input[type="file"]:not([accept*="image"])',
@@ -77,10 +110,15 @@ def unique(values: list[str]) -> list[str]:
     return result
 
 
-def chat_url(model: str | None) -> str:
-    if not model:
+def chat_url(model: str | None, temporary: bool = False) -> str:
+    params = {}
+    if temporary:
+        params["temporary-chat"] = "true"
+    if model:
+        params["model"] = model
+    if not params:
         return CHATGPT_URL
-    return f"{CHATGPT_URL}?{urlencode({'model': model})}"
+    return f"{CHATGPT_URL}?{urlencode(params)}"
 
 
 def prompt_text(words: tuple[str, ...], stdin: str) -> str:
@@ -102,23 +140,51 @@ def validate_files(files: list[Path]) -> list[Path]:
     return resolved
 
 
+def save_path(target: Path | None) -> Path:
+    path = (target or Path.cwd()).expanduser()
+    if path.is_dir():
+        name = f"chatgpt-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.txt"
+        return path / name
+    return path
+
+
+def saved_markdown(link: str, prompt: str, response: str) -> str:
+    return (
+        f"---\nlink: {link}\n---\n\n"
+        f"## User\n\n{prompt.rstrip()}\n\n"
+        f"## ChatGPT\n\n{response.rstrip()}\n"
+    )
+
+
+def normalize_save_args(args: list[str]) -> list[str]:
+    result = []
+    for index, arg in enumerate(args):
+        result.append(arg)
+        if arg == "--save" and (index == len(args) - 1 or args[index + 1].startswith("-")):
+            result.append(".")
+    return result
+
+
 def describe() -> dict[str, Any]:
     return {
         "name": "chatgpt",
         "default_cdp_url": CDP_URL,
         "source": CHATGPT_URL,
-        "actions": ["inspect", "new_tab", "project", "model", "reasoning", "connector", "file", "prompt", "submit"],
+        "actions": ["inspect", "new_tab", "project", "model", "reasoning", "connector", "file", "prompt", "submit", "save"],
         "formats": ["text", "json"],
         "default_format": "text",
         "input": {
             "prompt": "Arguments are joined with spaces. If omitted, stdin is used.",
             "files": "Repeat --file for attachments. Paths are validated before browser automation.",
             "model": "Passed in the ChatGPT new-chat URL query.",
+            "temporary": "Open a temporary ChatGPT chat.",
             "connector": "Repeat --connector to select @ mentions from the composer suggestion UI.",
             "pick": "Repeat --pick to click visible UI text after the page loads.",
+            "save": "Optional target file or directory. Bare --save writes a timestamped file in the current directory.",
         },
         "examples": [
             'chatgpt --dry-run --model gpt-5 "Summarize this"',
+            'chatgpt --save "Summarize this"',
             "chatgpt --inspect --connector-query drive --format json | jaq .",
             'chatgpt --file report.pdf --project "Transcripts" "Analyze this file"',
             'cat prompt.md | chatgpt --connector "Google Drive" --format json | jaq .',
@@ -239,6 +305,93 @@ async def submit_prompt(page: Page) -> None:
     await button.click()
 
 
+def text_matches_response(response: str, assistant_text: str) -> bool:
+    response_text = clean_label(response)
+    target = clean_label(assistant_text)
+    if not response_text or not target:
+        return False
+    return target in response_text or response_text in target or target[:80] in response_text
+
+
+async def clipboard_text(page: Page) -> str:
+    try:
+        return await page.evaluate("navigator.clipboard.readText()")
+    except Exception:
+        return ""
+
+
+async def response_copy_target(page: Page, prompt: str) -> dict[str, str]:
+    handle = await page.wait_for_function(
+        ASSISTANT_COPY_TARGET_JS,
+        arg={"prompt": prompt},
+        timeout=180000,
+    )
+    return await handle.json_value()
+
+
+async def stable_response_text(page: Page, prompt: str) -> str:
+    target = await response_copy_target(page, prompt)
+    previous = clean_label(target["text"])
+    stable_reads = 0
+    for _ in range(90):
+        await page.wait_for_timeout(1000)
+        target = await response_copy_target(page, prompt)
+        current = clean_label(target["text"])
+        if current == previous:
+            stable_reads += 1
+        else:
+            previous = current
+            stable_reads = 0
+        if stable_reads >= 2:
+            return target["text"]
+    raise RuntimeError("ChatGPT response did not finish within 90 seconds after it appeared")
+
+
+async def copy_response_markdown(page: Page, prompt: str) -> str:
+    assistant_text = await stable_response_text(page, prompt)
+    button = page.locator('[data-chatgpt-save-copy-target="true"]').last
+    before = await clipboard_text(page)
+    response = before
+    for force in [False, True, True]:
+        try:
+            await button.scroll_into_view_if_needed(timeout=3000)
+            await button.hover(timeout=3000)
+            await button.click(timeout=10000, force=force)
+            await page.wait_for_timeout(700)
+            response = await clipboard_text(page)
+            if text_matches_response(response, assistant_text):
+                return response
+        except PlaywrightTimeoutError:
+            continue
+    eprint("chatgpt: copy button did not update clipboard; saving visible assistant text instead")
+    return assistant_text
+
+
+async def conversation_link(page: Page, temporary: bool = False) -> str:
+    if temporary:
+        return page.url
+    await page.wait_for_function(
+        """() => {
+          const canonical = document.querySelector('link[rel="canonical"]')?.href || "";
+          const links = [...document.querySelectorAll('nav[aria-label="Chat history"] a[href*="/c/"]')];
+          return location.href.includes("/c/") || canonical.includes("/c/") || links.length > 0;
+        }
+        """,
+        timeout=30000,
+    )
+    return await page.evaluate(
+        """() => {
+          const canonical = document.querySelector('link[rel="canonical"]')?.href || "";
+          if (canonical.includes("/c/")) return canonical;
+          if (location.href.includes("/c/")) return location.href;
+          const title = document.title.trim();
+          const links = [...document.querySelectorAll('nav[aria-label="Chat history"] a[href*="/c/"]')];
+          const recent = links.filter(link => !(link.getAttribute("aria-label") || "").includes("pinned conversation"));
+          return (recent.find(link => link.innerText.trim() === title) || recent[0] || links[0]).href;
+        }"""
+    )
+
+
 async def inspect_snapshot(page: Page) -> dict[str, Any]:
     data = await page.evaluate(
         """() => {
@@ -309,12 +462,12 @@ async def inspect_snapshot(page: Page) -> dict[str, Any]:
     }
 
 
-async def inspect_chat(cdp_url: str, model: str | None, connector_query: str | None, settle_ms: int) -> dict[str, Any]:
+async def inspect_chat(cdp_url: str, model: str | None, temporary: bool, connector_query: str | None, settle_ms: int) -> dict[str, Any]:
     async with async_playwright() as p:
         browser = await p.chromium.connect_over_cdp(cdp_url)
         page = await new_page(browser)
         try:
-            await page.goto(chat_url(model), wait_until="domcontentloaded", timeout=60000)
+            await page.goto(chat_url(model, temporary), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(settle_ms)
             if connector_query is not None:
                 box = await visible_first(page, PROMPT_SELECTORS, "prompt box")
@@ -323,6 +476,7 @@ async def inspect_chat(cdp_url: str, model: str | None, connector_query: str | N
                 await page.wait_for_timeout(settle_ms)
             snapshot = await inspect_snapshot(page)
             snapshot["model"] = model
+            snapshot["temporary"] = temporary
             snapshot["connector_query"] = connector_query
             snapshot["future_proofing"] = [
                 "Use inspect before relying on option names.",
@@ -337,9 +491,10 @@ async def inspect_chat(cdp_url: str, model: str | None, connector_query: str | N
 async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
     async with async_playwright() as p:
         browser = await p.chromium.connect_over_cdp(request["cdp_url"])
+        await browser.contexts[0].grant_permissions(["clipboard-read", "clipboard-write"], origin="https://chatgpt.com")
         page = await new_page(browser)
         try:
-            await page.goto(chat_url(request["model"]), wait_until="domcontentloaded", timeout=60000)
+            await page.goto(chat_url(request["model"], request["temporary"]), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(request["settle_ms"])
             if "login" in page.url or "auth.openai.com" in page.url:
                 raise RuntimeError("ChatGPT is not authenticated in the CDP browser. Log in manually, then rerun.")
@@ -357,14 +512,24 @@ async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
             if request["submit"]:
                 await submit_prompt(page)
                 await page.wait_for_timeout(request["settle_ms"])
+            response = None
+            save = request["save"]
+            if request["submit"] and save:
+                response = await copy_response_markdown(page, request["prompt"])
+                link = await conversation_link(page, request["temporary"])
+                path = save_path(save).resolve()
+                path.write_text(saved_markdown(link, request["prompt"], response), encoding="utf-8")
             result = {
                 "url": page.url,
                 "title": await page.title(),
                 "submitted": request["submit"],
                 "files": [str(file) for file in request["files"]],
                 "model": request["model"],
+                "temporary": request["temporary"],
                 "project": request["project"],
                 "connectors": request["connectors"],
+                "save": str(path) if request["submit"] and save else None,
+                "response_chars": len(response) if response is not None else None,
             }
         finally:
             await browser.close()
@@ -378,6 +543,7 @@ def main(
     describe_schema: Annotated[bool, typer.Option("--describe", help="Print machine-readable CLI metadata and exit.")] = False,
     file: Annotated[list[Path] | None, typer.Option("--file", "-f", help="File to attach. Repeat for multiple files.")] = None,
     model: Annotated[str | None, typer.Option("--model", help="ChatGPT model slug/name for the new-chat URL.")] = None,
+    temporary: Annotated[bool, typer.Option("--temporary", help="Open a temporary ChatGPT chat.")] = False,
     project: Annotated[str | None, typer.Option("--project", help="Visible project name to open before composing.")] = None,
     connector: Annotated[list[str] | None, typer.Option("--connector", help="Connector/app name to add via @ mention. Repeatable.")] = None,
     inspect_ui: Annotated[bool, typer.Option("--inspect", help="Inspect live ChatGPT labels and controls without submitting.")] = False,
@@ -386,6 +552,7 @@ def main(
     pick: Annotated[list[str] | None, typer.Option("--pick", help="Visible UI text to click after page load. Repeatable escape hatch.")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate and print the planned action without opening the browser.")] = False,
     no_submit: Annotated[bool, typer.Option("--no-submit", help="Prepare the prompt in ChatGPT but do not submit.")] = False,
+    save: Annotated[Path | None, typer.Option("--save", help="Save the completed ChatGPT response to TARGET file or directory.")] = None,
     cdp_url: Annotated[str, typer.Option("--cdp-url", help="Chrome DevTools Protocol URL.")] = CDP_URL,
     settle_ms: Annotated[int, typer.Option("--settle-ms", min=0, help="Delay after UI actions, in milliseconds.")] = 1200,
     format: Annotated[str, typer.Option("--format", help="Output format: text or json.")] = "text",
@@ -399,7 +566,7 @@ def main(
         raise typer.BadParameter("--format must be text or json")
     try:
         if inspect_ui:
-            result = asyncio.run(inspect_chat(cdp_url, model, connector_query, settle_ms))
+            result = asyncio.run(inspect_chat(cdp_url, model, temporary, connector_query, settle_ms))
             if format == "json":
                 print(compact_json(result))
             else:
@@ -414,16 +581,18 @@ def main(
             "prompt": text,
             "files": files,
             "model": model,
+            "temporary": temporary,
             "project": project,
             "connectors": connector or [],
             "reasoning": reasoning,
             "picks": pick or [],
             "submit": not no_submit and not dry_run,
+            "save": save,
             "cdp_url": cdp_url,
             "settle_ms": settle_ms,
         }
         if dry_run:
-            print(compact_json({**request, "files": [str(path) for path in files]}))
+            print(compact_json({**request, "files": [str(path) for path in files], "save": str(save) if save else None}))
             raise typer.Exit()
         result = asyncio.run(prepare_chat(request))
     except typer.Exit:
@@ -435,8 +604,8 @@ def main(
         print(compact_json(result))
     else:
         action = "submitted" if result["submitted"] else "prepared"
-        print(f"{action}: {result['url']}")
+        print(result["save"] or f"{action}: {result['url']}")
 
 
 if __name__ == "__main__":
-    app()
+    app(args=normalize_save_args(sys.argv[1:]))

@@ -1,0 +1,35 @@
+#!/usr/bin/bash
+
+# Run `uvx feed2exec fetch` which fetches from ~/.config/feed2exec.ini to run this script on each item.
+# This script downloads each feed item as a single HTML page.
+# Source: https://chatgpt.com/c/6a4457bd-48a8-83ec-8a5d-0bcc7c3be582
+
+set -euo pipefail
+
+feed_name="${1:?usage: rss-archive-page FEED_NAME URL}"
+url="${2:?usage: rss-archive-page FEED_NAME URL}"
+item_updated="${3:-}"
+
+base="/home/sanand/Documents/rss/"
+
+# Preserve readable feed names, but prevent path traversal and bad path chars.
+safe_feed_name="$(
+  python3 - "$feed_name" <<'PY'
+import re, sys
+name = sys.argv[1].strip()
+name = re.sub(r"[/\\\0\r\n\t]", "_", name)
+name = re.sub(r"\s+", " ", name)
+name = name.strip(" .")
+print(name or "unnamed-feed")
+PY
+)"
+
+outdir="$base/$safe_feed_name"
+mkdir -p "$outdir"
+
+mise x github:Y2Z/monolith@2.10.1 -- monolith-gnu -I -e -q "$url" -o "$outdir/%timestamp% %title%.html"
+
+# Set the feed folder mtime to this item's updated time, if feed2exec supplied it.
+if [[ -n "$item_updated" && "$item_updated" != "None" ]]; then
+  touch -d "$item_updated" "$outdir" 2>/dev/null || true
+fi

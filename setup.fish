@@ -164,6 +164,8 @@ abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
 abbr --add copilotlog 'agentlog.py copilot'
 
+abbr --add tau 'uvx --from tau-ai tau'
+
 # File sync utilities
 # -----------------------------------------------
 
@@ -312,9 +314,19 @@ function mcd --description "mkdir DIR && cd DIR"
     and cd -- $argv[1]
 end
 
+# newsboat RSS reader
+function rss --description "Run newsboat with custom config and cache"
+    newsboat \
+        -u $HOME/Documents/newsboat/urls \
+        -c $HOME/Documents/newsboat/cache.db \
+        -C $HOME/Documents/newsboat/config \
+        $argv[1..]
+end
+
 # Notes utilities
 # -----------------------------------------------
-abbr actions 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 10); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
+abbr actions 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
+abbr ideas 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.ideas\' $file; end'
 
 # Audio/video
 # ----------------------------------------------

@@ -1,5 +1,38 @@
 # Rofi prompts
 
+## Wrap skills, 29 Jun 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify rofi-prompts.sh to include skills from `~/code/blog/pages/skills/*/SKILL.md` apart from `~/code/blog/pages/skills/*/SKILL.md`
+
+All skills should have their YAML frontmatter stripped out and be wrapped inside a:
+
+```
+<skill name="folder-name">
+...
+</skill>
+```
+
+For example, `~/code/blog/pages/skills/anand-objectives/SKILL.md` should be wrapped as:
+
+```
+<skill name="anand-objectives">
+Anand is building a ...
+</skill>
+```
+
+Run and test.
+
+--- <!-- 30 Jun 2026 -->
+
+Modify to include a description=... based on the skill description if it exists. Quote it for HTML/XML.
+
+<!-- codex resume 019f10fd-9243-7a03-8fc7-9165d6beb544 --yolo -->
+
 ## Include blog skills, 20 Jun 2026
 
 <!--

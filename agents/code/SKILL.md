@@ -3,20 +3,42 @@ name: code
 description: ALWAYS follow this style when writing Python / JavaScript code
 ---
 
-- Prefer libraries to writing code. Prefer popular, modern, minimal, fast libraries
+- Minimize new code and changes. Prefer the first working option:
+  1. Skip if unnecessary
+  2. Reuse existing code
+  3. Use native platform features
+  4. Write it one line if that is clear and correct
+  5. Use standard library
+  6. Use existing library
+  7. Use popular, modern, minimal, fast library
+  8. Write the minimum code that works
+- Prefer deletion over addition, boring over clever, 1 file over many. Minimize abstractions, scaffolding, or dependencies
+- Prefer data over code: structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
+- DRY: Use helpers for logic repeated 3+ times, precompute shared intermediates
 - Keep happy path linear and obvious. Write flow first, then fill in code
-- Keep code short
-  - Data over code: Structures beat conditionals. Prefer config.{json|yaml|toml|...} if >= 30 lines
-  - DRY: Helpers for repeated logic, precompute shared intermediates
-  - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
+- Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
 - Change existing code minimally. Retain existing comments. Follow existing style
-- Use type hints and docstrings (document contracts and surprises, not mechanics)
-- Only comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
-- When tests exist, or writing new code, add new failing tests first (including edge cases). Keep tests fast
-- Test web pages with screenshots (for layout, overlaps, contrast) _AND_ DOM (for interactions, navigation) before finalizing
-- Log status & progress for long tasks (>5s). Log _before_ action.
 - Make scripts re-startable if interrupted
-- Check latest docs for fast moving packages
+
+Docs:
+
+- Use type hints and docstrings (document contracts and surprises, not mechanics)
+- Comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
+
+Tests:
+
+- When tests exist, or writing new code, add and run tests first (including edge cases). Keep tests fast
+- Test final outputs, not just the source / intermediates
+- Test visual artifacts (web pages, docs, slides, PDFs, ...) with screenshots (for responsive layout, overlaps, contrast & visibility) _AND_ DOM (for interactions, navigation, accessibility) before finalizing
+- Never say "verified" without evidence. List changes, validations with results, and remaining risks/unknowns
+
+Ops:
+
+- Log status & progress for long tasks (>5s). Log _before_ action. Flush logs
+
+Bug fixes:
+
+- Fix the root cause, not just the reported symptom. Check callers before patching
 
 ## Python
 
@@ -32,12 +54,12 @@ Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies a
 # ///
 ```
 
-Preferred libs:
+Prefer:
 
 - typer / click not argparse
 - httpx not requests
 - lxml not xml
-- pandas not csv
+- duckdb / pandas not csv
 - tenacity for retries
 
 ## HTML
@@ -58,8 +80,6 @@ Preferred JS style:
 - No TypeScript, but `// @ts-check`. `.d.ts` is OK for packages
 - Loading indicator while awaiting fetch()
 - Error handling only at top level. Render errors for user
-
-Preferred libs: d3, hljs, lit-html, marked, partial-json
 
 Debug front-end apps with agent-browser, rodney, Playwright via CDP on localhost:9222.
 For single-page HTML files try `file://` if a server may not be needed.

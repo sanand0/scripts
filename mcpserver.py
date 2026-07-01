@@ -250,13 +250,12 @@ def stop_cloudflare_tunnel(process: subprocess.Popen[str] | None) -> None:
 @mcp.tool()
 async def bash(commands: str, timeout_ms: int = 30_000) -> str:
     """Runs multiline bash script.
-Useful CLI tools: curl, fd, ug, rga, jaq, sd, sg, git, gh, uv, agent-browser, duckdb, sqlite3, ...
-Under `~` = `/home/sanand/` you have:
+Under `~` = `/home/vscode/` (`/home/sanand` also works) you have:
 
-- ~/Dropbox/notes/transcripts/ - call transcripts
+- ~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
 - ~/Documents/data/
-  - s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports
-  - whatsapp/ - whatsapp exports
+  - s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
+  - whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.
   - browsing-history.db (SELECT url, timestamp, visit_count, ... FROM activity)
   - linkedin-invites.json
 - ~/code/talks/README.md - talk transcripts, slides
@@ -269,11 +268,36 @@ Under `~` = `/home/sanand/` you have:
 - ~/code/README.md - code repos
 - ~/r2/files/podcast - podcasts written for myself
 - ~/Documents/activities/ - daily activity logs
-- /tmp/ - to write temp files
+
+Avoid broad scans over `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives unless necessary.
+  Scope to known subdirs. Prefer `fd`/`rg` because they respect `.gitignore` by default.
+  Check shape (dir count, file size, match count, ...) first.
+First locate candidate files with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
+  THEN inspect the best files with `path:line` evidence.
+  Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
+
+This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
+
+CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
+Prefer `uv run --with pkg1 --with pkg2 -- python - <<'PY'` over `python`.
 
 gws can access email, calendar, chat:
-    gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
-    gws calendar events list --params '{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}
+  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
+  gws calendar events list --params '{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}'
+
+Verify paths with `pwd`, `ls`, or `test -e` before deep scans.
+Use `set -euo pipefail` for deterministic scripts.
+  Handle expected misses (`rg ... || true`, `test -e`, optional files) printing concise diagnostics.
+  Capped pipelines like `rg ... | head` can exit 141 from SIGPIPE.
+  Wrap expected capped/no-match pipelines in `( ... | head -N || true )`.
+Batch related probes into one script with section headers.
+  Avoid re-running identical discovery commands unless new evidence changed the scope.
+
+Keep stdout bounded to ~200 lines/ ~20KB.
+  Save large intermediate output to /tmp; print only summaries and paths.
+
+Do not print secrets, tokens, or credentials, unless explicitly requested.
+Summarize and cite paths/lines instead.
 """
     ctx: Context = get_context()
     await ctx.info(f"bash: {commands}")

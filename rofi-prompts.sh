@@ -26,7 +26,7 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
-CACHE_VERSION="v4"
+CACHE_VERSION="v5"
 SKILLS_ROOT="$HOME/code/scripts/agents"
 BLOG_SKILLS_ROOT="$HOME/code/blog/pages/skills"
 SKILL_DESCRIPTION_MAX=44
@@ -80,7 +80,8 @@ extract_first_fence() {
 extract_after_front_matter() {
   local file="$1"
   awk '
-    BEGIN { fence_count=0 }
+    BEGIN { fence_count=0; started=0 }
+    NR == 1 && $0 != "---" { started=1 }
     /^---$/ {
       fence_count++
       if (fence_count == 2) {
@@ -90,6 +91,19 @@ extract_after_front_matter() {
     }
     started { print }
   ' "$file"
+}
+
+format_skill() {
+  local file="$1" skill_name skill_description escaped_description body
+  skill_name="$(get_skill_name "$file")"
+  skill_description="$(get_skill_description "$file")"
+  body="$(extract_after_front_matter "$file")"
+  if [[ -n "$skill_description" ]]; then
+    escaped_description="$(printf '%s' "$skill_description" | xml_attr_escape)"
+    printf '<skill name="%s" description="%s">\n%s\n</skill>\n' "$skill_name" "$escaped_description" "$body"
+  else
+    printf '<skill name="%s">\n%s\n</skill>\n' "$skill_name" "$body"
+  fi
 }
 
 # Extracts first fenced code block under a specific H2 heading.
@@ -153,11 +167,18 @@ get_skill_description() {
   awk '
     /^description: / {
       sub(/^description:[[:space:]]*/, "")
-      gsub(/^"|"$/, "")
+      if ($0 ~ /^".*"$/) {
+        sub(/^"/, "")
+        sub(/"$/, "")
+      }
       print
       exit
     }
   ' "$file"
+}
+
+xml_attr_escape() {
+  sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g; s/>/\&gt;/g'
 }
 
 # Single-pass scanner to identify only H2 sections that actually contain code.
@@ -338,10 +359,13 @@ build_index_from_files() {
   local skill_file skill_name skill_description label_description
   for skill_file in "${SKILL_FILES[@]}"; do
     skill_description="$(get_skill_description "$skill_file")"
-    [[ -z "$skill_description" ]] && continue
     skill_name="$(get_skill_name "$skill_file")"
-    label_description="$(truncate_description "$skill_description")"
-    LABELS+=("Skill › ${skill_name}: ${label_description}")
+    if [[ -n "$skill_description" ]]; then
+      label_description="$(truncate_description "$skill_description")"
+      LABELS+=("Skill › ${skill_name}: ${label_description}")
+    else
+      LABELS+=("Skill › ${skill_name}")
+    fi
     META+=("skill"$'\t'"${skill_file}"$'\t')
   done
 }
@@ -423,7 +447,7 @@ fi
 IFS=$'\t' read -r SELECTED_KIND SELECTED_FILE SELECTED_HEADING <<< "$SELECTED_META"
 
 if [[ "$SELECTED_KIND" == "skill" ]]; then
-  CODE="$(extract_after_front_matter "$SELECTED_FILE")"
+  CODE="$(format_skill "$SELECTED_FILE")"
 elif [[ -n "${SELECTED_HEADING:-}" ]]; then
   CODE="$(extract_h2_fence "$SELECTED_FILE" "$SELECTED_HEADING")"
 else

@@ -42,8 +42,19 @@ Here are the setup details for my laptops.
 - [Android](setup/android.md)
 - [Online tools](setup/online.md) replacing installed software
 
+# Config files
+
+- [setup.fish](setup.fish): fish config file. Symlinked to `~/.config/fish/config.fish` on Linux/Cygwin.
+- [setup.bash](setup.bash): bash config file. Symlinked to `~/.bashrc` on Linux/Cygwin.
+- [.gitconfig](.gitconfig): git config file. Symlinked to `~/.gitconfig` on Linux/Cygwin.
+- [git-ignore](git-ignore): global git ignore file. Symlinked to `~/.config/git/ignore` on Linux/Cygwin.
+- [.tmux.conf](.tmux.conf): tmux config file. Symlinked to `~/.tmux.conf` on Linux/Cygwin.
+- [espanso-match-base.yml](espanso-match-base.yml): espanso match file. Symlinked to `~/.config/espanso/match/base.yml` on Linux/Cygwin.
+- [touchegg.conf](touchegg.conf): touchpad gesture config file. Symlinked to `~/.config/touchegg/touchegg.conf` on Linux/Cygwin.
+
 # Scripts
 
+- [aboutmerge.py](aboutmerge.py). Updates people-specific notes from my transcripts. I run [About Updates](https://github.com/sanand0/blog/blob/45ff12dee5c617d6ef27abcd9865077877146479/pages/prompts/about-updates.md) on ChatGPT, save output in `~/Dropbox/notes/about/week-YYYY-MM-DD.md`, and run `aboutmerge.py` to merge the new notes into `~/Dropbox/notes/about/*.md`.
 - [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. By default it fills pending days through yesterday. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
@@ -56,7 +67,7 @@ Here are the setup details for my laptops.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
 - [ccusage](ccusage) shows Claude Code usage and reset times - if you're already logged into Claude Code CLI.
 - [chars](chars) lists non-ASCII characters in files.
-- [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, and submit/no-submit modes. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --no-submit "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
+- [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --save "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
 - [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
 - [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
@@ -92,6 +103,7 @@ Here are the setup details for my laptops.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
 - [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rofi-prompts.sh](rofi-prompts.sh) shows prompts from Markdown files in `~/code/blog/pages/prompts` and `~/code/scripts/agents/**/SKILL.md` lets you pick one via rofi, then copies/pastes the selected fenced code block. Triggered by Ctrl + Alt + P.
+- [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [skilluse.py](skilluse.py) scans Codex, Claude, and Copilot logs for agent skill usage. Examples: `skilluse.py --agent codex --skill "github:*"`, `skilluse.py --format json | jaq .`, `skilluse.py --describe | jaq .`.
 - [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
 - [summarize.py](summarize.py) adds AI-generated metadata (summary, keywords, people, actions for transcripts; description and keywords for blog posts) to Markdown files. Already-processed files are skipped.

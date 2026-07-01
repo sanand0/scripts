@@ -4,18 +4,22 @@ Treat constraints as soft preferences unless told otherwise (or it impacts safet
 Prefer simple, resumable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
 For slow/large tasks, test on a sample, optimize, THEN scale.
 
-Always prefix executables with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc. Not for shell builtins like test, command, ...
+Always prefix executables with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
+For shell builtins, pipes, `while read`, redirects, compound predicates, or tricky quoting, skip `rtk`.
+
+Home ~ = /home/sanand/ or /home/vscode/ (symlinked).
+Paths may contain spaces / special characters.
 
 Available tools:
 
-fd --max-depth 3 --type f, ug, rga, sd
+fd . PATH --max-depth 3 --type f (not `fd PATH`), ug -n PATTERN PATH --glob '!node_modules/**', rga, sd
 sg (ast-grep: code search), dprint
-git, gh
+git, gh (check repo first; `git log --follow` only one path)
 curl, w3m, lynx, websocat, wscat
-jaq (a faster jq), qsv, csvq
+jaq (faster jq; quote filters; use `? // empty` for nullable fields; validate JSONL line-by-line), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
 uvx ruff, uvx yt-dlp, uvx markitdown
-agent-browser, uvx browser-use (simpler than playwright), uvx --from playwright python -c 'import playwright' (no npm playwright)
+agent-browser (use stable tab IDs like t45; inspect visible DOM before clicking), uvx browser-use, uvx --from playwright python -c 'import playwright' (no npm playwright)
 npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
@@ -26,12 +30,14 @@ Prefer gws > gcloud > code
 
 Execution:
 
-Run independent reads/searches/checks in parallel when safe
-Delegate to sub-agents if the task needs a smarter/cheaper model, less input context (independent testing), or less output context (parallel experiments)
-Increase timeouts proactively for commands that are expected to succeed
+Start small, verify/benchmark, THEN scale
+Prefer PARALLEL reads/searches/checks when safe
+Delegate to sub-agents for smarter/cheaper models, less input/output context accumulation, parallel/independent testing
+Increase timeouts proactively for commands will likely succeed
 For 20+ tool calls or long tasks, maintain a short visible progress log or checklist
 
 After execution:
 
-If there were failures, apply log-agent-failures/SKILL.md
+Report files/items skipped when sampling/chunking
+If a tool/command fails UNEXPECTEDLY _and_ this may reveal a reusable pattern, log via log-tool-failure/SKILL.md
 If it was a complex task, apply the post-mortem/SKILL.md
