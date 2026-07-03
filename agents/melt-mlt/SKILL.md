@@ -1,8 +1,7 @@
 ---
 name: melt-mlt
 description: Workflows for melt, the MLT Framework CLI video editor, to edit, transcode, composite, stream, or automate video/audio. Covers multitrack composition, color grading, batch processing, encoding, streaming, and server-side pipelines.
-metadata:
-  source: https://claude.ai/chat/76cc4aad-4e37-4486-8b82-ed2a3829174a
+# Source: https://claude.ai/chat/76cc4aad-4e37-4486-8b82-ed2a3829174a
 ---
 
 # Melt / MLT Framework — Expert Skill

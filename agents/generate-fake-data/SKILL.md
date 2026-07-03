@@ -1,10 +1,9 @@
 ---
 name: generate-fake-data
 description: Use when creating REALISTIC synthetic data leading to actionable business hypotheses.
-metadata:
-  sources:
-    - https://gemini.google.com/app/337be2ffd6ec7d16
-    - https://claude.ai/chat/bb3bc604-a782-4ad8-bfdd-6cd7556a73dc
+# Sources:
+# https://gemini.google.com/app/337be2ffd6ec7d16
+# https://claude.ai/chat/bb3bc604-a782-4ad8-bfdd-6cd7556a73dc
 ---
 
 STEP 1. Research who the audience might be and their objective / key questions / pain points. Generate actionable hypotheses that'd make them go "Wow! We have this exact problem and never quantified it." Each must be:
