@@ -253,6 +253,7 @@ async def bash(commands: str, timeout_ms: int = 30_000) -> str:
 Under `~` = `/home/vscode/` (`/home/sanand` also works) you have:
 
 - ~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
+- ~/Dropbox/notes/about/*.md - people or company specific notes
 - ~/Documents/data/
   - s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
   - whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.

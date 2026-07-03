@@ -28,6 +28,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import typer
 from playwright.async_api import Browser, Page, async_playwright
 
+import sanand_observability as obs
+
 app = typer.Typer(add_completion=False, help=__doc__)
 
 OUT_DIR = Path("~/Documents/data/whatsapp").expanduser()
@@ -893,7 +895,7 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
     return list(seen.values())
 
 
-async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int) -> bool:
+async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int) -> tuple[bool, str]:
     async def click_if_visible() -> bool | None:
         data = await list_chats(page)
         for chat in data["chats"]:
@@ -907,7 +909,7 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
 
     visible = await click_if_visible()
     if visible is not None:
-        return visible
+        return visible, "visible"
     for _ in range(max_scan):
         data = await list_chats(page)
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
@@ -916,12 +918,12 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
         await page.wait_for_timeout(500)
         visible = await click_if_visible()
         if visible is not None:
-            return visible
+            return visible, "scroll"
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(250)
     visible = await click_if_visible()
     if visible is not None:
-        return visible
+        return visible, "reset-visible"
     for _ in range(max_scan):
         data = await list_chats(page)
         if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
@@ -930,8 +932,8 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
         await page.wait_for_timeout(500)
         visible = await click_if_visible()
         if visible is not None:
-            return visible
-    return False
+            return visible, "reset-scroll"
+    return False, "not-found"
 
 
 async def scrape_open_chat(page: Page, cutoff: dt.datetime | None, max_messages: int, max_rounds: int, settle_ms: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -941,10 +943,16 @@ async def scrape_open_chat(page: Page, cutoff: dt.datetime | None, max_messages:
     messages = scroll.pop("messages", [])
     unique = {row_key(row): row for row in messages if row.get("messageId")}
     conversation_id = await current_chat_id(page)
+    dom_counts = await page.evaluate(
+        """() => ({
+          parser_dom_count: document.querySelectorAll('div#main [data-id]').length,
+          history_scroller_found: [...document.querySelectorAll('div#main div')].some((el) => el.scrollHeight > el.clientHeight + 200),
+        })"""
+    )
     for row in unique.values():
         if conversation_id:
             row.setdefault("userId", conversation_id)
-    return list(unique.values()), {**scroll, "conversation_id": conversation_id}
+    return list(unique.values()), {**scroll, **dom_counts, "scraper_dom_count": len(messages), "conversation_id": conversation_id}
 
 
 async def run_backup(
@@ -963,75 +971,164 @@ async def run_backup(
     dry_run: bool,
     format: str,
 ) -> None:
-    async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp(cdp_url)
-        page = await whatsapp_page(browser)
-        await inject_scraper(page, SCRAPER)
-        incremental_run = not (conversations or name or updated_since or updated_until or since or until)
-        checked_state = load_checked_state() if incremental_run else {}
-        stop_at = incremental_stop_time() if incremental_run else None
-        if stop_at:
-            eprint(
-                f"incremental: scanning chat list until {stop_at.date()} "
-                f"(latest local backup minus {INCREMENTAL_LOOKBACK_DAYS}d buffer; use explicit filters to override)"
-            )
-        chats = await iter_chats(page, max_scan, stop_at, checked_state if incremental_run else None)
-        selected = []
-        for chat in chats:
-            title = chat["title"]
-            conversation_id = chat.get("conversationId") or ""
-            path = path_for(title, conversation_id)
-            existing = load_jsonl(path)
-            local_since = max_message_time(existing)
-            list_time = chat_list_time(chat)
-            effective_since = since or local_since
-            matched = (not conversations or title in conversations) and (not name or name.lower() in title.lower())
-            date_matched = (updated_since is None or list_time is None or list_time >= updated_since) and (updated_until is None or list_time is None or list_time < updated_until)
-            incremental_window = not incremental_run or stop_at is None or list_time is None or list_time > stop_at
-            stale = not path.exists() or list_time is None or local_since is None or list_time > local_since
-            checked = incremental_run and stale and known_no_new_content(chat, checked_state)
-            if matched and date_matched and incremental_window and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
-                selected.append({**chat, "path": path, "since": effective_since, "local_rows": len(existing), "list_time": list_time, "local_since": local_since})
-            if limit and len(selected) >= limit:
-                break
-        if not selected and conversations:
-            missing = conversations - {chat["title"] for chat in chats}
-            if missing:
-                raise RuntimeError(f"conversation(s) not found in scanned chat list: {', '.join(sorted(missing))}")
+    cache_dir = Path("~/.cache/sanand-scripts/backupwhatsapp").expanduser()
+    trace = obs.new_run(
+        "backupwhatsapp",
+        cache_dir=cache_dir,
+        args=obs.sanitize_args(
+            {
+                "conversation": sorted(conversations),
+                "name": name,
+                "since": since.isoformat() if since else "",
+                "until": until.isoformat() if until else "",
+                "updated_since": updated_since.isoformat() if updated_since else "",
+                "updated_until": updated_until.isoformat() if updated_until else "",
+                "max_messages": max_messages,
+                "limit": limit,
+                "cdp_url": cdp_url,
+                "out_dir": OUT_DIR,
+                "max_scan": max_scan,
+                "max_scroll_rounds": max_scroll_rounds,
+                "settle_ms": settle_ms,
+                "dry_run": dry_run,
+                "format": format,
+            }
+        ),
+    )
+    page: Page | None = None
+    run_stats: dict[str, Any] = {"opened_chats": 0, "skipped_chats": 0, "messages_seen": 0, "messages_kept": 0, "rows_changed": 0}
+    try:
+        async with async_playwright() as p:
+            with trace.span("cdp_connection", {"cdp_url": cdp_url}):
+                browser = await p.chromium.connect_over_cdp(cdp_url)
+                trace.event("runtime", await obs.browser_versions(browser))
+            with trace.span("page_discovery"):
+                page = await whatsapp_page(browser)
+                obs.attach_page_observers(page, trace)
+                trace.event("page", {"url": page.url, "title": await page.title()})
+            with trace.span("dom_validation"):
+                await inject_scraper(page, SCRAPER)
+                counts = await page.evaluate(
+                    """() => ({
+                      chat_list: document.querySelectorAll('#pane-side [role="listitem"], #pane-side [role="row"]').length,
+                      main_data_id: document.querySelectorAll('div#main [data-id]').length,
+                      main_present: Boolean(document.querySelector('div#main')),
+                      pane_present: Boolean(document.querySelector('#pane-side')),
+                    })"""
+                )
+                trace.event("selector_counts", counts)
+            incremental_run = not (conversations or name or updated_since or updated_until or since or until)
+            checked_state = load_checked_state() if incremental_run else {}
+            stop_at = incremental_stop_time() if incremental_run else None
+            if stop_at:
+                eprint(
+                    f"incremental: scanning chat list until {stop_at.date()} "
+                    f"(latest local backup minus {INCREMENTAL_LOOKBACK_DAYS}d buffer; use explicit filters to override)"
+                )
+            with trace.span("scanning", {"incremental": incremental_run, "stop_at": stop_at.isoformat() if stop_at else ""}):
+                chats = await iter_chats(page, max_scan, stop_at, checked_state if incremental_run else None)
+                trace.event("chat_list_stats", {"chats": len(chats), "sorted_time_violations": len(sorted_time_violations(chats))})
+            selected = []
+            for chat in chats:
+                title = chat["title"]
+                conversation_id = chat.get("conversationId") or ""
+                path = path_for(title, conversation_id)
+                existing = load_jsonl(path)
+                local_since = max_message_time(existing)
+                list_time = chat_list_time(chat)
+                effective_since = since or local_since
+                matched = (not conversations or title in conversations) and (not name or name.lower() in title.lower())
+                date_matched = (updated_since is None or list_time is None or list_time >= updated_since) and (updated_until is None or list_time is None or list_time < updated_until)
+                incremental_window = not incremental_run or stop_at is None or list_time is None or list_time > stop_at
+                stale = not path.exists() or list_time is None or local_since is None or list_time > local_since
+                checked = incremental_run and stale and known_no_new_content(chat, checked_state)
+                if matched and date_matched and incremental_window and not checked and (conversations or name or updated_since or updated_until or since or until or stale):
+                    selected.append({**chat, "path": path, "since": effective_since, "local_rows": len(existing), "list_time": list_time, "local_since": local_since})
+                if limit and len(selected) >= limit:
+                    break
+            run_stats["selected_chats"] = len(selected)
+            trace.event("selection_stats", {"scanned_chats": len(chats), "selected_chats": len(selected)})
+            if not selected and conversations:
+                missing = conversations - {chat["title"] for chat in chats}
+                if missing:
+                    raise RuntimeError(f"conversation(s) not found in scanned chat list: {', '.join(sorted(missing))}")
 
-        for pos, chat in enumerate(selected, 1):
-            title = chat["title"]
-            path = chat["path"]
-            summary = {"conversation": title, "conversation_id": chat.get("conversationId") or "", "path": str(path), "event": "planned" if dry_run else "updated"}
-            if dry_run:
-                emit(summary, format)
-                continue
-            eprint(f"{pos}/{len(selected)}: {title}")
-            expected_id = chat.get("conversationId") or ""
-            if not await open_chat(page, title, expected_id, max_scan):
-                emit({**summary, "event": "skipped", "reason": "could-not-open"}, format)
-                continue
-            messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
-            conversation_id = scroll.get("conversation_id") or chat.get("conversationId") or ""
-            if expected_id and conversation_id and conversation_id != expected_id:
-                emit({**summary, "event": "skipped", "reason": f"opened-different-conversation:{conversation_id}", "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
-                continue
-            path = migrate_path(title, conversation_id) if conversation_id else path
-            summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
-            kept = filtered_messages(messages, since, until, max_messages)
-            if not messages:
+            for pos, chat in enumerate(selected, 1):
+                title = chat["title"]
+                path = chat["path"]
+                summary = {"conversation": title, "conversation_id": chat.get("conversationId") or "", "path": str(path), "event": "planned" if dry_run else "updated"}
+                if dry_run:
+                    emit(summary, format)
+                    continue
+                eprint(f"{pos}/{len(selected)}: {title}")
+                expected_id = chat.get("conversationId") or ""
+                with trace.span("opening_expanding", {"conversation_hash": obs.short_hash(chat_key(title, expected_id)), "position": pos}):
+                    opened, fallback = await open_chat(page, title, expected_id, max_scan)
+                    trace.event("open_chat_result", {"fallback_chosen": fallback, "opened": opened})
+                if not opened:
+                    run_stats["skipped_chats"] += 1
+                    trace.event("chat_skipped", {"reason": "could-not-open", "conversation_hash": obs.short_hash(chat_key(title, expected_id))})
+                    emit({**summary, "event": "skipped", "reason": "could-not-open"}, format)
+                    continue
+                run_stats["opened_chats"] += 1
+                with trace.span("scrolling", {"conversation_hash": obs.short_hash(chat_key(title, expected_id))}):
+                    messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
+                conversation_id = scroll.get("conversation_id") or chat.get("conversationId") or ""
+                chat_stats = {
+                    "selected_chats": 1,
+                    "opened_chats": 1,
+                    "messages_seen": len(messages),
+                    "local_rows": chat["local_rows"],
+                    "newer_chat_list_activity": bool(chat["list_time"] and chat["local_since"] and chat["list_time"] > chat["local_since"]),
+                    "expected_conversation_id": expected_id,
+                    "opened_conversation_id": conversation_id,
+                    **scroll,
+                }
+                anomalies = obs.classify_whatsapp_anomalies(chat_stats)
+                if expected_id and conversation_id and conversation_id != expected_id:
+                    run_stats["skipped_chats"] += 1
+                    trace.event("chat_anomalies", {"anomalies": anomalies, "conversation_hash": obs.short_hash(chat_key(title, expected_id))})
+                    emit({**summary, "event": "skipped", "reason": f"opened-different-conversation:{conversation_id}", "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
+                    continue
+                path = migrate_path(title, conversation_id) if conversation_id else path
+                summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
+                with trace.span("validation"):
+                    kept = filtered_messages(messages, since, until, max_messages)
+                    run_stats["messages_seen"] += len(messages)
+                    run_stats["messages_kept"] += len(kept)
+                    trace.event("message_stats", {"conversation_hash": obs.short_hash(chat_key(title, conversation_id)), "messages_seen": len(messages), "messages_kept": len(kept), "missing_rates": obs.missing_rates(messages, ["messageId", "time"]), "scroll": scroll, "anomalies": anomalies})
+                if not messages:
+                    run_stats["skipped_chats"] += 1
+                    emit({**summary, "event": "skipped", "reason": scroll.get("reason", "no-messages"), "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
+                    continue
+                before_rows = len(load_jsonl(path))
+                with trace.span("writing", {"path": str(path), "before_rows": before_rows}):
+                    changed = update_conversation(path, title, conversation_id, messages, since, until, max_messages)
+                after_rows = len(load_jsonl(path))
+                run_stats["rows_changed"] += changed
+                trace.event("output_stats", {"path": str(path), "before_rows": before_rows, "after_rows": after_rows, "rows_changed": changed})
                 if incremental_run:
-                    checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], chat["local_since"])
+                    local_since = max_message_time(load_jsonl(path))
+                    checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], local_since)
                     write_checked_state(checked_state)
-                emit({**summary, "event": "skipped", "reason": scroll.get("reason", "no-messages"), "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
-                continue
-            changed = update_conversation(path, title, conversation_id, messages, since, until, max_messages)
-            if incremental_run:
-                local_since = max_message_time(load_jsonl(path))
-                checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], local_since)
-                write_checked_state(checked_state)
-            emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "scroll": scroll}, format)
-        await browser.close()
+                emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "scroll": scroll}, format)
+            dom = await obs.capture_dom_outline(page)
+            await browser.close()
+        run_anomalies = obs.classify_whatsapp_anomalies(run_stats)
+        if run_anomalies:
+            trace.write_zip("anomaly", {**run_stats, "status": "ok", "anomalies": run_anomalies}, dom)
+        elif not obs.monthly_baseline_exists(cache_dir, trace.stamp):
+            trace.write_zip("baseline", {**run_stats, "status": "ok"}, dom)
+        trace.finish({**run_stats, "status": "ok", "anomalies": run_anomalies})
+    except Exception as exc:
+        trace.exception(exc)
+        if page is not None:
+            try:
+                trace.write_zip("anomaly", {"status": "failed"}, await obs.capture_dom_outline(page))
+            except Exception as zip_exc:
+                trace.exception(zip_exc, during="failure_zip")
+        trace.finish({"status": "failed", "error_type": type(exc).__name__, "error_message": str(exc)})
+        raise
 
 
 def emit(event: dict[str, Any], format: str) -> None:

@@ -91,6 +91,23 @@ def test_saved_markdown_includes_link_prompt_and_response() -> None:
     )
 
 
+def test_cdp_target_id_matches_page_target() -> None:
+    async def run() -> str:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            try:
+                cdp_id = await chatgpt.cdp_target_id(page)
+                session = await page.context.new_cdp_session(page)
+                targets = await session.send("Target.getTargets")
+                assert any(target["targetId"] == cdp_id and target["type"] == "page" for target in targets["targetInfos"])
+                return cdp_id
+            finally:
+                await browser.close()
+
+    assert asyncio.run(run())
+
+
 def test_copy_response_waits_for_assistant_turn() -> None:
     async def run() -> str:
         async with async_playwright() as p:

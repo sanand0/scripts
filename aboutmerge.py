@@ -9,6 +9,9 @@
 
 """Merge weekly about notes into per-person Markdown files.
 
+Paste the About Updates prompt every Sunday at
+https://chatgpt.com/g/g-p-6a40b2ac3dfc8191b48ad8d978d0e8bf-weekly/project
+
 Examples:
   aboutmerge.py --dry-run
   aboutmerge.py --source-glob 'week-2026-06-06.md' --dry-run --format jsonl | jaq .

@@ -1,5 +1,16 @@
 # chatgpt
 
+## Print the CDP ID, 01 Jul 2026
+
+<!--
+cd ~/code/scripts/
+dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Modify `chatgpt` minimally to print the CDP ID of the new tab it opens. This is useful for agents to monitor the tab directly.
+
+<!-- codex resume 019f1cb1-333f-7b41-b2c4-93a79de99e1f --yolo -->
+
 ## Wait for response, 26 Jun 2026
 
 <!--

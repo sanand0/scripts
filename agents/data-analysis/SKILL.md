@@ -61,6 +61,7 @@ Find leverage points:
 **Check for logical fallacies**:
 
 - **Correlation vs. causation**: is there a plausible mechanism, or just co-movement?
+- **Poor metric**: mean instead of median, absolute instead of percentile, average of averages, ...?
 - **Goodhart's Law**: is the metric gamed? Does measuring it change behavior?
 - **Simpson's Paradox**: does segmentation flip the trend?
 - **Regression to the mean**: are extreme values just natural variation reverting?

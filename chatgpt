@@ -200,6 +200,12 @@ async def new_page(browser: Browser) -> Page:
     return page
 
 
+async def cdp_target_id(page: Page) -> str:
+    session = await page.context.new_cdp_session(page)
+    target = await session.send("Target.getTargetInfo")
+    return target["targetInfo"]["targetId"]
+
+
 async def visible_first(page: Page, selectors: list[str], name: str, timeout: int = 15000) -> Locator:
     errors = []
     for selector in selectors:
@@ -466,6 +472,8 @@ async def inspect_chat(cdp_url: str, model: str | None, temporary: bool, connect
     async with async_playwright() as p:
         browser = await p.chromium.connect_over_cdp(cdp_url)
         page = await new_page(browser)
+        cdp_id = await cdp_target_id(page)
+        eprint(f"chatgpt: cdp_id={cdp_id}")
         try:
             await page.goto(chat_url(model, temporary), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(settle_ms)
@@ -475,6 +483,7 @@ async def inspect_chat(cdp_url: str, model: str | None, temporary: bool, connect
                 await page.keyboard.type(f"@{connector_query}")
                 await page.wait_for_timeout(settle_ms)
             snapshot = await inspect_snapshot(page)
+            snapshot["cdp_id"] = cdp_id
             snapshot["model"] = model
             snapshot["temporary"] = temporary
             snapshot["connector_query"] = connector_query
@@ -493,6 +502,8 @@ async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
         browser = await p.chromium.connect_over_cdp(request["cdp_url"])
         await browser.contexts[0].grant_permissions(["clipboard-read", "clipboard-write"], origin="https://chatgpt.com")
         page = await new_page(browser)
+        cdp_id = await cdp_target_id(page)
+        eprint(f"chatgpt: cdp_id={cdp_id}")
         try:
             await page.goto(chat_url(request["model"], request["temporary"]), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(request["settle_ms"])
@@ -520,6 +531,7 @@ async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
                 path = save_path(save).resolve()
                 path.write_text(saved_markdown(link, request["prompt"], response), encoding="utf-8")
             result = {
+                "cdp_id": cdp_id,
                 "url": page.url,
                 "title": await page.title(),
                 "submitted": request["submit"],

@@ -1,5 +1,55 @@
 # backup_linkedin.py
 
+## Observability, 03 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+<!-- Prompt via https://chatgpt.com/c/6a47117a-34c8-83ec-a808-115f56957951
+
+On @LocalMCP take a look at ~/code/scripts/{backuplinkedin.py,backupwhatsapp.py} which use CDP to parse my LinkedIn and WhatsApp which have brittle DOMs - i.e. they change, and other stuff can go wrong.
+
+I'd like to have them cache what an AI coding agent like Codex would need in the future to see if something's gone wrong, changed, or there are any opportunities for improvement.
+
+What should I log in ~/.cache/sanand-scripts/{backupwhatsapp,backuplinkedin}/ for this and how should it be organized (e.g. monthly / yearly, ideally without subdirectories) so I can easily manually delete really old stuff?
+
+Research AI agent observability best practices. Explore the DOM of these sites via CDP if required. Share a concise prompt I can use to steer Codex on what changes to make.
+
+-->
+
+Inspect `backuplinkedin.py` and `backupwhatsapp.py`. Add lightweight, local, privacy-conscious observability without changing their normal output files or CLI output format.
+
+Use only the standard library plus existing Playwright/Typer dependencies.
+
+Create flat caches under `~/.cache/sanand-scripts/{backuplinkedin,backupwhatsapp}/`:
+
+- `latest.json`: atomic summary of the latest run.
+- `YYYY-MM-runs.jsonl`: append-only events, grouped by `run_id`.
+- `YYYY-MM-DDTHH-MM-SSZ-<6hex>-baseline.zip`: at most one successful structural baseline per month.
+- `YYYY-MM-DDTHH-MM-SSZ-<6hex>-anomaly.zip`: on failures or suspicious results.
+- Preserve WhatsApp’s existing `checked.json` separately as operational state.
+
+Model each invocation as a trace with timed spans for CDP connection, page discovery/navigation, DOM validation, scanning, opening/expanding, scrolling, extraction, validation and writing. Log script/Git hash, runtime/browser versions, sanitized arguments, selector counts and fallback chosen, row counts, missing-field rates, scroll/click statistics, output before/after statistics, console/page/request errors, and exception type/message/stack.
+
+Rich ZIPs should contain `manifest.json`, run events, a bounded redacted DOM outline and—when supported—a redacted AI-mode ARIA snapshot. Never persist cookies, tokens, headers, request/response bodies, URL query strings, WhatsApp message text, contact names or unredacted WhatsApp screenshots. Do not enable Playwright context tracing by default because the attached CDP context contains unrelated tabs.
+
+Add anomaly rules, especially:
+
+- LinkedIn found post containers but extracted zero/fewer post rows, core-field missing rates spike, or a selector candidate changes.
+- WhatsApp selected/opened a chat but extracted zero messages despite existing local history or newer chat-list activity.
+- Expected and opened conversation IDs differ.
+- Parser DOM counts disagree, no history scroller is found unexpectedly, or all selected items are skipped.
+
+Do not mark a WhatsApp conversation checked when zero messages may indicate a scraper/DOM failure.
+
+Keep individual JSONL writes crash-resilient and bounded. Add tests for naming, redaction, anomaly classification and atomic `latest.json` updates. Run non-destructive live CDP diagnostics against the currently open LinkedIn and WhatsApp tabs and summarize the resulting cache files and any DOM assumptions discovered.
+
+Run and test as required.
+
+<!-- codex resume 019f25ce-634c-7532-b2b8-7df8ff2363e5 --yolo>
+
 ## Initial script, 19 May 2026
 
 <!--

@@ -27,6 +27,8 @@ from typing import Any
 import typer
 from playwright.async_api import Browser, ElementHandle, Page, async_playwright
 
+import sanand_observability as obs
+
 app = typer.Typer(add_completion=False, help=__doc__)
 
 CDP_URL = "http://localhost:9222"
@@ -443,56 +445,132 @@ async def scrape_posts(
     dry_run: bool,
     format: str,
 ) -> None:
+    cache_dir = Path("~/.cache/sanand-scripts/backuplinkedin").expanduser()
+    trace = obs.new_run(
+        "backuplinkedin",
+        cache_dir=cache_dir,
+        args=obs.sanitize_args(
+            {
+                "username": username,
+                "limit": limit,
+                "out": out_path,
+                "comments": include_comments,
+                "cdp_url": cdp_url,
+                "max_scrolls": max_scrolls,
+                "max_comment_rounds": max_comment_rounds,
+                "settle_ms": settle_ms,
+                "dry_run": dry_run,
+                "format": format,
+            }
+        ),
+    )
     rows: list[dict[str, Any]] = []
     processed: set[str] = set()
     changed = 0
-    async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp(cdp_url)
-        page = await linkedin_page(browser)
-        await navigate_posts(page, username)
-        stale = 0
-        for _ in range(max_scrolls):
-            handles = await page.query_selector_all(POST_SELECTOR)
-            if not handles:
-                eprint("warning: no post containers found on current viewport")
-            before = len(processed)
-            for post in handles:
-                urn = await post.get_attribute("data-urn")
-                if not urn or urn in processed:
-                    continue
-                processed.add(urn)
-                await post.scroll_into_view_if_needed(timeout=5000)
-                await page.wait_for_timeout(settle_ms)
-                await expand_text(post, settle_ms)
-                comment_stats: dict[str, int] = {}
-                if include_comments:
-                    await open_comments(post, settle_ms)
-                    comment_stats = await load_all_comments(post, max_comment_rounds, settle_ms)
-                scraped_at = now_utc()
-                try:
-                    extracted = await extract_post(post, scraped_at)
-                except Exception as exc:
-                    eprint(f"warning: failed to extract {urn}: {exc}")
-                    continue
-                for row in extracted:
-                    if row["type"] == "post":
-                        row["commentScrapeStats"] = comment_stats
-                rows.extend(extracted)
-                if not dry_run:
-                    changed += update_jsonl(out_path, extracted)
-                event = {"event": "scraped", "post": urn, "rows": len(extracted), "posts_seen": len(processed)}
-                print(compact_json(event) if format == "jsonl" else f"scraped: {urn}: rows={len(extracted)} seen={len(processed)}", flush=True)
+    page: Page | None = None
+    try:
+        async with async_playwright() as p:
+            with trace.span("cdp_connection", {"cdp_url": cdp_url}):
+                browser = await p.chromium.connect_over_cdp(cdp_url)
+                trace.event("runtime", await obs.browser_versions(browser))
+            with trace.span("page_discovery"):
+                page = await linkedin_page(browser)
+                obs.attach_page_observers(page, trace)
+                trace.event("page", {"url": page.url, "title": await page.title()})
+            with trace.span("page_navigation", {"username_hash": obs.short_hash(username)}):
+                await navigate_posts(page, username)
+            with trace.span("dom_validation"):
+                post_containers = len(await page.query_selector_all(POST_SELECTOR))
+                trace.event("selector_counts", {"selector_used": POST_SELECTOR, "post_containers": post_containers})
+            stale = 0
+            for _ in range(max_scrolls):
+                with trace.span("scanning"):
+                    handles = await page.query_selector_all(POST_SELECTOR)
+                if not handles:
+                    eprint("warning: no post containers found on current viewport")
+                before = len(processed)
+                for post in handles:
+                    urn = await post.get_attribute("data-urn")
+                    if not urn or urn in processed:
+                        continue
+                    processed.add(urn)
+                    with trace.span("opening_expanding", {"post_hash": obs.short_hash(urn)}):
+                        await post.scroll_into_view_if_needed(timeout=5000)
+                        await page.wait_for_timeout(settle_ms)
+                        await expand_text(post, settle_ms)
+                        comment_stats: dict[str, int] = {}
+                        if include_comments:
+                            await open_comments(post, settle_ms)
+                            comment_stats = await load_all_comments(post, max_comment_rounds, settle_ms)
+                    scraped_at = now_utc()
+                    try:
+                        with trace.span("extraction", {"post_hash": obs.short_hash(urn)}):
+                            extracted = await extract_post(post, scraped_at)
+                    except Exception as exc:
+                        trace.exception(exc, post_hash=obs.short_hash(urn))
+                        eprint(f"warning: failed to extract {urn}: {exc}")
+                        continue
+                    for row in extracted:
+                        if row["type"] == "post":
+                            row["commentScrapeStats"] = comment_stats
+                    with trace.span("validation"):
+                        trace.event("row_counts", {"post_hash": obs.short_hash(urn), "rows": len(extracted), "missing_rates": obs.missing_rates(extracted, ["id", "content", "postedText"])})
+                    rows.extend(extracted)
+                    if not dry_run:
+                        before_rows = len(load_jsonl(out_path))
+                        with trace.span("writing", {"path": str(out_path), "before_rows": before_rows}):
+                            delta = update_jsonl(out_path, extracted)
+                        changed += delta
+                        trace.event("output_stats", {"path": str(out_path), "before_rows": before_rows, "after_rows": len(load_jsonl(out_path)), "rows_changed": delta})
+                    event = {"event": "scraped", "post": urn, "rows": len(extracted), "posts_seen": len(processed)}
+                    print(compact_json(event) if format == "jsonl" else f"scraped: {urn}: rows={len(extracted)} seen={len(processed)}", flush=True)
+                    if limit and len(processed) >= limit:
+                        break
                 if limit and len(processed) >= limit:
                     break
-            if limit and len(processed) >= limit:
-                break
-            stale = stale + 1 if len(processed) == before else 0
-            scroll = await scroll_page(page, settle_ms * 2)
-            if stale >= 6 or scroll["top"] + scroll["client"] >= scroll["height"] - 8:
-                show_more = await page.query_selector_all('button:has-text("Show more results"), button:has-text("Show more posts")')
-                if not await click_all(show_more[:2], "show-more-results", settle_ms * 2):
-                    break
-        await browser.close()
+                stale = stale + 1 if len(processed) == before else 0
+                with trace.span("scrolling", {"stale": stale}):
+                    scroll = await scroll_page(page, settle_ms * 2)
+                    trace.event("scroll_stats", scroll)
+                if stale >= 6 or scroll["top"] + scroll["client"] >= scroll["height"] - 8:
+                    show_more = await page.query_selector_all('button:has-text("Show more results"), button:has-text("Show more posts")')
+                    clicks = await click_all(show_more[:2], "show-more-results", settle_ms * 2)
+                    trace.event("click_stats", {"show_more_buttons": len(show_more), "show_more_clicks": clicks})
+                    if not clicks:
+                        break
+            dom = await obs.capture_dom_outline(page)
+            await browser.close()
+        post_rows = sum(1 for row in rows if row.get("type") == "post")
+        previous = obs.latest_summary(cache_dir).get("selector_used")
+        summary_stats = {
+            "status": "ok",
+            "dry_run": dry_run,
+            "path": str(out_path),
+            "posts": len(processed),
+            "rows": len(rows),
+            "post_rows": post_rows,
+            "rows_changed": changed,
+            "selector_used": POST_SELECTOR,
+            "previous_selector": previous,
+            "limit": limit,
+            "post_containers": post_containers if "post_containers" in locals() else 0,
+            "missing_rates": obs.missing_rates([row for row in rows if row.get("type") == "post"], ["id", "content", "postedText"]),
+        }
+        anomalies = obs.classify_linkedin_anomalies(summary_stats)
+        if anomalies:
+            trace.write_zip("anomaly", {**summary_stats, "anomalies": anomalies}, dom)
+        elif not obs.monthly_baseline_exists(cache_dir, trace.stamp):
+            trace.write_zip("baseline", summary_stats, dom)
+        trace.finish({**summary_stats, "anomalies": anomalies})
+    except Exception as exc:
+        trace.exception(exc)
+        if page is not None:
+            try:
+                trace.write_zip("anomaly", {"status": "failed"}, await obs.capture_dom_outline(page))
+            except Exception as zip_exc:
+                trace.exception(zip_exc, during="failure_zip")
+        trace.finish({"status": "failed", "error_type": type(exc).__name__, "error_message": str(exc)})
+        raise
     if dry_run:
         eprint(f"dry-run: scraped {len(rows)} rows for {len(processed)} posts; not writing {out_path}")
         return
