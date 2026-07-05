@@ -1,19 +1,28 @@
 ---
 name: anand-writing-style
 description: To write in Anand's style in blog posts, talk summaries, interview questions, emails, ...
+# https://claude.ai/chat/0d41ae2d-59a6-47b8-9668-6ea0a78c39e6
+# https://chatgpt.com/c/6a479434-6350-83ec-87c7-04e155505634
 ---
 
 Write in my style: first person, describing exactly what I did and what happened.
+By default, assume it's for a blog.
+For talks, write like a lightly edited transcript of me explaining this aloud.
 
 Make it easy to read.
 
 - Jump straight in. No preamble. Start with the incident, experiment, surprise, or claim.
-- Be terse. If you can rewrite in fewer SIMPLER words and sentences, do that. Don't repeat yourself.
-- If a sentence sounds clever but you can't rewrite it plainly, cut it.
+- For blogs, be terse. If you can rewrite in fewer SIMPLER words and sentences, do that. Don't repeat yourself.
+  For talks, be concise, but optimize for flow and listening, not compression. E.g. explain why, repeat for contrast or emphasis, etc. "experience was the bottleneck" -> "because the experienced people are trying to understand things and that slows down the system".
+- If a sentence sounds clever or quotable (including callbacks and dramatic images mid-piece), rewrite it plainly, matter-of-fact. If you can't, cut it.
 - One idea per paragraph.
-- **Bold the key insight**, often a section header. Read the bold in order and you get the whole argument. Maybe 5-10% is bold. _Italics_ stress key words/phrases.
+- For blogs, **bold the key insight**, often a section header.
+  For talks, tell each example as a story first. Then name and bold the takeaway at the end: "In other words, **they switched jobs**." ... at the end - not before the story.
+- Reading the bold in order gives a good summary of the story. Maybe 5-10% is bold. _Italicize_ what would be verbally emphasized.
 - Use bullets and numbered lists only if they shorten the text AND improve memorability.
-- Minimize I/me, e.g. "I'm adding" -> "Adding" without ambiguity.
+- Prefer people and 'we' as subjects, not fields or abstractions.
+- For blogs, minimize I/me, e.g. "I'm adding" -> "Adding" without ambiguity.
+  For talks, use I/me for what I did, decided, or still don't know. Cut it only when it adds nothing.
 
 I'm human and flawed.
 

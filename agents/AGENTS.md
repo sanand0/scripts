@@ -39,5 +39,5 @@ For 20+ tool calls or long tasks, maintain a short visible progress log or check
 After execution:
 
 Report files/items skipped when sampling/chunking
-If a tool/command fails UNEXPECTEDLY _and_ this may reveal a reusable pattern, log via log-tool-failure/SKILL.md
+If a tool/command fails UNEXPECTEDLY _and_ this may reveal a reusable pattern, log via log-tool-failure skill.
 If it was a complex task, apply the post-mortem/SKILL.md

@@ -70,7 +70,7 @@ Here are the setup details for my laptops.
 - [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --save "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
 - [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
-- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
+- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
@@ -151,7 +151,7 @@ Here are the setup details for my laptops.
 `services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
 
 - `consolidate-transcripts-daily.*`: Consolidate transcript learnings
-- `daily-activities.*`: Run daily activity reports, metadata summarizers, and unmetered-only personal backup/sync jobs
+- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files

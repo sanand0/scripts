@@ -1,5 +1,29 @@
 # MCP Server
 
+## Observability updates, 04 Jul 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+<!-- Prompt: https://chatgpt.com/c/6a485aa6-d0c4-83ec-9f3f-f9bf39d896bb -->
+
+Minimally improve `mcpserver.py` observability:
+
+- Add a machine-readable `## Result` JSON section to each bash log with: `server_start_id`, timestamps/duration, exit code, timeout/error, stdout/stderr bytes, bytes before/after limits, line-trim count, and total truncation.
+- On startup, append one compact JSONL record with `server_start_id`, timestamp, PID, cwd, Git commit/dirty state, and hash of the bash tool description. Calls should reference only `server_start_id`.
+- Replace separate opened/closed Markdown request logs with one close-only daily JSONL log. Keep request/session IDs, MCP method, HTTP path, user-agent, protocol version, duration, result/error. Do not log bodies, raw header lists, IPs, tracing fields, or OpenAI identifiers.
+- After line trimming, enforce a 512 KiB UTF-8 total-output limit before logging and returning. Preserve approximately 384 KiB from the head and the remainder from the tail, with a marker reporting omitted bytes.
+- Update the tool description so ad-hoc Python uses `uv run --no-project --with ...`; project commands should `cd` into the project and use its environment normally.
+- Add a tiny `mcp-rate SCORE [TAG] [NOTE...]` CLI that appends timestamp, latest session ID, score `0|1|2`, tag, and note to a TSV. Tags: `intent_miss`, `source_miss`, `version_miss`, `too_much_evidence`, `too_little_evidence`, `tool_failure`, `unsupported_conclusion`.
+
+Review `mcpserver.py`, its Git history, current tests, and version-dated logs.
+Do not migrate bash logs to JSONL, alter cwd/environment behavior, add dashboards/OTel/auth, split `bash` into specialized tools, or backfill old logs.
+
+Update and run focused tests, including UTF-8 head/tail truncation, structured result metadata, timeout/non-zero exits, startup records, and absence of sensitive request data. Generate sample logs and inspect them manually.
+
+<!-- codex resume 019f2ae8-e2b3-75e0-b7f8-2476190dae3e --yolo -->
+
 ## Add logs and trim, 19 Jun 2026
 
 <!--

@@ -32,7 +32,7 @@ Look for stories that _confirm something suspected but never proven_, or _overtu
 - **Pattern breaks**: Where does a trend suddenly shift? What changed, and when?
 - **Surprising correlations**: What moves together that shouldn't? What's independent that should correlate?
 - **Standout entities**: Who dramatically overperforms or underperforms relative to peers? Who drives trends vs. bucks them?
-- **Hidden populations**: What patterns disappear in aggregate but emerge in subgroups? (Watch for Simpson's Paradox.)
+- **Hidden populations**: What patterns disappear in aggregate but emerge in subgroups (segments, clusters)? (Watch for Simpson's Paradox.)
 - **Dot connections**: What patterns emerge when combining fields that seem unrelated at first?
 - **Clusters**: What clusters or communities emerge? Where are the overlaps and outliers?
 

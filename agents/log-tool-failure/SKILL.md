@@ -1,7 +1,6 @@
 ---
 name: log-tool-failure
 description: If any tool call fails, log it IMMEDIATELY with this skill
-# Source: https://chatgpt.com/c/6a43867e-c888-83ec-b1ec-1e64d90c7889
 ---
 
 Append one valid JSON object per unexpected, reusable tool failure to `~/Documents/data/agents/tool-failure.jsonl` using the append script, never hand-written JSON.

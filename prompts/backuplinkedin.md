@@ -48,7 +48,11 @@ Keep individual JSONL writes crash-resilient and bounded. Add tests for naming, 
 
 Run and test as required.
 
-<!-- codex resume 019f25ce-634c-7532-b2b8-7df8ff2363e5 --yolo>
+---
+
+I deleted sanand-observability.py (and possibly the associated tests) accidentally. Recreate and test.
+
+<!-- codex resume 019f25ce-634c-7532-b2b8-7df8ff2363e5 --yolo -->
 
 ## Initial script, 19 May 2026
 

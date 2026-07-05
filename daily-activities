@@ -15,6 +15,8 @@ LOCK_DIR="${DAILY_ACTIVITIES_LOCK_DIR:-$HOME/.cache/sanand-scripts/daily-activit
 LOCK_FILE="$LOCK_DIR/run.lock"
 RCLONE="${DAILY_ACTIVITIES_RCLONE:-rclone}"
 RSYNC="${DAILY_ACTIVITIES_RSYNC:-rsync}"
+OPEN_TABS_DIR="${DAILY_ACTIVITIES_OPEN_TABS_DIR:-$HOME/Documents/data/open-tabs}"
+EDGE_TABS_PROFILE="${DAILY_ACTIVITIES_EDGE_TABS_PROFILE:-$HOME/.config/microsoft-edge}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export DAILY_ACTIVITIES=1
 export DAILY_ACTIVITIES_QUIET="${DAILY_ACTIVITIES_QUIET:-1}"
@@ -144,6 +146,16 @@ run_unmetered_job() {
   run_job "$name" "$@"
 }
 
+export_open_tabs() {
+  local output
+
+  mkdir -p "$OPEN_TABS_DIR"
+  output="$OPEN_TABS_DIR/$(date +%F).jsonl"
+  "$UV" run /home/sanand/code/scripts/edge_tabs.py --profile "$EDGE_TABS_PROFILE" --json \
+    | jaq -c '.timestamp as $t | .windows[] | .id as $w | .tabs[] | {timestamp:$t, window:$w, title, url}' \
+    >"$output"
+}
+
 if [[ ! -x "$UV" ]]; then
   log "missing executable: $UV"
   exit 127
@@ -172,11 +184,14 @@ fi
 
 failures=0
 
-if [[ -n "${DAILY_ACTIVITIES_TEST_JOBS:-}" ]]; then
+if [[ "${DAILY_ACTIVITIES_TEST_JOBS:-}" == "open-tabs" ]]; then
+  run_job "open-tabs" export_open_tabs || failures=$((failures + 1))
+elif [[ -n "${DAILY_ACTIVITIES_TEST_JOBS:-}" ]]; then
   run_job "test-fail" false || failures=$((failures + 1))
   run_job "test-ok" true || failures=$((failures + 1))
 else
   run_job "activities" "$UV" run /home/sanand/code/scripts/activities.py || failures=$((failures + 1))
+  run_job "open-tabs" export_open_tabs || failures=$((failures + 1))
   run_unmetered_job "backupgoogle" "$UV" run /home/sanand/code/scripts/backupgoogle.py || failures=$((failures + 1))
   run_unmetered_job "backupgoogle-personal" "$UV" run /home/sanand/code/scripts/backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com || failures=$((failures + 1))
   run_unmetered_job "backupmeet" "$UV" run /home/sanand/code/scripts/backupmeet.py --yes || failures=$((failures + 1))

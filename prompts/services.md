@@ -1,5 +1,26 @@
 # services
 
+## Capture browser tabs, 05 Jul 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Update `daily-activities` to run the equivalent of:
+
+`uv run ~/code/scripts/edge_tabs.py --json | jaq -c '.timestamp as $t | .windows[] | .id as $w | .tabs[] | {timestamp:$t, window:$w, title, url}' > ~/Documents/data/browser-tabs/$(date +%F).jsonl`
+
+Make sure paths work fine, even when run from a systemd service context. Test it.
+This can run even without an Internet connection.
+This is fairly fast. It can run right after `activities.py`.
+
+---
+
+Write to ~/Documents/data/open-tabs/ instead of browser-tabs. Rename existing directory. Rename variables / functions / ... if required. Update README.md.
+
+<!-- codex resume 019f322a-3e1d-7de3-93e2-4c9a6dae9894 -->
+
 ## Archive unused, 07 Jun 2026
 
 <!--

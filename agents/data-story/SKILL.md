@@ -3,117 +3,87 @@ name: data-story
 description: Write data findings as a compelling narrative story, Malcolm Gladwell prose, NYT graphics-team visuals, engaging & memorable even for a non-technical audience.
 ---
 
-# Narrative Data Story
-
 Write like Malcolm Gladwell. Visualize like the NYT graphics team. Think like a detective who must defend every finding under scrutiny.
 
-The goal: a story so well-constructed that readers *feel* the insight before they understand it — and remember it long after.
+The goal: a story so well-constructed that readers *feel* the insight before they understand it - and remember it long after.
 
-## 1 — The Hook
+## 0 - Pick the mode first
 
-Never open with a chart or a statistic. Open with a person, a tension, or a mystery — something that makes someone who wasn't planning to read this *stop and keep reading*.
+Before you write, decide what kind of piece this is. The mode sets the order of everything below.
+
+- **Long-form** - a reader you must pull along. The discovery arc applies: setup → complication → revelation.
+- **Executive** - a decision-maker who wants the answer. Lead with the finding; put the evidence right under it; skip the slow build. (Pairs with the meeting-response-style skill.)
+- **Exploratory** - you don't have one finding yet. Don't manufacture a story. Show the patterns and the uncertainty until a finding survives scrutiny.
+- **Teaching** - a learner building a mental model. Sequence the beats so each one sets up the next.
+
+Everything below is written for long-form. In the other modes, keep the craft - hook, concrete examples, one emotion, caveats - but change the order: answer-first for executive, question-open for exploratory, step-by-step for teaching.
+
+## 1 - The Hook
+
+The opening must make someone who wasn't planning to read this *stop and keep reading*. A person, a tension, or a mystery does this.
 
 - **Human angle**: A specific person, place, or moment that embodies the pattern you're about to reveal.
-- **Tension**: Something that seems wrong or contradictory — that the data will resolve.
+- **Tension**: Something that seems wrong or contradictory - that the data will resolve.
 - **Mystery**: A question the reader didn't know they wanted answered.
 
-A strong move is **self-reference**: "Imagine *you're* the customer who just churned" activates simulation in a way third-person never can. Cast abstract forces as agents with goals. Archetypes beat famililar/famous names (less baggage, more projection) for learning, but familiar names are memorable.
+A chart can be the hook - but only if it shows the contradiction in a single look. Otherwise, don't open with a chart or a statistic. (In executive mode, the hook *is* the answer.)
+
+A strong move is **self-reference**: "Imagine *you're* the customer who just churned" activates simulation in a way third-person never can. Cast abstract forces as agents with goals. Archetypes beat familiar/famous names (less baggage, more projection) for learning, but familiar names are memorable.
 
 > ❌ "This report analyzes regional sales performance across Q3."
 > ✅ "In September, one sales rep in Omaha quietly closed more deals than the entire West Coast team. Nobody had noticed."
 
-## 2 — Story Arc
+## 2 - Story Arc
 
-Build through *discovery*, not declaration. Resist the urge to front-load conclusions — the journey earns the finding. Keep your main beats to **≤4** — the brain chunks before it comprehends, and working memory holds roughly four things.
+Build through *discovery*, not declaration (long-form mode). Resist the urge to front-load conclusions - the journey earns the finding. Keep your main beats to **≤4** - the brain chunks before it comprehends, and working memory holds roughly four things.
 
-1. **Setup** — Establish the world as everyone assumes it to be.
-2. **Complication** — Introduce the anomaly, the crack in conventional wisdom.
-3. **Revelation** — The central insight, landed with precision and room to breathe.
-4. **Implications** — What this means and what should change.
+1. **Setup** - Establish the world as everyone assumes it to be.
+2. **Complication** - Introduce the anomaly, the crack in conventional wisdom.
+3. **Revelation** - The central insight, landed with precision and room to breathe.
+4. **Implications** - What this means and what should change.
 
-⚠️ **The tale trap**: a well-structured story *feels* like understanding even when the causal model is wrong. Sequential narrative implies causation automatically. Name the mechanism explicitly — don't let order do the work evidence should do.
+⚠️ **The tale trap**: a well-structured story *feels* like understanding even when the causal model is wrong. Sequential narrative implies causation automatically. Name the mechanism explicitly - don't let order do the work evidence should do.
 
-## 3 — Integrated Visualizations
+## 3 - Integrated Visualizations
 
-Charts and maps should be **revelatory, not decorative** — placed *in the moment of revelation*, not at the end.
+Charts make patterns / insights undeniable.
 
-- Every chart needs a **headline that states the finding**: "The Northeast isn't just ahead — it's in a different league" beats "Regional Performance Comparison."
-- Design for the *"oh"* moment: annotation and highlighting matter more than completeness.
-- Ask of every visual: *does this make the pattern undeniable, or does it require explanation?* If the latter, redesign or cut.
-- Prefer **focused over comprehensive** — one clear signal beats six noisy ones.
+- Put the chart where the insight lands, inside the prose (not at the end).
+- Give every chart a **headline that states the finding**: "The Northeast isn't just ahead - it's in a different league" beats "Regional Performance Comparison."
+- One clear signal per chart. If it needs explaining, redesign or cut it.
 
-**Chart choices that serve narrative**: anomalies → scatter plots with annotation; change over time → line charts with event markers; geography → choropleth or dot maps; composition surprises → treemaps or stacked bars with callouts; hidden subgroups → small multiples or ridgeline plots.
+Use any data-viz and interactions skills available.
 
-## 4 - Interactions
+## 4 - Concrete Examples & Evidence
 
-Use tooltips, popups, interactions, and animations as aids to help the user understand the story better.
-
-**Tooltips** are for immediate context.
-
-- Context about non-obvious terms or phrases (only if relevant and useful)
-- Additional context about references (where possible)
-- Metadata and context about data points, table cells, chart elements, etc. (always)
-- Guidelines:
-  - On mobile, use tap-to-reveal with clear dismiss affordance (tap elsewhere or an × icon); auto-reposition to stay within the viewport.
-  - Debounce on hover. Only 1 tooltip at a time.
-  - Do not show tooltips where the tooltips add no meaningful value or additional information beyond the text.
-
-**Popups** are for digging deeper into rabbit holes.
-
-- Citations. Search for and include references. Cite the key point from the reference and link to it.
-- Files. Link liberally to files as supporting evidence.
-  - Clicking on file links should open the files in a popup, with a link to open the original in a new tab.
-  - Syntax-highlighted if code
-  - Show sortable for tabular data, gradient-coloring important numeric / categorical columns if that will help understand the context
-- Data points. Provide extensive context for data points.
-  - Wherever useful, clicking on data points, table cells, chart elements, etc. should open a popup that provides full context about that element.
-  - Include narratives, cards, tables, charts, or even entire dashboards that answer what the user is likely to be curious about or wants to dig in for more details. E.g. context, examples, related metrics, trends over time, breakdown by relevant dimensions, etc.
-  - Standardize the format of these popups so users know what to expect. Reuse popups by archetype.
-- Guidelines: Trap keyboard focus inside. Contain scrolling. Show loading state when required. Use a consistent anatomy.
-
-**Interactions** help see the data from a different perspective.
-
-- Filters & search.
-- Sliders that allow users to adjust assumptions, scenarios, etc. and see the impact in real time. Keep input & output close - without scrolling.
-- Transitions on value change. e.g. animate chart values between states (e.g., bar heights morphing) rather than jump-cutting.
-- Brushing and linking. Select a region in one chart to highlight related data nearby.
-- Also: Trails, Cursor morphing, Magnetic snapping, Intertial scrolling/panning, Contextual axis transitions, etc.
-
-**Animated SVGs** explain complex dynamics.
-
-- Explaining processes, mechanisms, workflows, etc. The aim is to make users FEEL the process. One glance should give them an intuitive understanding of how it works, even before they read the accompanying text. Show how things are connected, what data flows from where to where, how elements, interact, etc.
-- Guidelines: Use GPU-friendly rendering (transform, opacity). Sequence multiple animations deliverately. Respect `prefers-reducted-motion`.
-
-## 5 — Concrete Examples & Evidence
-
-Abstract patterns become real through specific cases. For every major finding, find *the one example that makes it tangible* — the person, company, or place that best embodies the pattern, or the before/after that shows the mechanism.
+Abstract patterns become real through specific cases. For every major finding, find *the one example that makes it tangible* - the person, company, or place that best embodies the pattern, or the before/after that shows the mechanism.
 
 **Stack anchors in a single sentence** rather than scattering them: "Imagine *you're* standing at the top of the funnel watching 7 in 10 customers quietly disappear before they ever see a price" gives you self-reference + spatial position + scale in one beat.
 
-**Plan the fade**: start concrete, then introduce the formal abstraction. The metaphor is a bridge, not a destination — explicitly flag where it stops holding: *"Think of it like a leaky bucket — though unlike buckets, the leak rate changes with customer tenure."*
+**Plan the fade**: start concrete, then introduce the formal abstraction. The metaphor is a bridge, not a destination - explicitly flag where it stops holding: *"Think of it like a leaky bucket - though unlike buckets, the leak rate changes with customer tenure."*
 
 Statistics should flow *within* the prose, not interrupt it:
 - **Lead with the narrative beat**, follow with the number that proves it.
 - **Round and contextualize**: "nearly 3 in 4" lands better than "73.2%"; "twice the national average" beats "2.07×".
-- **Cite comparisons, not absolutes** — the delta is almost always more meaningful than the level.
-- **One number per beat** — don't cluster statistics. Let each one breathe.
+- **Cite comparisons, not absolutes** - the delta is almost always more meaningful than the level.
+- **One number per beat** - don't cluster statistics. Let each one breathe.
 
-## 5 — "Wait, Really?" Moments
+## 5 - "Wait, Really?" Moments
 
-Surprising findings need staging. Slow down at the moment of revelation — give it a short paragraph, let it land.
+Surprising findings need staging. Slow down at the moment of revelation - give it a short paragraph, let it land.
 
 - **Set up the assumption first**: state what everyone believes before you overturn it.
 - **Name the surprise explicitly**: "That's not a rounding error. That's a signal."
-- **One sharp emotion per story** — fear, surprise, and reward tag memories for keeping, but use surgically: one vivid moment per piece. High emotional arousal narrows cognition, so deploy it at the revelation, not throughout.
+- **One sharp emotion per story** - fear, surprise, and reward tag memories for keeping, but use surgically: one vivid moment per piece. High emotional arousal narrows cognition, so deploy it at the revelation, not throughout.
 - **Use contrast**: juxtapose the expected vs. the actual side by side.
 
-## 6 — So What?
+## 6 - So What?
 
-Embed implications *in the narrative flow* — don't save them for a bullet list at the end. Be specific: "This suggests reallocating onboarding resources to the first 72 hours" beats "investment in early customer experience may be warranted." End on a forward-looking note — what changes, what gets investigated, what gets tried.
+Embed implications *in the narrative flow* - don't save them for a bullet list at the end. Be specific: "This suggests reallocating onboarding resources to the first 72 hours" beats "investment in early customer experience may be warranted." End on a forward-looking note - what changes, what gets investigated, what gets tried.
 
-## 7 — Caveats
+## 7 - Caveats
 
-Acknowledge limitations *without undermining the story*. The detective doesn't refuse to name a suspect because the case isn't perfect — they state their confidence level and move forward.
+Acknowledge limitations *without undermining the story*. The detective doesn't refuse to name a suspect because the case isn't perfect - they state their confidence level and move forward.
 
 - Surface the most important caveat *once*, framed as "what we'd want to confirm" rather than "reasons this might be wrong."
 - Never hide a caveat in a footnote if it materially changes the interpretation.
@@ -123,6 +93,6 @@ Acknowledge limitations *without undermining the story*. The detective doesn't r
 
 ## Tone
 
-Active voice. Present tense. **Rhythm encodes** — parallel structure, alliteration, and consistent beat make key phrases stick long after the data is forgotten. Read every paragraph aloud; if you stumble, rewrite it.
+Active voice. Present tense. **Rhythm encodes** - parallel structure, alliteration, and consistent beat make key phrases stick long after the data is forgotten. Read every paragraph aloud; if you stumble, rewrite it.
 
 > **The test**: would a smart, busy person who didn't ask for this read it to the end? If not, the hook isn't strong enough, the arc isn't clear, or the "so what" isn't earned.

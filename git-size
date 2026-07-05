@@ -2,9 +2,9 @@
 """Show the logical size of staged changes.
 
 For each staged path whose state relative to HEAD changed, prints:
-  status    staged A/M/D, or F for `--all`
+  status    A/M/D from HEAD to the staged or selected working-tree payload
   lines     lines added minus lines deleted (text diffs only; binary is '-')
-  bytes     staged payload size in bytes, or 0 for deletes
+  bytes     selected payload size in bytes, or 0 for deletes
   path      repo-relative path
 
 Install as `git-size` somewhere on PATH, then run either `git-size` or `git size`.
@@ -117,8 +117,19 @@ def head_paths(root: str) -> set[str]:
     return set(nul_list(git(["ls-tree", "-r", "-z", "--name-only", "HEAD"], cwd=root).stdout))
 
 
-def tracked_paths(root: str) -> set[str]:
-    return set(nul_list(git(["ls-files", "-z"], cwd=root).stdout))
+def changed_paths_vs_head(root: str) -> set[str]:
+    data = git(["diff", "--no-renames", "--name-only", "-z", "HEAD", "--"], cwd=root).stdout
+    return set(nul_list(data))
+
+
+def untracked_paths(root: str) -> set[str]:
+    data = git(["ls-files", "--others", "--exclude-standard", "-z"], cwd=root).stdout
+    return set(nul_list(data))
+
+
+def initial_paths(root: str) -> set[str]:
+    data = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root).stdout
+    return set(nul_list(data))
 
 
 def staged_paths(root: str) -> set[str]:
@@ -141,14 +152,40 @@ def blob_size(root: str, blob: str) -> int:
     return int(git_text(["cat-file", "-s", blob], cwd=root))
 
 
+def status_for(path: str, root: str, paths_in_head: set[str]) -> str:
+    exists_in_head = path in paths_in_head
+    exists_in_worktree = (Path(root) / path).exists() or (Path(root) / path).is_symlink()
+    if exists_in_head and not exists_in_worktree:
+        return "D"
+    if not exists_in_head and exists_in_worktree:
+        return "A"
+    return "M"
+
+
 def collect_all(root: str) -> list[Row]:
     root_path = Path(root)
     rows: list[Row] = []
-    for path in sorted(tracked_paths(root)):
+
+    if not has_head(root):
+        for path in sorted(initial_paths(root)):
+            full = root_path / path
+            if not full.exists() and not full.is_symlink():
+                continue
+            rows.append(Row("A", line_count(full), payload_size(full), path))
+        return rows
+
+    in_head = head_paths(root)
+    numstat = parse_numstat(git(["diff", "--no-renames", "--numstat", "-z", "HEAD", "--"], cwd=root).stdout)
+
+    for path in sorted(changed_paths_vs_head(root) | untracked_paths(root)):
         full = root_path / path
-        if not full.exists() and not full.is_symlink():
-            continue
-        rows.append(Row("F", line_count(full), payload_size(full), path))
+        status = "A" if path not in in_head else status_for(path, root, in_head)
+        if status == "D":
+            rows.append(Row(status, numstat.get(path), 0, path))
+        elif path in numstat:
+            rows.append(Row(status, numstat[path], payload_size(full), path))
+        else:
+            rows.append(Row(status, line_count(full), payload_size(full), path))
     return rows
 
 
@@ -186,7 +223,7 @@ def main(argv: list[str]) -> int:
         description="Show net line and byte size of staged changes."
     )
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
-    parser.add_argument("--all", action="store_true", help="size all tracked files from `git ls-files`")
+    parser.add_argument("--all", action="store_true", help="size all changes that `git add <repo-root>` would stage")
     args = parser.parse_args(argv)
 
     try:
