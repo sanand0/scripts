@@ -36,6 +36,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from io import StringIO
 from pathlib import Path
 from threading import Lock
@@ -104,10 +105,14 @@ class ContentSet:
     exclude_names: list[str] = field(default_factory=list)  # basenames to skip (e.g. SKILL.md)
     meta_position: str = "before"  # "before": meta keys first; "after": meta keys last
     skip_if: Callable[[str], str | None] | None = None
+    prompt_builder: Callable[[str], str] | None = None
 
     @property
     def meta_keys(self) -> list[str]:
         return [f.name for f in self.fields]
+
+    def prompt_for(self, text: str) -> str:
+        return self.prompt_builder(text) if self.prompt_builder else self.prompt
 
 
 # ── YAML helpers ───────────────────────────────────────────────────────────────
@@ -264,6 +269,108 @@ def clean_ideas(ideas: list) -> list[str]:
     return out
 
 
+# ── Blog tag helpers ──────────────────────────────────────────────────────────
+
+BLOG_TAGS_PATH = Path("/home/sanand/code/blog/metadata-tags.yml")
+TAG_TOKEN_RE = re.compile(r"[a-z0-9]+")
+MAX_BLOG_TAG_CANDIDATES = 80
+COMMON_BLOG_TAGS = 25
+
+
+def _tag_slug(value: str) -> str:
+    text = str(value).strip().lower()
+    text = text.replace("&", " and ").replace("+", " plus ").replace("'", "")
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = re.sub(r"-+", "-", text).strip("-")
+    aliases = {
+        "large-language-model": "llms",
+        "large-language-models": "llms",
+        "llm": "llms",
+        "visualisation": "data-visualization",
+        "visualization": "data-visualization",
+        "data-visualisation": "data-visualization",
+        "dataviz": "data-visualization",
+        "books": "book",
+        "genai": "generative-ai",
+        "gen-ai": "generative-ai",
+    }
+    return aliases.get(text, text)
+
+
+@lru_cache(maxsize=1)
+def blog_tag_vocabulary() -> tuple[dict[str, dict], dict[str, str]]:
+    data = make_yaml().load(BLOG_TAGS_PATH.read_text(encoding="utf-8")) or {}
+    tags = data.get("tags") or {}
+    alias_map: dict[str, str] = {}
+    for tag, details in tags.items():
+        alias_map[_tag_slug(tag)] = tag
+        for alias in details.get("aliases") or []:
+            alias_map[_tag_slug(str(alias))] = tag
+    return tags, alias_map
+
+
+def _tokens(text: str) -> set[str]:
+    return set(TAG_TOKEN_RE.findall(text.lower()))
+
+
+def blog_tag_candidates(text: str, limit: int = MAX_BLOG_TAG_CANDIDATES) -> list[str]:
+    tags, _ = blog_tag_vocabulary()
+    doc_tokens = _tokens(text)
+    scored: list[tuple[int, int, str]] = []
+    for tag, details in tags.items():
+        tag_text = " ".join([tag, details.get("description") or "", *[str(a) for a in details.get("aliases") or []]])
+        overlap = len(doc_tokens & _tokens(tag_text))
+        count = int(details.get("count") or 0)
+        if overlap:
+            scored.append((overlap, count, tag))
+    candidates = [tag for _, _, tag in sorted(scored, key=lambda item: (-item[0], -item[1], item[2]))[:limit]]
+    for tag in list(tags)[:COMMON_BLOG_TAGS]:
+        if tag not in candidates:
+            candidates.append(tag)
+    return candidates[:limit]
+
+
+def blog_prompt(text: str) -> str:
+    tags, _ = blog_tag_vocabulary()
+    candidates = blog_tag_candidates(text)
+    tag_lines = "\n".join(
+        f"- {tag}: {tags[tag].get('description', '').removeprefix('Posts about ').rstrip('.')}"
+        for tag in candidates
+    )
+    return (
+        "Generate a description and canonical tags for this blog post's metadata.\n\n"
+        "Use first person (\"I\", never \"the author\") for personal posts. "
+        "Use imperative or neutral voice only for instructional or concept posts. "
+        "Be direct and conversational, not formal.\n\n"
+        "For tags, choose 3-8 slugs from this compact candidate list. Strongly prefer these existing tags. "
+        "If nothing fits an important topic, include it as proposed:new-tag; the script will flag it for review "
+        "and will not save it as a canonical tag.\n\n"
+        f"Candidate canonical tags:\n{tag_lines}\n\n"
+    )
+
+
+def clean_blog_tags(values: Any) -> list[str]:
+    _, aliases = blog_tag_vocabulary()
+    tags: list[str] = []
+    proposals: list[str] = []
+    for raw in values or []:
+        item = str(raw).strip()
+        if not item:
+            continue
+        lowered = item.lower()
+        if lowered.startswith("proposed:"):
+            proposals.append(_tag_slug(item.split(":", 1)[1]))
+            continue
+        tag = aliases.get(_tag_slug(item))
+        if tag and tag not in tags:
+            tags.append(tag)
+        elif item:
+            proposals.append(_tag_slug(item))
+    if proposals:
+        console.print(f"[yellow]Proposed blog tags ignored; add to metadata-tags.yml if approved: {sorted(set(proposals))}[/yellow]")
+    return tags
+
+
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 def is_unprocessed(val: Any) -> bool:
@@ -357,12 +464,8 @@ CONTENT_SETS: list[ContentSet] = [
     ContentSet(
         name="blog",
         base_dir=Path("/home/sanand/code/blog"),
-        prompt=(
-            "Generate a description and keywords for this blog post's metadata.\n\n"
-            "Use first person (\"I\", never \"the author\") for personal posts. "
-            "Use imperative or neutral voice only for instructional or concept posts. "
-            "Be direct and conversational, not formal.\n\n"
-        ),
+        prompt="",
+        prompt_builder=blog_prompt,
         fields=[
             FieldDef(
                 name="description",
@@ -375,13 +478,14 @@ CONTENT_SETS: list[ContentSet] = [
                 to_yaml=str,
             ),
             FieldDef(
-                name="keywords",
+                name="tags",
                 description=(
-                    "4-8 lower-case topics (names, tools, concepts) for keyword search. "
-                    "No generic tags, redundant synonyms."
+                    "3-8 canonical tag slugs from the supplied candidate list. "
+                    "Use proposed:new-tag only when no canonical tag fits an important topic."
                 ),
                 pydantic_type=list[str],
                 to_yaml=flow_list,
+                clean=clean_blog_tags,
             ),
         ],
         default_globs=["posts/**/*.md", "pages/**/*.md"],
@@ -427,7 +531,7 @@ def call_gemini(client, model: str, content_set: ContentSet, text: str):
     )
     response = client.models.generate_content(
         model=model,
-        contents=content_set.prompt + text,
+        contents=content_set.prompt_for(text) + text,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_json_schema=ResponseModel.model_json_schema(),
