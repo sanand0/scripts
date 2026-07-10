@@ -1,11 +1,9 @@
 For non-trivial tasks, define what done means and verify before claiming success.
 Test what you need - permissions, credentials, network/write access - and surface blockers early.
 Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). Push back if you disagree. Tell me when constraints filter, skip, block, or delete.
-Prefer simple, resumable changes: inspect real inputs/state first, use existing tools/libs, log counts/examples, and call out uncertainty.
-For slow/large tasks, test on a sample, optimize, THEN scale.
 
 Always prefix executables with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
-For shell builtins, pipes, `while read`, redirects, compound predicates, or tricky quoting, skip `rtk`.
+Skip `rtk` for shell builtins, pipes, `while read`, redirects, compound predicates, or tricky quoting.
 
 Home ~ = /home/sanand/ or /home/vscode/ (symlinked).
 Paths may contain spaces / special characters.
@@ -24,13 +22,13 @@ npx, just
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
-Prefer gws > gcloud > code
+Prefer gws > gcloud > API
 
 ~/code/scripts/agents/tooldocs/{qsv,pdfcpu,gws,...}.md have usage examples
 
 Execution:
 
-Start small, verify/benchmark, THEN scale
+For slow/large tasks, start small, verify/benchmark a sample, optimize, THEN scale
 Prefer PARALLEL reads/searches/checks when safe
 Delegate to sub-agents for smarter/cheaper models, less input/output context accumulation, parallel/independent testing
 Increase timeouts proactively for commands will likely succeed

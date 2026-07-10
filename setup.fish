@@ -164,6 +164,9 @@ abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
 abbr --add copilotlog 'agentlog.py copilot'
 
+# Count number of open tabs on Edge
+abbr --add counttabs "edge_tabs.py --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"
+
 abbr --add tau 'uvx --from tau-ai tau'
 
 # File sync utilities
@@ -190,6 +193,7 @@ abbr --add redirectsync  rclone bisync ~/r2/redirect r2:redirect $_RCLONE_BISYNC
 
 # Back up files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
 # Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
+# Keep in sync with ~/code/scripts/daily-activities
 abbr --add hetznerbackup rsync -avzP \
   ~/Documents/audio \
   ~/Documents/bcg \
@@ -197,6 +201,7 @@ abbr --add hetznerbackup rsync -avzP \
   ~/Documents/calls \
   ~/Documents/comics \
   ~/Documents/data \
+  ~/Documents/forms \
   ~/Documents/gitlab \
   ~/Documents/infy \
   ~/Documents/linkedin \

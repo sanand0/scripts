@@ -2,18 +2,11 @@
 description: Write a git commit message
 ---
 
-Write a Conventional-Commit message from the diff. Example:
+Write ONE git commit subject.
 
----
-doc: Readable code, shorter context
-
-**Readable code**. Standardize comments, add `method()` docstring in `path/file2.ext`. ...
-
-**Shorter context**. `get_context()` truncates files >10K + "..." in `path/file.ext`. ...
----
-
-Title (<= 50 chars).
-
-Group into themes by impact
-Use imperative mood
-Explain what changed and WHY
+Short, simple, human sentence.
+Say the main visible intent, not files/tests/plumbing.
+Focus on broad plain outcome unless crisp short details explain intent.
+Start with Add/Fix/Improve/Update/Remove/Move/Make/Handle when natural.
+Use literal scope like `tool/` or `story:` when useful.
+No `feat:`/`fix:`, bullets, or body.

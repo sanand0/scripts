@@ -1,0 +1,375 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12"]
+# ///
+"""Prepare an AI reply prompt from a Gmail message and thread.
+
+Examples:
+
+  emailai review "john doe" 2026-06
+  emailai 19f3b8b815819f2c --dry-run --format json | jaq .
+  emailai 19f3b8b815819f2c --ai chatgpt
+  emailai 19f3b8b815819f2c --submit
+"""
+
+from __future__ import annotations
+
+import base64
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import sys
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from typing import Annotated, Any
+
+import typer
+
+app = typer.Typer(add_completion=False, help=__doc__)
+
+CACHE_ROOT = Path("~/.cache/sanand-scripts/emailai").expanduser()
+GWS_NOISE_PREFIXES = ("Using keyring backend:",)
+
+# Edit this block to change the default instruction sent to the AI.
+STANDARD_PROMPT = """Draft a concise, professional reply to the email below.
+
+Use @LocalMCP as required.
+
+Write in Anand's voice: direct, warm, practical, and low-drama.
+Keep the reply ready to paste into email. If information is missing, include short bracketed placeholders.
+If attachments are provided, inspect them before drafting when they matter to the reply.
+"""
+
+
+def eprint(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def useful_stderr(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if not line.startswith(GWS_NOISE_PREFIXES))
+
+
+def run(cmd: list[str], *, config_dir: str | None = None, dry_run: bool = False) -> str:
+    if dry_run:
+        eprint("would run: " + " ".join(cmd))
+        return "{}"
+    env = os.environ.copy()
+    if config_dir:
+        env["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"] = config_dir
+    result = subprocess.run(cmd, env=env, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if stderr := useful_stderr(result.stderr):
+        eprint(stderr)
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    return result.stdout
+
+
+def gws_json(args: list[str], *, config_dir: str | None = None) -> Any:
+    return json.loads(run(["gws", *args], config_dir=config_dir))
+
+
+def b64url_decode(data: str) -> bytes:
+    return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+
+
+def decoded_text(data: str) -> str:
+    return b64url_decode(data).decode("utf-8", errors="replace").strip()
+
+
+def headers(message: dict[str, Any]) -> dict[str, str]:
+    return {
+        item.get("name", "").lower(): item.get("value", "")
+        for item in message.get("payload", {}).get("headers", [])
+    }
+
+
+def message_dt(message: dict[str, Any]) -> dt.datetime:
+    raw = headers(message).get("date")
+    if raw:
+        try:
+            parsed = parsedate_to_datetime(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt.UTC)
+            return parsed.astimezone(dt.UTC)
+        except (TypeError, ValueError):
+            pass
+    millis = int(message.get("internalDate", 0) or 0)
+    return dt.datetime.fromtimestamp(millis / 1000, tz=dt.UTC)
+
+
+def walk_parts(part: dict[str, Any]) -> list[dict[str, Any]]:
+    parts = [part]
+    for child in part.get("parts", []) or []:
+        parts.extend(walk_parts(child))
+    return parts
+
+
+def plain_body(message: dict[str, Any]) -> str:
+    payload = message.get("payload", {})
+    candidates = [
+        part.get("body", {}).get("data", "")
+        for part in walk_parts(payload)
+        if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data")
+    ]
+    if candidates:
+        return "\n\n".join(decoded_text(data) for data in candidates if data)
+    data = payload.get("body", {}).get("data")
+    return decoded_text(data) if data else message.get("snippet", "")
+
+
+def is_message_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{12,}", value))
+
+
+def gmail_query(phrases: list[str]) -> str:
+    return " ".join(f'"{phrase.replace(chr(34), chr(92) + chr(34))}"' for phrase in phrases)
+
+
+def find_message_id(phrases: list[str], config_dir: str | None, limit: int) -> tuple[str, str]:
+    if len(phrases) == 1 and is_message_id(phrases[0]):
+        return phrases[0].lower(), "message id"
+    query = gmail_query(phrases)
+    data = gws_json(
+        [
+            "gmail",
+            "users",
+            "messages",
+            "list",
+            "--params",
+            compact_json(
+                {
+                    "userId": "me",
+                    "q": query,
+                    "maxResults": limit,
+                    "fields": "messages(id,threadId),resultSizeEstimate",
+                }
+            ),
+            "--format",
+            "json",
+        ],
+        config_dir=config_dir,
+    )
+    messages = data.get("messages") or []
+    if not messages:
+        raise ValueError(f"no Gmail message matched: {query}")
+    return messages[0]["id"], f"gmail search: {query}"
+
+
+def safe_name(name: str) -> str:
+    cleaned = re.sub(r"[/\\:\0]+", "_", name).strip()
+    return cleaned or "attachment"
+
+
+def attachment_parts(message: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        part
+        for part in walk_parts(message.get("payload", {}))
+        if part.get("filename") and part.get("body", {}).get("attachmentId")
+    ]
+
+
+def download_attachments(messages: list[dict[str, Any]], root: Path, config_dir: str | None) -> list[Path]:
+    out = root / "attachments"
+    out.mkdir(parents=True, exist_ok=True)
+    files = []
+    seen: dict[str, int] = {}
+    for message in messages:
+        for part in attachment_parts(message):
+            filename = safe_name(part["filename"])
+            seen[filename] = seen.get(filename, 0) + 1
+            if seen[filename] > 1:
+                stem = Path(filename).stem
+                suffix = Path(filename).suffix
+                filename = f"{stem}-{seen[filename]}{suffix}"
+            path = out / filename
+            if not path.exists() or path.stat().st_size != part.get("body", {}).get("size"):
+                data = gws_json(
+                    [
+                        "gmail",
+                        "users",
+                        "messages",
+                        "attachments",
+                        "get",
+                        "--params",
+                        compact_json(
+                            {
+                                "userId": "me",
+                                "messageId": message["id"],
+                                "id": part["body"]["attachmentId"],
+                            }
+                        ),
+                        "--format",
+                        "json",
+                    ],
+                    config_dir=config_dir,
+                )
+                path.write_bytes(b64url_decode(data["data"]))
+            files.append(path)
+    return files
+
+
+def context_message(message: dict[str, Any], marker: str) -> str:
+    h = headers(message)
+    meta = [
+        f"Message: {marker}",
+        f"ID: {message.get('id', '')}",
+        f"Date: {h.get('date', '')}",
+        f"From: {h.get('from', '')}",
+        f"To: {h.get('to', '')}",
+        f"Cc: {h.get('cc', '')}",
+        f"Subject: {h.get('subject', '')}",
+    ]
+    files = [part["filename"] for part in attachment_parts(message)]
+    if files:
+        meta.append("Attachments: " + ", ".join(files))
+    return "\n".join(meta) + "\n\n" + plain_body(message).strip()
+
+
+def build_prompt(target: dict[str, Any], messages: list[dict[str, Any]], source: str, attachments: list[Path]) -> str:
+    target_id = target["id"]
+    blocks = []
+    for message in messages:
+        marker = "target email" if message["id"] == target_id else "earlier thread email"
+        blocks.append(context_message(message, marker))
+    files = "\n".join(f"- {path.name}" for path in attachments) or "- none"
+    return (
+        STANDARD_PROMPT.rstrip()
+        + "\n\n## Matched Gmail source\n\n"
+        + source
+        + "\n\n## Attached files sent separately\n\n"
+        + files
+        + "\n\n## Email thread context\n\n"
+        + "\n\n---\n\n".join(blocks)
+        + "\n"
+    )
+
+
+def prepare_context(phrases: list[str], config_dir: str | None, limit: int) -> tuple[dict[str, Any], Path, list[Path], str]:
+    message_id, source = find_message_id(phrases, config_dir, limit)
+    root = CACHE_ROOT / message_id
+    root.mkdir(parents=True, exist_ok=True)
+    target = gws_json(
+        ["gmail", "users", "messages", "get", "--params", compact_json({"userId": "me", "id": message_id, "format": "full"}), "--format", "json"],
+        config_dir=config_dir,
+    )
+    thread = gws_json(
+        ["gmail", "users", "threads", "get", "--params", compact_json({"userId": "me", "id": target["threadId"], "format": "full"}), "--format", "json"],
+        config_dir=config_dir,
+    )
+    target_time = message_dt(target)
+    messages = sorted(
+        [message for message in thread.get("messages", []) if message_dt(message) <= target_time],
+        key=message_dt,
+    )
+    attachments = download_attachments(messages, root, config_dir)
+    prompt = build_prompt(target, messages, source, attachments)
+    prompt_path = root / "prompt.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    (root / "thread.json").write_text(json.dumps(thread, ensure_ascii=False, indent=2), encoding="utf-8")
+    return target, prompt_path, attachments, source
+
+
+def open_ai(ai: str, prompt_path: Path, attachments: list[Path], submit: bool, model: str | None, dry_run: bool, fmt: str) -> dict[str, Any]:
+    if ai != "chatgpt":
+        raise ValueError(f"--ai {ai!r} is reserved but not implemented yet")
+    cmd = ["chatgpt", "--format", "json"]
+    if model:
+        cmd += ["--model", model]
+    if not submit:
+        cmd.append("--no-submit")
+    for path in attachments:
+        cmd += ["--file", str(path)]
+    prompt = prompt_path.read_text(encoding="utf-8")
+    if dry_run:
+        result = {"command": cmd, "prompt": str(prompt_path), "prompt_chars": len(prompt), "files": [str(path) for path in attachments], "submitted": submit}
+        return result
+    out = subprocess.run(cmd, input=prompt, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if stderr := useful_stderr(out.stderr):
+        eprint(stderr)
+    if out.returncode:
+        raise subprocess.CalledProcessError(out.returncode, cmd, out.stdout, out.stderr)
+    return json.loads(out.stdout) if fmt == "json" else {"output": out.stdout.strip()}
+
+
+def normalize_args(args: list[str]) -> list[str]:
+    """Let options appear after the variadic search phrases."""
+    flags = {"--submit", "--dry-run", "--help"}
+    valued = {"--ai", "--model", "--config-dir", "--format", "--limit", "-n"}
+    options: list[str] = []
+    phrases: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in flags:
+            options.append(arg)
+            index += 1
+        elif arg in valued:
+            if index + 1 >= len(args):
+                options.append(arg)
+                index += 1
+            else:
+                options.extend(args[index : index + 2])
+                index += 2
+        elif any(arg.startswith(f"{name}=") for name in valued):
+            options.append(arg)
+            index += 1
+        else:
+            phrases.append(arg)
+            index += 1
+    return [*options, *phrases]
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    phrases: Annotated[list[str], typer.Argument(help="Gmail search phrases that must all match, or one Gmail message ID.")],
+    ai: Annotated[str, typer.Option("--ai", help="AI target. Currently: chatgpt. Reserved: claude.")] = "chatgpt",
+    model: Annotated[str | None, typer.Option("--model", help="Model name/slug passed to the AI helper when supported.")] = None,
+    submit: Annotated[bool, typer.Option("--submit", help="Submit the prompt. Default only prepares the composer.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Fetch/build context but print planned AI action without opening the browser.")] = False,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Maximum live Gmail search results to request before selecting the first.")] = 10,
+    config_dir: Annotated[str | None, typer.Option("--config-dir", help="Override GOOGLE_WORKSPACE_CLI_CONFIG_DIR for gws.")] = None,
+    format: Annotated[str, typer.Option("--format", help="Output format: text or json.")] = "text",
+) -> None:
+    """Find one live Gmail message, fetch full thread context, and prepare an AI reply draft prompt."""
+    if not phrases:
+        raise typer.BadParameter("provide at least one search phrase or message ID")
+    if limit < 1:
+        raise typer.BadParameter("--limit must be at least 1")
+    if format not in {"text", "json"}:
+        raise typer.BadParameter("--format must be text or json")
+    if ai not in {"chatgpt", "claude"}:
+        raise typer.BadParameter("--ai must be chatgpt or claude")
+    try:
+        target, prompt_path, attachments, source = prepare_context(phrases, config_dir, limit)
+        result = open_ai(ai, prompt_path, attachments, submit, model, dry_run, format)
+    except Exception as exc:
+        typer.echo(f"emailai: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    summary = {
+        "message_id": target["id"],
+        "thread_id": target["threadId"],
+        "matched": source,
+        "prompt": str(prompt_path),
+        "attachments": [str(path) for path in attachments],
+        "ai": ai,
+        "submitted": submit,
+        "result": result,
+    }
+    if format == "json":
+        print(compact_json(summary))
+    else:
+        print(f"prepared: {prompt_path}")
+        print(f"attachments: {len(attachments)}")
+        if url := result.get("url"):
+            print(f"browser: {url}")
+
+
+if __name__ == "__main__":
+    app(args=normalize_args(sys.argv[1:]))

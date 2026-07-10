@@ -18,7 +18,7 @@ description: ALWAYS follow this style when writing Python / JavaScript code
 - Keep happy path linear and obvious. Write flow first, then fill in code
 - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
 - Change existing code minimally. Retain existing comments. Follow existing style
-- Make scripts re-startable if interrupted
+- Make scripts re-startable if interrupted. Inspect state first for unexpected changes
 
 Docs:
 
