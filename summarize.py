@@ -105,14 +105,14 @@ class ContentSet:
     exclude_names: list[str] = field(default_factory=list)  # basenames to skip (e.g. SKILL.md)
     meta_position: str = "before"  # "before": meta keys first; "after": meta keys last
     skip_if: Callable[[str], str | None] | None = None
-    prompt_builder: Callable[[str], str] | None = None
+    prompt_builder: Callable[[str, list[FieldDef] | None], str] | None = None
 
     @property
     def meta_keys(self) -> list[str]:
         return [f.name for f in self.fields]
 
-    def prompt_for(self, text: str) -> str:
-        return self.prompt_builder(text) if self.prompt_builder else self.prompt
+    def prompt_for(self, text: str, fields: list["FieldDef"] | None = None) -> str:
+        return self.prompt_builder(text, fields) if self.prompt_builder else self.prompt
 
 
 # ── YAML helpers ───────────────────────────────────────────────────────────────
@@ -330,13 +330,29 @@ def blog_tag_candidates(text: str, limit: int = MAX_BLOG_TAG_CANDIDATES) -> list
     return candidates[:limit]
 
 
-def blog_prompt(text: str) -> str:
+def blog_prompt(text: str, fields: list[FieldDef] | None = None) -> str:
+    field_names = {field.name for field in (fields or [])}
     tags, _ = blog_tag_vocabulary()
     candidates = blog_tag_candidates(text)
     tag_lines = "\n".join(
         f"- {tag}: {tags[tag].get('description', '').removeprefix('Posts about ').rstrip('.')}"
         for tag in candidates
     )
+    if field_names == {"tags"}:
+        return (
+            "Generate only canonical tags for this blog post's metadata.\n\n"
+            "Choose 3-8 slugs from this compact candidate list. Strongly prefer these existing tags. "
+            "If nothing fits an important topic, include it as proposed:new-tag; the script will flag it for review "
+            "and will not save it as a canonical tag.\n\n"
+            f"Candidate canonical tags:\n{tag_lines}\n\n"
+        )
+    if field_names == {"description"}:
+        return (
+            "Generate only a description for this blog post's metadata.\n\n"
+            "Use first person (\"I\", never \"the author\") for personal posts. "
+            "Use imperative or neutral voice only for instructional or concept posts. "
+            "Be direct and conversational, not formal.\n\n"
+        )
     return (
         "Generate a description and canonical tags for this blog post's metadata.\n\n"
         "Use first person (\"I\", never \"the author\") for personal posts. "
@@ -521,17 +537,17 @@ class Usage:
 # ── AI call ───────────────────────────────────────────────────────────────────
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
-def call_gemini(client, model: str, content_set: ContentSet, text: str):
+def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
     from google.genai import types  # noqa: PLC0415
 
     ResponseModel = create_model(
         "ResponseModel",
         **{f.name: (f.pydantic_type, PydanticField(description=f.description))
-           for f in content_set.fields},
+           for f in fields},
     )
     response = client.models.generate_content(
         model=model,
-        contents=content_set.prompt_for(text) + text,
+        contents=content_set.prompt_for(text, fields) + text,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_json_schema=ResponseModel.model_json_schema(),
@@ -597,7 +613,8 @@ def process_file(
     # AI for remaining missing fields
     if missing:
         try:
-            ai, usage = call_gemini(client, model, content_set, text)
+            missing_fields = [fdef for fdef in content_set.fields if fdef.name in missing]
+            ai, usage = call_gemini(client, model, content_set, text, missing_fields)
             result["tokens"] = usage.as_dict()
             result["cost_usd"] = round(usage.cost(model), 6)
             for fdef in content_set.fields:

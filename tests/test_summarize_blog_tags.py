@@ -45,6 +45,21 @@ def test_blog_prompt_uses_compact_candidate_tags(tmp_path, monkeypatch):
     assert len(prompt) < 1500
 
 
+def test_blog_prompt_can_request_only_tags(tmp_path, monkeypatch):
+    tags_path = tmp_path / "metadata-tags.yml"
+    write_tags(tags_path)
+    monkeypatch.setattr(summarize, "BLOG_TAGS_PATH", tags_path)
+    summarize.blog_tag_vocabulary.cache_clear()
+
+    tags_field = next(field for field in summarize.CONTENT_SET_MAP["blog"].fields if field.name == "tags")
+    prompt = summarize.blog_prompt("I used an LLM to improve a dataviz workflow.", [tags_field])
+
+    assert "Generate only canonical tags" in prompt
+    assert "Generate a description" not in prompt
+    assert "- llms:" in prompt
+    assert "- data-visualization:" in prompt
+
+
 def test_clean_blog_tags_keeps_canonical_and_flags_proposals(tmp_path, monkeypatch):
     tags_path = tmp_path / "metadata-tags.yml"
     write_tags(tags_path)
