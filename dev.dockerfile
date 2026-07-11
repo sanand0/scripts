@@ -108,6 +108,13 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
+# Install Playwright OS dependencies as root. Do not rely on sudo inside the dev container; dev.sh uses no-new-privileges.
+USER root
+RUN /home/vscode/apps/global/.venv/bin/playwright install-deps chromium firefox webkit \
+ && rm -rf /var/lib/apt/lists/*
+
+USER vscode
+
 # Install cargo. Takes ~1 min
 RUN bash -lc 'curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
   . "$HOME/.cargo/env"; \
@@ -122,14 +129,14 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g wscat@latest; \
   npm install -g @googleworkspace/cli@latest; \
   npm install -g pixelmatch pngjs; \
-  playwright install --with-deps chromium firefox webkit; \
+  playwright install chromium firefox webkit; \
   mise reshim node \
   '
 
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "05 Jul 2026: Updating agents and fast-moving agent tools"; \
+  echo "10 Jul 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \
