@@ -31,10 +31,12 @@ Usage:
 
 import concurrent.futures
 import glob as glob_module
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from functools import lru_cache
 from io import StringIO
@@ -272,6 +274,7 @@ def clean_ideas(ideas: list) -> list[str]:
 # ── Blog tag helpers ──────────────────────────────────────────────────────────
 
 BLOG_TAGS_PATH = Path("/home/sanand/code/blog/metadata-tags.yml")
+BLOG_PROPOSALS_PATH = BLOG_TAGS_PATH.with_name("metadata-tag-proposals.yml")
 TAG_TOKEN_RE = re.compile(r"[a-z0-9]+")
 MAX_BLOG_TAG_CANDIDATES = 80
 COMMON_BLOG_TAGS = 25
@@ -365,26 +368,80 @@ def blog_prompt(text: str, fields: list[FieldDef] | None = None) -> str:
     )
 
 
-def clean_blog_tags(values: Any) -> list[str]:
+def split_blog_tags(values: Any) -> tuple[list[str], list[str]]:
+    """Return canonical tags and normalized proposals without mixing the two."""
     _, aliases = blog_tag_vocabulary()
     tags: list[str] = []
-    proposals: list[str] = []
+    proposals: set[str] = set()
     for raw in values or []:
         item = str(raw).strip()
         if not item:
             continue
         lowered = item.lower()
         if lowered.startswith("proposed:"):
-            proposals.append(_tag_slug(item.split(":", 1)[1]))
+            if proposal := _tag_slug(item.split(":", 1)[1]):
+                proposals.add(proposal)
             continue
         tag = aliases.get(_tag_slug(item))
         if tag and tag not in tags:
             tags.append(tag)
         elif item:
-            proposals.append(_tag_slug(item))
+            if proposal := _tag_slug(item):
+                proposals.add(proposal)
+    return tags, sorted(proposals)
+
+
+def clean_blog_tags(values: Any) -> list[str]:
+    tags, proposals = split_blog_tags(values)
     if proposals:
-        console.print(f"[yellow]Proposed blog tags ignored; add to metadata-tags.yml if approved: {sorted(set(proposals))}[/yellow]")
+        console.print(f"[yellow]Proposed blog tags retained for review: {proposals}[/yellow]")
     return tags
+
+
+def _atomic_yaml_write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            make_yaml().dump(data, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def merge_blog_tag_proposals(path: Path, evidence: list[dict]) -> None:
+    """Reconcile processed sources into the proposal ledger with one atomic write."""
+    existing = make_yaml().load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    proposals = (existing or {}).get("proposals") or {}
+    processed_sources = {item["source"] for item in evidence}
+    merged: dict[str, dict[str, dict[str, str]]] = {}
+    for proposal, details in proposals.items():
+        sources = {
+            source: dict(source_details)
+            for source, source_details in (details.get("sources") or {}).items()
+            if source not in processed_sources
+        }
+        if sources:
+            merged[str(proposal)] = {"sources": sources}
+    for item in evidence:
+        source_details = {"content_hash": item["content_hash"]}
+        for proposal in sorted(set(item.get("proposals") or [])):
+            merged.setdefault(proposal, {"sources": {}})["sources"][item["source"]] = source_details
+    normalized = {
+        proposal: {"sources": dict(sorted(details["sources"].items()))}
+        for proposal, details in sorted(merged.items())
+    }
+    _atomic_yaml_write(path, {"version": 1, "proposals": normalized})
+
+
+def blog_source_path(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path.resolve())
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -580,6 +637,7 @@ def process_file(
         "skipped_reason": None,
         "tokens": {"prompt": 0, "output": 0},
         "cost_usd": 0.0,
+        "proposals": [],
     }
 
     text = path.read_text(encoding="utf-8")
@@ -621,7 +679,9 @@ def process_file(
                 if fdef.name not in missing:
                     continue
                 val = getattr(ai, fdef.name)
-                if fdef.clean is not None:
+                if content_set.name == "blog" and fdef.name == "tags":
+                    val, result["proposals"] = split_blog_tags(val)
+                elif fdef.clean is not None:
                     val = fdef.clean(val)
                 # Always write, even [] — marks field as processed so we don't re-run
                 updates[fdef.name] = fdef.to_yaml(val)
@@ -634,6 +694,9 @@ def process_file(
     full_meta = reorder_metadata(metadata, updates, meta_keys, content_set.meta_position) if force else None
     if not dry_run:
         write_file(path, had_fm, text, updates, content_set.meta_position, full_metadata=full_meta)
+        if content_set.name == "blog":
+            result["source"] = blog_source_path(path, content_set.base_dir)
+            result["content_hash"] = hashlib.sha256(path.read_bytes()).hexdigest()
     result["status"] = "dry-run" if dry_run else "updated"
     return result
 
@@ -720,6 +783,14 @@ def main(
                     "tokens": {"prompt": 0, "output": 0}, "cost_usd": 0.0,
                     "error": str(e),
                 })
+
+    if content_set.name == "blog" and not dry_run:
+        evidence = [
+            result for result in results
+            if result["status"] == "updated" and "content_hash" in result
+        ]
+        if evidence:
+            merge_blog_tag_proposals(BLOG_PROPOSALS_PATH, evidence)
 
     if not use_json:
         n_updated = sum(1 for r in results if r["status"] in ("updated", "dry-run"))
