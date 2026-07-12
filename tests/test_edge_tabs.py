@@ -34,6 +34,22 @@ def navigation(tab_id, index, url, title):
     return command(6, struct.pack("<I", len(body)) + body)
 
 
+def tab_group(tab_id, group_id=None):
+    high, low = group_id or (0, 0)
+    return command(
+        25, struct.pack("<i4xQQ?7x", tab_id, high, low, group_id is not None)
+    )
+
+
+def tab_group_metadata(group_id, title):
+    body = (
+        struct.pack("<QQ", *group_id)
+        + pickle_string16(title)
+        + struct.pack("<I??2x", 0, False, False)
+    )
+    return command(27, struct.pack("<I", len(body)) + body)
+
+
 def snss(*commands):
     return b"SNSS" + struct.pack("<I", 3) + b"".join(commands)
 
@@ -106,6 +122,50 @@ class EdgeTabsTest(unittest.TestCase):
 
         self.assertRegex(output.getvalue(), r"^# Timestamp: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00")
         self.assertIn("  1. Example title\n     https://example.com/", output.getvalue())
+
+    def test_group_and_pinned_state_are_in_outputs(self):
+        group_id = (123, 456)
+        data = snss(
+            command(0, struct.pack("<ii", 100, 10)),
+            command(0, struct.pack("<ii", 100, 11)),
+            command(2, struct.pack("<ii", 10, 0)),
+            command(2, struct.pack("<ii", 11, 1)),
+            navigation(10, 0, "https://pinned.example/", "Pinned"),
+            navigation(11, 0, "https://plain.example/", "Plain"),
+            command(12, struct.pack("<i?3x", 10, True)),
+            tab_group(10, group_id),
+            tab_group_metadata(group_id, "Research"),
+        )
+        windows = edge_tabs.parse_snss(data)
+        output = StringIO()
+
+        with redirect_stdout(output):
+            edge_tabs.print_text(windows, Path("Session"), urls_only=False)
+
+        tabs = edge_tabs.windows_to_json(windows, Path("Session"))["windows"][0]["tabs"]
+        self.assertEqual((tabs[0]["group"], tabs[0]["pinned"]), ("Research", True))
+        self.assertEqual((tabs[1]["group"], tabs[1]["pinned"]), (None, False))
+        self.assertIn(
+            "  1. [PIN] Pinned [Research]\n     https://pinned.example/",
+            output.getvalue(),
+        )
+
+    def test_later_group_and_pin_commands_replace_prior_state(self):
+        group_id = (123, 456)
+        data = snss(
+            command(0, struct.pack("<ii", 100, 10)),
+            navigation(10, 0, "https://example.com/", "Example"),
+            command(12, struct.pack("<i?3x", 10, True)),
+            command(12, struct.pack("<i?3x", 10, False)),
+            tab_group(10, group_id),
+            tab_group(10),
+            tab_group_metadata(group_id, "Research"),
+        )
+
+        tab = edge_tabs.parse_snss(data)[0].tabs[0]
+
+        self.assertFalse(tab.pinned)
+        self.assertIsNone(tab.group)
 
     def test_json_output_includes_utc_timestamp(self):
         result = edge_tabs.windows_to_json([], Path("Session"))

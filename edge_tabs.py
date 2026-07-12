@@ -27,6 +27,9 @@ class Tab:
     window_id: int = 0
     visual_index: int = 0
     current_navigation_index: int = 0
+    pinned: bool = False
+    group: str | None = None
+    group_id: tuple[int, int] | None = None
     navigations: dict[int, Navigation] = field(default_factory=dict)
 
     @property
@@ -65,6 +68,11 @@ class PickleReader:
     def int32(self) -> int:
         value = struct.unpack_from("<i", self.data, self.offset)[0]
         self.offset += 4
+        return value
+
+    def uint64(self) -> int:
+        value = struct.unpack_from("<Q", self.data, self.offset)[0]
+        self.offset += 8
         return value
 
     def string(self) -> str:
@@ -117,6 +125,7 @@ def parse_snss(data: bytes) -> list[Window]:
     windows: dict[int, Window] = {}
     closed_tabs: set[int] = set()
     closed_windows: set[int] = set()
+    group_titles: dict[tuple[int, int], str] = {}
 
     for command_id, payload in read_commands(data):
         if command_id == 0 and len(payload) >= 8:  # SetTabWindow
@@ -152,10 +161,23 @@ def parse_snss(data: bytes) -> list[Window]:
                 for key, value in tab.navigations.items()
                 if key >= index
             }
+        elif command_id == 12 and len(payload) >= 5:  # SetPinnedState
+            tab_id, pinned = struct.unpack_from("<i?", payload)
+            get_tab(tabs, tab_id).pinned = pinned
         elif command_id == 16 and len(payload) >= 4:  # TabClosed
             closed_tabs.add(struct.unpack_from("<i", payload)[0])
         elif command_id == 17 and len(payload) >= 4:  # WindowClosed
             closed_windows.add(struct.unpack_from("<i", payload)[0])
+        elif command_id == 25 and len(payload) >= 25:  # SetTabGroup
+            tab_id, high, low, has_group = struct.unpack_from("<i4xQQ?", payload)
+            get_tab(tabs, tab_id).group_id = (high, low) if has_group else None
+        elif command_id == 27 and len(payload) >= 24:  # SetTabGroupMetadata2
+            reader = PickleReader(payload, 4)  # First uint32 is Pickle payload size.
+            group_id = (reader.uint64(), reader.uint64())
+            group_titles[group_id] = reader.string16()
+
+    for tab in tabs.values():
+        tab.group = group_titles.get(tab.group_id) if tab.group_id else None
 
     live_windows: dict[int, Window] = {}
     for tab in tabs.values():
@@ -196,6 +218,8 @@ def windows_to_json(windows: list[Window], source: Path) -> dict[str, object]:
                         "index": index,
                         "visual_index": tab.visual_index,
                         "active": index == window.selected_tab_index,
+                        "group": tab.group,
+                        "pinned": tab.pinned,
                         "title": tab.title,
                         "url": tab.url,
                     }
@@ -216,10 +240,12 @@ def print_text(windows: list[Window], source: Path, urls_only: bool) -> None:
         print(f"Window {window_index} (id {window.id}, {len(window.tabs)} tabs)")
         for tab_index, tab in enumerate(window.tabs, 1):
             active = " *" if tab_index - 1 == window.selected_tab_index else ""
+            prefix = "[PIN] " if tab.pinned else ""
+            suffix = f" [{tab.group}]" if tab.group else ""
             if urls_only or not tab.title:
-                print(f"{tab_index:3d}.{active} {tab.url}")
+                print(f"{tab_index:3d}.{active} {prefix}{tab.url}{suffix}")
             else:
-                print(f"{tab_index:3d}.{active} {tab.title}\n     {tab.url}")
+                print(f"{tab_index:3d}.{active} {prefix}{tab.title}{suffix}\n     {tab.url}")
 
 
 def main() -> None:
