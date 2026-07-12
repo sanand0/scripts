@@ -70,8 +70,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      dev.sh
-      codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+      dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
       -->
 
   - trigger: "-claude"
@@ -80,8 +79,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      dev.sh
-      claude --dangerously-skip-permissions --model claude-sonnet-4.6 --effort medium
+      dev.sh -- claude --dangerously-skip-permissions --model opus --effort medium
       -->
 
   - trigger: "-copilot"
@@ -90,8 +88,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      dev.sh
-      copilot --yolo --model claude-sonnet-4.6
+      dev.sh -- copilot --yolo --model claude-sonnet-4.6
       -->
 
   # Print the output of a shell command
