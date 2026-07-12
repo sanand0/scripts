@@ -28,6 +28,66 @@ IMAGE_TAG="dev:latest"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="${SCRIPT_DIR}/dev.dockerfile"
 
+# Keep the Chrome/Chromium sandbox enabled while retaining
+# no-new-privileges. Playwright's profile is Docker's default seccomp policy
+# with user-namespace operations enabled.
+PLAYWRIGHT_VERSION="$(
+  awk -F= '$1 == "ARG PLAYWRIGHT_VERSION" { print $2; exit }' "$DOCKERFILE"
+)"
+if [[ -z "$PLAYWRIGHT_VERSION" ]]; then
+  printf 'ERROR: ARG PLAYWRIGHT_VERSION is missing from %s\n' "$DOCKERFILE" >&2
+  exit 2
+fi
+
+PLAYWRIGHT_SECCOMP_PROFILE="${XDG_CACHE_HOME:-$HOME/.cache}/dev-sh/playwright-seccomp-${PLAYWRIGHT_VERSION}.json"
+PLAYWRIGHT_SECCOMP_URL="https://raw.githubusercontent.com/microsoft/playwright/v${PLAYWRIGHT_VERSION}/utils/docker/seccomp_profile.json"
+
+download_file() {
+  local url="$1"
+  local destination="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$destination"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$destination" "$url"
+  else
+    printf 'ERROR: curl or wget is required to download %s\n' "$url" >&2
+    return 1
+  fi
+}
+
+ensure_playwright_seccomp_profile() {
+  local profile_dir
+  local temporary_profile
+
+  if [[ -s "$PLAYWRIGHT_SECCOMP_PROFILE" ]]; then
+    return 0
+  fi
+
+  profile_dir="$(dirname "$PLAYWRIGHT_SECCOMP_PROFILE")"
+  temporary_profile="${PLAYWRIGHT_SECCOMP_PROFILE}.tmp.$$"
+  mkdir -p "$profile_dir"
+
+  if ! download_file "$PLAYWRIGHT_SECCOMP_URL" "$temporary_profile"; then
+    rm -f "$temporary_profile"
+    printf 'ERROR: unable to download Playwright seccomp profile %s\n' \
+      "$PLAYWRIGHT_SECCOMP_URL" >&2
+    return 1
+  fi
+
+  # Cheap validation without requiring jq/python on the host.
+  if ! grep -q '"defaultAction"' "$temporary_profile" \
+    || ! grep -q '"clone"' "$temporary_profile" \
+    || ! grep -q '"unshare"' "$temporary_profile"; then
+    rm -f "$temporary_profile"
+    printf 'ERROR: downloaded Playwright seccomp profile looks invalid\n' >&2
+    return 1
+  fi
+
+  chmod 0644 "$temporary_profile"
+  mv -f "$temporary_profile" "$PLAYWRIGHT_SECCOMP_PROFILE"
+}
+
 # GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build rebuilds and exits. Extra args are passed to `docker build`.
 # GITHUB_TOKEN=(secret GITHUB_TOKEN) dev.sh --build --no-cache re-builds without cache.
 if [[ ${1-} == "--build" ]]; then
@@ -41,8 +101,10 @@ if [[ ${1-} == "--build" ]]; then
     exit 0
 fi
 
+ensure_playwright_seccomp_profile
+
 # Create history file if missing
-touch $HOME/.cache/dev-sh.bash-history
+touch "$HOME/.cache/dev-sh.bash-history"
 
 expand_path_mount() {
   local entry="$1"
@@ -137,15 +199,25 @@ if [[ -S /var/run/docker.sock ]]; then
   fi
 fi
 
+# Reuse the host GitHub CLI authentication inside the container.
+# The host credential is normally stored in its keyring, not ~/.config/gh.
+if [[ -z "${GH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+  GH_TOKEN="$(gh auth token --hostname github.com 2>/dev/null || true)"
+  export GH_TOKEN
+fi
+
 args=(
   --rm                          # auto-remove container on exit
+  --init                        # reap browser/agent child processes
   -it                           # interactive TTY
   --gpus all                    # expose all GPUs
   --shm-size=8g                 # bigger /dev/shm for browsers, PyTorch
   --ulimit nofile=1048576:1048576  # high FD limits
   --network host                # host networking (Linux only)
   -u 1000:1000                  # run as host user 1000:1000
-  --security-opt no-new-privileges:true     # prevent privilege escalation within the container
+  --security-opt no-new-privileges:true
+  --security-opt "seccomp=${PLAYWRIGHT_SECCOMP_PROFILE}"
+  -e GH_TOKEN                   # Copy GH_TOKEN from host env if present
   -e HOME=/home/vscode
   -e USER=vscode
   -e LOGNAME=vscode
@@ -157,8 +229,7 @@ args=(
   -v /etc/localtime:/etc/localtime:ro
   -v /etc/timezone:/etc/timezone:ro
   # Caches
-  -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface" \
-  -v "$HOME/.cache/ms-playwright:/home/vscode/.cache/ms-playwright" \
+  -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface"
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip"
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
   # Configs. Enable what's required.
@@ -167,7 +238,8 @@ args=(
   -v "$HOME/.claude.json:/home/vscode/.claude.json"
   -v "$HOME/.codex:/home/vscode/.codex"
   # -v "$HOME/.config/gcloud:/home/vscode/.config/gcloud:ro"   # 🔴
-  -v "$HOME/.config/gh:/home/vscode/.config/gh"
+  # We don't need .config/gh since we're passing GH_TOKEN
+  # -v "$HOME/.config/gh:/home/vscode/.config/gh:ro"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/gws-root.node@gmail.com/:/home/vscode/.config/gws-root.node@gmail.com"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
@@ -184,19 +256,20 @@ args=(
   # image-managed installs/shims and makes the container toolchain depend on the
   # host's mise state.
   -v "$HOME/.local/share/opencode:/home/vscode/.local/share/opencode"
-  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   -v "$HOME/.local/share/rtk:/home/vscode/.local/share/rtk"
   -v "$HOME/.local/share/sanand-scripts:/home/vscode/.local/share/sanand-scripts"
   -v "$HOME/.npm:/home/vscode/.npm"
   -v "$HOME/.gemini:/home/vscode/.gemini"
   -v "$HOME/.pi:/home/vscode/.pi"
+  # UV caches are shared above but the managed Python installations should be image-owned
+  # -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json:ro"
   -v "$HOME/Documents/data/agents:/home/vscode/Documents/data/agents" # Agents data
   "${font_mount_args[@]}"
   # X11 forwarding for GUI apps
-  -e DISPLAY=$DISPLAY
+  -e DISPLAY="$DISPLAY"
   # Allow Claude Code to generate large HTML files. https://code.claude.com/docs/en/settings
   -e CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
   -v /tmp/.X11-unix:/tmp/.X11-unix

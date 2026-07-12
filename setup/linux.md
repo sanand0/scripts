@@ -308,6 +308,10 @@ cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
 
+# Set up Agent tools
+codex mcp add chrome-devtools -- npx chrome-devtools-mcp@latest
+claude mcp add chrome-devtools --scope user npx chrome-devtools-mcp@latest
+
 # Install .deb tools
 wget -O /tmp/zoom.deb "https://zoom.us/client/latest/zoom_amd64.deb"; sudo apt install -y /tmp/zoom.deb; rm /tmp/zoom.deb   # Zoom does not support apt/flatpak
 

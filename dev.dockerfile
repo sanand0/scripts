@@ -5,32 +5,59 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+# Keep this aligned with the seccomp profile version resolved by dev.sh.
+ARG PLAYWRIGHT_VERSION=1.61.0
 
 # Takes ~3 min
 # `docker.io` is here for the client binary only. `dev.sh` bind-mounts the host
 # Docker socket, so container-side Docker commands talk to the host daemon.
-RUN apt-get update \
-  && apt-get install -y \
-    curl \
-    ca-certificates \
-    docker.io \
-    fontconfig \
-    imagemagick \
-    ugrep \
-    lynx \
-    qpdf \
-    w3m \
-    sqlite3 \
-    moreutils \
-    ffmpeg \
-    webp \
-    postgresql-client \
-    poppler-utils \
-    ghostscript \
-    librsvg2-bin \
+#
+# Install Google Chrome as a normal system package, independently of Playwright.
+# Compatibility aliases maximize discovery by tools that probe Chromium names.
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
     bubblewrap \
-    xxd \
-  && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    curl \
+    docker.io \
+    ffmpeg \
+    fontconfig \
+    ghostscript \
+    imagemagick \
+    librsvg2-bin \
+    lynx \
+    moreutils \
+    poppler-utils \
+    postgresql-client \
+    qpdf \
+    sqlite3 \
+    ugrep \
+    w3m \
+    webp \
+    xxd; \
+  curl -fsSL \
+    https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    -o /tmp/google-chrome.deb; \
+  apt-get install -y --no-install-recommends /tmp/google-chrome.deb; \
+  ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chrome; \
+  ln -sf /usr/bin/google-chrome-stable /usr/local/bin/google-chrome; \
+  ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chromium; \
+  ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chromium-browser; \
+  command -v google-chrome-stable; \
+  command -v google-chrome; \
+  command -v chromium; \
+  command -v chromium-browser; \
+  rm -f /tmp/google-chrome.deb; \
+  rm -rf /var/lib/apt/lists/*
+
+# Hints used by browser launchers that do not reliably search PATH.
+ENV CHROME_BIN=/usr/bin/google-chrome-stable \
+    CHROME_PATH=/usr/bin/google-chrome-stable \
+    GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable \
+    CHROMIUM_BIN=/usr/bin/google-chrome-stable \
+    CHROMIUM_PATH=/usr/bin/google-chrome-stable \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # dev.sh passes GID 992 (render/GPU device - ollama?). Avoid warning about missing group name.
 RUN getent group 992 >/dev/null || groupadd --gid 992 render
@@ -56,7 +83,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"
 # depends on FUSE/fusermount availability.
 RUN mkdir -p "${HOME}/.local/overrides" "${PLAYWRIGHT_BROWSERS_PATH}" \
  && ln -sf "$(command -v magick || command -v convert)" "${HOME}/.local/overrides/magick" \
- && curl -L "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64" -o "${HOME}/.local/overrides/ttyd" && chmod +x "${HOME}/.local/overrides/ttyd"
+ && curl -L "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64" -o "${HOME}/.local/overrides/ttyd" \
+ && chmod +x "${HOME}/.local/overrides/ttyd"
 
 # Install mise and set up shell
 # Keep a copy of `mise` outside `~/.local/bin`, because `dev.sh` intentionally
@@ -98,27 +126,33 @@ RUN --mount=type=secret,id=github_token bash -lc 'eval "$(mise env -s bash)"; \
   yq \
   '
 
-# Install uv. Takes ~0.5 min
+# Install cargo. Takes ~1 min
+RUN bash -lc 'curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
+  . "$HOME/.cargo/env"; \
+  cargo install --locked resvg; \
+  '
+
+# Install Python tools, pinning Playwright so its browsers and Docker seccomp
+# profile can be kept on the same release.
 RUN bash -lc 'eval "$(mise env -s bash)"; \
   mkdir -p ~/apps/global; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai playwright; \
+  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai "playwright==${PLAYWRIGHT_VERSION}"; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
-# Install Playwright OS dependencies as root. Do not rely on sudo inside the dev container; dev.sh uses no-new-privileges.
+# Playwright's Firefox and WebKit are patched builds; Chromium is kept too so
+# normal Playwright defaults and CLI commands continue to work. System Chrome
+# remains independently discoverable through /usr/bin and /usr/local/bin.
 USER root
 RUN /home/vscode/apps/global/.venv/bin/playwright install-deps chromium firefox webkit \
  && rm -rf /var/lib/apt/lists/*
 
 USER vscode
-
-# Install cargo. Takes ~1 min
-RUN bash -lc 'curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-  . "$HOME/.cargo/env"; \
-  cargo install --locked resvg; \
+RUN bash -lc 'eval "$(mise env -s bash)"; \
+  playwright install chromium firefox webkit; \
   '
 
 # Global npm executables under a mise-managed Node are not reliably visible
@@ -129,7 +163,6 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g wscat@latest; \
   npm install -g @googleworkspace/cli@latest; \
   npm install -g pixelmatch pngjs; \
-  playwright install chromium firefox webkit; \
   mise reshim node \
   '
 

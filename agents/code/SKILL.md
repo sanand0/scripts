@@ -29,7 +29,10 @@ Tests:
 
 - When tests exist, or writing new code, add and run tests first (including edge cases). Keep tests fast
 - Test final outputs, not just the source / intermediates
-- Test visual artifacts (web pages, docs, slides, PDFs, ...) with screenshots (for responsive layout, overlaps, contrast & visibility) _AND_ DOM (for interactions, navigation, accessibility) before finalizing
+- Test visual artifacts (web pages, docs, slides, PDFs, ...) before finalizing with:
+  - Screenshots (for responsive layout, overlaps, contrast & visibility)
+  - DOM (for interactions, navigation)
+  - Lighthouse audit (for accessibility) via Chrome DevTools MCP else `npx -y lighthouse@latest`
 - Never say "verified" without evidence. List changes, validations with results, and remaining risks/unknowns
 
 Ops:

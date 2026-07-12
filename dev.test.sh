@@ -219,6 +219,55 @@ path_is_executable() {
   [ -x "$1" ]
 }
 
+command_absent() {
+  ! command -v "$1" >/dev/null 2>&1
+}
+
+commands_resolve_to_same_executable() {
+  local first="$1"
+  shift
+  local expected
+  local command_name
+  local command_path
+
+  command_path="$(command -v "$first")" || return 1
+  expected="$(readlink -f "$command_path")" || return 1
+  [ -x "$expected" ] || return 1
+
+  for command_name in "$@"; do
+    command_path="$(command -v "$command_name")" || return 1
+    [ "$(readlink -f "$command_path")" = "$expected" ] || return 1
+  done
+}
+
+proc_status_value_equals() {
+  local field="$1"
+  local expected="$2"
+  local actual
+  actual="$(awk -v key="${field}:" '$1 == key { print $2; exit }' /proc/self/status 2>/dev/null)"
+  [ "$actual" = "$expected" ]
+}
+
+pid1_is_init() {
+  local comm
+  comm="$(cat /proc/1/comm 2>/dev/null || true)"
+  case "$comm" in
+    docker-init|tini)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+playwright_version_matches_dockerfile() {
+  local dockerfile="$1"
+  local expected
+  local actual
+  expected="$(awk -F= '$1 == "ARG PLAYWRIGHT_VERSION" { print $2; exit }' "$dockerfile" 2>/dev/null)"
+  actual="$(playwright --version 2>/dev/null | awk '{ print $2; exit }')"
+  [ -n "$expected" ] && [ "$actual" = "$expected" ]
+}
+
 python_packages_present() {
   local python_bin="$1"
   shift
@@ -280,6 +329,52 @@ playwright_screenshot_works() {
   playwright screenshot --browser "$browser" "file://$html_path" "$screenshot_path" >/dev/null 2>&1 && [ -s "$screenshot_path" ]
 }
 
+system_chrome_headless_works() {
+  local chrome_bin="$1"
+  local html_path="$2"
+  local user_data_dir="$3"
+  local dom_path="$4"
+
+  timeout 45 "$chrome_bin" \
+    --headless=new \
+    --disable-gpu \
+    --no-first-run \
+    --no-default-browser-check \
+    --user-data-dir="$user_data_dir" \
+    --dump-dom "file://$html_path" \
+    >"$dom_path" \
+  && grep -q 'system Chrome smoke test' "$dom_path"
+}
+
+playwright_chrome_channel_works() {
+  local python_bin="$1"
+  local html_path="$2"
+  local screenshot_path="$3"
+
+  "$python_bin" - "$html_path" "$screenshot_path" <<'PY'
+import asyncio
+import sys
+from pathlib import Path
+
+from playwright.async_api import async_playwright
+
+
+async def main() -> None:
+    html_path = Path(sys.argv[1]).resolve()
+    screenshot_path = Path(sys.argv[2]).resolve()
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(channel="chrome")
+        page = await browser.new_page()
+        await page.goto(html_path.as_uri())
+        await page.screenshot(path=str(screenshot_path))
+        await browser.close()
+
+
+asyncio.run(main())
+PY
+  [ -s "$screenshot_path" ]
+}
+
 # make_tmpdir creates disposable workspaces so every test runs in isolation.
 make_tmpdir() {
   local tmp
@@ -308,7 +403,12 @@ trap cleanup EXIT
 # These env vars are part of the `dev.sh` runtime contract. When one changes,
 # the container wiring changed too, so keep this list in sync with `dev.sh`.
 # Confirm a few core environment variables exist so scripts behave predictably.
-required_env_vars=(HOME PATH SHELL TERM COLORTERM LANG USER UV_LINK_MODE CLAUDE_CODE_MAX_OUTPUT_TOKENS PLAYWRIGHT_BROWSERS_PATH)
+required_env_vars=(
+  HOME PATH SHELL TERM COLORTERM LANG USER
+  UV_LINK_MODE CLAUDE_CODE_MAX_OUTPUT_TOKENS PLAYWRIGHT_BROWSERS_PATH
+  CHROME_BIN CHROME_PATH GOOGLE_CHROME_BIN
+  CHROMIUM_BIN CHROMIUM_PATH PUPPETEER_EXECUTABLE_PATH
+)
 for var in "${required_env_vars[@]}"; do
   run_check "printenv $var" env_var_present "$var"
 done
@@ -316,9 +416,17 @@ done
 check_env_eq UV_LINK_MODE copy
 check_env_eq CLAUDE_CODE_MAX_OUTPUT_TOKENS 64000
 check_env_eq PLAYWRIGHT_BROWSERS_PATH /home/vscode/.local/share/playwright-browsers
+for chrome_env_var in CHROME_BIN CHROME_PATH GOOGLE_CHROME_BIN CHROMIUM_BIN CHROMIUM_PATH PUPPETEER_EXECUTABLE_PATH; do
+  check_env_eq "$chrome_env_var" /usr/bin/google-chrome-stable
+done
 
-# Cover newer dev.sh runtime settings that matter for browsers and hard-link-safe uv installs.
+# Cover runtime settings that matter for browser sandboxing, child-process
+# cleanup, and hard-link-safe uv installs.
 run_check "/dev/shm >= 7800MB" shm_size_large_enough
+run_check "NoNewPrivs == 1" proc_status_value_equals NoNewPrivs 1
+run_check "Seccomp == 2 (filtering)" proc_status_value_equals Seccomp 2
+run_check "PID 1 is docker-init/tini" pid1_is_init
+check_command_runs "unshare -Ur true" unshare -Ur true
 
 # Exercise the everyday CLI tools rather than only checking PATH entries.
 check_command_runs "fd --version" fd --version
@@ -335,7 +443,6 @@ check_command_runs "mise --version" mise --version
 check_command_runs "node --version" node --version
 check_command_runs "npm --version" npm --version
 check_command_runs "csvq --version" csvq --version
-check_command_runs "csvjson --version" csvjson --version
 check_command_runs "uv --version" uv --version
 check_command_runs "uvx --version" uvx --version
 check_command_runs "qpdf --version" qpdf --version
@@ -365,8 +472,8 @@ check_command_runs "dprint --version" dprint --version
 check_command_runs "yt-dlp --version" yt-dlp --version
 check_command_runs "markitdown --help" markitdown --help
 check_command_runs "playwright --version" playwright --version
+run_check "Playwright version matches dev.dockerfile" playwright_version_matches_dockerfile "${SCRIPT_DIR}/dev.dockerfile"
 check_command_runs "copilot version" copilot version
-check_command_runs "gemini --help" gemini --help
 
 # Check that GitHub CLI logins still work, otherwise repo automation fails.
 check_command_runs "gh auth status --active" gh auth status --active
@@ -386,7 +493,7 @@ if has_command uv; then
   global_python="${HOME}/apps/global/.venv/bin/python"
   if run_check "test -x $global_python" path_is_executable "$global_python"; then
     check_command_runs "$global_python --version" "$global_python" --version
-    run_check "python packages cairosvg pillow" python_packages_present "$global_python" cairosvg pillow
+    run_check "python packages cairosvg pillow playwright" python_packages_present "$global_python" cairosvg pillow playwright
   fi
   tmp_uv="$(make_tmpdir)"
   if [ -n "$tmp_uv" ]; then
@@ -398,10 +505,9 @@ fi
 # "npm package missing" from "package installed but PATH/shims broken".
 # Bootstrap a Node project and install one dependency to prove npm works.
 if has_command npm; then
-  run_check "npm ls -g wscat playwright @github/copilot @google/gemini-cli @openai/codex --depth=0" \
+  run_check "npm ls -g wscat @github/copilot @google/gemini-cli @openai/codex --depth=0" \
     npm_global_packages_present \
     wscat \
-    playwright \
     @github/copilot \
     @google/gemini-cli \
     @openai/codex
@@ -419,10 +525,42 @@ if run_check "font directories available" any_directory_exists "${font_dirs[@]}"
   run_check "fc-list sees mounted fonts" fontconfig_sees_mounted_fonts "${font_dirs[@]}"
 fi
 
+# Verify system Chrome discovery independently of Playwright. All common
+# Chromium-family command names should resolve to the same global Chrome binary,
+# while Firefox should exist only as a Playwright-managed browser payload.
+for chrome_command in chrome google-chrome google-chrome-stable chromium chromium-browser; do
+  run_check "command -v $chrome_command" has_command "$chrome_command"
+done
+run_check \
+  "Chrome aliases resolve to one executable" \
+  commands_resolve_to_same_executable \
+  chrome google-chrome google-chrome-stable chromium chromium-browser
+run_check "system firefox absent" command_absent firefox
+check_command_runs "google-chrome-stable --version" google-chrome-stable --version
+
+tmp_system_chrome="$(make_tmpdir)"
+if [ -n "$tmp_system_chrome" ]; then
+  cat <<'HTML' >"$tmp_system_chrome/index.html"
+<!doctype html>
+<html lang="en">
+  <body>
+    <h1>system Chrome smoke test</h1>
+  </body>
+</html>
+HTML
+  mkdir -p "$tmp_system_chrome/profile"
+  run_check \
+    "system Chrome launches sandboxed" \
+    system_chrome_headless_works \
+    google-chrome-stable \
+    "$tmp_system_chrome/index.html" \
+    "$tmp_system_chrome/profile" \
+    "$tmp_system_chrome/dom.html"
+fi
+
 # The earlier `playwright --version` check only proves the CLI shim exists. The
-# screenshot checks below prove the browser downloads and launch dependencies
-# are actually usable at runtime.
-# Playwright must be on PATH and able to launch each installed browser headlessly.
+# screenshot checks below prove Playwright's version-matched Chromium, patched
+# Firefox, and patched WebKit payloads are actually usable at runtime.
 if has_command playwright; then
   tmp_playwright="$(make_tmpdir)"
   if [ -n "$tmp_playwright" ]; then
@@ -438,6 +576,16 @@ HTML
       screenshot="$tmp_playwright/${browser}.png"
       run_check "playwright screenshot --browser $browser" playwright_screenshot_works "$browser" "$tmp_playwright/index.html" "$screenshot"
     done
+
+    global_python="${HOME}/apps/global/.venv/bin/python"
+    if [ -x "$global_python" ]; then
+      run_check \
+        "Playwright launches system Chrome channel" \
+        playwright_chrome_channel_works \
+        "$global_python" \
+        "$tmp_playwright/index.html" \
+        "$tmp_playwright/chrome-channel.png"
+    fi
   fi
 fi
 
