@@ -165,7 +165,7 @@ abbr --add codexlog 'agentlog.py codex'
 abbr --add copilotlog 'agentlog.py copilot'
 
 # Count number of open tabs on Edge
-abbr --add counttabs "edge_tabs.py --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"
+abbr --add counttabs "edge tabs --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"
 
 abbr --add tau 'uvx --from tau-ai tau'
 

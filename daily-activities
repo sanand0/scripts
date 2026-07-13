@@ -151,7 +151,7 @@ export_open_tabs() {
 
   mkdir -p "$OPEN_TABS_DIR"
   output="$OPEN_TABS_DIR/$(date +%F).jsonl"
-  "$UV" run /home/sanand/code/scripts/edge_tabs.py --profile "$EDGE_TABS_PROFILE" --json \
+  /home/sanand/code/scripts/edge tabs --profile "$EDGE_TABS_PROFILE" --json \
     | jaq -c '.timestamp as $t | .windows[] | .id as $w | .tabs[] | {timestamp:$t, window:$w, title, url, group, pinned}' \
     >"$output"
 }

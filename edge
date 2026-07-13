@@ -1,5 +1,21 @@
 #!/usr/bin/env -S uv run --script
-"""Print Microsoft Edge tabs grouped by window from Chromium SNSS session files."""
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "beautifulsoup4>=4.13",
+#   "httpx>=0.28",
+#   "markdownify>=1.2",
+#   "websocket-client>=1.8",
+# ]
+# ///
+"""Inspect Microsoft Edge tabs and extract a tab's main content as Markdown.
+
+Examples:
+  edge tabs
+  edge tabs --json | jaq '.tab_count'
+  edge md 'article title' | moor
+  edge md docs.example.com | xclip -selection clipboard
+"""
 
 from __future__ import annotations
 
@@ -7,9 +23,12 @@ import argparse
 import datetime as dt
 import json
 import struct
+import sys
+from contextlib import closing
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urljoin
 
 
 EDGE_CONFIG = Path.home() / ".config" / "microsoft-edge"
@@ -248,16 +267,161 @@ def print_text(windows: list[Window], source: Path, urls_only: bool) -> None:
                 print(f"{tab_index:3d}.{active} {prefix}{tab.title}{suffix}\n     {tab.url}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def load_windows(profile: Path, session_file: Path | None) -> tuple[list[Window], Path]:
+    source = session_file or default_session_file(profile)
+    return parse_snss(source.read_bytes()), source
+
+
+def find_tabs(windows: list[Window], query: str) -> list[Tab]:
+    """Find tabs containing query in their URL, title, or group name."""
+    needle = query.casefold()
+    return [
+        tab
+        for window in windows
+        for tab in window.tabs
+        if any(needle in value.casefold() for value in (tab.url, tab.title, tab.group or ""))
+    ]
+
+
+def resolve_tabs(windows: list[Window], query: str) -> tuple[list[Tab], bool]:
+    """Resolve query, preferring a full group-name match as an ordered collection."""
+    needle = query.casefold()
+    matches = find_tabs(windows, query)
+    group = [tab for tab in matches if (tab.group or "").casefold() == needle]
+    return (group or matches, bool(group))
+
+
+def cdp_targets(cdp_url: str) -> list[dict[str, object]]:
+    import httpx
+
+    response = httpx.get(f"{cdp_url.rstrip('/')}/json/list", timeout=10)
+    response.raise_for_status()
+    return [target for target in response.json() if target.get("type") == "page"]
+
+
+def tab_html(tab: Tab, cdp_url: str) -> str:
+    """Return the current DOM HTML for tab using its CDP page target."""
+    import websocket
+
+    targets = [target for target in cdp_targets(cdp_url) if target.get("url") == tab.url]
+    titled = [target for target in targets if target.get("title") == tab.title]
+    target = (titled or targets or [None])[0]
+    if target is None:
+        raise RuntimeError(f"Tab is not available over CDP: {tab.title} ({tab.url})")
+    websocket_url = target.get("webSocketDebuggerUrl")
+    if not isinstance(websocket_url, str):
+        raise RuntimeError(f"CDP target has no WebSocket URL: {tab.url}")
+
+    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
+        connection.send(
+            json.dumps(
+                {
+                    "id": 1,
+                    "method": "Runtime.evaluate",
+                    "params": {
+                        "expression": "document.documentElement.outerHTML",
+                        "returnByValue": True,
+                    },
+                }
+            )
+        )
+        while True:
+            response = json.loads(connection.recv())
+            if response.get("id") == 1:
+                break
+    if "error" in response:
+        raise RuntimeError(response["error"]["message"])
+    return response["result"]["result"]["value"]
+
+
+def html_to_markdown(html: str, url: str) -> str:
+    """Extract readable main content and convert it to clean GitHub-flavored Markdown."""
+    from bs4 import BeautifulSoup
+    from markdownify import markdownify
+
+    document = BeautifulSoup(html, "html.parser")
+    for element in document.select("nav, aside, footer, form, script, style, template, noscript, iframe"):
+        element.decompose()
+    candidates = document.select("main, article, [role='main'], section")
+    content_node = max(candidates, key=lambda node: len(node.get_text(" ", strip=True)), default=document.body)
+    content = str(content_node or document)
+    soup = BeautifulSoup(content, "html.parser")
+    for element in soup.select(
+        "script, style, template, noscript, iframe, button, textarea, input, "
+        "[hidden], [aria-hidden='true'], .u-display-none, .w-form-done, .w-form-fail"
+    ):
+        element.decompose()
+    for element in soup.select("a[href], img[src]"):
+        attribute = "href" if element.name == "a" else "src"
+        element[attribute] = urljoin(url, element[attribute])
+    for image in soup.select("img"):
+        if len(image.get("alt", "").strip()) < 3 or image.get("alt") == "Favicon":
+            image.decompose()
+    return markdownify(
+        str(soup), heading_style="ATX", bullets="-", code_language_callback=lambda _: ""
+    ).strip()
+
+
+def tab_markdown(tab: Tab, cdp_url: str) -> str:
+    return html_to_markdown(tab_html(tab, cdp_url), tab.url)
+
+
+def md_command(queries: list[str], profile: Path, session_file: Path | None, cdp_url: str) -> int:
+    windows, _ = load_windows(profile, session_file)
+    resolved = [(query, *resolve_tabs(windows, query)) for query in queries]
+    missing = [query for query, matches, _ in resolved if not matches]
+    ambiguous = [(query, matches) for query, matches, is_group in resolved if len(matches) > 1 and not is_group]
+    for query in missing:
+        print(f"No tab matches: {query}", file=sys.stderr)
+    for index, (query, matches) in enumerate(ambiguous):
+        if index:
+            print()
+        print(f"## {query}\n")
+        print("Title\tTab group\tURL")
+        for tab in matches:
+            print(f"{tab.title}\t{tab.group or ''}\t{tab.url}")
+    if missing or ambiguous:
+        return 1
+
+    tabs: dict[tuple[int, int], Tab] = {}
+    for _, matches, _ in resolved:
+        for tab in matches:
+            tabs.setdefault((tab.window_id, tab.id), tab)
+    documents = []
+    for tab in tabs.values():
+        metadata = [f"# {tab.title or tab.url}", "", f"- URL: {tab.url}"]
+        if tab.group:
+            metadata.append(f"- Tab group: {tab.group}")
+        documents.append("\n".join([*metadata, "", tab_markdown(tab, cdp_url)]))
+    print("\n\n---\n\n".join(documents))
+    return 0
+
+
+def add_session_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--profile", type=Path, default=EDGE_CONFIG, help="Edge profile root, default: %(default)s")
     parser.add_argument("--file", type=Path, help="Specific SNSS Session_* file to parse")
-    parser.add_argument("--json", action="store_true", help="Print JSON instead of text")
-    parser.add_argument("--urls-only", action="store_true", help="Only print tab URLs in text output")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    tabs_parser = subparsers.add_parser("tabs", help="Print tabs grouped by Edge window")
+    add_session_arguments(tabs_parser)
+    tabs_parser.add_argument("--json", action="store_true", help="Print JSON instead of text")
+    tabs_parser.add_argument("--urls-only", action="store_true", help="Only print tab URLs in text output")
+
+    md_parser = subparsers.add_parser("md", help="Extract one matching tab's main content as Markdown")
+    md_parser.add_argument(
+        "queries", nargs="+", metavar="QUERY", help="Partial title/URL matches or full tab group names"
+    )
+    add_session_arguments(md_parser)
+    md_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
 
-    source = args.file or default_session_file(args.profile)
-    windows = parse_snss(source.read_bytes())
+    if args.command == "md":
+        raise SystemExit(md_command(args.queries, args.profile, args.file, args.cdp_url))
+
+    windows, source = load_windows(args.profile, args.file)
     if args.json:
         print(json.dumps(windows_to_json(windows, source), indent=2, ensure_ascii=False))
     else:

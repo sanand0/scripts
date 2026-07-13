@@ -3,7 +3,7 @@ name: log-tool-failure
 description: If any tool call fails, log it IMMEDIATELY with this skill
 ---
 
-Append one valid JSON object per unexpected, reusable tool failure to `~/Documents/data/agents/tool-failure.jsonl` using the append script, never hand-written JSON.
+Append one VALID JSON object per unexpected, reusable tool failure to `~/Documents/data/agents/tool-failure.jsonl`. Quote / escape JSON programmatically.
 
 ```jsonc
 {
