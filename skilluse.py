@@ -38,6 +38,7 @@ SHELL_WRAPPERS = {
     "env",
     "nice",
     "nohup",
+    "rtk",
     "setsid",
     "stdbuf",
     "sudo",
@@ -123,6 +124,8 @@ def _unwrap_shell_script(command: str) -> str:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return command
+    if tokens and tokens[0] == "rtk":
+        tokens = tokens[1:]
     if len(tokens) >= 3 and tokens[0] in {"bash", "sh", "zsh"} and tokens[1] in {"-c", "-lc"}:
         return tokens[2]
     return command
@@ -148,6 +151,7 @@ def _first_command(tokens: list[str]) -> str | None:
 
 def _shell_skill_targets(command: str, agents_root: Path) -> list[str]:
     targets: list[str] = []
+    has_reader = False
     for segment in _split_shell_segments(_unwrap_shell_script(command)):
         try:
             tokens = shlex.split(segment, posix=True)
@@ -158,11 +162,18 @@ def _shell_skill_targets(command: str, agents_root: Path) -> list[str]:
         executable = _first_command(tokens)
         if executable not in READ_COMMANDS:
             continue
+        has_reader = True
         for token in tokens[1:]:
             skill = _normalize_skill_target(token, agents_root)
             if skill is not None:
                 targets.append(skill)
-    return targets
+    if not targets and has_reader:
+        for match in re.findall(r"[^\s\"'`;]+/SKILL\.md", command, flags=re.IGNORECASE):
+            if not any(marker in match for marker in "*?${}"):
+                skill = _normalize_skill_target(match, agents_root)
+                if skill is not None:
+                    targets.append(skill)
+    return list(dict.fromkeys(targets))
 
 
 def _tool_argument_skill_targets(tool_name: str, arguments: Any, agents_root: Path) -> list[str]:
@@ -181,16 +192,26 @@ def _tool_argument_skill_targets(tool_name: str, arguments: Any, agents_root: Pa
         return []
     if tool in {"bash", "exec_command", "shell"}:
         if isinstance(arguments, dict):
-            if tool == "exec_command" and isinstance(arguments.get("cmd"), str):
-                return _shell_skill_targets(arguments["cmd"], agents_root)
-            command = arguments.get("command")
+            command = arguments.get("cmd") if tool == "exec_command" and "cmd" in arguments else arguments.get("command")
             if isinstance(command, str):
                 return _shell_skill_targets(command, agents_root)
-            if isinstance(command, list):
-                return _shell_skill_targets(" ".join(str(part) for part in command), agents_root)
+            if isinstance(command, list) and all(isinstance(part, str) for part in command):
+                return _shell_skill_targets(shlex.join(command), agents_root)
         if isinstance(arguments, str):
             return _shell_skill_targets(arguments, agents_root)
     return []
+
+
+def _custom_exec_skill_targets(script: Any, agents_root: Path) -> list[str]:
+    if not isinstance(script, str) or "exec_command" not in script:
+        return []
+    if not any(re.search(rf"\b{re.escape(command)}\b", script) for command in READ_COMMANDS):
+        return []
+    targets = (
+        _normalize_skill_target(match, agents_root)
+        for match in re.findall(r"[\"']([^\"'\n]*SKILL\.md)[\"']", script, flags=re.IGNORECASE)
+    )
+    return list(dict.fromkeys(target for target in targets if target is not None))
 
 
 def _resolve_claude_skill_target(skill_name: str, cwd: str, agents_root: Path) -> str | None:
@@ -213,8 +234,18 @@ def _is_copilot_tool_success(event: dict[str, Any]) -> bool:
 
 
 def _is_codex_tool_success(output: Any) -> bool:
+    if isinstance(output, list):
+        return any(
+            _is_codex_tool_success(item.get("text"))
+            for item in output
+            if isinstance(item, dict) and isinstance(item.get("text"), str)
+        )
     if isinstance(output, str):
         lowered = output.lower()
+        if "script failed" in lowered:
+            return False
+        if "script completed" in lowered:
+            return True
         if "exited with code 0" in lowered or "exit_code\":0" in lowered:
             return True
         return "exited with code" not in lowered and "error" not in lowered
@@ -223,6 +254,19 @@ def _is_codex_tool_success(output: Any) -> bool:
         if isinstance(metadata, dict) and metadata.get("exit_code") is not None:
             return int(metadata["exit_code"]) == 0
     return False
+
+
+def _codex_output_skill_targets(output: Any, targets: list[str]) -> list[str]:
+    if not isinstance(output, list):
+        return []
+    text = "\n".join(
+        item["text"] for item in output if isinstance(item, dict) and isinstance(item.get("text"), str)
+    )
+    return [
+        skill
+        for skill in targets
+        if re.search(rf"^name:\s*[\"']?{re.escape(skill)}[\"']?\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+    ]
 
 
 def _matches_skill_globs(skill: str, patterns: tuple[str, ...]) -> bool:
@@ -291,7 +335,7 @@ def _yield_skill(
 def _scan_codex(root: Path, agents_root: Path, *, seen: set[tuple[str, str, str]], skill_globs: tuple[str, ...]) -> Iterator[SkillUse]:
     for path in _iter_codex_files(root):
         session_id = path.stem
-        pending: dict[str, tuple[str, list[str]]] = {}
+        pending: dict[str, tuple[str, list[str], bool]] = {}
         for event in _load_jsonl(path):
             payload = event.get("payload")
             if event.get("type") == "session_meta" and isinstance(payload, dict):
@@ -302,20 +346,25 @@ def _scan_codex(root: Path, agents_root: Path, *, seen: set[tuple[str, str, str]
             if event.get("type") != "response_item" or not isinstance(payload, dict):
                 continue
             payload_type = payload.get("type")
-            if payload_type == "function_call":
-                args = _parse_tool_arguments(payload.get("arguments"))
-                targets = _tool_argument_skill_targets(str(payload.get("name", "")), args, agents_root)
+            if payload_type in {"function_call", "custom_tool_call"}:
+                if payload_type == "custom_tool_call":
+                    targets = _custom_exec_skill_targets(payload.get("input"), agents_root)
+                else:
+                    args = _parse_tool_arguments(payload.get("arguments"))
+                    targets = _tool_argument_skill_targets(str(payload.get("name", "")), args, agents_root)
                 call_id = payload.get("call_id")
                 if isinstance(call_id, str) and targets:
-                    pending[call_id] = (str(event.get("timestamp", "")), targets)
-            elif payload_type == "function_call_output":
+                    pending[call_id] = (str(event.get("timestamp", "")), targets, payload_type == "custom_tool_call")
+            elif payload_type in {"function_call_output", "custom_tool_call_output"}:
                 call_id = payload.get("call_id")
                 if not isinstance(call_id, str) or call_id not in pending:
                     continue
                 if not _is_codex_tool_success(payload.get("output")):
                     pending.pop(call_id, None)
                     continue
-                timestamp, targets = pending.pop(call_id)
+                timestamp, targets, verify_output = pending.pop(call_id)
+                if verify_output:
+                    targets = _codex_output_skill_targets(payload.get("output"), targets)
                 for skill in targets:
                     row = _yield_skill(
                         seen=seen,

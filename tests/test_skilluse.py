@@ -7,7 +7,7 @@ import sys
 from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from skilluse import _normalize_skill_target, build_app
+from skilluse import _normalize_skill_target, build_app, iter_skill_use
 
 
 RUNNER = CliRunner()
@@ -19,6 +19,230 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
         for row in rows:
             handle.write(json.dumps(row))
             handle.write("\n")
+
+
+def _scan(tmp_path: Path, agent: str) -> list[tuple[str, str]]:
+    rows = iter_skill_use(
+        codex_root=tmp_path / "codex",
+        claude_root=tmp_path / "claude",
+        copilot_root=tmp_path / "copilot",
+        agents_root=Path("/home/vscode/code/scripts/agents"),
+        agents={agent},
+        skill_globs=(),
+    )
+    return [(row.session_id, row.skill) for row in rows]
+
+
+def test_codex_custom_exec_detects_parallel_skill_reads(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "codex/sessions/2026/07/13/session.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": "codex-session"}},
+            {
+                "timestamp": "2026-07-13T06:19:16Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call-1",
+                    "name": "exec",
+                    "input": """const paths = [
+                        '/home/vscode/code/scripts/agents/code/SKILL.md',
+                        '/home/vscode/code/scripts/agents/vitest-dom/SKILL.md'
+                    ];
+                    await Promise.all(paths.map(path => tools.exec_command({cmd: `rtk sed -n '1,240p' ${path}`})));""",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-1",
+                    "output": [
+                        {
+                            "type": "input_text",
+                            "text": "Script completed\nOutput:\n---\nname: code\n---\nname: vitest-dom\n",
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "codex") == [
+        ("codex-session", "code"),
+        ("codex-session", "vitest-dom"),
+    ]
+
+
+def test_codex_custom_exec_ignores_failed_skill_read(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "codex/sessions/2026/07/13/session.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": "codex-session"}},
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call-1",
+                    "name": "exec",
+                    "input": "await tools.exec_command({cmd: 'rtk cat agents/code/SKILL.md'})",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-1",
+                    "output": [{"type": "input_text", "text": "Script failed\nWall time 0.1 seconds"}],
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "codex") == []
+
+
+def test_codex_custom_exec_ignores_skill_path_in_patch_text(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "codex/sessions/2026/07/16/session.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": "codex-session"}},
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "call_id": "call-1",
+                    "name": "exec",
+                    "input": """const patch = `+ await tools.exec_command({
+                        cmd: 'cat agents/interactions/SKILL.md'
+                    })`;
+                    await tools.apply_patch(patch);""",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-1",
+                    "output": [{"type": "input_text", "text": "Script completed\nOutput:\n{}"}],
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "codex") == []
+
+
+def test_claude_bash_detects_rtk_prefixed_skill_read(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "claude/project/claude-session.jsonl",
+        [
+            {
+                "sessionId": "claude-session",
+                "timestamp": "2026-07-14T10:00:00Z",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tool-1",
+                            "name": "Bash",
+                            "input": {
+                                "command": "rtk bash -lc 'sed -n 1,240p agents/vitest-dom/SKILL.md'"
+                            },
+                        }
+                    ]
+                },
+            },
+            {
+                "sessionId": "claude-session",
+                "timestamp": "2026-07-14T10:00:01Z",
+                "message": {
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "tool-1", "content": "---\nname: vitest-dom"}
+                    ]
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "claude") == [("claude-session", "vitest-dom")]
+
+
+def test_codex_detects_skill_read_in_command_array(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "codex/sessions/2025/11/09/session.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": "codex-session"}},
+            {
+                "timestamp": "2025-11-09T08:00:00Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "exec_command",
+                    "arguments": json.dumps(
+                        {
+                            "command": [
+                                "bash",
+                                "-lc",
+                                "cat /home/vscode/code/scripts/agents/interactions/SKILL.md",
+                            ]
+                        }
+                    ),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": "Process exited with code 0\nOutput:\nname: interactions",
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "codex") == [("codex-session", "interactions")]
+
+
+def test_codex_detects_explicit_skill_paths_read_through_loop_variable(tmp_path: Path) -> None:
+    _write_jsonl(
+        tmp_path / "codex/sessions/2026/04/04/session.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": "codex-session"}},
+            {
+                "timestamp": "2026-04-04T08:00:00Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "exec_command",
+                    "arguments": json.dumps(
+                        {
+                            "cmd": """for f in \\
+'agents/data-analysis/SKILL.md' \\
+'agents/data-story/SKILL.md'; do
+  rg -n 'story|analysis' "$f"
+done"""
+                        }
+                    ),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-1",
+                    "output": "Process exited with code 0\nOutput:\nmatched",
+                },
+            },
+        ],
+    )
+
+    assert _scan(tmp_path, "codex") == [
+        ("codex-session", "data-analysis"),
+        ("codex-session", "data-story"),
+    ]
 
 
 def test_skilluse_detects_reads_across_agents(tmp_path: Path) -> None:
