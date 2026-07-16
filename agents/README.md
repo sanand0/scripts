@@ -27,18 +27,9 @@ Link for:
   ln -s ~/code/scripts/agents/AGENTS.md ~/.copilot/copilot-instructions.md
   # Skills
   ```
-- [Gemini](https://geminicli.com/docs/cli/skills/): `~/.gemini/AGENTS.md`
-  ```bash
-  ln -s ~/code/scripts/agents/AGENTS.md ~/.gemini/AGENTS.md
-  ln -s ~/code/scripts/agents ~/.gemini/skills
-  ```
 - [OpenCode](https://opencode.ai/docs/config/): `~/.config/opencode/opencode.jsonc`
   ```bash
   jq ".instructions = [\"$HOME/code/scripts/agents/AGENTS.md\", \"AGENTS.md\"]" ~/.config/opencode/opencode.jsonc | sponge ~/.config/opencode/opencode.jsonc
-  ```
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/f21ff093897980a51a4ad1ea6ee167dee53416b6/docs/cli/configuration.md?plain=1#L40): `~/.gemini/settings.json`
-  ```bash
-  jq ".contextFileName = [\"$HOME/code/scripts/agents/AGENTS.md\", \"AGENTS.md\"]" ~/.gemini/settings.json | sponge ~/.gemini/settings.json
   ```
 - [Cline](https://docs.cline.bot/features/cline-rules): `~/Cline/Rules`
 
@@ -46,7 +37,6 @@ Manually update at:
 
 - [Cursor](https://docs.cursor.com/en/context/rules#user-rules): Copy-paste into Settings > Rules.
 - [ChatGPT Codex](https://chatgpt.com/codex): Codex Settings > Custom instructions
-- WindSurf: No documented global “rules” markdown
 
 # Prompts
 
@@ -55,3 +45,17 @@ The `custom-prompts` directory has custom prompts for Codex, etc. Install via:
 ```bash
 ln -s ~/code/scripts/agents/custom-prompts ~/.codex/prompts
 ```
+
+# Skills
+
+The skills here are relevant to coding agents.
+But some skills are also relevant to my online usage and are uploaded to Claude.ai (16 Jul 2026):
+
+- data-analysis
+- data-story
+- data-viz
+- design
+- expert-lens
+- interactive-storytelling
+
+`archive/` has outdated or under-used skills.
