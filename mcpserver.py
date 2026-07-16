@@ -412,23 +412,27 @@ async def bash(commands: str, timeout_ms: int = 30_000) -> str:
     """Runs multiline bash script.
 Under `~` = `/home/vscode/` (`/home/sanand` also works) you have:
 
-- ~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
-- ~/Dropbox/notes/about/*.md - people or company specific notes
-- ~/Documents/data/
-  - s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
-  - whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.
-  - browsing-history.db (SELECT url, timestamp, visit_count, ... FROM activity)
-  - linkedin-invites.json
-- ~/code/talks/README.md - talk transcripts, slides
-- ~/code/datastories/config.json - data stories
-- ~/code/llmdemos/config.json - innovation team demos
-- ~/code/llmevals/README.md - LLM evals
-- ~/code/blog/description.md - 20K files, 5K posts. Search for "- llm" for AI-related posts.
-- ~/code/til/README.md - things I learnt
-- ~/code/scripts/agents/*/SKILL.md - agent skills
-- ~/code/README.md - code repos
-- ~/r2/files/podcast - podcasts written for myself
-- ~/Documents/activities/ - daily activity logs
+Skills already on Claude, not yet on ChatGPT:
+~/code/scripts/agents/*/SKILL.md - coding + thinking skills
+~/code/blog/pages/skills/*/SKILL.md - thinking skills
+
+Content:
+~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
+~/Dropbox/notes/about/*.md - people or company specific notes
+~/Documents/data/
+  s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
+  whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.
+  browsing-history.db (SELECT url, timestamp, visit_count, ... FROM activity)
+  linkedin-invites.json
+~/code/talks/README.md - talk transcripts, slides
+~/code/datastories/config.json - data stories
+~/code/llmdemos/config.json - innovation team demos
+~/code/llmevals/README.md - LLM evals
+~/code/blog/description.md - 20K files, 5K posts. Search for "- llm" for AI-related posts.
+~/code/til/README.md - things I learnt
+~/code/README.md - code repos
+~/r2/files/podcast - podcasts written for myself
+~/Documents/activities/ - daily activity logs
 
 Avoid broad scans over `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives unless necessary.
   Scope to known subdirs. Prefer `fd`/`rg` because they respect `.gitignore` by default.
