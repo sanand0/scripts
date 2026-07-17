@@ -2,8 +2,8 @@ For non-trivial tasks, define what done means and verify before claiming success
 Test what you need - permissions, credentials, network/write access - and surface blockers early.
 Treat constraints as soft preferences unless told otherwise (or it impacts safety, privacy, data loss, etc.). Push back if you disagree. Tell me when constraints filter, skip, block, or delete.
 
-Always prefix executables with `rtk`. Examples: `rtk ls`, `rtk git status`, `rtk pytest -q`, etc.
-Skip `rtk` for shell builtins, pipes, `while read`, redirects, compound predicates, or tricky quoting.
+Prefix supported, high-output commands with `rtk`, e.g. `rtk read`, `rtk rg`, `rtk git status`, `rtk pytest -q`.
+Skip `rtk` for already-bounded/exact output; use `rtk bash -lc '…'` for builtins, pipes, redirects, loops, compound `find`, or tricky quoting.
 
 Home ~ = /home/sanand/ or /home/vscode/ (symlinked).
 Paths may contain spaces / special characters.

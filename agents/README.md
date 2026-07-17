@@ -48,8 +48,9 @@ ln -s ~/code/scripts/agents/custom-prompts ~/.codex/prompts
 
 # Skills
 
-The skills here are relevant to coding agents.
-But some skills are also relevant to my online usage and are uploaded to Claude.ai (16 Jul 2026):
+Skills here are ONLY for coding agents.
+Skills for ONLINE agents (Claude.ai) are at `~/code/blog/pages/skills/`.
+But some coding agent skills are also relevant online and are uploaded to Claude.ai (16 Jul 2026):
 
 - data-analysis
 - data-story

@@ -169,6 +169,8 @@ abbr --add counttabs "edge tabs --json | jaq -c '.timestamp as \$t | .windows[] 
 
 abbr --add tau 'uvx --from tau-ai tau'
 
+abbr --add skilllist "ug ^description ~/code/blog/pages/skills/*/SKILL.md ~/code/scripts/agents/*/SKILL.md | sed -E 's|.*/([^/]+)/SKILL.md:description: (.*)|\1: \2|' | sort"
+
 # File sync utilities
 # -----------------------------------------------
 
