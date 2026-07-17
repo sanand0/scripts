@@ -3,17 +3,15 @@
 # Activate mise since we need jq which is mise-installed (~50ms)
 eval "$(mise env -s bash)"
 
-# CDP's hidden "tab" targets include sleeping tabs; /json only lists live page targets.
+# Edge's session file has sleeping-tab titles; hidden CDP tab targets provide activatable IDs.
 CDP_URL=http://localhost:9222
-CDP_WS=$(curl -fsS "$CDP_URL/json/version" | jq -r .webSocketDebuggerUrl)
-TABS_JSON=$(printf '%s\n' '{"id":1,"method":"Target.getTargets","params":{"filter":[{"type":"tab","exclude":false},{"exclude":true}]}}' |
-    websocat -1 "$CDP_WS" | jq '.result.targetInfos')
+TABS_JSON=$(/home/sanand/code/scripts/edge tabs --json --cdp-url "$CDP_URL")
 
 if [[ $# -eq 0 ]]; then
     # List the domain, title, and ID of each browser tab, separated by tabs (column delimiter).
-    echo "$TABS_JSON" | jq -r '.[] | select(.embedderData.tabStripIndex? != null) |
+    echo "$TABS_JSON" | jq -r '.windows[].tabs[] | select(.cdp_id) |
       (.url | sub("^https?://"; "") | split("/")[0])
-      + "\t" + .title + "\t🔑" + .targetId' | column -t -s $'\t'
+      + "\t" + .title + "\t🔑" + .cdp_id' | column -t -s $'\t'
 else
     # rofi returns value the after the 🔑
     TAB_ID=$(echo -e "$*" | sed 's/.*🔑\(.*\)/\1/')

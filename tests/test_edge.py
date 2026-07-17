@@ -1,4 +1,5 @@
 import argparse
+import json
 import struct
 import sys
 import tempfile
@@ -9,7 +10,7 @@ from datetime import datetime
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 loader = SourceFileLoader("edge", str(Path(__file__).resolve().parents[1] / "edge"))
@@ -246,6 +247,67 @@ class EdgeTest(unittest.TestCase):
 
         self.assertEqual(timestamp.utcoffset().total_seconds(), 0)
         self.assertEqual(result["source"], "Session")
+
+    def test_json_output_joins_cdp_id_by_window_and_visual_index(self):
+        windows = [
+            edge.Window(
+                100,
+                tabs=[edge.Tab(10, visual_index=4), edge.Tab(11, visual_index=7)],
+            )
+        ]
+
+        tabs = edge.windows_to_json(
+            windows,
+            Path("Session"),
+            cdp_ids={(100, 4): "target-10", (100, 7): "target-11"},
+        )["windows"][0]["tabs"]
+
+        self.assertEqual([tab["cdp_id"] for tab in tabs], ["target-10", "target-11"])
+
+    def test_cdp_tab_ids_joins_targets_by_window_and_tab_strip_index(self):
+        version_response = MagicMock()
+        version_response.__enter__.return_value = StringIO('{"webSocketDebuggerUrl":"ws://browser"}')
+        http_response = StringIO('{"webSocketDebuggerUrl":"ws://browser"}')
+        http_response.status = 200
+        http_connection = MagicMock()
+        http_connection.getresponse.return_value = http_response
+        http_client = MagicMock()
+        http_client.HTTPConnection.return_value = http_connection
+        connection = MagicMock()
+        connection.recv.side_effect = [
+            json.dumps(
+                {
+                    "id": 1,
+                    "result": {
+                        "targetInfos": [
+                            {
+                                "targetId": "target-10",
+                                "type": "tab",
+                                "embedderData": {"tabStripIndex": 4},
+                            },
+                            {
+                                "targetId": "target-11",
+                                "type": "tab",
+                                "embedderData": {"tabStripIndex": 7},
+                            },
+                            {"targetId": "internal", "type": "tab"},
+                        ]
+                    },
+                }
+            ),
+            json.dumps({"id": 3, "result": {"windowId": 200}}),
+            json.dumps({"id": 2, "result": {"windowId": 100}}),
+        ]
+        websocket = MagicMock()
+        websocket.create_connection.return_value = connection
+
+        with patch("urllib.request.urlopen", return_value=version_response), patch.dict(
+            sys.modules, {"http.client": http_client, "websocket": websocket}
+        ):
+            result = edge.cdp_tab_ids("http://localhost:9222")
+
+        self.assertEqual(result, {(100, 4): "target-10", (200, 7): "target-11"})
+        http_client.HTTPConnection.assert_called_once_with("localhost:9222", timeout=10)
 
     def test_find_tabs_matches_title_group_and_url_case_insensitively(self):
         windows = [

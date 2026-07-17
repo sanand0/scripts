@@ -28,7 +28,7 @@ from contextlib import closing
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 
 EDGE_CONFIG = Path.home() / ".config" / "microsoft-edge"
@@ -222,7 +222,11 @@ def default_session_file(profile: Path = EDGE_CONFIG) -> Path:
     return candidates[-1]
 
 
-def windows_to_json(windows: list[Window], source: Path | list[Path]) -> dict[str, object]:
+def windows_to_json(
+    windows: list[Window],
+    source: Path | list[Path],
+    cdp_ids: dict[tuple[int, int], str] | None = None,
+) -> dict[str, object]:
     return {
         "timestamp": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
         "source": [str(path) for path in source] if isinstance(source, list) else str(source),
@@ -238,6 +242,11 @@ def windows_to_json(windows: list[Window], source: Path | list[Path]) -> dict[st
                     {
                         "id": tab.id,
                         "index": index,
+                        **(
+                            {"cdp_id": cdp_ids[(window.id, tab.visual_index)]}
+                            if cdp_ids and (window.id, tab.visual_index) in cdp_ids
+                            else {}
+                        ),
                         "visual_index": tab.visual_index,
                         "active": index == window.selected_tab_index,
                         "group": tab.group,
@@ -324,6 +333,68 @@ def cdp_targets(cdp_url: str) -> list[dict[str, object]]:
     response = httpx.get(f"{cdp_url.rstrip('/')}/json/list", timeout=10)
     response.raise_for_status()
     return [target for target in response.json() if target.get("type") == "page"]
+
+
+def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
+    """Map session (window ID, tab index) pairs to CDP tab target IDs."""
+    from http.client import HTTPConnection, HTTPSConnection
+
+    import websocket
+
+    endpoint = urlsplit(cdp_url)
+    http = (HTTPSConnection if endpoint.scheme == "https" else HTTPConnection)(endpoint.netloc, timeout=10)
+    http.request("GET", f"{endpoint.path.rstrip('/')}/json/version")
+    response = http.getresponse()
+    if response.status >= 400:
+        raise RuntimeError(f"CDP version endpoint returned HTTP {response.status}")
+    websocket_url = json.load(response)["webSocketDebuggerUrl"]
+    http.close()
+
+    def command(connection: websocket.WebSocket, request_id: int, method: str, params: dict) -> dict:
+        connection.send(json.dumps({"id": request_id, "method": method, "params": params}))
+        while True:
+            result = json.loads(connection.recv())
+            if result.get("id") == request_id:
+                break
+        if "error" in result:
+            raise RuntimeError(result["error"]["message"])
+        return result["result"]
+
+    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
+        targets = command(
+            connection,
+            1,
+            "Target.getTargets",
+            {"filter": [{"type": "tab", "exclude": False}, {"exclude": True}]},
+        )["targetInfos"]
+        result = {}
+        pending = {}
+        request_id = 2
+        for target in targets:
+            tab_index = target.get("embedderData", {}).get("tabStripIndex")
+            if not isinstance(tab_index, int):
+                continue
+            connection.send(
+                json.dumps(
+                    {
+                        "id": request_id,
+                        "method": "Browser.getWindowForTarget",
+                        "params": {"targetId": target["targetId"]},
+                    }
+                )
+            )
+            pending[request_id] = (target["targetId"], tab_index)
+            request_id += 1
+        while pending:
+            response = json.loads(connection.recv())
+            target = pending.pop(response.get("id"), None)
+            if target is None:
+                continue
+            if "error" in response:
+                raise RuntimeError(response["error"]["message"])
+            target_id, tab_index = target
+            result[(response["result"]["windowId"], tab_index)] = target_id
+    return result
 
 
 def tab_html(tab: Tab, cdp_url: str) -> str:
@@ -447,6 +518,7 @@ def main() -> None:
     add_session_arguments(tabs_parser)
     tabs_parser.add_argument("--json", action="store_true", help="Print JSON instead of text")
     tabs_parser.add_argument("--urls-only", action="store_true", help="Only print tab URLs in text output")
+    tabs_parser.add_argument("--cdp-url", help="Add CDP target IDs from this browser endpoint")
 
     md_parser = subparsers.add_parser("md", help="Extract one matching tab's main content as Markdown")
     md_parser.add_argument(
@@ -464,7 +536,8 @@ def main() -> None:
     windows = [window for _, profile_windows, _ in loaded for window in profile_windows]
     sources = [source for _, _, source in loaded]
     if args.json:
-        print(json.dumps(windows_to_json(windows, sources), indent=2, ensure_ascii=False))
+        cdp_ids = cdp_tab_ids(args.cdp_url) if args.cdp_url else None
+        print(json.dumps(windows_to_json(windows, sources, cdp_ids), indent=2, ensure_ascii=False))
     else:
         print_text(windows, sources, args.urls_only)
 
