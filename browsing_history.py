@@ -9,7 +9,7 @@
 """Export Microsoft Edge browsing history across all profiles.
 
 Examples:
-  browsing_history.py --root ~/.config/microsoft-edge --sync-only
+  browsing_history.py --root ~/.config/microsoft-edge-cdp --sync-only
   browsing_history.py --no-sync --since 30d > history.tsv
   browsing_history.py --format json --fields timestamp,activity_source,url | jaq '.[0]'
   browsing_history.py --describe | jaq .
@@ -18,6 +18,7 @@ Examples:
 from __future__ import annotations
 
 import csv
+import hashlib
 import heapq
 import json
 import shutil
@@ -80,7 +81,8 @@ DESCRIBE = {
     "database": str(DEFAULT_DB),
     "default_fields": DEFAULT_FIELDS,
     "discovery": [
-        "~/.config/microsoft-edge*",
+        "~/.config/microsoft-edge-cdp (preferred)",
+        "~/.config/microsoft-edge and ~/.config/microsoft-edge-*",
         "~/.var/app/com.microsoft.Edge/config/microsoft-edge*",
         "~/snap/microsoft-edge/common/.config/microsoft-edge*",
         "Any repeated --root path",
@@ -173,13 +175,20 @@ def parse_time(value: str | None, end: bool = False) -> int | None:
 def default_roots() -> list[Path]:
     home = Path.home()
     patterns = [
-        ".config/microsoft-edge*",
+        ".config/microsoft-edge-cdp",
+        ".config/microsoft-edge",
+        ".config/microsoft-edge-*",
         ".var/app/com.microsoft.Edge/config/microsoft-edge*",
         "snap/microsoft-edge/common/.config/microsoft-edge*",
     ]
     roots: list[Path] = []
+    seen: set[Path] = set()
     for pattern in patterns:
-        roots.extend(sorted(home.glob(pattern)))
+        for root in sorted(home.glob(pattern)):
+            resolved = root.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                roots.append(root)
     return roots
 
 
@@ -304,7 +313,7 @@ def base_row(db_path: Path, timestamp: int | None, activity_source: str) -> dict
         "activity_source": activity_source,
         "profile": db_path.parent.name,
         "profile_name": profile_name(db_path.parent),
-        "source": str(db_path),
+        "source": str(db_path.resolve()),
         "visit_id": "",
         "url_id": "",
         "shortcut_id": "",
@@ -444,19 +453,17 @@ def write_rows(rows: Iterator[dict[str, Any]], fields: Sequence[str], fmt: str) 
 
 
 def record_id(row: dict[str, Any]) -> str:
-    if row["activity_source"] == "history":
-        return str(row.get("visit_id") or "")
+    timestamp = int(row.get("_sort_visit_time") or row.get("sort_visit_time") or 0)
+    identity = [row.get("profile", ""), timestamp, row.get("url", "")]
     if row["activity_source"] == "shortcut":
-        return str(row.get("shortcut_id") or "")
-    return str(row.get("url") or row.get("_sort_visit_time") or "")
+        identity.append(row.get("shortcut_text", ""))
+    return hashlib.sha256(json.dumps(identity, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
-def ensure_db(con: sqlite3.Connection) -> None:
-    con.execute("PRAGMA journal_mode = DELETE")
-    con.execute("PRAGMA synchronous = NORMAL")
+def create_activity_table(con: sqlite3.Connection) -> None:
     con.execute(
         """
-        CREATE TABLE IF NOT EXISTS activity (
+        CREATE TABLE activity (
             activity_source TEXT NOT NULL,
             record_id TEXT NOT NULL,
             timestamp TEXT NOT NULL,
@@ -486,10 +493,52 @@ def ensure_db(con: sqlite3.Connection) -> None:
             shortcut_id TEXT,
             first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (activity_source, profile, source, record_id)
+            PRIMARY KEY (activity_source, record_id)
         )
         """
     )
+
+
+def primary_key(con: sqlite3.Connection, table: str) -> list[str]:
+    return [row[1] for row in sorted(con.execute(f"PRAGMA table_info({table})"), key=lambda row: row[5]) if row[5]]
+
+
+def migrate_activity_table(con: sqlite3.Connection) -> None:
+    """Replace source-local IDs with stable logical IDs without losing archived rows."""
+    con.execute("ALTER TABLE activity RENAME TO activity_legacy")
+    create_activity_table(con)
+    columns_with_timestamps = [*DB_COLUMNS, "first_seen_at", "updated_at"]
+    placeholders = ", ".join(":" + column for column in columns_with_timestamps)
+    updates = ", ".join(
+        f"{column} = excluded.{column}"
+        for column in DB_COLUMNS
+        if column not in {"activity_source", "record_id"}
+    )
+    sql = f"""
+        INSERT INTO activity ({", ".join(columns_with_timestamps)})
+        VALUES ({placeholders})
+        ON CONFLICT(activity_source, record_id) DO UPDATE SET
+            {updates},
+            first_seen_at = MIN(activity.first_seen_at, excluded.first_seen_at),
+            updated_at = MAX(activity.updated_at, excluded.updated_at)
+    """
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM activity_legacy ORDER BY source LIKE '%/microsoft-edge-cdp/%'")
+    for old_row in rows:
+        data = dict(old_row)
+        data["record_id"] = record_id(data)
+        data["source"] = str(Path(data["source"]).expanduser().resolve())
+        con.execute(sql, data)
+    con.execute("DROP TABLE activity_legacy")
+
+
+def ensure_db(con: sqlite3.Connection) -> None:
+    con.execute("PRAGMA journal_mode = DELETE")
+    con.execute("PRAGMA synchronous = NORMAL")
+    if not table_exists(con, "activity"):
+        create_activity_table(con)
+    elif primary_key(con, "activity") != ["activity_source", "record_id"]:
+        migrate_activity_table(con)
     con.execute("CREATE INDEX IF NOT EXISTS idx_activity_time ON activity(sort_visit_time DESC)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_activity_url ON activity(url)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_activity_source ON activity(activity_source)")
@@ -510,11 +559,12 @@ def sync_database(db: Path, activity_files: Sequence[Path]) -> int:
     sql = f"""
         INSERT INTO activity ({", ".join(DB_COLUMNS)})
         VALUES ({placeholders})
-        ON CONFLICT(activity_source, profile, source, record_id) DO UPDATE SET
+        ON CONFLICT(activity_source, record_id) DO UPDATE SET
             {updates},
             updated_at = CURRENT_TIMESTAMP
     """
     count = 0
+    seen: set[tuple[str, str]] = set()
     with sqlite3.connect(db) as con:
         ensure_db(con)
         with con:
@@ -522,6 +572,10 @@ def sync_database(db: Path, activity_files: Sequence[Path]) -> int:
                 data = normalize_db_row(row)
                 if not data["record_id"]:
                     continue
+                key = (str(data["activity_source"]), str(data["record_id"]))
+                if key in seen:
+                    continue
+                seen.add(key)
                 con.execute(sql, data)
                 count += 1
     return count

@@ -1,14 +1,35 @@
 # Prompts
 
+## Handle multiple profiles, 17 Jul 2026
+
 <!--
-
-cd /home/sanand/code/scripts
-dev.sh -v /home/sanand/.config/microsoft-edge/:/home/sanand/.config/microsoft-edge/:ro  -v /home/sanand/Documents/data/:/home/sanand/Documents/data/
-codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
-
+cd ~/code/scripts
+dev.sh -p ~/.config:ro,~/Documents/data -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
 -->
 
+I'm mainly using `~/.config/microsoft-edge-cdp/` instead of `~/.config/microsoft-edge/`.
+Modify `browsing_history.py` to use that as the default.
+
+While you're at it, just check: is it already picking up from BOTH the .config directories?
+Both of them are synced to the same account.
+This also includes workspaced.
+I just want to make sure that there's no duplication of history when we update the browsing history database.
+
+Explore carefully and make sure that the history is being read from the right place, and that it is being updated correctly in the database without duplication. Test.
+
+---
+
+FYI: I'm perfectly OK with the script picking up from either/both locations as long as it's deduplicated.
+
+<!-- codex resume 019f6ee7-ead8-7171-a22c-03b5695242ff --yolo -->
+
 ## Explore, 13 May 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/.config/microsoft-edge/:/home/sanand/.config/microsoft-edge/:ro -v /home/sanand/Documents/data/:/home/sanand/Documents/data/
+codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
+-->
 
 Write an agent-friendly CLI script `browsing_history.py` that will export my Edge browsing history (possibly at ~/.config/microsoft-edge/). Make sure that it exports the full history, across workspaces. Use CDP at 9222 to test. Make sure it works even if Edge is running by reading it without a lock.
 

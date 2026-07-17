@@ -32,6 +32,7 @@ from urllib.parse import urljoin
 
 
 EDGE_CONFIG = Path.home() / ".config" / "microsoft-edge"
+DEFAULT_PROFILES = [Path.home() / ".config" / "microsoft-edge-cdp", EDGE_CONFIG]
 
 
 @dataclass
@@ -75,6 +76,7 @@ class Window:
     id: int
     selected_tab_index: int = -1
     tabs: list[Tab] = field(default_factory=list)
+    profile: Path | None = None
 
 
 class PickleReader:
@@ -220,15 +222,16 @@ def default_session_file(profile: Path = EDGE_CONFIG) -> Path:
     return candidates[-1]
 
 
-def windows_to_json(windows: list[Window], source: Path) -> dict[str, object]:
+def windows_to_json(windows: list[Window], source: Path | list[Path]) -> dict[str, object]:
     return {
         "timestamp": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-        "source": str(source),
+        "source": [str(path) for path in source] if isinstance(source, list) else str(source),
         "window_count": len(windows),
         "tab_count": sum(len(window.tabs) for window in windows),
         "windows": [
             {
                 "id": window.id,
+                **({"profile": window.profile.name} if window.profile else {}),
                 "selected_tab_index": window.selected_tab_index,
                 "tab_count": len(window.tabs),
                 "tabs": [
@@ -250,13 +253,14 @@ def windows_to_json(windows: list[Window], source: Path) -> dict[str, object]:
     }
 
 
-def print_text(windows: list[Window], source: Path, urls_only: bool) -> None:
+def print_text(windows: list[Window], source: Path | list[Path], urls_only: bool) -> None:
     print(f"# Timestamp: {dt.datetime.now(dt.UTC).isoformat(timespec='seconds')}")
-    print(f"# Source: {source}")
+    print(f"# Source: {', '.join(map(str, source)) if isinstance(source, list) else source}")
     print(f"# Windows: {len(windows)}  Tabs: {sum(len(window.tabs) for window in windows)}")
     for window_index, window in enumerate(windows, 1):
         print()
-        print(f"Window {window_index} (id {window.id}, {len(window.tabs)} tabs)")
+        profile = f", profile {window.profile.name}" if window.profile else ""
+        print(f"Window {window_index} (id {window.id}{profile}, {len(window.tabs)} tabs)")
         for tab_index, tab in enumerate(window.tabs, 1):
             active = " *" if tab_index - 1 == window.selected_tab_index else ""
             prefix = "[PIN] " if tab.pinned else ""
@@ -270,6 +274,29 @@ def print_text(windows: list[Window], source: Path, urls_only: bool) -> None:
 def load_windows(profile: Path, session_file: Path | None) -> tuple[list[Window], Path]:
     source = session_file or default_session_file(profile)
     return parse_snss(source.read_bytes()), source
+
+
+def is_profile_open(profile: Path) -> bool:
+    """Return whether Chromium's profile-owner process is a live Edge browser."""
+    try:
+        pid = int((profile / "SingletonLock").readlink().name.rsplit("-", 1)[1])
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+    except (FileNotFoundError, PermissionError, ValueError, IndexError):
+        return False
+    executable = command.split("\0", 1)[0]
+    return "microsoft-edge" in executable or executable.endswith("/msedge")
+
+
+def load_profiles(profiles: list[Path], session_file: Path | None) -> list[tuple[Path, list[Window], Path]]:
+    """Load live profiles, or one explicitly requested offline session file."""
+    selected = profiles[:1] if session_file else [profile for profile in profiles if is_profile_open(profile)]
+    loaded = []
+    for profile in selected:
+        windows, source = load_windows(profile, session_file)
+        for window in windows:
+            window.profile = profile
+        loaded.append((profile, windows, source))
+    return loaded
 
 
 def find_tabs(windows: list[Window], query: str) -> list[Tab]:
@@ -366,9 +393,17 @@ def tab_markdown(tab: Tab, cdp_url: str) -> str:
     return html_to_markdown(tab_html(tab, cdp_url), tab.url)
 
 
-def md_command(queries: list[str], profile: Path, session_file: Path | None, cdp_url: str) -> int:
-    windows, _ = load_windows(profile, session_file)
-    resolved = [(query, *resolve_tabs(windows, query)) for query in queries]
+def md_command(queries: list[str], profiles: list[Path] | Path, session_file: Path | None, cdp_url: str) -> int:
+    loaded = load_profiles(profiles, session_file) if isinstance(profiles, list) else [(profiles, *load_windows(profiles, session_file))]
+    resolved = []
+    for query in queries:
+        matches = [(profile, tab) for profile, windows, _ in loaded for tab in find_tabs(windows, query)]
+        needle = query.casefold()
+        groups = [(profile, tab) for profile, tab in matches if (tab.group or "").casefold() == needle]
+        group_keys = {(profile, tab.group_id or tab.group) for profile, tab in groups}
+        is_group = bool(groups) and len(group_keys) == 1
+        resolved.append((query, groups if is_group else matches, is_group))
+
     missing = [query for query, matches, _ in resolved if not matches]
     ambiguous = [(query, matches) for query, matches, is_group in resolved if len(matches) > 1 and not is_group]
     for query in missing:
@@ -377,16 +412,16 @@ def md_command(queries: list[str], profile: Path, session_file: Path | None, cdp
         if index:
             print()
         print(f"## {query}\n")
-        print("Title\tTab group\tURL")
-        for tab in matches:
-            print(f"{tab.title}\t{tab.group or ''}\t{tab.url}")
+        print("Profile\tTitle\tTab group\tURL")
+        for profile, tab in matches:
+            print(f"{profile.name}\t{tab.title}\t{tab.group or ''}\t{tab.url}")
     if missing or ambiguous:
         return 1
 
-    tabs: dict[tuple[int, int], Tab] = {}
+    tabs: dict[tuple[Path, int, int], Tab] = {}
     for _, matches, _ in resolved:
-        for tab in matches:
-            tabs.setdefault((tab.window_id, tab.id), tab)
+        for profile, tab in matches:
+            tabs.setdefault((profile, tab.window_id, tab.id), tab)
     documents = []
     for tab in tabs.values():
         metadata = [f"# {tab.title or tab.url}", "", f"- URL: {tab.url}"]
@@ -398,7 +433,10 @@ def md_command(queries: list[str], profile: Path, session_file: Path | None, cdp
 
 
 def add_session_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--profile", type=Path, default=EDGE_CONFIG, help="Edge profile root, default: %(default)s")
+    parser.add_argument(
+        "--profile", action="append", type=Path,
+        help=f"Edge profile root (repeatable), defaults: {', '.join(map(str, DEFAULT_PROFILES))}",
+    )
     parser.add_argument("--file", type=Path, help="Specific SNSS Session_* file to parse")
 
 
@@ -418,14 +456,17 @@ def main() -> None:
     md_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
 
+    profiles = args.profile or DEFAULT_PROFILES
     if args.command == "md":
-        raise SystemExit(md_command(args.queries, args.profile, args.file, args.cdp_url))
+        raise SystemExit(md_command(args.queries, profiles, args.file, args.cdp_url))
 
-    windows, source = load_windows(args.profile, args.file)
+    loaded = load_profiles(profiles, args.file)
+    windows = [window for _, profile_windows, _ in loaded for window in profile_windows]
+    sources = [source for _, _, source in loaded]
     if args.json:
-        print(json.dumps(windows_to_json(windows, source), indent=2, ensure_ascii=False))
+        print(json.dumps(windows_to_json(windows, sources), indent=2, ensure_ascii=False))
     else:
-        print_text(windows, source, args.urls_only)
+        print_text(windows, sources, args.urls_only)
 
 
 if __name__ == "__main__":

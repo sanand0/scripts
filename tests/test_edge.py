@@ -1,3 +1,4 @@
+import argparse
 import struct
 import sys
 import tempfile
@@ -62,6 +63,70 @@ def snss(*commands):
 
 
 class EdgeTest(unittest.TestCase):
+    def test_profile_argument_is_repeatable_with_requested_defaults(self):
+        parser = argparse.ArgumentParser()
+        edge.add_session_arguments(parser)
+        self.assertIsNone(parser.parse_args([]).profile)
+        self.assertEqual(parser.parse_args([]).profile or edge.DEFAULT_PROFILES, edge.DEFAULT_PROFILES)
+        self.assertEqual(parser.parse_args(["--profile", "one", "--profile", "two"]).profile, [Path("one"), Path("two")])
+
+    def test_is_profile_open_checks_live_edge_process(self):
+        with patch.object(Path, "readlink", return_value=Path("host-123")), patch.object(
+            Path, "read_bytes", return_value=b"/opt/microsoft/msedge/msedge\0--type=browser"
+        ):
+            self.assertTrue(edge.is_profile_open(Path("profile")))
+        with patch.object(Path, "readlink", return_value=Path("host-123")), patch.object(
+            Path, "read_bytes", return_value=b"/usr/bin/firefox\0"
+        ):
+            self.assertFalse(edge.is_profile_open(Path("profile")))
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertFalse(edge.is_profile_open(Path(directory)))
+
+    def test_load_profiles_skips_profiles_without_an_open_browser(self):
+        profiles = [Path("closed"), Path("open")]
+        with patch.object(edge, "is_profile_open", side_effect=lambda profile: profile.name == "open"), patch.object(
+            edge, "load_windows", return_value=([edge.Window(1)], Path("Session"))
+        ) as load_windows:
+            loaded = edge.load_profiles(profiles, None)
+        self.assertEqual(loaded[0][0], Path("open"))
+        self.assertEqual(loaded[0][1][0].profile, Path("open"))
+        load_windows.assert_called_once_with(Path("open"), None)
+
+    def test_md_searches_all_profiles_and_identifies_ambiguous_matches(self):
+        first = edge.Tab(1, navigations={0: edge.Navigation("https://one.example/", "Shared one")})
+        second = edge.Tab(1, navigations={0: edge.Navigation("https://two.example/", "Shared two")})
+        loaded = [
+            (Path("microsoft-edge-cdp"), [edge.Window(1, tabs=[first])], Path("Session_1")),
+            (Path("microsoft-edge"), [edge.Window(1, tabs=[second])], Path("Session_2")),
+        ]
+        output = StringIO()
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(edge, "tab_markdown") as tab_markdown, redirect_stdout(output):
+            result = edge.md_command(["shared"], edge.DEFAULT_PROFILES, None, "http://localhost:9222")
+        self.assertEqual(result, 1)
+        self.assertIn("microsoft-edge-cdp\tShared one", output.getvalue())
+        self.assertIn("microsoft-edge\tShared two", output.getvalue())
+        tab_markdown.assert_not_called()
+
+    def test_md_extracts_unique_match_from_second_profile(self):
+        tab = edge.Tab(1, navigations={0: edge.Navigation("https://two.example/", "Only target")})
+        loaded = [(Path("first"), [], Path("Session_1")), (Path("second"), [edge.Window(1, tabs=[tab])], Path("Session_2"))]
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(edge, "tab_markdown", return_value="Body") as tab_markdown:
+            result = edge.md_command(["target"], edge.DEFAULT_PROFILES, None, "http://localhost:9222")
+        self.assertEqual(result, 0)
+        tab_markdown.assert_called_once_with(tab, "http://localhost:9222")
+
+    def test_same_exact_group_name_in_two_profiles_is_ambiguous(self):
+        first = edge.Tab(1, group="Research", group_id=(1, 1), navigations={0: edge.Navigation("https://one.example/", "One")})
+        second = edge.Tab(2, group="Research", group_id=(2, 2), navigations={0: edge.Navigation("https://two.example/", "Two")})
+        loaded = [(Path("first"), [edge.Window(1, tabs=[first])], Path("Session_1")), (Path("second"), [edge.Window(2, tabs=[second])], Path("Session_2"))]
+        output = StringIO()
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(edge, "tab_markdown") as tab_markdown, redirect_stdout(output):
+            result = edge.md_command(["research"], edge.DEFAULT_PROFILES, None, "http://localhost:9222")
+        self.assertEqual(result, 1)
+        self.assertIn("first\tOne", output.getvalue())
+        self.assertIn("second\tTwo", output.getvalue())
+        tab_markdown.assert_not_called()
+
     def test_parse_windows_in_tab_order(self):
         data = snss(
             command(0, struct.pack("<ii", 100, 10)),
@@ -212,7 +277,7 @@ class EdgeTest(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(
             output.getvalue(),
-            "## shared\n\nTitle\tTab group\tURL\nShared A\tOne\thttps://a.example/\nShared B\t\thttps://b.example/\n",
+            "## shared\n\nProfile\tTitle\tTab group\tURL\nprofile\tShared A\tOne\thttps://a.example/\nprofile\tShared B\t\thttps://b.example/\n",
         )
         tab_markdown.assert_not_called()
 
@@ -256,9 +321,9 @@ class EdgeTest(unittest.TestCase):
             result = edge.md_command(["alpha", "unique", "beta"], Path("profile"), None, "http://localhost:9222")
 
         self.assertEqual(result, 1)
-        self.assertIn("## alpha\n\nTitle\tTab group\tURL", output.getvalue())
+        self.assertIn("## alpha\n\nProfile\tTitle\tTab group\tURL", output.getvalue())
         self.assertIn("Alpha one\t\thttps://one.example/a", output.getvalue())
-        self.assertIn("## beta\n\nTitle\tTab group\tURL", output.getvalue())
+        self.assertIn("## beta\n\nProfile\tTitle\tTab group\tURL", output.getvalue())
         self.assertNotIn("## unique", output.getvalue())
         tab_markdown.assert_not_called()
 

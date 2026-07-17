@@ -563,10 +563,12 @@ rclone config create gdrive-straive
 
 # Enable Edge CDP (remote debugging): https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c
 # For Wayland, add --enable-features=UseOzonePlatform --ozone-platform=wayland
+# You can't enable CDP on the default profile, so I created a new one at ~/.config/microsoft-edge-cdp instead of ~/.config/microsoft-edge and synced my account, workspaces, etc.: https://chatgpt.com/c/6a59ac8b-de88-83ee-a050-a38f70e9b219
+mkdir -p ~/.config/microsoft-edge-cdp
 mkdir -p ~/.local/share/applications
 desktop-file-install --dir=$HOME/.local/share/applications /usr/share/applications/microsoft-edge.desktop \
   --set-key=Exec \
-  --set-value='/usr/bin/microsoft-edge-stable --remote-debugging-port=9222 --remote-allow-origins="*" %U'
+  --set-value='/usr/bin/microsoft-edge-stable --user-data-dir="/home/sanand/.config/microsoft-edge-cdp" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 %U'
 update-desktop-database ~/.local/share/applications   # refresh caches
 
 # If `journalctl --user-unit espanso | tail` reports several `get_active_window reported an error`

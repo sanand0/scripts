@@ -3,6 +3,22 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Switch profile, 17 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+In `edge`, allow multiple profiles to be specified, e.g. `--profile ~/.config/microsoft-edge-cdp/ --profile ~/.config/microsoft-edge/`.
+The above should be the default.
+`edge tabs` should show windows only from open browsers, e.g. if the browser with a profile is not running, it should not show any windows from that profile.
+`edge md` should search across all profiles, and if there are multiple matches, list all matches with the profile name in the output.
+
+<!-- codex resume 019f6eb8-f5f8-7783-96c6-3d91f7a89f43 --yolo -->
+
+Modify `rofi-chrome-tabs.sh` to use `edge` instead of CDP
+
 ## Migrate to edge subcommands, 13 Jul 2026
 
 <!--
