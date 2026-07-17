@@ -1,5 +1,20 @@
 # MCP Server
 
+## Add read tool, 17 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+The mcpserver.py `bash` tool restricts the output size - which means agents can't fetch large binaries (e.g. images, PDFs).
+
+Add a new `read` tool that can address this problem.
+Plan first, researching online for best practices on how to implement such a `read` tool (e.g. what to do if the file is too large, how to handle binary files, MIME types and encoding, missing files, permission errors, etc.)
+Then implement (writing tests first) and test it.
+
+<!-- codex resume 019f6d81-a256-7601-a36a-2dbfae47cdeb --yolo -->
+
 ## Observability updates, 04 Jul 2026
 
 <!--

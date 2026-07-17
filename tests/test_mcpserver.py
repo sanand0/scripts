@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import sys
 from pathlib import Path
+
+import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
+from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mcpserver
@@ -149,3 +156,166 @@ def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
     assert score == "2"
     assert tag == "tool_failure"
     assert note == "command timed out"
+
+
+def test_read_returns_utf8_text_and_complete_metadata(tmp_path) -> None:
+    path = tmp_path / "hello.txt"
+    path.write_text("Hello, αβ!", encoding="utf-8")
+
+    result = mcpserver.read(str(path))
+
+    assert result.structured_content == {
+        "path": str(path.resolve()),
+        "mime_type": "text/plain",
+        "encoding": "utf-8",
+        "size": path.stat().st_size,
+        "offset": 0,
+        "bytes_read": path.stat().st_size,
+        "next_offset": None,
+        "eof": True,
+    }
+    assert isinstance(result.content[0], TextContent)
+    assert json.loads(result.content[0].text) == result.structured_content
+    assert isinstance(result.content[1], TextContent)
+    assert result.content[1].text == "Hello, αβ!"
+
+
+def test_read_keeps_utf8_chunks_on_character_boundaries(tmp_path) -> None:
+    path = tmp_path / "greek.txt"
+    path.write_text("αβ", encoding="utf-8")
+
+    first = mcpserver.read(str(path), limit=3)
+    second = mcpserver.read(str(path), offset=first.structured_content["next_offset"], limit=3)
+
+    assert first.content[1].text == "α"
+    assert first.structured_content["bytes_read"] == 2
+    assert first.structured_content["next_offset"] == 2
+    assert first.structured_content["eof"] is False
+    assert second.content[1].text == "β"
+    assert second.structured_content["eof"] is True
+
+
+@pytest.mark.parametrize(
+    ("name", "data", "content_type", "mime_type"),
+    [
+        ("pixel.png", b"\x89PNG\r\n\x1a\ncontent", ImageContent, "image/png"),
+        ("sound.mp3", b"ID3content", AudioContent, "audio/mpeg"),
+        ("document.pdf", b"%PDF-1.7\ncontent", EmbeddedResource, "application/pdf"),
+    ],
+)
+def test_read_returns_native_mcp_binary_content(tmp_path, name, data, content_type, mime_type) -> None:
+    path = tmp_path / name
+    path.write_bytes(data)
+
+    result = mcpserver.read(str(path))
+
+    payload = result.content[1]
+    assert isinstance(payload, content_type)
+    assert result.structured_content["mime_type"] == mime_type
+    assert result.structured_content["encoding"] == "base64"
+    if isinstance(payload, EmbeddedResource):
+        assert payload.resource.mimeType == mime_type
+        encoded = payload.resource.blob
+    else:
+        assert payload.mimeType == mime_type
+        encoded = payload.data
+    assert base64.b64decode(encoded) == data
+
+
+def test_read_paginates_large_binary_without_silent_truncation(tmp_path) -> None:
+    path = tmp_path / "large.pdf"
+    path.write_bytes(b"0123456789")
+
+    first = mcpserver.read(str(path), offset=2, limit=4)
+    second = mcpserver.read(str(path), offset=first.structured_content["next_offset"], limit=4)
+
+    assert first.structured_content["bytes_read"] == 4
+    assert first.structured_content["next_offset"] == 6
+    assert first.structured_content["eof"] is False
+    assert first.content[1].resource.mimeType == "application/octet-stream"
+    assert base64.b64decode(first.content[1].resource.blob) == b"2345"
+    assert base64.b64decode(second.content[1].resource.blob) == b"6789"
+    assert second.structured_content["eof"] is True
+
+
+def test_read_transfers_binary_larger_than_bash_output_cap(tmp_path) -> None:
+    data = b"\0\1" * (mcpserver.MAX_TOTAL_OUTPUT_BYTES // 2 + 1)
+    path = tmp_path / "large.bin"
+    path.write_bytes(data)
+
+    result = mcpserver.read(str(path))
+
+    assert result.structured_content["bytes_read"] > mcpserver.MAX_TOTAL_OUTPUT_BYTES
+    assert result.structured_content["eof"] is True
+    assert base64.b64decode(result.content[1].resource.blob) == data
+
+
+def test_read_empty_and_unknown_utf8_files(tmp_path) -> None:
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    extensionless = tmp_path / "README"
+    extensionless.write_text("plain text", encoding="utf-8")
+
+    empty_result = mcpserver.read(str(empty))
+    text_result = mcpserver.read(str(extensionless))
+
+    assert empty_result.structured_content["bytes_read"] == 0
+    assert empty_result.structured_content["eof"] is True
+    assert base64.b64decode(empty_result.content[1].resource.blob) == b""
+    assert text_result.structured_content["mime_type"] == "text/plain"
+    assert text_result.content[1].text == "plain text"
+
+
+def test_read_reports_invalid_arguments_and_filesystem_errors(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "file.txt"
+    path.write_text("content")
+
+    with pytest.raises(ToolError, match="offset must be non-negative"):
+        mcpserver.read(str(path), offset=-1)
+    with pytest.raises(ToolError, match="limit must be between 1 and"):
+        mcpserver.read(str(path), limit=mcpserver.MAX_READ_BYTES + 1)
+    with pytest.raises(ToolError, match="File not found"):
+        mcpserver.read(str(tmp_path / "missing.txt"))
+    with pytest.raises(ToolError, match="Not a regular file"):
+        mcpserver.read(str(tmp_path))
+
+    original_open = Path.open
+
+    def deny_open(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_open)
+    with pytest.raises(ToolError, match="Permission denied"):
+        mcpserver.read(str(path))
+
+
+def test_read_rejects_mid_character_offset(tmp_path) -> None:
+    path = tmp_path / "greek.txt"
+    path.write_text("αβ", encoding="utf-8")
+
+    with pytest.raises(ToolError, match="UTF-8 character boundary"):
+        mcpserver.read(str(path), offset=1, limit=2)
+
+    with pytest.raises(ToolError, match="limit is too small for the next UTF-8 character"):
+        mcpserver.read(str(path), limit=1)
+
+
+def test_read_tool_is_registered_read_only_and_callable(tmp_path) -> None:
+    path = tmp_path / "hello.txt"
+    path.write_text("hello")
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("read", {"path": str(path)})
+            return tools, result
+
+    tools, result = asyncio.run(exercise_tool())
+    read_tool = next(tool for tool in tools if tool.name == "read")
+    assert read_tool.annotations.readOnlyHint is True
+    assert read_tool.annotations.openWorldHint is False
+    assert result.is_error is False
+    assert result.structured_content["path"] == str(path.resolve())
+    assert result.content[1].text == "hello"

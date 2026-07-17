@@ -11,10 +11,13 @@
 # npx -y ngrok@latest http --host-header=rewrite 2428
 #   Exposes the server to the internet via ngrok. (Use with caution!)
 
-import subprocess
+import base64
 import hashlib
 import json
+import mimetypes
 import os
+import stat
+import subprocess
 import sys
 import time
 import uuid
@@ -23,8 +26,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from fastmcp import FastMCP, Context
+from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context, get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
+from mcp.types import AudioContent, BlobResourceContents, EmbeddedResource, ImageContent, TextContent
 
 # Initialize the server
 mcp = FastMCP("Remote shell commands")
@@ -35,6 +41,8 @@ TRIM_MARKER = "... [trimmed to 50KB/line] ..."
 MAX_TOTAL_OUTPUT_BYTES = 512 * 1024
 TOTAL_OUTPUT_HEAD_BYTES = 384 * 1024
 TOTAL_TRIM_MARKER = "\n... [omitted {bytes} bytes to keep total output under 512 KiB] ...\n"
+DEFAULT_READ_BYTES = 8 * 1024 * 1024
+MAX_READ_BYTES = 16 * 1024 * 1024
 SERVER_START_ID = uuid.uuid4().hex
 RATE_TAGS = {
     "intent_miss",
@@ -440,6 +448,7 @@ Avoid broad scans over `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives unl
 First locate candidate files with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
   THEN inspect the best files with `path:line` evidence.
   Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
+Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
 
 This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
 
@@ -474,6 +483,135 @@ Summarize and cite paths/lines instead.
     await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
     log_bash_command(commands, output, request, result)
     return output
+
+
+def is_text_mime_type(mime_type: str) -> bool:
+    return (
+        mime_type.startswith("text/")
+        or mime_type in {"application/json", "application/javascript", "application/xml"}
+        or mime_type.endswith(("+json", "+xml"))
+    )
+
+
+def looks_like_utf8_text(data: bytes) -> bool:
+    if b"\0" in data:
+        return False
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return all(char.isprintable() or char in "\t\n\r" for char in text)
+
+
+def file_mime_type(path: Path, sample: bytes) -> str:
+    mime_type = mimetypes.guess_type(path.name, strict=False)[0]
+    if mime_type is None and looks_like_utf8_text(sample):
+        return "text/plain"
+    return mime_type or "application/octet-stream"
+
+
+def decode_utf8_chunk(data: bytes, *, offset: int, eof: bool) -> tuple[str, int] | None:
+    if offset and data and data[0] & 0b1100_0000 == 0b1000_0000:
+        raise ToolError(f"offset {offset} is not on a UTF-8 character boundary")
+    trims = range(1) if eof else range(min(3, len(data)) + 1)
+    for trim in trims:
+        candidate = data if trim == 0 else data[:-trim]
+        try:
+            return candidate.decode("utf-8"), len(candidate)
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+def read_error(action: str, path: Path, error: OSError) -> ToolError:
+    return ToolError(f"{action}: {path}: {error.strerror or error}")
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False}, output_schema=None)
+def read(path: str, offset: int = 0, limit: int = DEFAULT_READ_BYTES) -> ToolResult:
+    """Read a local text or binary file using MCP-native content blocks.
+
+    Text is returned as UTF-8. Images and audio use native MCP media blocks;
+    other binary files use base64 embedded resources. Reads are capped at 16
+    MiB per call. If `eof` is false, call again with the returned `next_offset`.
+    Byte offsets must fall on a UTF-8 character boundary for text files.
+    """
+    if offset < 0:
+        raise ToolError("offset must be non-negative")
+    if not 1 <= limit <= MAX_READ_BYTES:
+        raise ToolError(f"limit must be between 1 and {MAX_READ_BYTES} bytes")
+
+    file_path = Path(path).expanduser().resolve()
+    try:
+        file_stat = file_path.stat()
+    except FileNotFoundError as error:
+        raise read_error("File not found", file_path, error) from error
+    except PermissionError as error:
+        raise read_error("Permission denied", file_path, error) from error
+    except OSError as error:
+        raise read_error("Cannot inspect file", file_path, error) from error
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise ToolError(f"Not a regular file: {file_path}")
+    if offset > file_stat.st_size:
+        raise ToolError(f"offset {offset} exceeds file size {file_stat.st_size}")
+
+    try:
+        with file_path.open("rb") as handle:
+            sample = handle.read(8192)
+            handle.seek(offset)
+            data = handle.read(limit)
+    except PermissionError as error:
+        raise read_error("Permission denied", file_path, error) from error
+    except OSError as error:
+        raise read_error("Cannot read file", file_path, error) from error
+
+    mime_type = file_mime_type(file_path, sample)
+    text_chunk = None
+    if is_text_mime_type(mime_type):
+        text_chunk = decode_utf8_chunk(data, offset=offset, eof=offset + len(data) == file_stat.st_size)
+    if text_chunk is not None:
+        text, bytes_read = text_chunk
+        if data and bytes_read == 0:
+            raise ToolError("limit is too small for the next UTF-8 character")
+        payload = TextContent(type="text", text=text)
+        encoding = "utf-8"
+    else:
+        bytes_read = len(data)
+        encoded = base64.b64encode(data).decode("ascii")
+        complete = offset == 0 and bytes_read == file_stat.st_size
+        if complete and mime_type.startswith("image/"):
+            payload = ImageContent(type="image", data=encoded, mimeType=mime_type)
+        elif complete and mime_type.startswith("audio/"):
+            payload = AudioContent(type="audio", data=encoded, mimeType=mime_type)
+        else:
+            end = offset + bytes_read
+            uri = file_path.as_uri() if complete else f"{file_path.as_uri()}#bytes={offset}-{end}"
+            payload = EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri=uri,
+                    mimeType=mime_type if complete else "application/octet-stream",
+                    blob=encoded,
+                ),
+            )
+        encoding = "base64"
+
+    next_offset = offset + bytes_read
+    eof = next_offset == file_stat.st_size
+    metadata = {
+        "path": str(file_path),
+        "mime_type": mime_type,
+        "encoding": encoding,
+        "size": file_stat.st_size,
+        "offset": offset,
+        "bytes_read": bytes_read,
+        "next_offset": None if eof else next_offset,
+        "eof": eof,
+    }
+    return ToolResult(
+        content=[TextContent(type="text", text=json.dumps(metadata, separators=(",", ":"))), payload],
+        structured_content=metadata,
+    )
 
 
 def latest_session_id() -> str:
