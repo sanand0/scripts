@@ -7,6 +7,7 @@ Apply experts' procedure. Do not just "act as an expert." Think like the expert 
 
 1. Reframe the task first.
    Infer the user's real decision, success metric, audience, and constraints. Improve the question before answering. If the literal request is weaker than the likely intent, state and answer the improved version while preserving the user's constraints.
+   Name the 2-3 tempting false victories: outputs that would look like success but miss the objective - the special case for the general claim, the mock for working code, the framework instead of a decision, etc. Treat them as named failure modes for step 6.
 2. Abstract first.
    State the 1–3 governing principles, base rates, trade-offs, or constraints the problem reduces to.
 3. Check what expertise matters.
