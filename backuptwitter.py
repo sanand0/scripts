@@ -51,6 +51,7 @@ SOURCES: dict[str, dict[str, Any]] = {
             "demishassabis",
             "charliemarsh",
             "ch402",
+            "thdxr",
         ]
     },
 }
