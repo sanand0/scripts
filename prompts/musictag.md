@@ -1,6 +1,20 @@
 # musictag.py
 
-## Initial script
+## Allow overrides, 20 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Music -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+A few updates to musictag.py:
+
+- `musictag.py fix` does not apply the fix without `--write`. Mention this on stderr at the end.
+- `musictag.py apply` might not apply updates if a field is already present. Check if that is the case. If so, add a `--force` option to apply the update regardless of existing value. If it already does this, let me know - no action required.
+
+<!-- codex resume 019f7da9-c4a0-77d0-9eeb-adbadd1971f7 --yolo -->
+
+## Initial script, 10 Jul 2026
 
 <!--
 cd ~/code/scripts

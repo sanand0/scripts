@@ -5,9 +5,13 @@ import sys
 from pathlib import Path
 
 from mutagen.id3 import APIC, ID3, Encoding, POPM, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE2, USLT
+from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import musictag
+
+
+runner = CliRunner()
 
 
 def tagged(path: Path, *frames) -> Path:
@@ -149,3 +153,25 @@ def test_mtime_preserved(tmp_path: Path) -> None:
     musictag.save_preserve_mtime(tags, path)
 
     assert path.stat().st_mtime_ns == old_ns
+
+
+def test_apply_overwrites_existing_value(tmp_path: Path, monkeypatch) -> None:
+    path = tagged(tmp_path / "Album.Title.mp3", text_frame(TALB, "Old Album"))
+    csv_path = tmp_path / "updates.csv"
+    csv_path.write_text(f"filename,TALB\n{path.name},New Album\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(musictag.app, ["apply", str(csv_path)])
+
+    assert result.exit_code == 0
+    assert "updated=1" in result.stdout
+    assert musictag.current_value(musictag.read_id3(path), "TALB") == "New Album"
+
+
+def test_fix_preview_ends_with_write_reminder(tmp_path: Path) -> None:
+    path = tagged(tmp_path / "Album.Title.mp3", text_frame(TALB, "Old Album"))
+
+    result = runner.invoke(musictag.app, ["fix", str(path)])
+
+    assert result.exit_code == 1
+    assert result.stderr.rstrip().endswith("No changes written. Re-run with --write to apply fixes.")

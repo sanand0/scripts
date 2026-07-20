@@ -357,6 +357,8 @@ def fix(
                 typer.echo(format_report(path, frame))
     if json_output:
         typer.echo(jsonlib.dumps(results, indent=2))
+    if not write:
+        typer.echo("No changes written. Re-run with --write to apply fixes.", err=True)
     raise typer.Exit(exit_code)
 
 def has_site_spam(tags: ID3) -> bool:
