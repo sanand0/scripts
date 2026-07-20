@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from mutagen.apev2 import APEv2, APENoHeaderError
 from mutagen.id3 import APIC, ID3, Encoding, POPM, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE2, USLT
 from typer.testing import CliRunner
 
@@ -175,3 +176,21 @@ def test_fix_preview_ends_with_write_reminder(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert result.stderr.rstrip().endswith("No changes written. Re-run with --write to apply fixes.")
+
+
+def test_fix_write_deletes_apev2_tags(tmp_path: Path, monkeypatch) -> None:
+    path = tagged(tmp_path / "Album.Title.mp3", text_frame(TALB, "Album"), text_frame(TIT2, "Title"))
+    ape = APEv2()
+    ape["Title"] = "Old title"
+    ape.save(path)
+    monkeypatch.setattr(musictag, "read_rows", lambda: [])
+
+    result = runner.invoke(musictag.app, ["fix", "--write", str(path)])
+
+    assert result.exit_code == 0
+    try:
+        APEv2(path)
+    except APENoHeaderError:
+        pass
+    else:
+        raise AssertionError("APEv2 tags were not deleted")

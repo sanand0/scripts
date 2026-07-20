@@ -28,6 +28,7 @@ from typing import Any
 
 import typer
 from mutagen import File
+from mutagen.apev2 import delete as delete_apev2
 from mutagen.id3 import ID3, ID3NoHeaderError, Encoding, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE1, TRCK, TXXX, UFID
 
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -348,6 +349,8 @@ def fix(
             apply_changes(tags, values)
             save_preserve_mtime(tags, path)
             update_csv_row(path, read_id3(path))
+        if write:
+            delete_apev2(path)
         result = {"file": str(path), "changed": bool(changes), "written": bool(write and changes), "changes": changes, "frames": frames, "warnings": warnings}
         results.append(result)
         if not json_output:
