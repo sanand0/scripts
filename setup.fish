@@ -620,6 +620,7 @@ end
 function meeting --description "Create a new meeting transcript file"
     set date $(date -Idate)
     set title "$date $argv[1..]"
+    code "$HOME/Dropbox/notes/listening.md"
     set file "$HOME/Dropbox/notes/transcripts/$title.md"
     code $file
     if not test -e $file
@@ -627,6 +628,10 @@ function meeting --description "Create a new meeting transcript file"
 ---
 
 # $title
+
+- [ ] Speak less, observe and learn more.
+- [ ] Scan for politics (who wins/loses) and emotion and **test** your hypotheses.
+- [ ] Close with owner, date, proof
 
 ## Transcript
 " > $file

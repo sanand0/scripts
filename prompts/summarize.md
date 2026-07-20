@@ -1,5 +1,9 @@
 # Summarize
 
+## Add what-i-missed, update actions, 20 Jul 2026
+
+<!-- https://chatgpt.com/c/6a5de3a1-e084-83e8-8665-87886a6bef8e -->
+
 ## Add ideas to transcripts, 26 Jun 2026
 
 <!--

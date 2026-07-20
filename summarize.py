@@ -154,6 +154,16 @@ def dump_metadata(metadata: dict) -> str:
     return stream.getvalue()
 
 
+def without_frontmatter_fields(text: str, names: set[str]) -> str:
+    """Remove fields being regenerated so old AI output cannot anchor the new call."""
+    metadata, body, had_fm = parse_frontmatter(text)
+    if not had_fm:
+        return text
+    for name in names:
+        metadata.pop(name, None)
+    return f"---\n{dump_metadata(metadata)}---\n\n{body}"
+
+
 def strip_empty_values(metadata: dict) -> CommentedMap:
     """Remove keys whose value is None or empty string (keep empty lists — meaningful)."""
     result = CommentedMap()
@@ -268,6 +278,31 @@ def clean_ideas(ideas: list) -> list[str]:
         s = re.sub(r"^\s*#idea[:\s-]*", "", str(raw).strip(), flags=re.IGNORECASE).strip(" '\"")
         if s:
             out.append(s)
+    return out
+
+
+def clean_what_i_missed(items: list) -> list[str]:
+    """Normalize the deliberately small reason taxonomy used by what-i-missed."""
+    aliases = {
+        "topic": "topic shift",
+        "focus": "task focus",
+        "solution": "premature solution mode",
+        "time": "time pressure",
+        "pace": "pace",
+        "dominance": "conversational dominance",
+    }
+    out = []
+    for raw in items:
+        item = str(raw).strip()
+        match = re.search(r"(?i)(Possible reason:\s*)([^.]+)(\.?)$", item)
+        if match:
+            reason = match.group(2).strip().lower()
+            allowed = next((value for value in aliases.values() if value in reason), None)
+            if allowed is None:
+                allowed = next((value for key, value in aliases.items() if key in reason), "task focus")
+            item = item[:match.start()] + match.group(1) + allowed + "."
+        if item:
+            out.append(item)
     return out
 
 
@@ -474,9 +509,11 @@ CONTENT_SETS: list[ContentSet] = [
         name="transcript",
         base_dir=Path("/home/sanand/Dropbox/notes/transcripts"),
         prompt=(
-            "Analyze this meeting transcript and extract metadata.\n\n"
-            "For 'actions': format each as \"Owner: Details of action\" "
-            "(e.g. \"Anand: Send slides to Vikram\", \"Team: Review dashboard by Friday\").\n"
+            "Analyze this meeting transcript and extract only the requested metadata fields. "
+            "Use only transcript evidence. Treat a leading YYYY-MM-DD in the title as the meeting date. "
+            "Be conservative: false positives are worse than omissions. Never invent dates, channels, recipients, "
+            "cc lists, deliverables, commitments, workflow details, motives, or emotional states. When evidence is "
+            "insufficient, omit the detail. Before output, silently falsify every item against later transcript evidence.\n\n"
             "For 'people': include only clearly named speakers — no placeholders.\n"
             "For 'ideas': capture forward-looking sparks worth revisiting later — business or market "
             "opportunities, product/venture concepts, experiments to try, provocative \"what if\" questions, "
@@ -513,9 +550,42 @@ CONTENT_SETS: list[ContentSet] = [
             ),
             FieldDef(
                 name="actions",
-                description='ALL Action items as "Owner: Details" e.g. "Alok: Test GCS buckets". Empty list if none.',
+                description=(
+                    "ALL agreed or clearly assigned actions. Silently build a final commitment ledger: for each "
+                    "owner and outcome, scan the entire transcript and keep only the latest accepted instruction. "
+                    "A later explicit direction overrides an earlier one, especially phrases such as 'instead' or "
+                    "'no choice but', or a changed model, approach, or plan. Merge due date, artifact, recipient or "
+                    "handoff, channel, escalation, and completion condition only when stated. Preserve explicit scope "
+                    "such as both, each, all, and same. Drop completed-during-call work unless follow-up remains, "
+                    "unaccepted suggestions, optional or conditional plans, exploratory ideas, duplicates, and "
+                    "superseded actions. Format each as 'Owner: By D Mon YYYY. Specific observable action or "
+                    "handoff.' Omit the date and any other unsupported detail. Resolve relative dates from the meeting "
+                    "date, never the script run date. Empty list if none."
+                ),
                 pydantic_type=list[str],
                 to_yaml=list,
+            ),
+            FieldDef(
+                name="what-i-missed",
+                description=(
+                    "Return 0-2 items, and usually 0. First search for explicit evidence that another speaker opened "
+                    "or reopened a material need: a request, concern, constraint, opportunity, explicit emotional "
+                    "signal, or comprehension breakdown. Retain an explicit 'I lost track' or 'I do not understand' "
+                    "when Anand continues without checking what the speaker missed. Then inspect Anand's immediate "
+                    "response and every later turn. Reject if he "
+                    "acknowledges, answers, clarifies, delegates, tests, turns it into an action, or serves the "
+                    "underlying need another way. Reject advice he adopts, concerns he answers, proposed future "
+                    "sessions replaced by equivalent live work, scheduling conflicts resolved by both sides, "
+                    "agreement, thanks, and closure. Retain only a clearly unresolved, high-leverage miss, not merely "
+                    "a response that could have been better. Merge repeated manifestations of the same unresolved "
+                    "need into one item. Format each as '<Speaker> — Bid: <quote or close "
+                    "paraphrase>. Better move: <grounded question, acknowledgment, test, or commitment>. Possible "
+                    "reason: <pace, task focus, topic shift, time pressure, premature solution mode, or conversational "
+                    "dominance>.' Do not infer psychology or unstated emotion. Empty list if none."
+                ),
+                pydantic_type=list[str],
+                to_yaml=list,
+                clean=clean_what_i_missed,
             ),
             FieldDef(
                 name="ideas",
@@ -604,8 +674,12 @@ def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: 
     )
     response = client.models.generate_content(
         model=model,
-        contents=content_set.prompt_for(text, fields) + text,
+        contents=(
+            content_set.prompt_for(text, fields)
+            + without_frontmatter_fields(text, {field.name for field in fields})
+        ),
         config=types.GenerateContentConfig(
+            temperature=0,
             response_mime_type="application/json",
             response_json_schema=ResponseModel.model_json_schema(),
         ),
@@ -627,7 +701,8 @@ def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: 
 # ── Per-file processing ───────────────────────────────────────────────────────
 
 def process_file(
-    path: Path, client, model: str, dry_run: bool, force: bool, content_set: ContentSet
+    path: Path, client, model: str, dry_run: bool, force: bool, content_set: ContentSet,
+    selected_fields: set[str] | None = None,
 ) -> dict:
     result: dict = {
         "file": str(path),
@@ -644,7 +719,8 @@ def process_file(
     metadata, body, had_fm = parse_frontmatter(text)
     meta_keys = content_set.meta_keys
 
-    missing = [k for k in meta_keys if force or is_unprocessed(metadata.get(k))]
+    eligible_keys = [k for k in meta_keys if selected_fields is None or k in selected_fields]
+    missing = [k for k in eligible_keys if force or is_unprocessed(metadata.get(k))]
     if not missing:
         result["skipped_reason"] = "all fields present"
         return result
@@ -673,8 +749,6 @@ def process_file(
         try:
             missing_fields = [fdef for fdef in content_set.fields if fdef.name in missing]
             ai, usage = call_gemini(client, model, content_set, text, missing_fields)
-            result["tokens"] = usage.as_dict()
-            result["cost_usd"] = round(usage.cost(model), 6)
             for fdef in content_set.fields:
                 if fdef.name not in missing:
                     continue
@@ -686,6 +760,8 @@ def process_file(
                 # Always write, even [] — marks field as processed so we don't re-run
                 updates[fdef.name] = fdef.to_yaml(val)
                 result["added_fields"].append(fdef.name)
+            result["tokens"] = usage.as_dict()
+            result["cost_usd"] = round(usage.cost(model), 6)
         except Exception as e:
             result["status"] = "error"
             result["error"] = str(e.__cause__ or e)
@@ -713,6 +789,7 @@ def main(
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
     fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
     verbose:   bool                   = typer.Option(False, "--verbose", "-v", help="Show skipped files"),
+    fields:    Optional[str]          = typer.Option(None, "--fields", help="Comma-separated fields to process"),
 ) -> None:
     """Add AI-generated metadata to content files (transcripts, blog posts, etc.)."""
     if content_set_name not in CONTENT_SET_MAP:
@@ -721,6 +798,14 @@ def main(
         raise typer.Exit(1)
 
     content_set = CONTENT_SET_MAP[content_set_name]
+    selected_fields = None
+    if fields:
+        requested = {name.strip() for name in fields.split(",") if name.strip()}
+        unknown = requested - set(content_set.meta_keys)
+        if unknown:
+            console.print(f"[red]Unknown fields: {', '.join(sorted(unknown))}[/red]")
+            raise typer.Exit(1)
+        selected_fields = requested
 
     load_dotenv()
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -745,7 +830,9 @@ def main(
     def on_done(result: dict) -> None:
         results.append(result)
         t = result.get("tokens", {})
-        total_usage.add(t.get("prompt", 0), t.get("output", 0))
+        total_usage.prompt += t.get("prompt", 0)
+        total_usage.output += t.get("output", 0)
+        total_usage.calls += t.get("calls", 0)
         with _print_lock:
             if use_json:
                 print(json.dumps(result), flush=True)
@@ -769,7 +856,9 @@ def main(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(process_file, path, client, model, dry_run, force, content_set): path
+            pool.submit(
+                process_file, path, client, model, dry_run, force, content_set, selected_fields
+            ): path
             for path in files
         }
         for future in concurrent.futures.as_completed(futures):

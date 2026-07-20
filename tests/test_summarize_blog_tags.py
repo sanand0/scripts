@@ -1,3 +1,19 @@
+'''
+Run with:
+
+cd ~/code/scripts
+uv run --no-project \
+  --with pytest \
+  --with typer \
+  --with google-genai \
+  --with python-dotenv \
+  --with ruamel.yaml \
+  --with rich \
+  --with pydantic \
+  --with tenacity \
+  pytest -q tests/test_summarize_blog_tags.py
+'''
+
 from pathlib import Path
 import importlib.util
 import sys
