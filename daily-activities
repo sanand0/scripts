@@ -16,7 +16,6 @@ LOCK_FILE="$LOCK_DIR/run.lock"
 RCLONE="${DAILY_ACTIVITIES_RCLONE:-rclone}"
 RSYNC="${DAILY_ACTIVITIES_RSYNC:-rsync}"
 OPEN_TABS_DIR="${DAILY_ACTIVITIES_OPEN_TABS_DIR:-$HOME/Documents/data/open-tabs}"
-EDGE_TABS_PROFILE="${DAILY_ACTIVITIES_EDGE_TABS_PROFILE:-$HOME/.config/microsoft-edge}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export DAILY_ACTIVITIES=1
 export DAILY_ACTIVITIES_QUIET="${DAILY_ACTIVITIES_QUIET:-1}"
@@ -151,7 +150,7 @@ export_open_tabs() {
 
   mkdir -p "$OPEN_TABS_DIR"
   output="$OPEN_TABS_DIR/$(date +%F).jsonl"
-  /home/sanand/code/scripts/edge tabs --profile "$EDGE_TABS_PROFILE" --json \
+  /home/sanand/code/scripts/edge tabs --json \
     | jaq -c '.timestamp as $t | .windows[] | .id as $w | .tabs[] | {timestamp:$t, window:$w, title, url, group, pinned}' \
     >"$output"
 }
