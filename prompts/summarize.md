@@ -1,5 +1,20 @@
 # Summarize
 
+## Fix what-i-missed, 22 Jul 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -p ~/Dropbox/notes/transcripts,~/code/blog -- claude --dangerously-skip-permissions --model fable
+-->
+
+I noticed that `summarize.py transcript` puts in empty `what-i-missed` sections in the YAML metadata.
+I'm not sure that in the last few conversations, it really should have been empty.
+Find out why this happened and fix it.
+Review conversations from 20 Jul 2026 and update the `what-i-missed` section in the YAML metadata.
+
+<!-- claude --resume acc0df4c-b7db-46bf-828c-4d12d5c1c958 --dangerously-skip-permissions -->
+<!-- I undid this change and used my old prompt from ~/code/blog/content/prompts/analyze-call-recording.md -->
+
 ## Add what-i-missed, update actions, 20 Jul 2026
 
 <!-- https://chatgpt.com/c/6a5de3a1-e084-83e8-8665-87886a6bef8e -->

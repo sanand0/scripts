@@ -568,20 +568,14 @@ CONTENT_SETS: list[ContentSet] = [
             FieldDef(
                 name="what-i-missed",
                 description=(
-                    "Return 0-2 items, and usually 0. First search for explicit evidence that another speaker opened "
-                    "or reopened a material need: a request, concern, constraint, opportunity, explicit emotional "
-                    "signal, or comprehension breakdown. Retain an explicit 'I lost track' or 'I do not understand' "
-                    "when Anand continues without checking what the speaker missed. Then inspect Anand's immediate "
-                    "response and every later turn. Reject if he "
-                    "acknowledges, answers, clarifies, delegates, tests, turns it into an action, or serves the "
-                    "underlying need another way. Reject advice he adopts, concerns he answers, proposed future "
-                    "sessions replaced by equivalent live work, scheduling conflicts resolved by both sides, "
-                    "agreement, thanks, and closure. Retain only a clearly unresolved, high-leverage miss, not merely "
-                    "a response that could have been better. Merge repeated manifestations of the same unresolved "
-                    "need into one item. Format each as '<Speaker> — Bid: <quote or close "
-                    "paraphrase>. Better move: <grounded question, acknowledgment, test, or commitment>. Possible "
-                    "reason: <pace, task focus, topic shift, time pressure, premature solution mode, or conversational "
-                    "dominance>.' Do not infer psychology or unstated emotion. Empty list if none."
+                    "List the highest-leverage moments where I (Anand) missed or under-reacted to a “bid” "
+                    "(request, concern, constraint, opportunity, or emotional signal) from others. "
+                    "Read between the lines. Consider what went unsaid. Mentally list, pick the top. "
+                    "For each moment, concisely include "
+                    "(a) the exact quote, fragment or a close paraphrase of what they said, "
+                    "(b) the follow-up question or move I _should_ have made in the moment, and "
+                    "(c) why I might have missed it (cognitive, bias, interaction, time pressure, etc.)."
+                    "Empty list if none."
                 ),
                 pydantic_type=list[str],
                 to_yaml=list,
