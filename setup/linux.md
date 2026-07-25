@@ -169,6 +169,7 @@ mise use -g github:ip7z/7zip          # 7zip - File archiver with high compressi
 mise use -g github:jqnatividad/qsv    # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
 mise use -g github:junegunn/fzf       # fzf - Fuzzy finder for command-line | Ctrl+T to open, Ctrl+R for history
 mise use -g github:kenn-io/agentsview # agentsview serve for UI for local agent sessions
+mise use -g github:kovidgoyal/kitty   # kitty - GPU-based terminal emulator
 mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g github:pnpm/pnpm          # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
@@ -339,6 +340,7 @@ end
 # espanso install actually-all-emojis
 espanso service register
 espanso start
+# Useful commands: espanso restart; espanso path base; espanso match list
 
 # Install Docker
 curl -fsSL https://get.docker.com | sh

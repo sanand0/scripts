@@ -56,4 +56,9 @@ It's not worth it when people need to read fast, like a dashboard or a quick dec
 - Does it still work at phone width?
 - Is it still clear in gray?
 
-Fix and redraw until yes.
+Make this a repeatable grader:
+
+- Write code that checks the source: overlaps, tiny fonts, too many marks, cut‑off elements, colour count, ...
+- Render relevant screenshots for model to score the layout, contrast, impact, ...
+
+Fix and redraw until good.

@@ -32,6 +32,8 @@ matches:
     replace: |
       Regards
       Anand
+  - trigger: "-fyi "
+    replace: "FYI - no response required. "
 
   # NOTE: espanso uses YAML to define matches, so pay attention to the indentation!
   # But matches can also be dynamic:
@@ -64,8 +66,7 @@ matches:
         params:
           format: "%a, %d %b %Y %T GMT"
 
-  - trigger: "-codex"
-    word: true
+  - trigger: "-codex "
     force_clipboard: true
     replace: |
       <!--
@@ -73,8 +74,7 @@ matches:
       dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
       -->
 
-  - trigger: "-claude"
-    word: true
+  - trigger: "-claude "
     force_clipboard: true
     replace: |
       <!--

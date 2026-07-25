@@ -11,7 +11,7 @@ Design principles:
 - Bookmarkable. Capture state in the URL `#path?key=value`. Sharing the URL reproduces the view, with tabs, filters, slider positions, etc. captured. Prefer replaceState()
 
 Prefer creative, distinctive frontends that surprise and delight, not generic, "on distribution" outputs.
-Copying niche styles can be a great idea.
+A good way is to copy the design of a niche site highly related to the topic. If you do so, mention the site, reason, and what's copied.
 
 Focus on:
 

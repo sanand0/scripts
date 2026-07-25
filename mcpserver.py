@@ -420,13 +420,14 @@ async def bash(commands: str, timeout_ms: int = 30_000) -> str:
     """Runs multiline bash script.
 Under `~` = `/home/vscode/` (`/home/sanand` also works) you have:
 
-Skills already on Claude, not yet on ChatGPT:
+Skills are already in Claude, not yet on ChatGPT:
 ~/code/scripts/agents/*/SKILL.md - coding + thinking skills
 ~/code/blog/pages/skills/*/SKILL.md - thinking skills
 
-Content:
+Content (mostly read-only):
 ~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
 ~/Dropbox/notes/about/*.md - people or company specific notes
+~/Dropbox/notes/ - notes archive; recently edited files are useful
 ~/Documents/data/
   s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
   whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.
@@ -436,11 +437,12 @@ Content:
 ~/code/datastories/config.json - data stories
 ~/code/llmdemos/config.json - innovation team demos
 ~/code/llmevals/README.md - LLM evals
-~/code/blog/description.md - 20K files, 5K posts. Search for "- llm" for AI-related posts.
+~/code/blog/description.md - 20K files, 5K posts. Search for "- llm" for AI-related posts
 ~/code/til/README.md - things I learnt
 ~/code/README.md - code repos
 ~/r2/files/podcast - podcasts written for myself
 ~/Documents/activities/ - daily activity logs
+~/Documents/Mail/{*.mbox,mail-index.sqlite} - 2005-2025 email archives + index (use immutable=1)
 
 Avoid broad scans over `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives unless necessary.
   Scope to known subdirs. Prefer `fd`/`rg` because they respect `.gitignore` by default.
@@ -456,8 +458,9 @@ CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), 
 For ad-hoc Python outside a project, prefer `uv run --no-project --with pkg1 --with pkg2 -- python - <<'PY'`.
 For project commands, `cd` into the project and use its environment normally.
 
-gws can access email, calendar, chat:
-  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
+gws can access email, calendar, chat, drive:
+  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}' # For work email
+  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws ... # For personal email
   gws calendar events list --params '{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}'
 
 Verify paths with `pwd`, `ls`, or `test -e` before deep scans.
