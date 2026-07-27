@@ -232,6 +232,7 @@ args=(
   -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface"
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip"
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
+  -v "$HOME/.cache/sanand-scripts:/home/vscode/.cache/sanand-scripts"
   # Configs. Enable what's required.
   # 🔴 = sensitive credentials. (LLM API keys are OK - loss is a few dollars.)
   -v "$HOME/.claude:/home/vscode/.claude"
