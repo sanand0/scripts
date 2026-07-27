@@ -13,8 +13,9 @@ import os
 import re
 import sqlite3
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Optional, Protocol
+from typing import Any, Protocol
 
 import typer
 
@@ -54,8 +55,8 @@ class SessionEvent:
 class SessionSummary:
     session_id: str
     cwd: str = ""
-    start_ts: Optional[str] = None
-    end_ts: Optional[str] = None
+    start_ts: str | None = None
+    end_ts: str | None = None
     first_prompt: str = ""
     search_preview: str = ""
     files_count: int = 0
@@ -74,7 +75,7 @@ class SearchPattern:
         return self.needle in text.casefold()
 
 
-def parse_iso8601(ts: Any) -> Optional[dt.datetime]:
+def parse_iso8601(ts: Any) -> dt.datetime | None:
     if not isinstance(ts, str) or not ts:
         return None
     try:
@@ -92,7 +93,7 @@ def ts_key(ts: Any) -> tuple[int, str]:
     return (0, parsed.isoformat())
 
 
-def in_time_range(ts: Optional[str], since: str, until: str) -> bool:
+def in_time_range(ts: str | None, since: str, until: str) -> bool:
     if ts is None:
         return False
     return ts_key(since) <= ts_key(ts) <= ts_key(until)
@@ -247,8 +248,8 @@ class Backend(Protocol):
 
 
 def _session_header(events: list[SessionEvent], session_id: str, cwd: str = "") -> str:
-    start_ts: Optional[str] = None
-    end_ts: Optional[str] = None
+    start_ts: str | None = None
+    end_ts: str | None = None
     files = sorted({event.source.file_path for event in events})
     for event in events:
         ts = event.raw.get("timestamp")
@@ -272,7 +273,7 @@ def _normalize_kind(kind: str) -> str:
     return kind.strip().lower()
 
 
-def _parse_kind_filters(values: Optional[list[str]]) -> frozenset[str]:
+def _parse_kind_filters(values: list[str] | None) -> frozenset[str]:
     if not values:
         return frozenset()
     kinds: set[str] = set()
@@ -420,7 +421,7 @@ def _append_search_preview(summary: SessionSummary, lines: list[str]) -> None:
     seen = getattr(summary, "_search_preview_seen", None)
     if seen is None:
         seen = set()
-        setattr(summary, "_search_preview_seen", seen)
+        summary._search_preview_seen = seen
     preview_lines = summary.search_preview.splitlines() if summary.search_preview else []
     for line in lines:
         if line in seen:
@@ -542,8 +543,8 @@ class ClaudeBackend:
                     0 if str(path) in getattr(session, "_files", set()) else 1
                 )
                 if not hasattr(session, "_files"):
-                    setattr(session, "_files", set())
-                getattr(session, "_files").add(str(path))
+                    session._files = set()
+                session._files.add(str(path))
                 cwd = event.get("cwd")
                 if isinstance(cwd, str) and cwd and not session.cwd:
                     session.cwd = cwd
@@ -561,7 +562,7 @@ class ClaudeBackend:
                         allow_local_commands=allow_local_commands,
                     )
                 if search_re is not None and _search_event_matches(event, search_re):
-                    setattr(session, "_search_matched", True)
+                    session._search_matched = True
                     _append_search_preview(
                         session, _extract_matching_lines(event, search_re, width)
                     )
@@ -609,8 +610,8 @@ class ClaudeBackend:
                         sid, SessionSummary(session_id=sid, source_kind="jsonl")
                     )
                     if not hasattr(session, "_files"):
-                        setattr(session, "_files", set())
-                    files = getattr(session, "_files")
+                        session._files = set()
+                    files = session._files
                     if str(path) not in files:
                         files.add(str(path))
                         session.files_count += 1
@@ -631,7 +632,7 @@ class ClaudeBackend:
                             allow_local_commands=allow_local_commands,
                         )
                     if search_re is not None and _search_event_matches(event, search_re):
-                        setattr(session, "_search_matched", True)
+                        session._search_matched = True
                         _append_search_preview(
                             session, _extract_matching_lines(event, search_re, width)
                         )
@@ -787,7 +788,7 @@ class CopilotBackend:
     def _legacy_root(self, root: Path) -> Path:
         return root / "session-state"
 
-    def _connect(self, root: Path) -> Optional[sqlite3.Connection]:
+    def _connect(self, root: Path) -> sqlite3.Connection | None:
         db_path = self._db_path(root)
         if not db_path.exists():
             return None
@@ -1561,7 +1562,7 @@ class CodexBackend:
         include_empty: bool,
         width: int,
         search_re: SearchPattern | None,
-    ) -> Optional[SessionSummary]:
+    ) -> SessionSummary | None:
         sid = self._session_id(rows, path)
         summary = SessionSummary(session_id=sid, files_count=1, source_kind="jsonl")
         matched_search = search_re is None
@@ -2004,7 +2005,7 @@ def build_app(backend: Backend) -> typer.Typer:
         open_details: bool = typer.Option(
             False, help="Render <details open> for easier scanning."
         ),
-        kind: Optional[list[str]] = typer.Option(
+        kind: list[str] | None = typer.Option(
             None,
             "--kind",
             help="Only include event kinds matching these comma-separated or repeated values.",
@@ -2046,7 +2047,7 @@ def build_app(backend: Backend) -> typer.Typer:
         ),
         strict: bool = typer.Option(False, help="Fail fast on invalid JSON lines."),
         stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
-        kind: Optional[list[str]] = typer.Option(
+        kind: list[str] | None = typer.Option(
             None,
             "--kind",
             help="Only include event kinds matching these comma-separated or repeated values.",

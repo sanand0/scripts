@@ -29,8 +29,8 @@ FOLDER = "application/vnd.google-apps.folder"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 MEET_NAMES = "(name contains 'Recording' or name contains 'Transcript' or name contains 'Notes by Gemini')"
 FIELDS = "nextPageToken,files(id,name,mimeType,createdTime,modifiedTime,size,parents,webViewLink)"
-FFMPEG = "ffmpeg -hide_banner -stats -v warning -i".split()
-OPUS = "-c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10".split()
+FFMPEG = ["ffmpeg", "-hide_banner", "-stats", "-v", "warning", "-i"]
+OPUS = ["-c:a", "libopus", "-b:a", "12k", "-ac", "1", "-application", "voip", "-vbr", "on", "-compression_level", "10"]
 GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 
 
@@ -75,7 +75,7 @@ class DriveFile:
     def title(self) -> str:
         stem = self.name.rsplit(".", 1)[0] if "." in self.name else self.name
         title = re.sub(r"[\s\W]*20\d{2}\W+\d{1,2}\W+\d{1,2}.*$", "", stem)
-        title = re.sub(r"[\s-]*(Recording|Transcript|Notes by Gemini)$", "", title, flags=re.I)
+        title = re.sub(r"[\s-]*(Recording|Transcript|Notes by Gemini)$", "", title, flags=re.IGNORECASE)
         return clean(title or stem)
 
     def matches_type(self, kind: str | None) -> bool:
@@ -193,7 +193,7 @@ def useful_stderr(text: str) -> str:
 def day_start(spec: str) -> str:
     if match := re.fullmatch(r"(\d+)d", spec):
         day = datetime.now(UTC) - timedelta(days=int(match.group(1)))
-    elif match := re.fullmatch(r"(\d+)\s+months?\s+ago", spec, re.I):
+    elif match := re.fullmatch(r"(\d+)\s+months?\s+ago", spec, re.IGNORECASE):
         day = datetime.now(UTC) - timedelta(days=30 * int(match.group(1)))
     else:
         day = datetime.fromisoformat(spec).replace(tzinfo=UTC)

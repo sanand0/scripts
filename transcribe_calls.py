@@ -7,9 +7,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass
-from functools import lru_cache
 import hashlib
 import json
 import math
@@ -19,8 +16,12 @@ import shlex
 import subprocess
 import tempfile
 import time
+from collections import Counter
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -83,7 +84,7 @@ class UsageCost:
 class TranscriptionResult:
     transcript: str
     usage: UsageCost
-    warnings: tuple["InvalidTranscriptWarning", ...] = ()
+    warnings: tuple[InvalidTranscriptWarning, ...] = ()
 
 
 @dataclass(frozen=True)

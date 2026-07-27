@@ -59,7 +59,7 @@ ALIASES = {
 }
 GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 FORMAT_CHOICES = {"text", "json"}
-TIME_RE = re.compile(r"^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*$", re.I)
+TIME_RE = re.compile(r"^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*$", re.IGNORECASE)
 HOLIDAY_COUNTRIES = {
     "America/Los_Angeles": "US",
     "America/New_York": "US",
@@ -181,7 +181,7 @@ def parse_clock(value: str) -> dt.time:
 
 
 def parse_hours(value: str) -> tuple[dt.time, dt.time]:
-    parts = re.split(r"\s*(?:-|to|,)\s*", value.strip(), maxsplit=1, flags=re.I)
+    parts = re.split(r"\s*(?:-|to|,)\s*", value.strip(), maxsplit=1, flags=re.IGNORECASE)
     if len(parts) != 2:
         fail(f"invalid hours: {value!r}. Use e.g. 9am-6pm.")
     start, end = parse_clock(parts[0]), parse_clock(parts[1])

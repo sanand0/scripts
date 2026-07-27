@@ -28,7 +28,7 @@ import tempfile
 from calendar import monthrange
 from collections.abc import Iterator, Sequence
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -232,7 +232,7 @@ def columns(con: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
 
 
-@lru_cache(maxsize=None)
+@cache
 def profile_name(profile_path: Path) -> str:
     prefs = profile_path / "Preferences"
     if not prefs.exists():

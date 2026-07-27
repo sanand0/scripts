@@ -12,7 +12,6 @@ import json
 import shlex
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import DefaultDict
 
 import typer
 
@@ -94,8 +93,7 @@ def _first_command_token(tokens: list[str]) -> str | None:
         if substitution_depth > 0:
             substitution_depth += token.count("$(")
             substitution_depth -= token.count(")")
-            if substitution_depth < 0:
-                substitution_depth = 0
+            substitution_depth = max(substitution_depth, 0)
             continue
 
         if token == "[":
@@ -161,8 +159,8 @@ def _parse_log(path: Path) -> tuple[Counter[str], dict[str, Counter[str]], dict[
     """Return totals, per-tool stats, and shell command stats for a log."""
 
     totals: Counter[str] = Counter()
-    tool_stats: DefaultDict[str, Counter[str]] = defaultdict(Counter)
-    shell_stats: DefaultDict[str, Counter[str]] = defaultdict(Counter)
+    tool_stats: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    shell_stats: defaultdict[str, Counter[str]] = defaultdict(Counter)
     calls: dict[str, tuple[str, str | None]] = {}
     completed: set[str] = set()
 
@@ -225,8 +223,8 @@ def main(root: Path = root) -> None:
     reports = [_parse_log(path) for path in logs]
 
     overall: Counter[str] = Counter()
-    overall_tool_stats: DefaultDict[str, Counter[str]] = defaultdict(Counter)
-    overall_shell_breakdown: DefaultDict[str, Counter[str]] = defaultdict(Counter)
+    overall_tool_stats: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    overall_shell_breakdown: defaultdict[str, Counter[str]] = defaultdict(Counter)
 
     for totals, tools, shells in reports:
         overall.update(totals)

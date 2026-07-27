@@ -410,11 +410,11 @@ def parse_time(value: str) -> dt.datetime:
     text = value.strip()
     if not text:
         raise ValueError("empty time")
-    if match := re.fullmatch(r"(\d+)([dhm])", text, re.I):
+    if match := re.fullmatch(r"(\d+)([dhm])", text, re.IGNORECASE):
         amount, unit = int(match[1]), match[2].lower()
         delta = {"d": dt.timedelta(days=amount), "h": dt.timedelta(hours=amount), "m": dt.timedelta(minutes=amount)}[unit]
         return dt.datetime.now(dt.UTC) - delta
-    if match := re.fullmatch(r"(\d+)\s+months?\s+ago", text, re.I):
+    if match := re.fullmatch(r"(\d+)\s+months?\s+ago", text, re.IGNORECASE):
         return dt.datetime.now(dt.UTC) - dt.timedelta(days=30 * int(match[1]))
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         text += "T00:00:00"

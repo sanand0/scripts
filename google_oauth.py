@@ -13,20 +13,20 @@ This module is imported by CLI scripts that declare dependencies via their
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def ensure_token(*, scopes: List[str], token_file: Path, force_auth: bool = False) -> str:
+def ensure_token(*, scopes: list[str], token_file: Path, force_auth: bool = False) -> str:
     """Ensure OAuth creds via InstalledAppFlow; return access token."""
     # Lazy imports to avoid hard dependency unless actually used by a script.
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
     from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     cid = os.getenv("GOOGLE_DESKTOP_CLIENT_ID", "").strip()
@@ -49,11 +49,11 @@ def ensure_token(*, scopes: List[str], token_file: Path, force_auth: bool = Fals
     def get_credentials(config, scopes):
         """Get fresh credentials via OAuth flow, persisting in the token file"""
         flow = InstalledAppFlow.from_client_config(config, scopes)
-        creds: Optional[Credentials] = flow.run_local_server(port=0, open_browser=True)
+        creds: Credentials | None = flow.run_local_server(port=0, open_browser=True)
         token_file.write_text(creds.to_json())
         return creds
 
-    creds: Optional[Credentials] = None
+    creds: Credentials | None = None
     if token_file.exists():
         creds = Credentials.from_authorized_user_file(str(token_file), scopes)
 
@@ -72,7 +72,7 @@ def ensure_token(*, scopes: List[str], token_file: Path, force_auth: bool = Fals
     return creds.token if creds else ""
 
 
-async def api(client: Any, method: str, path: str, **kwargs) -> Dict[str, Any]:
+async def api(client: Any, method: str, path: str, **kwargs) -> dict[str, Any]:
     """GET API response as JSON, raising errors."""
     request_fn = getattr(client, method.lower(), None)
     r = await request_fn(path, **kwargs)

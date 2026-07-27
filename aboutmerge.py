@@ -24,12 +24,13 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Annotated, Iterable
+from typing import Annotated
 
-from markdown_it import MarkdownIt
 import typer
+from markdown_it import MarkdownIt
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 MD = MarkdownIt("commonmark")

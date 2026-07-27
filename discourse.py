@@ -22,19 +22,24 @@ Prints Markdown summaries of all posts in category 34 created/edited since 7 day
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Generator, Iterable, List, Tuple
-from urllib.parse import urljoin
 import os
 import time
-import typer
+from collections.abc import Generator, Iterable
+from datetime import datetime, timezone
+from urllib.parse import urljoin
 
-from httpx import Client, Timeout, HTTPStatusError
+import typer
 from dateutil import parser as dt_parser
+from dotenv import load_dotenv
+from httpx import Client, HTTPStatusError, Timeout
 from lxml import html
 from markdownify import markdownify as md
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from dotenv import load_dotenv
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 app = typer.Typer(add_completion=False)
 
@@ -89,11 +94,11 @@ def fetch_topic_pages(client: Client, category_id: int) -> Iterable[dict]:
         url = more if more else None
 
 
-def simplify_html(host: str, cooked: str) -> Tuple[str, List[Tuple[str, str]]]:
+def simplify_html(host: str, cooked: str) -> tuple[str, list[tuple[str, str]]]:
     if not cooked:
         return "", []
     tree = html.fromstring(cooked)
-    images: List[Tuple[str, str]] = []
+    images: list[tuple[str, str]] = []
     for img in tree.xpath("//img"):
         alt = (img.get("alt") or "").strip() or "image"
         src = img.get("src") or ""
@@ -110,7 +115,7 @@ def simplify_html(host: str, cooked: str) -> Tuple[str, List[Tuple[str, str]]]:
     return compact, images
 
 
-def format_reactions(reactions: List[dict]) -> str:
+def format_reactions(reactions: list[dict]) -> str:
     parts = []
     for entry in reactions:
         count = entry.get("count", 0)
@@ -121,7 +126,7 @@ def format_reactions(reactions: List[dict]) -> str:
     return ", ".join(parts)
 
 
-def format_post_line(label: str, post: dict, content: str, images: List[Tuple[str, str]]) -> str:
+def format_post_line(label: str, post: dict, content: str, images: list[tuple[str, str]]) -> str:
     created = iso(parse_dt(post["created_at"]))
     author = post.get("username") or post.get("name") or "unknown"
     parts = [
@@ -138,7 +143,7 @@ def format_post_line(label: str, post: dict, content: str, images: List[Tuple[st
     return " | ".join(parts)
 
 
-def format_topic_block(host: str, topic: dict, op_post: dict, posts: List[dict]) -> str:
+def format_topic_block(host: str, topic: dict, op_post: dict, posts: list[dict]) -> str:
     slug = topic.get("slug") or str(topic["id"])
     topic_url = f"{host}/t/{slug}/{topic['id']}"
     header = f"## {topic['title']} ({topic['id']})"
@@ -154,7 +159,7 @@ def format_topic_block(host: str, topic: dict, op_post: dict, posts: List[dict])
 
 def collect_topic_posts(
     client: Client, topic: dict, since: datetime | None, until: datetime | None = None
-) -> Tuple[dict, List[dict]]:
+) -> tuple[dict, list[dict]]:
     detail = get_json(client, f"/t/{topic['id']}.json")
     posts = detail.get("post_stream", {}).get("posts", [])
     if not posts:

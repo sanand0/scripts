@@ -23,8 +23,9 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 import typer
 
@@ -111,11 +112,11 @@ def parse_time(value: str | None, *, end: bool = False) -> str | None:
         return None
     now = dt.datetime.now(dt.UTC)
     text = value.strip()
-    if match := re.fullmatch(r"(\d+)\s*d(?:ays?)?", text, re.I):
+    if match := re.fullmatch(r"(\d+)\s*d(?:ays?)?", text, re.IGNORECASE):
         return (now - dt.timedelta(days=int(match.group(1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
-    if match := re.fullmatch(r"(\d+)\s*months?\s*ago", text, re.I):
+    if match := re.fullmatch(r"(\d+)\s*months?\s*ago", text, re.IGNORECASE):
         return (now - dt.timedelta(days=30 * int(match.group(1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
-    if match := re.fullmatch(r"(\d+)\s*hours?\s*ago", text, re.I):
+    if match := re.fullmatch(r"(\d+)\s*hours?\s*ago", text, re.IGNORECASE):
         return (now - dt.timedelta(hours=int(match.group(1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         suffix = "23:59:59Z" if end else "00:00:00Z"

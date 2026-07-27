@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
 
 import typer
 
@@ -56,15 +56,15 @@ def is_section_break(line: str) -> bool:
     return False
 
 
-def find_sections(lines: List[str], header_re: re.Pattern[str], max_scan: int) -> List[List[str]]:
+def find_sections(lines: list[str], header_re: re.Pattern[str], max_scan: int) -> list[list[str]]:
     """Find and return all targeted bullet sections and nested items (raw lines)."""
     scan_upto = min(len(lines), max_scan)
-    out: List[List[str]] = []
+    out: list[list[str]] = []
     i = 0
     while i < scan_upto:
         line = lines[i].rstrip("\n")
         if header_re.match(line):
-            collected: List[str] = [line]
+            collected: list[str] = [line]
             j = i + 1
             while j < len(lines):
                 next_line = lines[j].rstrip("\n")
@@ -97,10 +97,10 @@ def extract_month(filename: str) -> str | None:
 
 
 def collect_sections(
-    root: Path, label_patterns: Dict[str, re.Pattern[str]], max_scan: int
-) -> Dict[str, Dict[str, Dict[str, List[str]]]]:
+    root: Path, label_patterns: dict[str, re.Pattern[str]], max_scan: int
+) -> dict[str, dict[str, dict[str, list[str]]]]:
     """Return nested mapping of section -> month -> file -> copied bullet lines."""
-    collected: Dict[str, Dict[str, Dict[str, List[str]]]] = {
+    collected: dict[str, dict[str, dict[str, list[str]]]] = {
         label: defaultdict(dict) for label in TARGET_SECTIONS
     }
     for md in iter_markdown_files(root, exclude=set(AUTO_EXCLUDE)):
@@ -112,7 +112,7 @@ def collect_sections(
 
         for label in TARGET_SECTIONS:
             buckets = find_sections(lines, label_patterns[label], max_scan=max_scan)
-            bullet_lines: List[str] = []
+            bullet_lines: list[str] = []
             for bucket in buckets:
                 bullet_lines.extend(line for line in bucket[1:] if line.strip())
             if bullet_lines:
@@ -121,9 +121,9 @@ def collect_sections(
     return collected
 
 
-def render_month_content(label: str, month: str, files: Dict[str, List[str]]) -> str:
+def render_month_content(label: str, month: str, files: dict[str, list[str]]) -> str:
     """Render content for a single month."""
-    lines: List[str] = [f"# {label} {month}", ""]
+    lines: list[str] = [f"# {label} {month}", ""]
     for idx, (name, bullet_lines) in enumerate(files.items()):
         if idx:
             lines.append("")

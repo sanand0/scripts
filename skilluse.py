@@ -12,12 +12,12 @@ import fnmatch
 import json
 import re
 import shlex
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 import typer
-
 
 READ_COMMANDS = {
     "awk",

@@ -1007,8 +1007,7 @@ def _first_command_token(tokens: list[str]) -> str | None:
         if substitution_depth > 0:
             substitution_depth += token.count("$(")
             substitution_depth -= token.count(")")
-            if substitution_depth < 0:
-                substitution_depth = 0
+            substitution_depth = max(substitution_depth, 0)
             continue
 
         if token == "[":
@@ -1898,7 +1897,7 @@ def _analyze_session(path: Path, session_key: str) -> dict[str, str]:
     row["files_edited"] = "|".join(sorted(edited_files))
     row["tool_calls_per_minute"] = _format_ratio(tool_calls, duration_minutes)
     row["edits_per_minute"] = _format_ratio(apply_patch_count, duration_minutes)
-    row["feature_exec_command"] = "1" if any(name in tool_counter for name in {"exec_command", "shell"}) else "0"
+    row["feature_exec_command"] = "1" if any(name in tool_counter for name in ("exec_command", "shell")) else "0"
     row["feature_apply_patch"] = "1" if "apply_patch" in tool_counter else "0"
     row["feature_update_plan"] = "1" if "update_plan" in tool_counter else "0"
     row["feature_subagents"] = "1" if any(name in tool_counter for name in SUBAGENT_TOOLS) else "0"
@@ -2143,13 +2142,7 @@ def main(
     )
 
     typer.echo(
-        "sessions={total} queued={queued} processed={processed} skipped={skipped} parse_errors={errors}".format(
-            total=summary.total_sessions,
-            queued=summary.queued_sessions,
-            processed=summary.processed_sessions,
-            skipped=summary.skipped_sessions,
-            errors=summary.parse_errors,
-        )
+        f"sessions={summary.total_sessions} queued={summary.queued_sessions} processed={summary.processed_sessions} skipped={summary.skipped_sessions} parse_errors={summary.parse_errors}"
     )
     typer.echo(f"wrote {output_csv}")
 

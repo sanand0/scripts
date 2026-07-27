@@ -5,9 +5,9 @@ import json
 import re
 import shlex
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 
 def parse_ts(value: str) -> datetime:

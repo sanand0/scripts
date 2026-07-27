@@ -25,10 +25,11 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
-from typing import Any, Callable
 
 import typer
 
@@ -44,7 +45,7 @@ PERSONAL_GWS_CONFIG_DIR = Path("~/.config/gws-root.node@gmail.com").expanduser()
 NOISE_SPACE_RE = re.compile(r"\s+")
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 COMMIT_TIMESTAMP_RE = re.compile(r"^(?:[A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M|\d{4}-\d{2}-\d{2})")
-SUBJECT_PREFIX_RE = re.compile(r"^((re|fw|fwd):\s*)+", re.I)
+SUBJECT_PREFIX_RE = re.compile(r"^((re|fw|fwd):\s*)+", re.IGNORECASE)
 SELF_EMAILS = {"s.anand@gramener.com", "root.node@gmail.com"}
 DEFAULT_SOURCES = "calendar,email,personal-email,commit,github-commit,browser,code-prompt,shell,whatsapp"
 BOILERPLATE_MARKERS = (
@@ -71,7 +72,7 @@ GENERIC_AI_TITLES = {"chatgpt", "claude", "codex"}
 FISH_HISTORY_BURST_MINUTES = 15
 SHELL_COMMAND_MAX_CHARS = 220
 DEFAULT_PATCH_DAYS = 7
-WHATSAPP_CALL_RE = re.compile(r"^(?:missed )?(?:voice|video) call$", re.I)
+WHATSAPP_CALL_RE = re.compile(r"^(?:missed )?(?:voice|video) call$", re.IGNORECASE)
 SHELL_NOISE_RE = re.compile(
     r"^(?:"
     r"cd\b|z\b|l\b|ls\b|ll\b|la\b|pwd\b|clear\b|history\b|exit\b|jobs\b|fg\b|bg\b|"
@@ -81,7 +82,7 @@ SHELL_NOISE_RE = re.compile(
 )
 SHELL_SENSITIVE_RE = re.compile(
     r"(\b(secrets?|passwords?|passwd|tokens?|api[_-]?keys?|oauth|authorization|bearer|client[_-]?secret)\b|(?:^|[\s/])\.env\b)",
-    re.I,
+    re.IGNORECASE,
 )
 SHELL_SIGNAL_RE = re.compile(
     r"^(?:"
@@ -105,7 +106,7 @@ LEISURE_DOMAINS = {
 }
 LEISURE_QUERY_RE = re.compile(
     r"\b(actor|actress|movie|film|netflix|prime video|diplomat|keri russell|sriram raghavan|poornima|honey i blew|star wars)\b",
-    re.I,
+    re.IGNORECASE,
 )
 CODE_PROMPT_CACHE: tuple[dt.datetime, dt.datetime, list[Activity]] | None = None
 EMAIL_CACHE: dict[str, tuple[dt.datetime, dt.datetime, list[Activity]]] = {}
@@ -274,21 +275,21 @@ def looks_machine_prompt(text: str) -> bool:
 def prompt_goal(text: str) -> str:
     cleaned = clean_text(text)
     lowered = cleaned.casefold()
-    if match := re.search(r"the current ([^.;]+?) works but gets ([^.;]+?) wrong", cleaned, re.I):
+    if match := re.search(r"the current ([^.;]+?) works but gets ([^.;]+?) wrong", cleaned, re.IGNORECASE):
         return trim(f"Fix {match.group(2)} in {match.group(1)}", 220)
-    if match := re.match(r"modify\s+(\S+)\s+to\s+(.+)", cleaned, re.I):
+    if match := re.match(r"modify\s+(\S+)\s+to\s+(.+)", cleaned, re.IGNORECASE):
         return trim(f"Update {match.group(1)} to {match.group(2)}", 220)
-    if match := re.match(r"read\s+(\S+)\s+(.+)", cleaned, re.I):
+    if match := re.match(r"read\s+(\S+)\s+(.+)", cleaned, re.IGNORECASE):
         return trim(f"Assess {match.group(1)}: {match.group(2)}", 220)
     if lowered.startswith("our aim is to build an app where"):
         return "Build multi-document Q&A app for uploaded business materials"
     if lowered.startswith("we will be adding"):
         goal = cleaned.split("adding", 1)[1].strip()
-        goal = re.split(r"\bFirst,\s+", goal, maxsplit=1, flags=re.I)[0].strip()
+        goal = re.split(r"\bFirst,\s+", goal, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         return trim("Add " + goal, 180)
     if lowered.startswith("you are reviewing"):
         return trim("Review " + cleaned.split("reviewing", 1)[1].strip(), 220)
-    if match := re.match(r"using\s+(\S+),?\s+(.+)", cleaned, re.I):
+    if match := re.match(r"using\s+(\S+),?\s+(.+)", cleaned, re.IGNORECASE):
         return trim(f"Use {match.group(1)} to {match.group(2)}", 220)
     return first_sentence(cleaned, 300)
 

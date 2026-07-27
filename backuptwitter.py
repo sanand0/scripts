@@ -229,8 +229,8 @@ def fetch(source: dict[str, Any], limit: int, cwd: Path) -> dict[str, Any]:
     """
     eprint(f"fetching {limit} tweets in {cwd} via twitter-cli Python API")
     with working_dir(cwd):
-        from twitter_cli.auth import get_cookies
         import twitter_cli.client as client_module
+        from twitter_cli.auth import get_cookies
         from twitter_cli.client import TwitterClient
         from twitter_cli.config import load_config
         from twitter_cli.serialization import tweets_to_data

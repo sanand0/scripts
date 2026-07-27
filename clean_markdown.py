@@ -10,11 +10,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 LIST_RE = re.compile(r"^([ \t]*)([*+-]|\d+[.)])([ \t]+)(.*)$")
 LEADING_WS_RE = re.compile(r"^[ \t]*")

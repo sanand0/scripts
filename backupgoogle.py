@@ -36,7 +36,7 @@ SPACE_CACHE_HOURS = 6
 GWS_NOISE_PREFIXES = ("Using keyring backend:",)
 REPLY_MARKERS = re.compile(
     r"\n\s*(?:On [\s\S]{0,1000}?wrote:\s*|From:\s.+\nSent:\s.+\n|-----Original Message-----|_{20,}|-{20,})",
-    re.I | re.S,
+    re.IGNORECASE | re.DOTALL,
 )
 NOISE_RE = re.compile(r"[ \t\r\f\v]+")
 

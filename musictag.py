@@ -29,7 +29,22 @@ from typing import Any
 import typer
 from mutagen import File
 from mutagen.apev2 import delete as delete_apev2
-from mutagen.id3 import ID3, ID3NoHeaderError, Encoding, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE1, TRCK, TXXX, UFID
+from mutagen.id3 import (
+    ID3,
+    TALB,
+    TCOM,
+    TCON,
+    TDRC,
+    TEXT,
+    TIT2,
+    TOLY,
+    TPE1,
+    TRCK,
+    TXXX,
+    UFID,
+    Encoding,
+    ID3NoHeaderError,
+)
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
@@ -43,7 +58,7 @@ FIELDS = ["filename"] + TAG_FIELDS[:8] + ["length"] + TAG_FIELDS[8:]
 SITES = ["MassTamilan", "StarMusiQ", "VmusiQ", "SenSongs", "IsaiKadal", "TamilWire", "NaaSongs", "Pagalworld", "SongsPk", "FriendsTamil"]
 MANAGED = set(TAG_FIELDS)
 MUSIC_CSV = Path("~/Music/musicdump.csv").expanduser()
-SITE_RE = re.compile(r"\s+-\s+(?:" + "|".join(map(re.escape, SITES)) + r")(?:\.(?:com|in|net|org))?\s*$", re.I)
+SITE_RE = re.compile(r"\s+-\s+(?:" + "|".join(map(re.escape, SITES)) + r")(?:\.(?:com|in|net|org))?\s*$", re.IGNORECASE)
 YEAR_RE = re.compile(r"^\d{4}$")
 TEXT_FRAMES = {"TCON": TCON, "TDRC": TDRC, "TALB": TALB, "TIT2": TIT2, "TCOM": TCOM, "TPE1": TPE1, "TRCK": TRCK, "TEXT": TEXT, "TOLY": TOLY}
 FALLBACK = {"TCON": ["©gen"], "TDRC": ["©day"], "TALB": ["©alb"], "TIT2": ["©nam"], "TCOM": ["©wrt"], "TPE1": ["©ART"], "TRCK": ["trkn"]}

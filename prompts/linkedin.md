@@ -13,6 +13,6 @@ Modify linkedin.py (and tests/test_linkedin.py) to not require an initial Linked
 Assume CDP at localhost:9222 is logged in.
 Use this as an opportunity to SHORTEN and simplify the code, not increase it.
 
----
+<!-- codex resume 019fa297-e100-7f53-91da-3af1f50730c5 --yolo -->
 
 <!-- #TODO: Maybe extend linkedin.py to cover /recent-activity/all/ and /details/{certifications,volunteering-experiences,projects,skills,recommendations,courses,honors,interests,languages}

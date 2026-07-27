@@ -18,11 +18,12 @@ Usage:
 """
 
 import json
-import markdown2
 import os
 import re
 import sys
 from html import unescape
+
+import markdown2
 from rich.console import Console
 
 STATE_FILE = ".slide_state.json"
@@ -187,7 +188,7 @@ def main():
         flag, nslides = "next", 0
     elif arg.startswith(("+", "-")):
         flag = "next"
-    elif arg.startswith((":")):
+    elif arg.startswith(":"):
         flag = "last"
     elif arg.isdigit():
         flag = "set"

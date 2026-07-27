@@ -14,19 +14,21 @@
 
 import asyncio
 import json
-import typer
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence
-from rich.console import Console
-from pathlib import Path
-from httpx import AsyncClient
-from google_oauth import ensure_token, api
-from email.utils import parseaddr, parsedate_to_datetime
-from dotenv import load_dotenv
+from collections.abc import AsyncIterator, Sequence
 from datetime import timezone
+from email.utils import parseaddr, parsedate_to_datetime
+from pathlib import Path
+from typing import Any
 
+import typer
+from dotenv import load_dotenv
+from httpx import AsyncClient
+from rich.console import Console
 
-Message = Dict[str, Any]
-MessageRow = Dict[str, Any]
+from google_oauth import api, ensure_token
+
+Message = dict[str, Any]
+MessageRow = dict[str, Any]
 Messages = AsyncIterator[Message]
 
 
@@ -39,7 +41,7 @@ GMAIL_TOKEN_FILE = Path("~/.config/sanand-scripts/token.gmail.json").expanduser(
 async def iter_message_refs(client: AsyncClient, q: str, page_size: int, limit: int) -> Messages:
     """Yield message refs up to the requested limit."""
     remaining = limit
-    token: Optional[str] = None
+    token: str | None = None
     while remaining > 0:
         params = {"q": q, "maxResults": min(page_size, remaining)}
         if token:
@@ -68,7 +70,7 @@ async def get_metadata(client: AsyncClient, msg_id: str) -> Message:
 
 async def iter_details(client: AsyncClient, refs: Messages, concurrency: int = 16) -> Messages:
     """Yield details with bounded concurrency by processing refs in chunks."""
-    chunk: List[Message] = []
+    chunk: list[Message] = []
     async for ref in refs:
         chunk.append(ref)
         if len(chunk) == concurrency:
@@ -116,7 +118,7 @@ def to_row(m: Message, fields: Sequence[str]) -> MessageRow:
     return {field: FIELDS[field](m, headers) for field in fields if field in FIELDS}
 
 
-def print_tsv(con: Console, row: Dict[str, Any], fields: Sequence[str]) -> None:
+def print_tsv(con: Console, row: dict[str, Any], fields: Sequence[str]) -> None:
     """Render a TSV row with colorized columns."""
     c = ["cyan", "magenta", "green", "white", "blue", "yellow"]
     v = [str(row.get(f, "")) for f in fields]
@@ -149,7 +151,7 @@ async def search(
             con = Console(highlight=False)
             con.print("\t".join(sel_fields))
 
-        page_size = limit if limit <= 500 else 500
+        page_size = min(limit, 500)
         refs = iter_message_refs(client=client, q=q, page_size=page_size, limit=limit)
         async for detail in iter_details(client, refs):
             row = to_row(detail, sel_fields)
@@ -164,7 +166,7 @@ def main(
     q: str = typer.Argument("in:inbox", help="Gmail search query (Gmail search syntax)."),
     user_id: str = typer.Option("me", "--user", help="Gmail user: 'me' or email."),
     limit: int = typer.Option(20, "-n", "--limit", min=1, help="Total results to print."),
-    fields: List[str] = typer.Option(
+    fields: list[str] = typer.Option(
         ["date", "from", "subject", "snippet"],
         "--fields",
         help=(

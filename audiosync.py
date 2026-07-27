@@ -10,11 +10,12 @@
 # ///
 
 import subprocess
-import typer
-import numpy as np
-import librosa
-from scipy import signal
 from pathlib import Path
+
+import librosa
+import numpy as np
+import typer
+from scipy import signal
 
 app = typer.Typer(add_completion=False)
 

@@ -27,7 +27,8 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 import typer
-from playwright.async_api import Browser, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import Browser, Page, async_playwright
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
@@ -163,10 +164,10 @@ def parse_access_time(value: str, tz_name: str, now: dt.datetime) -> dt.datetime
         return None
     lower = text.lower()
     tz = ZoneInfo(tz_name)
-    if match := re.fullmatch(r"yesterday,?\s+(\d{1,2}:\d{2}\s*[AP]M)", text, flags=re.I):
+    if match := re.fullmatch(r"yesterday,?\s+(\d{1,2}:\d{2}\s*[AP]M)", text, flags=re.IGNORECASE):
         parsed_time = dt.datetime.strptime(match.group(1).upper().replace(" ", ""), "%I:%M%p").time()
         return dt.datetime.combine(now.date() - dt.timedelta(days=1), parsed_time, tz)
-    if match := re.fullmatch(r"today,?\s+(\d{1,2}:\d{2}\s*[AP]M)", text, flags=re.I):
+    if match := re.fullmatch(r"today,?\s+(\d{1,2}:\d{2}\s*[AP]M)", text, flags=re.IGNORECASE):
         parsed_time = dt.datetime.strptime(match.group(1).upper().replace(" ", ""), "%I:%M%p").time()
         return dt.datetime.combine(now.date(), parsed_time, tz)
     if match := re.fullmatch(r"(\d+)\s+(minute|hour|day)s?\s+ago", lower):

@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import platform
 import secrets
 import subprocess
 import sys
 import time
 import traceback
+import zipfile
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
-import zipfile
 
 MAX_EVENT_BYTES = 64_000
 MAX_EVENTS_IN_ZIP = 400

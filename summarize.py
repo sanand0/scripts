@@ -37,16 +37,18 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from io import StringIO
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Optional
+from typing import Any
 
 import typer
 from dotenv import load_dotenv
-from pydantic import Field as PydanticField, create_model
+from pydantic import Field as PydanticField
+from pydantic import create_model
 from rich.console import Console
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
@@ -659,7 +661,7 @@ class Usage:
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
 def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
-    from google.genai import types  # noqa: PLC0415
+    from google.genai import types
 
     ResponseModel = create_model(
         "ResponseModel",
@@ -776,14 +778,14 @@ def process_file(
 @app.command()
 def main(
     content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}"),
-    patterns:  Optional[list[str]]    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
+    patterns:  list[str] | None    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
     model:     str                    = typer.Option("gemini-3.5-flash", help="Gemini model ID"),
     workers:   int                    = typer.Option(4, "--workers", help="Parallel API workers"),
     dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
     fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
     verbose:   bool                   = typer.Option(False, "--verbose", "-v", help="Show skipped files"),
-    fields:    Optional[str]          = typer.Option(None, "--fields", help="Comma-separated fields to process"),
+    fields:    str | None          = typer.Option(None, "--fields", help="Comma-separated fields to process"),
 ) -> None:
     """Add AI-generated metadata to content files (transcripts, blog posts, etc.)."""
     if content_set_name not in CONTENT_SET_MAP:
@@ -815,7 +817,7 @@ def main(
         print(json.dumps({"error": msg}) if use_json else msg)
         raise typer.Exit(1)
 
-    from google import genai  # noqa: PLC0415
+    from google import genai
     client = genai.Client(api_key=api_key)
 
     results: list[dict] = []
