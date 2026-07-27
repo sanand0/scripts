@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    TextContent,
+    TextResourceContents,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mcpserver
@@ -63,9 +68,11 @@ def test_log_bash_command_includes_result_after_output(tmp_path, monkeypatch) ->
     assert "printf ok" in markdown
 
 
-def test_run_bash_command_records_nonzero_and_timeout() -> None:
+def test_run_bash_command_records_nonzero_timeout_and_cwd(tmp_path) -> None:
+    cwd_output, _ = mcpserver.run_bash_command("pwd", timeout_ms=1000, cwd=str(tmp_path))
     output, result = mcpserver.run_bash_command("printf err >&2; exit 7", timeout_ms=1000)
 
+    assert cwd_output.strip() == str(tmp_path)
     assert "STDERR:\nerr" in output
     assert "Return code: 7" in output
     assert result["exit_code"] == 7
@@ -80,7 +87,7 @@ def test_run_bash_command_records_nonzero_and_timeout() -> None:
     assert timeout_result["error"]
 
 
-def test_startup_record_is_compact_jsonl(tmp_path, monkeypatch) -> None:
+def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
     monkeypatch.setattr(mcpserver, "tool_description_hash", lambda: "hash-test")
@@ -96,6 +103,7 @@ def test_startup_record_is_compact_jsonl(tmp_path, monkeypatch) -> None:
     assert logged["cwd"]
     assert logged["git"] == {"commit": "abc123", "dirty": True}
     assert logged["tool_description_hash"] == "hash-test"
+    assert capsys.readouterr().out.startswith("mounted paths (rw = read-write, ro = read-only):\n")
 
 
 def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch) -> None:
@@ -158,126 +166,94 @@ def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
     assert note == "command timed out"
 
 
-def test_read_returns_utf8_text_and_complete_metadata(tmp_path) -> None:
+def test_download_file_returns_complete_utf8_embedded_resource(tmp_path) -> None:
     path = tmp_path / "hello.txt"
     path.write_text("Hello, αβ!", encoding="utf-8")
 
-    result = mcpserver.read(str(path))
+    result = mcpserver.download_file(str(path))
 
     assert result.structured_content == {
         "path": str(path.resolve()),
         "mime_type": "text/plain",
         "encoding": "utf-8",
         "size": path.stat().st_size,
-        "offset": 0,
         "bytes_read": path.stat().st_size,
-        "next_offset": None,
-        "eof": True,
     }
     assert isinstance(result.content[0], TextContent)
     assert json.loads(result.content[0].text) == result.structured_content
-    assert isinstance(result.content[1], TextContent)
-    assert result.content[1].text == "Hello, αβ!"
-
-
-def test_read_keeps_utf8_chunks_on_character_boundaries(tmp_path) -> None:
-    path = tmp_path / "greek.txt"
-    path.write_text("αβ", encoding="utf-8")
-
-    first = mcpserver.read(str(path), limit=3)
-    second = mcpserver.read(str(path), offset=first.structured_content["next_offset"], limit=3)
-
-    assert first.content[1].text == "α"
-    assert first.structured_content["bytes_read"] == 2
-    assert first.structured_content["next_offset"] == 2
-    assert first.structured_content["eof"] is False
-    assert second.content[1].text == "β"
-    assert second.structured_content["eof"] is True
+    assert isinstance(result.content[1], EmbeddedResource)
+    assert isinstance(result.content[1].resource, TextResourceContents)
+    assert result.content[1].resource.text == "Hello, αβ!"
 
 
 @pytest.mark.parametrize(
-    ("name", "data", "content_type", "mime_type"),
+    ("name", "data", "mime_type"),
     [
-        ("pixel.png", b"\x89PNG\r\n\x1a\ncontent", ImageContent, "image/png"),
-        ("sound.mp3", b"ID3content", AudioContent, "audio/mpeg"),
-        ("document.pdf", b"%PDF-1.7\ncontent", EmbeddedResource, "application/pdf"),
+        ("pixel.png", b"\x89PNG\r\n\x1a\ncontent", "image/png"),
+        ("sound.mp3", b"ID3content", "audio/mpeg"),
+        ("document.pdf", b"%PDF-1.7\ncontent", "application/pdf"),
     ],
 )
-def test_read_returns_native_mcp_binary_content(tmp_path, name, data, content_type, mime_type) -> None:
+def test_download_file_returns_complete_binary_embedded_resource(tmp_path, name, data, mime_type) -> None:
     path = tmp_path / name
     path.write_bytes(data)
 
-    result = mcpserver.read(str(path))
+    result = mcpserver.download_file(str(path))
 
     payload = result.content[1]
-    assert isinstance(payload, content_type)
+    assert isinstance(payload, EmbeddedResource)
+    assert isinstance(payload.resource, BlobResourceContents)
     assert result.structured_content["mime_type"] == mime_type
     assert result.structured_content["encoding"] == "base64"
-    if isinstance(payload, EmbeddedResource):
-        assert payload.resource.mimeType == mime_type
-        encoded = payload.resource.blob
-    else:
-        assert payload.mimeType == mime_type
-        encoded = payload.data
-    assert base64.b64decode(encoded) == data
+    assert payload.resource.mimeType == mime_type
+    assert base64.b64decode(payload.resource.blob) == data
 
 
-def test_read_paginates_large_binary_without_silent_truncation(tmp_path) -> None:
-    path = tmp_path / "large.pdf"
-    path.write_bytes(b"0123456789")
-
-    first = mcpserver.read(str(path), offset=2, limit=4)
-    second = mcpserver.read(str(path), offset=first.structured_content["next_offset"], limit=4)
-
-    assert first.structured_content["bytes_read"] == 4
-    assert first.structured_content["next_offset"] == 6
-    assert first.structured_content["eof"] is False
-    assert first.content[1].resource.mimeType == "application/octet-stream"
-    assert base64.b64decode(first.content[1].resource.blob) == b"2345"
-    assert base64.b64decode(second.content[1].resource.blob) == b"6789"
-    assert second.structured_content["eof"] is True
-
-
-def test_read_transfers_binary_larger_than_bash_output_cap(tmp_path) -> None:
-    data = b"\0\1" * (mcpserver.MAX_TOTAL_OUTPUT_BYTES // 2 + 1)
+def test_download_file_transfers_binary_larger_than_bash_output_cap(tmp_path) -> None:
+    data = b"\0\1" * (8 * 1024 * 1024 + 1)
     path = tmp_path / "large.bin"
     path.write_bytes(data)
 
-    result = mcpserver.read(str(path))
+    result = mcpserver.download_file(str(path))
 
     assert result.structured_content["bytes_read"] > mcpserver.MAX_TOTAL_OUTPUT_BYTES
-    assert result.structured_content["eof"] is True
     assert base64.b64decode(result.content[1].resource.blob) == data
 
 
-def test_read_empty_and_unknown_utf8_files(tmp_path) -> None:
+def test_download_file_treats_invalid_utf8_text_as_blob(tmp_path) -> None:
+    path = tmp_path / "invalid.txt"
+    path.write_bytes(b"\xff")
+
+    result = mcpserver.download_file(str(path))
+
+    assert isinstance(result.content[1].resource, BlobResourceContents)
+    assert result.content[1].resource.mimeType == "text/plain"
+    assert base64.b64decode(result.content[1].resource.blob) == b"\xff"
+
+
+def test_download_file_empty_and_unknown_utf8_files(tmp_path) -> None:
     empty = tmp_path / "empty.bin"
     empty.write_bytes(b"")
     extensionless = tmp_path / "README"
     extensionless.write_text("plain text", encoding="utf-8")
 
-    empty_result = mcpserver.read(str(empty))
-    text_result = mcpserver.read(str(extensionless))
+    empty_result = mcpserver.download_file(str(empty))
+    text_result = mcpserver.download_file(str(extensionless))
 
     assert empty_result.structured_content["bytes_read"] == 0
-    assert empty_result.structured_content["eof"] is True
     assert base64.b64decode(empty_result.content[1].resource.blob) == b""
     assert text_result.structured_content["mime_type"] == "text/plain"
-    assert text_result.content[1].text == "plain text"
+    assert text_result.content[1].resource.text == "plain text"
 
 
-def test_read_reports_invalid_arguments_and_filesystem_errors(tmp_path, monkeypatch) -> None:
+def test_download_file_reports_filesystem_errors(tmp_path, monkeypatch) -> None:
     path = tmp_path / "file.txt"
     path.write_text("content")
 
-    with pytest.raises(ToolError, match="offset must be non-negative"):
-        mcpserver.read(str(path), offset=-1)
-    with pytest.raises(ToolError, match="limit must be between 1 and"):
-        mcpserver.read(str(path), limit=mcpserver.MAX_READ_BYTES + 1)
     with pytest.raises(ToolError, match="File not found"):
-        mcpserver.read(str(tmp_path / "missing.txt"))
+        mcpserver.download_file(str(tmp_path / "missing.txt"))
     with pytest.raises(ToolError, match="Not a regular file"):
-        mcpserver.read(str(tmp_path))
+        mcpserver.download_file(str(tmp_path))
 
     original_open = Path.open
 
@@ -288,34 +264,73 @@ def test_read_reports_invalid_arguments_and_filesystem_errors(tmp_path, monkeypa
 
     monkeypatch.setattr(Path, "open", deny_open)
     with pytest.raises(ToolError, match="Permission denied"):
-        mcpserver.read(str(path))
+        mcpserver.download_file(str(path))
 
 
-def test_read_rejects_mid_character_offset(tmp_path) -> None:
-    path = tmp_path / "greek.txt"
-    path.write_text("αβ", encoding="utf-8")
-
-    with pytest.raises(ToolError, match="UTF-8 character boundary"):
-        mcpserver.read(str(path), offset=1, limit=2)
-
-    with pytest.raises(ToolError, match="limit is too small for the next UTF-8 character"):
-        mcpserver.read(str(path), limit=1)
-
-
-def test_read_tool_is_registered_read_only_and_callable(tmp_path) -> None:
+def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> None:
     path = tmp_path / "hello.txt"
     path.write_text("hello")
 
     async def exercise_tool():
         async with Client(mcpserver.mcp) as client:
             tools = await client.list_tools()
-            result = await client.call_tool("read", {"path": str(path)})
+            result = await client.call_tool("download_file", {"path": str(path)})
             return tools, result
 
     tools, result = asyncio.run(exercise_tool())
-    read_tool = next(tool for tool in tools if tool.name == "read")
-    assert read_tool.annotations.readOnlyHint is True
-    assert read_tool.annotations.openWorldHint is False
+    download_tool = next(tool for tool in tools if tool.name == "download_file")
+    assert all(tool.name != "read" for tool in tools)
+    assert download_tool.annotations.readOnlyHint is True
+    assert download_tool.annotations.openWorldHint is False
     assert result.is_error is False
     assert result.structured_content["path"] == str(path.resolve())
-    assert result.content[1].text == "hello"
+    assert result.content[1].resource.text == "hello"
+
+
+def test_bash_tool_exposes_and_uses_cwd_and_dynamic_mount_description(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+
+    async def list_tools():
+        async with Client(mcpserver.mcp) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("bash", {"commands": "pwd", "cwd": str(tmp_path)})
+            return tools, result
+
+    tools, result = asyncio.run(list_tools())
+    bash_tool = next(tool for tool in tools if tool.name == "bash")
+    assert "cwd" in bash_tool.inputSchema["properties"]
+    assert f"cwd: {mcpserver.display_path(Path.cwd())} (" in bash_tool.description
+    assert "mounted paths (rw = read-write, ro = read-only):" in bash_tool.description
+    assert "download_file" in bash_tool.description
+    assert result.content[0].text.strip() == str(tmp_path)
+
+
+def test_build_bash_description_omits_unmounted_paths(tmp_path, monkeypatch) -> None:
+    mounted = tmp_path / "mounted path"
+    mounted.mkdir()
+    missing = tmp_path / "missing"
+    monkeypatch.setattr(mcpserver, "path_access_mode", lambda path: "ro")
+
+    description = mcpserver.build_bash_description(
+        cwd=tmp_path,
+        mounted_paths=[
+            (f"{mounted}/*.md", "available"),
+            (f"{missing}/*.md", "unavailable"),
+        ],
+    )
+
+    assert f"cwd: {tmp_path} (ro)" in description
+    assert f"  ro: {mounted}/*.md - available" in description
+    assert str(missing) not in description
+
+
+@pytest.mark.parametrize(
+    ("display", "expected"),
+    [
+        ("~/notes/*.md", Path.home() / "notes"),
+        ("~/Mail/{*.mbox,mail-index.sqlite}", Path.home() / "Mail"),
+        ("~/code/README.md", Path.home() / "code/README.md"),
+    ],
+)
+def test_mount_probe_path_uses_literal_display_prefix(display, expected) -> None:
+    assert mcpserver.mount_probe_path(display) == expected

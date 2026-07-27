@@ -8,8 +8,8 @@
 # Usage: uv run mcpserver.py
 #   Exposes an MCP server on localhost:2428 that lets LLMs run bash commands.
 #   curl localhost:2428/mcp to test
-# npx -y ngrok@latest http --host-header=rewrite 2428
-#   Exposes the server to the internet via ngrok. (Use with caution!)
+# Test with
+#   uv run --with pytest --with fastmcp pytest -q tests/test_mcpserver.py
 
 import base64
 import hashlib
@@ -25,12 +25,18 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from fastmcp import FastMCP, Context
+
+from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context, get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
-from mcp.types import AudioContent, BlobResourceContents, EmbeddedResource, ImageContent, TextContent
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    TextContent,
+    TextResourceContents,
+)
 
 # Initialize the server
 mcp = FastMCP("Remote shell commands")
@@ -41,8 +47,6 @@ TRIM_MARKER = "... [trimmed to 50KB/line] ..."
 MAX_TOTAL_OUTPUT_BYTES = 512 * 1024
 TOTAL_OUTPUT_HEAD_BYTES = 384 * 1024
 TOTAL_TRIM_MARKER = "\n... [omitted {bytes} bytes to keep total output under 512 KiB] ...\n"
-DEFAULT_READ_BYTES = 8 * 1024 * 1024
-MAX_READ_BYTES = 16 * 1024 * 1024
 SERVER_START_ID = uuid.uuid4().hex
 RATE_TAGS = {
     "intent_miss",
@@ -53,6 +57,49 @@ RATE_TAGS = {
     "tool_failure",
     "unsupported_conclusion",
 }
+MOUNTED_PATHS = [
+    ("~/code/scripts/agents/*/SKILL.md", "coding + thinking skills"),
+    ("~/code/blog/pages/skills/*/SKILL.md", "thinking skills"),
+    (
+        "~/Dropbox/notes/transcripts/YYYY-MM-DD*.md",
+        "date-window by filename, then read narrow ranges",
+    ),
+    ("~/Dropbox/notes/about/*.md", "people or company specific notes"),
+    ("~/Dropbox/notes/", "notes archive; recently edited files are useful"),
+    (
+        "~/Documents/data/s.anand@gramener.com/",
+        "work email, chat, calendar exports. Use `gws` for latest",
+    ),
+    (
+        "~/Documents/data/root.node@gmail.com/",
+        "personal email, calendar exports. Use `gws` for latest",
+    ),
+    (
+        "~/Documents/data/whatsapp/",
+        "WhatsApp exports. Use `jaq` fields `.time`, `.author`, `.text`",
+    ),
+    (
+        "~/Documents/data/browsing-history.db",
+        "SELECT url, timestamp, visit_count, ... FROM activity",
+    ),
+    (
+        "~/Documents/Mail/{*.mbox,mail-index.sqlite}",
+        "2005-2025 email archives (use ?immutable=1)",
+    ),
+    ("~/Documents/data/linkedin-invites.json", "LinkedIn invites"),
+    ("~/code/talks/README.md", "talk transcripts, slides"),
+    ("~/code/datastories/config.json", "data stories"),
+    ("~/code/llmdemos/config.json", "innovation team demos"),
+    ("~/code/llmevals/README.md", "LLM evals"),
+    (
+        "~/code/blog/description.md",
+        '20K files, 5K posts. Search for "- llm" for AI-related posts',
+    ),
+    ("~/code/til/README.md", "things I learnt"),
+    ("~/code/README.md", "code repos"),
+    ("~/r2/files/podcast", "podcasts written for myself"),
+    ("~/Documents/activities/", "daily activity logs"),
+]
 
 
 def markdown_code_block(text: str) -> str:
@@ -338,6 +385,7 @@ def log_startup_record() -> dict[str, Any]:
         "tool_description_hash": tool_description_hash(),
     }
     append_jsonl(LOG_DIR / "startup.jsonl", record)
+    print(mounted_paths_text(), flush=True)
     return record
 
 
@@ -361,7 +409,7 @@ def finalize_output(
     return total_limited, result
 
 
-def run_bash_command(commands: str, timeout_ms: int) -> tuple[str, dict[str, Any]]:
+def run_bash_command(commands: str, timeout_ms: int, cwd: str | None = None) -> tuple[str, dict[str, Any]]:
     started_at = iso_timestamp()
     start = time.monotonic()
     result: dict[str, Any] = {
@@ -383,6 +431,7 @@ def run_bash_command(commands: str, timeout_ms: int) -> tuple[str, dict[str, Any
             capture_output=True,
             text=True,
             timeout=timeout_ms / 1000,
+            cwd=Path(cwd).expanduser() if cwd else None,
         )
         result["exit_code"] = completed.returncode
         result["stdout_bytes"] = len(completed.stdout.encode())
@@ -415,57 +464,76 @@ def run_bash_command(commands: str, timeout_ms: int) -> tuple[str, dict[str, Any
     return finalize_output(output, result)
 
 
-@mcp.tool()
-async def bash(commands: str, timeout_ms: int = 30_000) -> str:
-    """Runs multiline bash script.
-Under `~` = `/home/vscode` (`/home/sanand` also works) you have:
+def display_path(path: Path) -> str:
+    path = path.absolute()
+    home = Path.home().absolute()
+    try:
+        relative = path.relative_to(home)
+    except ValueError:
+        return str(path)
+    return "~" if relative == Path(".") else f"~/{relative}"
 
-Skills:
-~/code/scripts/agents/*/SKILL.md - coding + thinking skills
-~/code/blog/pages/skills/*/SKILL.md - thinking skills
 
-Content (mounted read-only):
-~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
-~/Dropbox/notes/about/*.md - people or company specific notes
-~/Dropbox/notes/ - notes archive; recently edited files are useful
-~/Documents/data/
-  s.anand@gramener.com/ and root.node@gmail.com/ - email, chat, calendar exports. Use `gws` for latest
-  whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`.
-  browsing-history.db (SELECT url, timestamp, visit_count, ... FROM activity)
-  linkedin-invites.json
-~/code/talks/README.md - talk transcripts, slides
-~/code/datastories/config.json - data stories
-~/code/llmdemos/config.json - innovation team demos
-~/code/llmevals/README.md - LLM evals
-~/code/blog/description.md - 20K files, 5K posts. Search for "- llm" for AI-related posts
-~/code/til/README.md - things I learnt
-~/code/README.md - code repos
-~/r2/files/podcast - podcasts written for myself
-~/Documents/activities/ - daily activity logs
-~/Documents/Mail/{*.mbox,mail-index.sqlite} - 2005-2025 email archives + index (use immutable=1)
+def path_access_mode(path: Path) -> str:
+    writable = os.access(path, os.W_OK, effective_ids=True)
+    with suppress(OSError):
+        writable = writable and not os.statvfs(path).f_flag & os.ST_RDONLY
+    return "rw" if writable else "ro"
+
+
+def mount_probe_path(display: str) -> Path:
+    parts = []
+    for part in Path(display).expanduser().parts:
+        if any(marker in part for marker in "*?[{"):
+            break
+        parts.append(part)
+    return Path(*parts)
+
+
+def mounted_paths_text(mounted_paths: list[tuple[str, str]] | None = None) -> str:
+    entries = []
+    for display, description in MOUNTED_PATHS if mounted_paths is None else mounted_paths:
+        path = mount_probe_path(display)
+        if path.exists():
+            entries.append(f"  {path_access_mode(path)}: {display} - {description}")
+    return "mounted paths (rw = read-write, ro = read-only):\n" + ("\n".join(entries) if entries else "(none detected)")
+
+
+def build_bash_description(
+    cwd: Path | None = None,
+    mounted_paths: list[tuple[str, str]] | None = None,
+) -> str:
+    cwd = cwd or Path.cwd()
+    return f"""Runs multiline bash script.
+Use the sibling `download_file` tool to transfer files, not by printing base64, etc.
+
+cwd: {display_path(cwd)} ({path_access_mode(cwd)})
+
+{mounted_paths_text(mounted_paths)}
 
 Avoid broad scans over large file lists - `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives - unless necessary.
-  Scope to known subdirs. Prefer `fd`/`rg` because they respect `.gitignore` by default.
+  Scope to known subdirs. Prefer `fd`/`rg` to respect `.gitignore` and shrink long listings.
   Check shape (dir count, file size, match count, ...) first.
 Avoid wasting tool calls on wrong files by
   Verifying paths with `pwd`, `ls`, or `test -e`.
-  Locaating best candidates with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
+  Locating best candidates with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
   Searching best matches with `path:line` evidence.
 Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
-Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
 
 This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
 
 CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
 For ad-hoc Python, prefer `uv run --no-project --with pkg1 --with pkg2 -- python - <<'PY'`.
+Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
+Commands run transactionally; do not start persistent background servers.
 
 gws can access work email, calendar, chat, drive:
-  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
-  gws calendar events list --params '{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}'
+  gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
+  gws calendar events list --params '{{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}}'
 For personal email (root.node@gmail.com) use:
-  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
+  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
 
-Use `set -euo pipefail` for deterministic scripts.
+Prefer `set -euo pipefail` for deterministic scripts. If so, then:
   Handle expected misses (`rg ... || true`, `test -e`, optional files) printing concise diagnostics.
   Capped pipelines like `rg ... | head` can exit 141 from SIGPIPE.
   Wrap expected capped/no-match pipelines in `( ... | head -N || true )`.
@@ -475,19 +543,27 @@ Batch multiple commands into fewer tool calls to avoid call overhead.
 
 Keep stdout bounded to ~200 lines/ ~20KB.
   Save large intermediate output to /tmp; print only summaries and paths.
+  Use `download_file` tool to transfer large files.
 
 Do not print secrets, tokens, or credentials, unless explicitly requested.
 Summarize and cite paths/lines instead.
 """
+
+
+async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> str:
     ctx: Context = get_context()
-    await ctx.info(f"bash: {commands}")
-    request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms}
-    output, result = run_bash_command(commands, timeout_ms)
+    await ctx.info(f"bash: {commands} (cwd={cwd or os.getcwd()})")
+    request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
+    output, result = run_bash_command(commands, timeout_ms, cwd)
     if result["stderr_bytes"]:
         await ctx.warning(f"ERROR: {result['stderr_bytes']} stderr bytes")
     await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
     log_bash_command(commands, output, request, result)
     return output
+
+
+bash.__doc__ = build_bash_description()
+mcp.tool(description=bash.__doc__)(bash)
 
 
 def is_text_mime_type(mime_type: str) -> bool:
@@ -515,37 +591,13 @@ def file_mime_type(path: Path, sample: bytes) -> str:
     return mime_type or "application/octet-stream"
 
 
-def decode_utf8_chunk(data: bytes, *, offset: int, eof: bool) -> tuple[str, int] | None:
-    if offset and data and data[0] & 0b1100_0000 == 0b1000_0000:
-        raise ToolError(f"offset {offset} is not on a UTF-8 character boundary")
-    trims = range(1) if eof else range(min(3, len(data)) + 1)
-    for trim in trims:
-        candidate = data if trim == 0 else data[:-trim]
-        try:
-            return candidate.decode("utf-8"), len(candidate)
-        except UnicodeDecodeError:
-            continue
-    return None
-
-
 def read_error(action: str, path: Path, error: OSError) -> ToolError:
     return ToolError(f"{action}: {path}: {error.strerror or error}")
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False}, output_schema=None)
-def read(path: str, offset: int = 0, limit: int = DEFAULT_READ_BYTES) -> ToolResult:
-    """Read a local text or binary file using MCP-native content blocks.
-
-    Text is returned as UTF-8. Images and audio use native MCP media blocks;
-    other binary files use base64 embedded resources. Reads are capped at 16
-    MiB per call. If `eof` is false, call again with the returned `next_offset`.
-    Byte offsets must fall on a UTF-8 character boundary for text files.
-    """
-    if offset < 0:
-        raise ToolError("offset must be non-negative")
-    if not 1 <= limit <= MAX_READ_BYTES:
-        raise ToolError(f"limit must be between 1 and {MAX_READ_BYTES} bytes")
-
+def download_file(path: str) -> ToolResult:
+    """Download a complete local file as an MCP embedded resource."""
     file_path = Path(path).expanduser().resolve()
     try:
         file_stat = file_path.stat()
@@ -557,64 +609,44 @@ def read(path: str, offset: int = 0, limit: int = DEFAULT_READ_BYTES) -> ToolRes
         raise read_error("Cannot inspect file", file_path, error) from error
     if not stat.S_ISREG(file_stat.st_mode):
         raise ToolError(f"Not a regular file: {file_path}")
-    if offset > file_stat.st_size:
-        raise ToolError(f"offset {offset} exceeds file size {file_stat.st_size}")
 
     try:
         with file_path.open("rb") as handle:
-            sample = handle.read(8192)
-            handle.seek(offset)
-            data = handle.read(limit)
+            data = handle.read()
     except PermissionError as error:
         raise read_error("Permission denied", file_path, error) from error
     except OSError as error:
         raise read_error("Cannot read file", file_path, error) from error
 
-    mime_type = file_mime_type(file_path, sample)
-    text_chunk = None
+    mime_type = file_mime_type(file_path, data[:8192])
+    text = None
     if is_text_mime_type(mime_type):
-        text_chunk = decode_utf8_chunk(data, offset=offset, eof=offset + len(data) == file_stat.st_size)
-    if text_chunk is not None:
-        text, bytes_read = text_chunk
-        if data and bytes_read == 0:
-            raise ToolError("limit is too small for the next UTF-8 character")
-        payload = TextContent(type="text", text=text)
+        with suppress(UnicodeDecodeError):
+            text = data.decode()
+    uri = file_path.as_uri()
+    if text is not None:
+        resource = TextResourceContents(uri=uri, mimeType=mime_type, text=text)
         encoding = "utf-8"
     else:
-        bytes_read = len(data)
-        encoded = base64.b64encode(data).decode("ascii")
-        complete = offset == 0 and bytes_read == file_stat.st_size
-        if complete and mime_type.startswith("image/"):
-            payload = ImageContent(type="image", data=encoded, mimeType=mime_type)
-        elif complete and mime_type.startswith("audio/"):
-            payload = AudioContent(type="audio", data=encoded, mimeType=mime_type)
-        else:
-            end = offset + bytes_read
-            uri = file_path.as_uri() if complete else f"{file_path.as_uri()}#bytes={offset}-{end}"
-            payload = EmbeddedResource(
-                type="resource",
-                resource=BlobResourceContents(
-                    uri=uri,
-                    mimeType=mime_type if complete else "application/octet-stream",
-                    blob=encoded,
-                ),
-            )
+        resource = BlobResourceContents(
+            uri=uri,
+            mimeType=mime_type,
+            blob=base64.b64encode(data).decode("ascii"),
+        )
         encoding = "base64"
 
-    next_offset = offset + bytes_read
-    eof = next_offset == file_stat.st_size
     metadata = {
         "path": str(file_path),
         "mime_type": mime_type,
         "encoding": encoding,
         "size": file_stat.st_size,
-        "offset": offset,
-        "bytes_read": bytes_read,
-        "next_offset": None if eof else next_offset,
-        "eof": eof,
+        "bytes_read": len(data),
     }
     return ToolResult(
-        content=[TextContent(type="text", text=json.dumps(metadata, separators=(",", ":"))), payload],
+        content=[
+            TextContent(type="text", text=json.dumps(metadata, separators=(",", ":"))),
+            EmbeddedResource(type="resource", resource=resource),
+        ],
         structured_content=metadata,
     )
 

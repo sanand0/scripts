@@ -1,5 +1,51 @@
 # MCP Server
 
+## Dynamic paths in docstring, 27 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify mcpserver.py as follows:
+
+Rename `read()` to `download_file()` and make sure it always returns the complete file as an EmbeddedResource, even for text files.
+
+Add a `cwd=` parameter to the `bash()` tool.
+
+On startup, auto-detect which of the directories mentioned in the `bash` docstring are mounted, whether they're read-write or read-only, and mention accordingly.
+Also mention the cwd:
+In other words, create the docstring dynamically. It might look like:
+
+```
+cwd: ~/code/scripts (read-write)
+
+mounted paths:
+~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges (read-only)
+~/Dropbox/notes/about/*.md - people or company specific notes (writeable)
+~/Documents/data/
+  s.anand@gramener.com/ - work email, chat, calendar exports. Use `gws` for latest (read-only)
+  root.node@gmail.com/ - personal email, calendar exports. Use `gws` for latest (read-only)
+  whatsapp/ - whatsapp exports. Use `jaq` fields `.time`, `.author`, `.text`. (read-only)
+  browsing-history.db (SELECT url, timestamp, visit_count, ... FROM activity) (read-only)
+~/code/talks/README.md - talk transcripts, slides (read-only)
+... (etc.)
+```
+
+It might make sense to put this into a data structure and generate from it.
+
+---
+
+Could we make `MOUNTED_PATHS` carry only the display and the description, and infer the probe from the display?
+
+On startup, print the `mounted` paths.
+
+---
+
+I made a few minor tweaks to mcpserver.py. Run the tests and if they still pass, leave things as they are. Else update tests to reflect my changes.
+
+<!-- codex resume 019fa2b5-44af-75e0-872a-63c55a0ffbe5 --yolo -->
+
 ## Add read tool, 17 Jul 2026
 
 <!--
