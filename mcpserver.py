@@ -418,13 +418,13 @@ def run_bash_command(commands: str, timeout_ms: int) -> tuple[str, dict[str, Any
 @mcp.tool()
 async def bash(commands: str, timeout_ms: int = 30_000) -> str:
     """Runs multiline bash script.
-Under `~` = `/home/vscode/` (`/home/sanand` also works) you have:
+Under `~` = `/home/vscode` (`/home/sanand` also works) you have:
 
-Skills are already in Claude, not yet on ChatGPT:
+Skills:
 ~/code/scripts/agents/*/SKILL.md - coding + thinking skills
 ~/code/blog/pages/skills/*/SKILL.md - thinking skills
 
-Content (mostly read-only):
+Content (mounted read-only):
 ~/Dropbox/notes/transcripts/YYYY-MM-DD*.md - date-window by filename, then read narrow ranges
 ~/Dropbox/notes/about/*.md - people or company specific notes
 ~/Dropbox/notes/ - notes archive; recently edited files are useful
@@ -444,32 +444,34 @@ Content (mostly read-only):
 ~/Documents/activities/ - daily activity logs
 ~/Documents/Mail/{*.mbox,mail-index.sqlite} - 2005-2025 email archives + index (use immutable=1)
 
-Avoid broad scans over `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives unless necessary.
+Avoid broad scans over large file lists - `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives - unless necessary.
   Scope to known subdirs. Prefer `fd`/`rg` because they respect `.gitignore` by default.
   Check shape (dir count, file size, match count, ...) first.
-First locate candidate files with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
-  THEN inspect the best files with `path:line` evidence.
-  Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
+Avoid wasting tool calls on wrong files by
+  Verifying paths with `pwd`, `ls`, or `test -e`.
+  Locaating best candidates with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
+  Searching best matches with `path:line` evidence.
+Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
 Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
 
 This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
 
 CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
-For ad-hoc Python outside a project, prefer `uv run --no-project --with pkg1 --with pkg2 -- python - <<'PY'`.
-For project commands, `cd` into the project and use its environment normally.
+For ad-hoc Python, prefer `uv run --no-project --with pkg1 --with pkg2 -- python - <<'PY'`.
 
-gws can access email, calendar, chat, drive:
-  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}' # For work email
-  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws ... # For personal email
+gws can access work email, calendar, chat, drive:
+  gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
   gws calendar events list --params '{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}'
+For personal email (root.node@gmail.com) use:
+  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws gmail users messages list --params '{"userId":"me", "q": "from:..."}'
 
-Verify paths with `pwd`, `ls`, or `test -e` before deep scans.
 Use `set -euo pipefail` for deterministic scripts.
   Handle expected misses (`rg ... || true`, `test -e`, optional files) printing concise diagnostics.
   Capped pipelines like `rg ... | head` can exit 141 from SIGPIPE.
   Wrap expected capped/no-match pipelines in `( ... | head -N || true )`.
 Batch related probes into one script with section headers.
   Avoid re-running identical discovery commands unless new evidence changed the scope.
+Batch multiple commands into fewer tool calls to avoid call overhead.
 
 Keep stdout bounded to ~200 lines/ ~20KB.
   Save large intermediate output to /tmp; print only summaries and paths.

@@ -1,6 +1,6 @@
 ---
 name: expert-lens
-description: Use this for non-trivial analysis, design, diagnosis, review, strategy, or judgment. Skip it for simple lookups, mechanical rewrites, and pure tone tasks.
+description: Use when domain expertise will significantly change the criteria, recommendations, risks. Skip for routine analysis, mechanical work, etc.
 ---
 
 Apply experts' procedure. Do not just "act as an expert." Think like the expert but keep the reasoning internal.
@@ -13,7 +13,7 @@ Apply experts' procedure. Do not just "act as an expert." Think like the expert 
 3. Check what expertise matters.
    - High-validity domains: stable patterns, fast clear feedback, objective checks. Trust expert pattern recognition but verify.
    - Low-validity domains: strategy, novel markets, long-horizon prediction, governance. Use expert process, taxonomies, base rates, falsifiers, and leading indicators. Do not trust expert confidence or gut feel.
-4. Pick 1–3 lenses that could significantly change the answer. For each, list:
+4. Apply only the expert procedures or lenses that significantly change the answer. For each, list:
    - What they'd notice
    - The mental model they'd apply
    - The question they'd ask

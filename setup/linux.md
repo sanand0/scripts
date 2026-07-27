@@ -80,6 +80,11 @@ rm /tmp/dropbox.deb
 wget -qO- https://deb.opera.com/archive.key | gpg --dearmor | sudo tee /usr/share/keyrings/opera-browser.gpg > /dev/null
 sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/opera-browser.gpg] https://deb.opera.com/opera-stable/ stable non-free" > /etc/apt/sources.list.d/opera-stable.list'
 sudo apt update && sudo apt install -y opera-stable
+
+# Claude Desktop. https://code.claude.com/docs/en/desktop-linux
+sudo curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc https://downloads.claude.ai/claude-desktop/key.asc
+echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" | sudo tee /etc/apt/sources.list.d/claude-desktop.list
+sudo apt update && sudo apt install -y claude-desktop
 ```
 
 Upgrade via `sudo apt update && sudo apt upgrade -y`
@@ -141,6 +146,7 @@ mise use -g 'github:phiresky/ripgrep-all[extract_all=true]'   # rga - ripgrep th
 mise use -g age                       # age - Modern, simple encryption for files & backups (tar | age)
 mise use -g ast-grep                  # ast-grep - AST-based code search and rewriting tool
 mise use -g aws-cli                   # AWS CLI - Amazon Web Services command-line interface 🔴 Rarely used
+mise use -g bun                       # bun - Fast all-in-one JavaScript runtime, bundler, transpiler, package manager
 mise use -g bat                       # bat - cat clone with syntax highlighting 🟡 exploring moor since keyboard-based wrapping is missing
 mise use -g caddy                     # caddy - Web server with automatic HTTPS
 mise use -g cloudflared               # cloudflared - Cloudflare Tunnel client
@@ -505,8 +511,10 @@ EOF
 mkdir -p ~/.local/share/fonts
 curl -sL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.tar.xz -o ~/.local/share/fonts/FiraCode.tar.xz
 tar -xf ~/.local/share/fonts/FiraCode.tar.xz -C ~/.local/share/fonts
-curl -sL https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-Variable.zip -o ~/.local/share/fonts/MapleMono-Variable.zip
-unzip ~/.local/share/fonts/MapleMono-Variable.zip -d ~/.local/share/fonts
+# curl -sL https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-Variable.zip -o ~/.local/share/fonts/MapleMono-Variable.zip
+# unzip ~/.local/share/fonts/MapleMono-Variable.zip -d ~/.local/share/fonts
+curl -sL "https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-static-v1.400.zip" -o ~/.local/share/fonts/monaspace-static-v1.400.zip
+unzip -j -q ~/.local/share/fonts/monaspace-static-v1.400.zip -d ~/.local/share/fonts
 curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Bold-Italic.ttf -o ~/.local/share/fonts/Consolas-Bold-Italic.ttf
 curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Bold.ttf -o ~/.local/share/fonts/Consolas-Bold.ttf
 curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consolas-Italic.ttf -o ~/.local/share/fonts/Consolas-Italic.ttf
