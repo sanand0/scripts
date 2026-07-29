@@ -305,6 +305,38 @@ def test_bash_tool_exposes_and_uses_cwd_and_dynamic_mount_description(tmp_path, 
     assert result.content[0].text.strip() == str(tmp_path)
 
 
+def test_tools_warn_and_ignore_unknown_parameters(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+    path = tmp_path / "hello.txt"
+    path.write_text("hello")
+    logs = []
+
+    async def handle_log(log):
+        logs.append(log)
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp, log_handler=handle_log) as client:
+            bash_result = await client.call_tool(
+                "bash",
+                {"commands": "printf ok", "description": "Print a test value"},
+            )
+            download_result = await client.call_tool(
+                "download_file",
+                {"path": str(path), "description": "Download a test file"},
+            )
+            return bash_result, download_result
+
+    bash_result, download_result = asyncio.run(exercise_tool())
+
+    assert bash_result.content[0].text == "ok"
+    assert download_result.content[1].resource.text == "hello"
+    assert sum(
+        log.level == "warning"
+        and log.data["msg"] == "Unknown parameters will be ignored: description"
+        for log in logs
+    ) == 2
+
+
 def test_build_bash_description_omits_unmounted_paths(tmp_path, monkeypatch) -> None:
     mounted = tmp_path / "mounted path"
     mounted.mkdir()

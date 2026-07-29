@@ -297,7 +297,28 @@ class RequestLogMiddleware(Middleware):
         return result
 
 
+class IgnoreUnknownParametersMiddleware(Middleware):
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, ToolResult],
+    ) -> ToolResult:
+        tool = await mcp.get_tool(context.message.name)
+        if tool is None:
+            return await call_next(context)
+        arguments = context.message.arguments or {}
+        unknown = arguments.keys() - tool.parameters.get("properties", {})
+        if unknown:
+            await context.fastmcp_context.warning(
+                f"Unknown parameters will be ignored: {', '.join(sorted(unknown))}"
+            )
+            for name in unknown:
+                arguments.pop(name)
+        return await call_next(context)
+
+
 mcp.add_middleware(RequestLogMiddleware())
+mcp.add_middleware(IgnoreUnknownParametersMiddleware())
 
 
 def load_env_token(name: str) -> str:

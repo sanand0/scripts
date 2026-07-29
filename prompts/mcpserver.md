@@ -1,5 +1,24 @@
 # MCP Server
 
+## All parameter, 29 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Claude.ai, when calling the bash tool, sent a `description` parameter.
+Maybe other tools might add other parameters in the future.
+Rather than failing on unknown parameters, the MCP server should accept all parameters, ignore unknown ones, log a crisp warning mentioning that the unknown parameters were and will be ignored, and continue to process the request.
+Make the MINIMIAL code changes required for this.
+Write tests, run, fail, fix, run, pass.
+
+---
+
+Apply this to the download tool, too.
+
+<!-- codex resume 019facad-d6d2-77e1-a54a-75807ecb1d80 --yolo -->
+
 ## Dynamic paths in docstring, 27 Jul 2026
 
 <!--
