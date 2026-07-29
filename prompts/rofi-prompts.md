@@ -1,5 +1,18 @@
 # Rofi prompts
 
+## Include descriptions, 29 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify rofi-prompts.sh to display the `description:` from `~/code/blog/pages/prompts/*.md` where available.
+
+If possible, try to do this in a way that simplifies and shortens the overall code without changing functionality, rather than adding more (or much) code.
+
+<!-- codex resume 019fabdc-367c-7902-9466-7ec7e257bd97 --yolo -->
+
 ## Wrap skills, 29 Jun 2026
 
 <!--

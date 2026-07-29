@@ -26,10 +26,10 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
-CACHE_VERSION="v5"
+CACHE_VERSION="v6"
 SKILLS_ROOT="$HOME/code/scripts/agents"
 BLOG_SKILLS_ROOT="$HOME/code/blog/pages/skills"
-SKILL_DESCRIPTION_MAX=44
+DESCRIPTION_MAX=44
 
 TARGET="$DEFAULT_TARGET"
 BENCHMARK=0
@@ -96,7 +96,7 @@ extract_after_front_matter() {
 format_skill() {
   local file="$1" skill_name skill_description escaped_description body
   skill_name="$(get_skill_name "$file")"
-  skill_description="$(get_skill_description "$file")"
+  skill_description="$(get_description "$file")"
   body="$(extract_after_front_matter "$file")"
   if [[ -n "$skill_description" ]]; then
     escaped_description="$(printf '%s' "$skill_description" | xml_attr_escape)"
@@ -148,7 +148,7 @@ get_doc_title() {
 }
 
 truncate_description() {
-  local text="$1" max="${2:-$SKILL_DESCRIPTION_MAX}"
+  local text="$1" max="${2:-$DESCRIPTION_MAX}"
 
   if [[ ${#text} -le "$max" ]]; then
     printf '%s\n' "$text"
@@ -162,11 +162,10 @@ get_skill_name() {
   basename "$(dirname "$file")"
 }
 
-get_skill_description() {
-  local file="$1"
+get_description() {
   awk '
-    /^description: / {
-      sub(/^description:[[:space:]]*/, "")
+    /^description:[[:space:]]+/ {
+      sub(/^description:[[:space:]]+/, "")
       if ($0 ~ /^".*"$/) {
         sub(/^"/, "")
         sub(/"$/, "")
@@ -174,7 +173,7 @@ get_skill_description() {
       print
       exit
     }
-  ' "$file"
+  ' "$1"
 }
 
 xml_attr_escape() {
@@ -339,26 +338,30 @@ build_index_from_files() {
   LABELS=()
   META=()
 
-  local file doc_title
+  local file doc_title description
   for file in "${FILES[@]}"; do
     doc_title="$(get_doc_title "$file")"
+    description="$(get_description "$file")"
+    if [[ -n "$description" ]]; then
+      description=": $(truncate_description "$description")"
+    fi
     mapfile -t headings < <(list_h2_with_fence "$file")
 
     if [[ ${#headings[@]} -gt 0 ]]; then
       local heading
       for heading in "${headings[@]}"; do
-        LABELS+=("${doc_title} › ${heading}")
+        LABELS+=("${doc_title} › ${heading}${description}")
         META+=("prompt"$'\t'"${file}"$'\t'"${heading}")
       done
     elif has_any_fence "$file"; then
-      LABELS+=("${doc_title}")
+      LABELS+=("${doc_title}${description}")
       META+=("prompt"$'\t'"${file}"$'\t')
     fi
   done
 
   local skill_file skill_name skill_description label_description
   for skill_file in "${SKILL_FILES[@]}"; do
-    skill_description="$(get_skill_description "$skill_file")"
+    skill_description="$(get_description "$skill_file")"
     skill_name="$(get_skill_name "$skill_file")"
     if [[ -n "$skill_description" ]]; then
       label_description="$(truncate_description "$skill_description")"
