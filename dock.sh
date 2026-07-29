@@ -26,24 +26,28 @@ exec 9>/tmp/dock-sh.lock
 /usr/bin/flock -n 9 || exit 0
 
 # Disable extensions
+/usr/bin/gnome-extensions disable "claude-code-usage@haletran.com"
+sleep 0.15
 /usr/bin/gnome-extensions disable "Vitals@CoreCoding.com"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions disable "ubuntu-appindicators@ubuntu.com"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions disable "emoji-copy@felipeftn"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions disable "clipboard-history@alexsaveau.dev"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions disable "dash-to-panel@jderose9.github.com"
 sleep 1
 
 # Enable extensions
 /usr/bin/gnome-extensions enable "dash-to-panel@jderose9.github.com"
-sleep 1
+sleep 0.15
 /usr/bin/gnome-extensions enable "clipboard-history@alexsaveau.dev"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions enable "emoji-copy@felipeftn"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions enable "ubuntu-appindicators@ubuntu.com"
-sleep 0.2
+sleep 0.15
 /usr/bin/gnome-extensions enable "Vitals@CoreCoding.com"
+sleep 0.15
+/usr/bin/gnome-extensions enable "claude-code-usage@haletran.com"
