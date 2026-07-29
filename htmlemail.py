@@ -14,7 +14,7 @@
 #     "google-api-python-client>=2.0.0",
 # ]
 # ///
-"""Convert markdown posts to email-friendly HTML and optionally send via Gmail."""
+"""Convert HTML or Markdown to email-friendly HTML and optionally send via Gmail."""
 
 from __future__ import annotations
 
@@ -394,10 +394,17 @@ def frontmatter_base_url(post: frontmatter.Post) -> str | None:
     return None
 
 
-def render_email(markdown_file: Path, base_url: str | None = None) -> RenderedEmail:
-    """Convert a markdown file to email-friendly HTML."""
-    post = frontmatter.load(markdown_file)
-    content = re.sub(r"\\[ \t]*(\r?\n)", r"\1", post.content)
+def render_email(
+    input_file: Path,
+    base_url: str | None = None,
+    input_format: str | None = None,
+) -> RenderedEmail:
+    """Render an HTML or Markdown file as email-friendly HTML."""
+    input_format = input_format or ("html" if input_file.suffix.lower() in {".html", ".htm"} else "markdown")
+    if input_format not in {"html", "markdown"}:
+        raise HtmlemailError("--input-format must be html or markdown")
+
+    post = frontmatter.load(input_file)
 
     def highlight_code(code: str, lang: str | None, _attrs: str) -> str | None:
         if not lang:
@@ -409,19 +416,24 @@ def render_email(markdown_file: Path, base_url: str | None = None) -> RenderedEm
         formatter = HtmlFormatter(style="default", nowrap=True)
         return pygments_highlight(code, lexer, formatter)
 
-    md = (
-        MarkdownIt(
-            "commonmark",
-            {
-                "html": True,
-                "breaks": True,
-                "highlight": highlight_code,
-            },
+    if input_format == "markdown":
+        content = re.sub(r"\\[ \t]*(\r?\n)", r"\1", post.content)
+        md = (
+            MarkdownIt(
+                "commonmark",
+                {
+                    "html": True,
+                    "breaks": True,
+                    "highlight": highlight_code,
+                },
+            )
+            .enable("table")
+            .enable("strikethrough")
         )
-        .enable("table")
-        .enable("strikethrough")
-    )
-    html_content = md.render(content)
+        html_content = md.render(content)
+    else:
+        html_content = post.content
+
     html_content = replace_youtube_embeds(html_content)
     html_content = replace_media_embeds(html_content)
 
@@ -439,11 +451,11 @@ def render_email(markdown_file: Path, base_url: str | None = None) -> RenderedEm
                 f"or frontmatter base_url/canonical_url/url was provided: {preview}{more}"
             )
 
-    formatter = HtmlFormatter(style="default")
-    pygments_css = formatter.get_style_defs("pre code")
     subject = post.get("title", "Blog Post")
 
-    html_template = f"""
+    if input_format == "markdown":
+        pygments_css = HtmlFormatter(style="default").get_style_defs("pre code")
+        html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -522,13 +534,17 @@ def render_email(markdown_file: Path, base_url: str | None = None) -> RenderedEm
     </html>
     """
 
-    email_html = transform(html_template)
-    return RenderedEmail(subject=str(subject), html=email_html, base_url=resolved_base_url, warnings=warnings)
+    return RenderedEmail(
+        subject=str(subject),
+        html=transform(html_content),
+        base_url=resolved_base_url,
+        warnings=warnings,
+    )
 
 
 def markdown_to_email_html(markdown_file: Path, base_url: str | None = None) -> tuple[str, str]:
     """Backward-compatible wrapper returning only subject and HTML."""
-    rendered = render_email(markdown_file, base_url)
+    rendered = render_email(markdown_file, base_url, "markdown")
     return rendered.subject, rendered.html
 
 
@@ -661,171 +677,55 @@ def send_email(
     gmail_service.users().messages().send(userId="me", body={"raw": raw_message}).execute()
 
 
-def run_tests() -> None:
-    """Run minimal inline tests without requiring Google credentials."""
-    import tempfile
-
-    def render(md: str, *, fm: str = "title: Test", base_url: str | None = "https://example.com/blog/post/") -> tuple[str, str]:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "post.md"
-            path.write_text(f"---\n{fm}\n---\n\n" + md)
-            subject, html = markdown_to_email_html(path, base_url)
-            return subject, html
-
-    _subject, html = render("- A\n  - B\n")
-    assert "<ul" in html and "<li" in html and "B" in html
-
-    _subject, html = render("```python\nprint('hi')\n```\n")
-    assert "print" in html and "<pre" in html and "<code" in html
-
-    _subject, html = render("| A | B |\n| - | - |\n| 1 | 2 |\n")
-    assert "<table" in html and "<th" in html and "<td" in html
-
-    _subject, html = render('<div markdown="1">**bold**</div>')
-    assert "<div" in html and "**bold**" in html
-
-    _subject, html = render('<iframe src="https://www.youtube.com/embed/abc123"></iframe>')
-    assert "youtu.be/abc123" in html and "i.ytimg.com" in html
-
-    _subject, html = render(
-        """
-<video controls poster="../poster.webp" title="Demo walkthrough">
-  <source src="../clip.webm" type="video/webm">
-  <source src="../clip.mp4" type="video/mp4">
-  <track kind="captions" src="../clip.en.vtt" srclang="en" label="English">
-</video>
-"""
-    )
-    assert "<video" not in html
-    assert "<strong>Video:</strong>" in html and "Watch video" in html
-    assert "https://example.com/blog/clip.webm" in html
-    assert "<strong>Captions:</strong>" in html
-    assert "https://example.com/blog/clip.en.vtt" in html
-
-    _subject, html = render(
-        """
-<audio controls aria-label="Interview recording">
-  <source src="../episode.ogg" type="audio/ogg">
-  <source src="../episode.mp3" type="audio/mpeg">
-  <track kind="subtitles" src="../episode.en.vtt" srclang="en">
-</audio>
-"""
-    )
-    assert "<audio" not in html
-    assert "<strong>Audio:</strong>" in html and "Listen to audio" in html
-    assert "https://example.com/blog/episode.ogg" in html
-    assert "<strong>Captions:</strong>" in html
-    assert "https://example.com/blog/episode.en.vtt" in html
-
-    _subject, html = render("[rel](../x)\n\n![img](../i.png)\n")
-    assert "https://example.com/blog/x" in html
-    assert "https://example.com/blog/i.png" in html
-    assert "s-anand.net" not in html
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "post.md"
-        path.write_text("---\ntitle: Test\n---\n\n[rel](../x)\n\n![img](../i.png)\n")
-        rendered = render_email(path, None)
-        assert "../x" in rendered.html and "../i.png" in rendered.html
-        assert rendered.warnings and "Relative href/src URLs" in rendered.warnings[0]
-        assert "s-anand.net" not in rendered.html
-
-    _subject, html = render(
-        "[rel](../x)\n",
-        fm="title: Test\nbase_url: https://frontmatter.example/blog/post/",
-        base_url=None,
-    )
-    assert "https://frontmatter.example/blog/x" in html
-
-    _subject, html = render("Line 1\\\nLine 2\n")
-    assert "Line 1" in html and "Line 2" in html and "<br" in html
-
-    assert format_recipients(["a@example.com", "b@example.com"]) == "a@example.com, b@example.com"
-    token_name = token_filename_for_email("A.B+X@Gmail.COM")
-    assert token_name.startswith("a_b_x_gmail_com-") and token_name.endswith(".json")
-    assert canonical_scope_set(SCOPES) == canonical_scope_set(
-        "openid https://www.googleapis.com/auth/userinfo.email "
-        "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/gmail.send"
-    )
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        old_config_dir = os.environ.get("HTMLEMAIL_CONFIG_DIR")
-        os.environ["HTMLEMAIL_CONFIG_DIR"] = tmpdir
-        try:
-            assert get_config_dir().exists()
-            cfg = load_config()
-            cfg.setdefault("profiles", {})["a@example.com"] = {"verified_email": "a@example.com"}
-            save_config(cfg)
-            assert load_config()["profiles"]["a@example.com"]["verified_email"] == "a@example.com"
-        finally:
-            if old_config_dir is None:
-                os.environ.pop("HTMLEMAIL_CONFIG_DIR", None)
-            else:
-                os.environ["HTMLEMAIL_CONFIG_DIR"] = old_config_dir
-
-    validate_sender_identity("a@example.com", {"email": "A@Example.com"})
-    try:
-        validate_sender_identity("a@example.com", {"email": "b@example.com"})
-    except HtmlemailError as exc:
-        assert "Authenticated Google account" in str(exc)
-    else:
-        raise AssertionError("sender mismatch should fail")
-
-    typer.echo("✓ Tests passed")
-
-
 def main(
-    markdown_file: Path | None = typer.Argument(None, help="Markdown file path to convert"),
+    input_file: Path | None = typer.Argument(None, help="HTML or Markdown file path to render"),
     email: list[str] = typer.Option(None, "--email", help="Send email via Gmail API; repeat for multiple recipients"),
     cc: list[str] = typer.Option(None, "--cc", help="CC email address; repeat for multiple recipients"),
     from_email: str | None = typer.Option(None, "--from", help="Gmail account to authenticate and send from"),
     base_url: str | None = typer.Option(None, "--base-url", help="Base URL used to resolve relative href/src links"),
+    input_format: str | None = typer.Option(None, "--input-format", help="Input format: html or markdown (default: infer from extension)"),
     init: bool = typer.Option(False, "--init", help="Copy OAuth client secrets into the app config directory"),
     client_secrets: Path | None = typer.Option(None, "--client-secrets", help="Path to Google OAuth desktop client secrets JSON"),
     show_config_flag: bool = typer.Option(False, "--show-config", help="Show config, credentials, token paths, and known profiles"),
     logout_from_email: str | None = typer.Option(None, "--logout-from", help="Delete the saved token/profile for this sender"),
     reauth: bool = typer.Option(False, "--reauth", help="Force a new OAuth login for --from"),
     token: Path | None = typer.Option(None, "--token", help="Deprecated: explicit token path override for migration/debugging"),
-    test: bool = typer.Option(False, "--test", help="Run inline tests and exit"),
 ) -> None:
-    """Convert markdown to email-friendly HTML, or send it through Gmail.
+    """Render HTML or Markdown as email-friendly HTML, or send it through Gmail.
 
     Examples:
 
         uv run htmlemail.py --init --client-secrets ~/Downloads/credentials.json
         uv run htmlemail.py post.md --base-url https://example.com/blog/post/
+        uv run htmlemail.py newsletter.html
         uv run htmlemail.py post.md --from you@gmail.com --email friend@example.com
     """
     try:
-        if test:
-            run_tests()
-            raise typer.Exit(0)
-
         if init:
             if not client_secrets:
                 raise HtmlemailError("--init requires --client-secrets PATH")
             target = init_config(client_secrets)
             eprint(f"✓ Saved OAuth client secrets to {target}")
-            if not markdown_file and not show_config_flag:
+            if not input_file and not show_config_flag:
                 raise typer.Exit(0)
 
         if logout_from_email:
             logout_from(logout_from_email)
-            if not markdown_file and not show_config_flag:
+            if not input_file and not show_config_flag:
                 raise typer.Exit(0)
 
         if show_config_flag:
             show_config()
-            if not markdown_file:
+            if not input_file:
                 raise typer.Exit(0)
 
-        if not markdown_file:
-            raise HtmlemailError("markdown_file is required unless --test, --init, --show-config, or --logout-from is used")
+        if not input_file:
+            raise HtmlemailError("input_file is required unless --init, --show-config, or --logout-from is used")
 
-        if not markdown_file.exists():
-            raise HtmlemailError(f"File not found: {markdown_file}")
+        if not input_file.exists():
+            raise HtmlemailError(f"File not found: {input_file}")
 
-        rendered = render_email(markdown_file, base_url)
+        rendered = render_email(input_file, base_url, input_format)
         for warning in rendered.warnings:
             eprint(f"Warning: {warning}")
 

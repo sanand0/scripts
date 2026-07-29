@@ -1,14 +1,32 @@
 # htmlemail
 
+## Allow sending HTML files, 29 Jul 2026
+
 <!--
-
-cd /home/sanand/code/scripts
-dev.sh -v /home/sanand/code/blog:/home/sanand/code/blog:ro
-codex --yolo --model gpt-5.5 --config model_reasoning_effort=low
-
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
 -->
 
+Modify htmlemail.py to allow a HTML or Markdown file to be sent as an email.
+Auto-detect based on the extension but allow a CLI to override.
+For example, `htmlemail.py x.html` should treat the input as HTML without the need to convert to Markdown.
+However, the premailer transform would still apply.
+
+Keep the change minimal and simple. If possible, make the code even simpler, shorter, and more readable than it is now.
+
+---
+
+Move the tests into tests/test_htmlemail.py in a structure similar to the other recent tests.
+Run and test.
+
+<!-- codex resume codex resume 019fac5a-a3b8-77d1-8dc9-0c74faba697b --yolo -->
+
 ## Generalize, 28 Apr 2026
+
+<!--
+cd /home/sanand/code/scripts
+dev.sh -v /home/sanand/code/blog:/home/sanand/code/blog:ro -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=low
+-->
 
 <!-- https://chatgpt.com/c/69f0c0c1-6200-83ea-8df1-87cd33e53da8 -->
 
