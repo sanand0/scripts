@@ -26,6 +26,7 @@ set -euo pipefail
 
 DEFAULT_TARGET="$HOME/code/blog/pages/prompts"
 CACHE_DIR="$HOME/.cache/sanand-scripts/rofi-prompts"
+LOG_FILE="$HOME/.local/share/sanand-scripts/rofi-prompts-log.tsv"
 CACHE_VERSION="v6"
 SKILLS_ROOT="$HOME/code/scripts/agents"
 BLOG_SKILLS_ROOT="$HOME/code/blog/pages/skills"
@@ -462,4 +463,6 @@ if [[ -z "${CODE:-}" ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname "$LOG_FILE")"
+printf '%s\t%s\n' "$(date --iso-8601=seconds)" "$CHOICE" >> "$LOG_FILE"
 copy_or_type "$CODE"

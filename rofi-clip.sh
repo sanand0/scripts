@@ -5,6 +5,7 @@
 set -Eeuo pipefail
 
 DEBUG_LOG="${ROFI_CLIP_DEBUG_LOG:-/tmp/rofi-clip.log}"
+ACTIVATION_LOG="$HOME/.local/share/sanand-scripts/rofi-clip-log.tsv"
 RUN_ID="$(date '+%Y%m%dT%H%M%S%z')-$$"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 LOG_ENABLED=0
@@ -541,6 +542,8 @@ main() {
         log_debug "clipboard_write skipped_by_handler=1"
     fi
 
+    mkdir -p "$(dirname "$ACTIVATION_LOG")"
+    printf '%s\t%s\n' "$(date --iso-8601=seconds)" "$CHOICE" >> "$ACTIVATION_LOG"
     log_debug "run_end success=1"
 }
 

@@ -1,5 +1,16 @@
 # Rofi prompts
 
+## Save usage, 30 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Update `rofi-prompts.sh` minimally to log the prompt activated. Save in ~/.local/share/sanand-scripts/rofi-prompts-log.tsv with timestamp and the prompt name.
+
+<!-- codex resume 019fb0bf-0297-72d2-b5d5-af4192616b5b --yolo -->
+
 ## Include descriptions, 29 Jul 2026
 
 <!--

@@ -1,5 +1,16 @@
 # Rofi Clip
 
+## Save usage, 30 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex resume 019fb0bf-0297-72d2-b5d5-af4192616b5b --yolo
+-->
+
+Update `rofi-clip.sh` minimally to log clipboard transform activated. Save in ~/.local/share/sanand-scripts/rofi-clip-log.tsv with timestamp and the transform name.
+
+<!-- codex resume 019fb0bf-0297-72d2-b5d5-af4192616b5b --yolo -->
+
 ## Use sans-serif unicode font, 06 Jun 2026
 
 <!--
