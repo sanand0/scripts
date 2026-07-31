@@ -79,6 +79,7 @@ Here are the setup details for my laptops.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [discourse.py](discourse.py) extracts recent posts from a Discourse category or topic.
 - [dock.sh](dock.sh) restarts GNOME user extensions and the Ubuntu AppIndicators extension after screen blanking breaks the dock/tray state.
+- [fish_usage.py](fish_usage.py) shows the most common fish commands used in the last 90 days.
 - [freeslots.py](freeslots.py) suggests preferred and fallback meeting slots from Google Calendar free/busy data via `gws`, explicitly showing my time zone and the requested time zone with DST-aware abbreviations. It skips weekends for broad searches, moves recognized-holiday slots to the fallback section with the holiday name, honors explicit one-day dates, and keeps the longest 3 slots per day unless overridden. Examples: `freeslots.py --timezone UK --days 7`, `freeslots.py --timezone "San Francisco" --since tomorrow --until "next friday" --slots-per-day 2`, `freeslots.py --timezone ET --duration 45 --include-weekends --format json | jaq .`.
 - [gitget](gitget) clones a git repository and copies specific paths to local directories.
 - [git-size](git-size) shows the size of changes that `git add <repo-root>` would stage in net lines and total bytes. <!-- https://chatgpt.com/c/6a237662-c664-83ec-9416-97eb1a4b82a1 -->
