@@ -124,6 +124,14 @@ abbr --add mail cmdg
 abbr --add gcalcli 'uvx gcalcli'
 abbr --add agenda 'uvx gcalcli agenda --calendar $EMAIL --nodeclined $(date -Ihours) (date -I --date "+2 days")'
 
+# Google Tasks command line. https://chatgpt.com/c/6a6c3ec7-9928-83ec-8108-9e0e8d32d770
+function googletasks --description "Show open Google Tasks, newest first"
+    set -lx GOOGLE_WORKSPACE_CLI_CONFIG_DIR $HOME/.config/gws-root.node@gmail.com
+    gws tasks tasklists list --page-all --params '{"maxResults":100}' | jaq -r '.items[]? | [.id,.title] | @tsv' | while read id list
+        gws tasks tasks list --page-all --params (jaq -cn --arg id $id '{tasklist:$id,maxResults:100}') | jaq -c --arg list $list '.items[]? | {updated,title,notes:(.notes//""),list:$list}'
+    end | jaq -sr 'sort_by(.updated)|reverse|.[]|"- \(.updated|fromdateiso8601|.+28800|strftime("%d %b %Y")). \(.title) #\(.list)"+if .notes=="" then "" else "\n  "+(.notes|gsub("\\r\\n?";"\n")|gsub("\n";"\n  ")) end'
+end
+
 # Size of all `git add` files
 abbr --add gitaddsize 'git ls-files -s | awk "{print \$4}" | xargs ls -la | sort -k 5n'
 
@@ -657,17 +665,6 @@ categories:
     end
 end
 
-# Like llm -e but with streaming.
-function copycode --description 'Stream + copy last code fence. Usage: llm "Write Tetris in Python" | copycode'
-    tee /dev/tty | awk 'BEGIN{f=0} /```/{f=!f; next} f{buf=buf$0"\n"} END{print buf}' | xclip -selection clipboard
-end
-
-function pasteit --description "Paste output into buffer. Usage: llm -t fish 'Largest file' | pasteit"
-    read -l buf
-    commandline -r -- $buf
-    commandline -f repaint
-end
-
 function trimdiff --description 'git diff | trimdiff 100 2000 100000 shows first/last 100 lines, max 2000 chars per line, 100K chars total'
     set -l N $argv[1]; test -z "$N"; and set N 100
     set -l C $argv[2]; test -z "$C"; and set C 2000
@@ -707,28 +704,6 @@ function livesync --description "Merge live branch into main (or specified) bran
     git branch -D live
     git checkout -b live
     git push -u origin live
-end
-
-function pyrun --description "Write & run Python code to execute a task"
-    # Join all arguments into one quoted prompt
-    set query (string join ' ' $argv)
-
-    llm "$query" --system '
-Write minimal Python code inside ```python...```
-Begin with inline script dependencies. Example:
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["pandas", ...]
-# ///
-import pandas as pd
-...' \
-    | awk '
-        { print > "/dev/stderr"; all = all $0 ORS }
-        /^```/ { seen = 1; code = !code; next }
-        code   { print; next }
-        END    { if (!seen) print all }
-      ' \
-    | uv run -
 end
 
 function prompt --description "Example: llm --system \"(prompt core-concepts)\" Parenting"
@@ -801,6 +776,7 @@ function pages --description "Serve current directory under a base path via Vite
     return $vite_status
 end
 
+# #TODO - unused so far
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
@@ -808,16 +784,6 @@ end
 function opus --description "opus *.mp4 converts it to *.opus (voice quality)"
     for file in $argv
         ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
-    end
-end
-
-# -b:a 48k is OK for many tracks. 64k works for all on earphones. 80-96k for electronic/classical music
-# -ac 2 is not required. Mono stays mono. 5.1 downmixes to 2 because Opus is max 2 channels
-# -ar 48000 is Opus' native sampling rate
-# -frame_duration 60 is more efficient for music than the default 20 or 40 ms
-function opusmusic --description "opus *.mp4 converts it to *.opus (music quality)"
-    for file in $argv
-        ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 48k -application audio -frame_duration 60 -vbr on -cpu-used 8 -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
     end
 end
 
@@ -871,7 +837,7 @@ end
 abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 
 # https://yazi-rs.github.io/docs/quick-start
-function y
+function y --description "Run yazi to change working directory based on project context"
     set tmp (mktemp -t "yazi-cwd.XXXXXX")
     yazi $argv --cwd-file="$tmp"
     if read -z cwd < "$tmp"; and [ -n "$cwd" ]; and [ "$cwd" != "$PWD" ]
