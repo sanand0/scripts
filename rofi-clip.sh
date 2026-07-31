@@ -214,18 +214,23 @@ normalize_text_to_ascii() {
     # anyascii handles a huge range: Cyrillic, CJK, emoji, typographic chars, etc.
     # Falls back to manual map for the most common typographic substitutions first
     # so we preserve intent (em-dash → hyphen with spaces, bullet -> hyphen, not asterisk).
-    with_input_file uvx --offline --quiet --with anyascii python - <<'PYEOF'
-import sys, anyascii
+    with_input_file uvx --quiet --with anyascii python - <<'PYEOF'
+import anyascii, re, sys
 from pathlib import Path
 
-MANUAL = {
-    '\u2014': ' -- ', # em dash
-    '\u2022': '-',    # bullet
-}
+BOTH_SPACED = '—―'      # Ensure 1 space on both sides of these hyphens
+RIGHT_SPACED = '•⁃‣'    # Ensure 1 space to the right of these bullets
+chars = BOTH_SPACED + RIGHT_SPACED
 
 text = Path(sys.argv[1]).read_text(encoding='utf-8')
-for src, dst in MANUAL.items():
-    text = text.replace(src, dst)
+text = re.sub(
+    rf'(?<=\S)(?=[{re.escape(BOTH_SPACED)}])'
+    rf'|(?<=[{re.escape(chars)}])(?=\S)',
+    ' ',
+    text,
+)
+text = text.translate(str.maketrans(chars, '-' * len(chars)))
+
 # anyascii for everything else
 sys.stdout.write(anyascii.anyascii(text))
 PYEOF
