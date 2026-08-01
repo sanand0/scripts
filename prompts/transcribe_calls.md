@@ -1,5 +1,16 @@
 # Transcribe Calls
 
+## Save model and cost, 01 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify transcribe_calls.py minimally to update the YAML frontmatter of the transcript file to include a `model:` and `cost:` in dollars.
+
+<!-- codex resume 019fbac8-5d4d-7aa3-9d97-273fd135ed44 --yolo -->
+
 ## Add robustness, 14 Jun 2026
 
 <!--

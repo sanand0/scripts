@@ -168,6 +168,22 @@ def set_prompt_metadata(markdown: str, prompt: str) -> str:
     return f"---\n{updated_body}\n---\n\n{remainder}" if remainder else f"---\n{updated_body}\n---\n"
 
 
+def set_model_cost_metadata(markdown: str, model: str, cost_usd: float) -> str:
+    """Add or update the transcription model and dollar cost in note frontmatter."""
+    metadata = f"model: {model}\ncost: {cost_usd:.6f}"
+    match = FRONTMATTER_RE.match(markdown)
+    if not match:
+        return f"---\n{metadata}\n---\n\n{markdown.lstrip()}"
+    body = "\n".join(
+        line
+        for line in match.group("body").splitlines()
+        if not line.startswith(("model:", "cost:"))
+    ).strip()
+    updated_body = f"{metadata}\n{body}" if body else metadata
+    remainder = markdown[match.end() :].lstrip("\n")
+    return f"---\n{updated_body}\n---\n\n{remainder}" if remainder else f"---\n{updated_body}\n---\n"
+
+
 def extract_system_prompt(markdown: str) -> str:
     """Return the first fenced code block content, else the full Markdown body."""
     match = CODE_FENCE_RE.search(markdown)
@@ -1317,20 +1333,38 @@ def main(
                             chunk_minutes=chunk_minutes,
                         )
                     updated_markdown = patch_transcript_section(
-                        updated_markdown, section, section_result.transcript, prompt=note_prompt
+                        updated_markdown,
+                        section,
+                        section_result.transcript,
+                        prompt=note_prompt,
                     )
-                output_path.write_text(updated_markdown, encoding="utf-8")
-            else:
                 output_path.write_text(
-                    (
-                        patch_transcript_section(existing_markdown, patch_section, result.transcript, prompt=note_prompt)
-                        if patch_section is not None
-                        else upsert_transcript_section(
-                            existing_markdown,
-                            audio_path.stem,
-                            result.transcript,
-                            prompt=note_prompt,
-                        )
+                    set_model_cost_metadata(
+                        updated_markdown,
+                        model,
+                        combine_usage_costs(combined_usage).cost_usd,
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                updated_markdown = (
+                    patch_transcript_section(
+                        existing_markdown,
+                        patch_section,
+                        result.transcript,
+                        prompt=note_prompt,
+                    )
+                    if patch_section is not None
+                    else upsert_transcript_section(
+                        existing_markdown,
+                        audio_path.stem,
+                        result.transcript,
+                        prompt=note_prompt,
+                    )
+                )
+                output_path.write_text(
+                    set_model_cost_metadata(
+                        updated_markdown, model, result.usage.cost_usd
                     ),
                     encoding="utf-8",
                 )

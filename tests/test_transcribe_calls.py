@@ -503,6 +503,7 @@ def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path)
         encoding="utf-8",
     )
     (output_dir / "call-c.md").write_text(
+        "---\ntags: [call]\nmodel: old-model\ncost: 1\n---\n\n"
         "# call-c\n\n## Notes\n\nNeeds transcript\n",
         encoding="utf-8",
     )
@@ -549,10 +550,21 @@ def test_script_processes_missing_transcripts_and_skips_existing(tmp_path: Path)
     call_b = (output_dir / "call-b.md").read_text(encoding="utf-8")
     call_c = (output_dir / "call-c.md").read_text(encoding="utf-8")
 
-    assert call_a.startswith("---\nprompt: |-\n  Use this exact prompt\n---\n\n# call-a\n")
+    assert call_a.startswith(
+        "---\n"
+        "model: gemini-3-flash-preview\n"
+        "cost: 0.000800\n"
+        "prompt: |-\n"
+        "  Use this exact prompt\n"
+        "---\n\n"
+        "# call-a\n"
+    )
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-a.opus line 1" in call_a
     assert call_b == "# call-b\n\n## Transcript\n\nExisting transcript\n"
+    assert "tags: [call]" in call_c
     assert "## Notes\n\nNeeds transcript" in call_c
+    assert "model: gemini-3-flash-preview\ncost: 0.000800\n" in call_c
+    assert call_c.count("model:") == call_c.count("cost:") == 1
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-c.wav line 1" in call_c
 
     second = run_script(script_path, input_dir, output_dir, prompt_file, env=env, cwd=tmp_path)
