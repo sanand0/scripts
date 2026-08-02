@@ -48,13 +48,56 @@ def now_utc() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
 
 
+COUNT_RE = re.compile(
+    r"^\s*(\d[\d,]*(?:\.\d+)?)(?:[ \t]*([kmb]))?(?=\s|$)", re.IGNORECASE
+)
+
+
 def parse_count(value: str) -> int | None:
-    text = re.sub(r"\s+", " ", value or "").strip().lower().replace(",", "")
-    match = re.search(r"(\d+(?:\.\d+)?)\s*([kmb])?", text)
+    """Parse a leading count without treating a following name as a K/M/B suffix."""
+    match = COUNT_RE.match(value or "")
     if not match:
         return None
-    scale = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2) or "", 1)
-    return int(float(match.group(1)) * scale)
+    scale = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(
+        (match.group(2) or "").lower(), 1
+    )
+    return round(float(match.group(1).replace(",", "")) * scale)
+
+
+def linkedin_id_datetime(value: str) -> dt.datetime | None:
+    """Decode the exact timestamp embedded in a LinkedIn activity or comment ID."""
+    match = re.search(r"(?:activity:|,|^)(\d{16,})(?:\)|$)", value or "")
+    if not match:
+        return None
+    timestamp = dt.datetime.fromtimestamp((int(match.group(1)) >> 22) / 1000, dt.UTC)
+    earliest = dt.datetime(2010, 1, 1, tzinfo=dt.UTC)
+    return timestamp if earliest <= timestamp <= now_utc() + dt.timedelta(days=1) else None
+
+
+def labeled_count(value: str, label: str) -> int | None:
+    match = re.search(
+        rf"(?:^|\n)([\d,.]+(?:\.\d+)?(?:[ \t]*[kmb])?)\s+{label}s?\b",
+        value or "",
+        re.IGNORECASE,
+    )
+    return parse_count(match.group(1)) if match else None
+
+
+def normalize_counts(row: dict[str, Any]) -> dict[str, Any]:
+    """Re-parse raw count text so selector quirks cannot silently inflate metrics."""
+    if row.get("type") == "post":
+        social = str(row.get("socialText") or "")
+        if social:
+            reaction = parse_count(social)
+            if reaction is not None:
+                row["reactionCount"] = reaction
+            row["commentCount"] = labeled_count(social, "comment") or 0
+            row["repostCount"] = labeled_count(social, "repost") or 0
+    else:
+        reaction = parse_count(str(row.get("reactionText") or ""))
+        if reaction is not None:
+            row["reactionCount"] = reaction
+    return row
 
 
 def parse_relative_time(value: str, scraped_at: dt.datetime) -> tuple[str, str]:
@@ -97,6 +140,25 @@ def row_key(row: dict[str, Any]) -> str:
     return f"{row.get('type', 'row')}:{row.get('id') or row.get('url') or compact_json(row)[:160]}"
 
 
+LATEST_FIELDS = {
+    "commentCount",
+    "commentScrapeStats",
+    "commentedText",
+    "edited",
+    "impressionCount",
+    "postedText",
+    "rawText",
+    "reactionCount",
+    "reactionText",
+    "replyCount",
+    "repostCount",
+    "scrapedAt",
+    "socialText",
+    "visibility",
+}
+TIME_FIELDS = {"postedAt", "postedAtConfidence", "commentedAt", "commentedAtConfidence"}
+
+
 def richness(value: Any) -> int:
     if value in (None, "", [], {}, False):
         return 0
@@ -108,10 +170,24 @@ def richness(value: Any) -> int:
 
 
 def merge_row(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Keep rich identity data, but let newer snapshot values decrease or reach zero."""
     merged = dict(old)
     for key, value in new.items():
-        if key == "scrapedAt" or richness(value) >= richness(merged.get(key)):
+        if key in TIME_FIELDS:
+            continue
+        if key in LATEST_FIELDS:
+            if value is not None:
+                merged[key] = value
+        elif richness(value) >= richness(merged.get(key)):
             merged[key] = value
+    for prefix in ("postedAt", "commentedAt"):
+        confidence = f"{prefix}Confidence"
+        if (
+            new.get(prefix)
+            and (new.get(confidence) == "id" or merged.get(confidence) != "id")
+        ):
+            merged[prefix] = new[prefix]
+            merged[confidence] = new.get(confidence)
     return merged
 
 
@@ -134,11 +210,21 @@ def update_jsonl(path: Path, rows: list[dict[str, Any]]) -> int:
 
 def add_time_fields(row: dict[str, Any], scraped_at: dt.datetime) -> dict[str, Any]:
     if row["type"] == "post":
-        when, confidence = parse_relative_time(row.get("postedText", ""), scraped_at)
+        exact = linkedin_id_datetime(str(row.get("postId") or row.get("id") or ""))
+        when, confidence = (
+            (exact.isoformat(), "id")
+            if exact
+            else parse_relative_time(row.get("postedText", ""), scraped_at)
+        )
         row["postedAt"] = when
         row["postedAtConfidence"] = confidence
     else:
-        when, confidence = parse_relative_time(row.get("commentedText", ""), scraped_at)
+        exact = linkedin_id_datetime(str(row.get("commentId") or row.get("id") or ""))
+        when, confidence = (
+            (exact.isoformat(), "id")
+            if exact
+            else parse_relative_time(row.get("commentedText", ""), scraped_at)
+        )
         row["commentedAt"] = when
         row["commentedAtConfidence"] = confidence
     row["scrapedAt"] = scraped_at.isoformat()
@@ -265,10 +351,10 @@ EXTRACT_JS = r"""
     }
   };
   const number = (value) => {
-    const match = String(value || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*([kmb])?/i);
+    const match = String(value || "").match(/^\s*(\d[\d,]*(?:\.\d+)?)(?:[ \t]*([kmb]))?(?=\s|$)/i);
     if (!match) return null;
     const scale = { k: 1e3, m: 1e6, b: 1e9 }[(match[2] || "").toLowerCase()] || 1;
-    return Math.round(Number(match[1]) * scale);
+    return Math.round(Number(match[1].replace(/,/g, "")) * scale);
   };
   const miniProfileUrn = (link) => {
     if (!link?.href) return "";
@@ -302,12 +388,14 @@ EXTRACT_JS = r"""
   const ageText = text(ageEl) || (lines.find((line) => /^\d+\s*(m|min|h|hr|d|w|mo|y|yr)\b/i.test(line)) || "");
   const socialText = text(first(post, ['.social-details-social-counts', '.feed-shared-social-counts']));
   const reactionText = text(first(post, ['.social-details-social-counts__reactions-count', '[aria-label*="reactions"], [aria-label*="others"]']));
-  const commentText = (socialText.match(/[\d,.]+\s+comments?/i) || [""])[0];
-  const repostText = (socialText.match(/[\d,.]+\s+reposts?/i) || [""])[0];
-  const impressionText = (text(post).match(/[\d,.]+\s+impressions?/i) || [""])[0];
+  const commentText = (socialText.match(/[\d,.]+\s*[kmb]?\s+comments?/i) || [""])[0];
+  const repostText = (socialText.match(/[\d,.]+\s*[kmb]?\s+reposts?/i) || [""])[0];
+  const impressionText = (text(post).match(/[\d,.]+\s*[kmb]?\s+impressions?/i) || [""])[0];
+  const hasSocialCounts = Boolean(first(post, ['.social-details-social-counts', '.feed-shared-social-counts']));
+  const reactionCount = number(socialText.split("\n")[0]) ?? number(reactionText);
   const analytics = first(post, ['a.analytics-entry-point[href]', 'a[href*="/analytics/post-summary/"]']);
   const actor = first(post, ['.update-components-actor', '.feed-shared-actor']);
-  const actorText = `${text(actor)} ${ariaText(actor || post)} ${lines.slice(0, 8).join(" ")}`;
+  const actorText = `${text(actor)} ${ariaText(actor || post)}`;
   const reactionTypesVisible = [...new Set(all(post, [
     '.social-details-social-counts img[alt]',
     '.feed-shared-social-counts img[alt]',
@@ -341,7 +429,7 @@ EXTRACT_JS = r"""
     authorProfile: profile ? cleanUrl(profile.href).split("?")[0] : "",
     authorMiniProfileUrn: miniProfileUrn(profile),
     authorDescription: headline,
-    authorBadges: lines.filter((line) => /verified|premium|you/i.test(line)).slice(0, 6),
+    authorBadges: text(actor).split("\n").filter((line) => /verified|premium|you/i.test(line)).slice(0, 6),
     premiumVerifiedBadges: badgesFrom(actorText),
     postedText: ageText,
     edited: /edited/i.test(text(first(post, ['.update-components-actor__sub-description', '.feed-shared-actor__sub-description']))),
@@ -352,10 +440,10 @@ EXTRACT_JS = r"""
     media,
     mediaCount: media.length,
     analyticsUrl: analytics ? cleanUrl(analytics.href).split("?")[0] : "",
-    reactionCount: number(reactionText),
+    reactionCount: reactionCount ?? (hasSocialCounts ? 0 : null),
     reactionTypesVisible,
-    commentCount: number(commentText),
-    repostCount: number(repostText),
+    commentCount: number(commentText) ?? (hasSocialCounts ? 0 : null),
+    repostCount: number(repostText) ?? (hasSocialCounts ? 0 : null),
     impressionCount: number(impressionText),
     socialText,
     rawText: text(post).slice(0, 20000),
@@ -402,7 +490,7 @@ EXTRACT_JS = r"""
       reactionText: reactionButton?.getAttribute("aria-label") || "",
       reactionTypesVisible: commentReactionTypes,
       replyCount: number(text(replyButton) || ""),
-      impressionCount: number((text(article).match(/[\d,.]+\s+impressions?/i) || [""])[0]),
+      impressionCount: number((text(article).match(/[\d,.]+\s*[kmb]?\s+impressions?/i) || [""])[0]),
       socialText: social,
       rawText: text(article).slice(0, 10000),
       scrapedAt,
@@ -415,7 +503,7 @@ EXTRACT_JS = r"""
 
 async def extract_post(post: ElementHandle, scraped_at: dt.datetime) -> list[dict[str, Any]]:
     rows = await post.evaluate(EXTRACT_JS, {"scrapedAt": scraped_at.isoformat()})
-    return [add_time_fields(row, scraped_at) for row in rows if row.get("id")]
+    return [add_time_fields(normalize_counts(row), scraped_at) for row in rows if row.get("id")]
 
 
 async def scroll_page(page: Page, settle_ms: int) -> dict[str, Any]:
