@@ -214,7 +214,7 @@ normalize_text_to_ascii() {
     # anyascii handles a huge range: Cyrillic, CJK, emoji, typographic chars, etc.
     # Falls back to manual map for the most common typographic substitutions first
     # so we preserve intent (em-dash → hyphen with spaces, bullet -> hyphen, not asterisk).
-    with_input_file uvx --quiet --with anyascii python - <<'PYEOF'
+    with_input_file uvx --offline --quiet --with anyascii python - <<'PYEOF'
 import anyascii, re, sys
 from pathlib import Path
 
@@ -241,7 +241,7 @@ transform_unicode_to_ascii() {
 }
 
 transform_shorthand_to_emoji() {
-    with_input_file uvx --quiet --with emoji python - <<'PYEOF'
+    with_input_file uvx --offline --quiet --with emoji python - <<'PYEOF'
 import sys
 from pathlib import Path
 

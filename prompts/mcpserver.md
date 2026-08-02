@@ -1,5 +1,9 @@
 # MCP Server
 
+TODO
+
+- Split logs by month
+
 ## All parameter, 29 Jul 2026
 
 <!--

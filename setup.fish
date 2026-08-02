@@ -636,9 +636,9 @@ function meeting --description "Create a new meeting transcript file"
 
 # $title
 
-- [ ] Speak less, observe and learn more.
-- [ ] Scan for politics (who wins/loses) and emotion and **test** your hypotheses.
-- [ ] Close with owner, date, proof
+- 🟣 Speak less, observe and learn more.
+- 🟣 Scan for politics (who wins/loses) and emotion and **test** your hypotheses.
+- 🟣 Close with owner, date, proof
 
 ## Transcript
 " > $file
@@ -781,6 +781,7 @@ function youtube-subtitles --description "downloads subtitles from YouTube video
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
+# Convert file to Opus. (libopus has no GPU encoder.)
 function opus --description "opus *.mp4 converts it to *.opus (voice quality)"
     for file in $argv
         ffmpeg -hide_banner -stats -v warning -i $file -c:a libopus -b:a 12k -ac 1 -application voip -vbr on -compression_level 10 (string replace -r '\.[^.]+$' '.opus' $file)
@@ -832,9 +833,13 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         $out
 end
 
-# Lower crf = higher quality (55 is poor, 45 is good)
+# NVIDIA GPU encoding
 # Higher preset = better, slower compression (0=slowest, 8=fastest)
-abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
+# -cq 51 is the highest compression supported by my ffmpeg (lower = larger file size, higher quality)
+abbr --add videocompress ffmpeg -i input.mp4 -c:v av1_nvenc -preset p6 -tune hq -rc vbr -cq 51 -b:v 0 -spatial-aq 1 -temporal-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
+# Older CPU encoding
+# Lower crf = higher quality (55 is poor, 45 is good)
+# abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 
 # https://yazi-rs.github.io/docs/quick-start
 function y --description "Run yazi to change working directory based on project context"
