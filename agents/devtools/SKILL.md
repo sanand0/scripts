@@ -1,6 +1,6 @@
 ---
 name: devtools
-description: Use CDP at localhost:9222 to test/debug websites, automate browser tasks
+description: Use CDP at localhost:9222 to test/debug websites, automate browser tasks, and inspect/replay browser APIs
 ---
 
 Use CDP at localhost:9222.
@@ -12,8 +12,12 @@ Capabilities:
 - For DOM HTML to Markdown: turndown, markdownify, or `uvx markitdown file.html`
 - Log progress via console: `page.on("console", msg => console.log("LOG:", msg.type(), msg.text()))`. Use CDP's `Console.enable` for replay
 - Log screenshots via `(page||locator).screenshot({ path, fullPage, type, quality, ... })`
-- Intercept fetch/XHR, parse JSON directly, cache for repeat runs
-- HAR traces: `context.tracing.start({ screenshots: true, snapshots: true })` ... `context.tracing.stop({ path: "trace.zip" })`
+- For repeated structured reads, inspect fetch/XHR before building browser automation.
+  Replay a stable request when it returns the required data; otherwise use the rendered DOM.
+- Capture via CDP `Network.enable` / `Network.getResponseBody` or Playwright request/response listeners.
+  `context.tracing` is not HAR; `recordHar` / `record_har_path` requires a new context.
+- Verify replayed results against representative browser results.
+  Keep browser authentication and fallback; do not persist credentials or session headers.
 - Inject JS into existing tabs via a `blob:` URL created in the page context. CSP may block inline scripts.
   - `url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))`
   - Append `<script src="blob:...">`
