@@ -4,6 +4,29 @@ TODO
 
 - Allow up to 4 concurrent bash processes.
 
+## Refactor
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Refactor `mcpserver.py` to:
+- Reduce code: cleaner, elegant, with a linear flow, and easier to read and maintain.
+- Reduce technical debt.
+
+Make sure it retains the core functionality - but supporting functionality (e.g. how to log, how to handle errors, etc.) can be simplified keeping in mind agent-friendliness.
+
+--- <!-- /model gpt-5.6-luna -->
+
+Explain with examples what the observability changes are - specifically what won't be recorded.
+
+--- <!-- /model gpt-5.6-sol -->
+
+Restore the per-call Markdown files under YYYY-MM/ and the requests-YYYY-MM-DD.jsonl files (with minimal code changes). The logs are useful for post-facto connection debugging.
+
+<!-- codex resume 019fcc9b-f0d2-7fe0-8c37-0dcd6d385b93 --yolo -->
+
 ## Fix ChatGPT compatibility, 04 Aug 2026
 
 <!-- See: https://chatgpt.com/c/6a71c529-52c4-83ec-aa41-60ee3b62ae0c -->

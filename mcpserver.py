@@ -50,21 +50,28 @@ MAX_TOTAL_OUTPUT_BYTES = 512 * 1024
 TOTAL_OUTPUT_HEAD_BYTES = 384 * 1024
 TOTAL_TRIM_MARKER = "\n... [omitted {bytes} bytes to keep total output under 512 KiB] ...\n"
 MAX_UPLOAD_BYTES = int(os.environ.get("MCPSERVER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
-DOWNLOAD_FILE_OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
+
+
+def output_schema(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+DOWNLOAD_FILE_OUTPUT_SCHEMA = output_schema(
+    {
         "path": {"type": "string"},
         "mime_type": {"type": "string"},
         "encoding": {"type": "string", "enum": ["utf-8", "base64"]},
         "size": {"type": "integer", "minimum": 0},
         "bytes_read": {"type": "integer", "minimum": 0},
-    },
-    "required": ["path", "mime_type", "encoding", "size", "bytes_read"],
-    "additionalProperties": False,
-}
-BASH_OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
+    }
+)
+BASH_OUTPUT_SCHEMA = output_schema(
+    {
         "server_start_id": {"type": "string"},
         "request_id": {"type": ["string", "null"]},
         "started_at": {"type": "string"},
@@ -82,28 +89,8 @@ BASH_OUTPUT_SCHEMA = {
         "line_trim_omitted_bytes": {"type": "integer", "minimum": 0},
         "total_limit_omitted_bytes": {"type": "integer", "minimum": 0},
         "total_truncation_omitted_bytes": {"type": "integer", "minimum": 0},
-    },
-    "required": [
-        "server_start_id",
-        "request_id",
-        "started_at",
-        "finished_at",
-        "duration_ms",
-        "exit_code",
-        "timed_out",
-        "error",
-        "cwd",
-        "stdout_bytes",
-        "stderr_bytes",
-        "output_bytes_before_limits",
-        "output_bytes_after_limits",
-        "line_trim_count",
-        "line_trim_omitted_bytes",
-        "total_limit_omitted_bytes",
-        "total_truncation_omitted_bytes",
-    ],
-    "additionalProperties": False,
-}
+    }
+)
 SERVER_START_ID = uuid.uuid4().hex
 RATE_TAGS = {
     "intent_miss",
@@ -168,20 +155,6 @@ class ChatGPTUpload(TypedDict):
     mime_type: str
 
 
-def markdown_code_block(text: str) -> str:
-    """Return text in a fence that cannot be closed by the content."""
-    ticks = 0
-    current = 0
-    for char in text:
-        if char == "`":
-            current += 1
-            ticks = max(ticks, current)
-        else:
-            current = 0
-    fence = "`" * max(3, ticks + 1)
-    return f"{fence}\n{text}\n{fence}"
-
-
 def fit_utf8_prefix(text: str, byte_count: int) -> str:
     return text.encode()[:byte_count].decode(errors="ignore")
 
@@ -235,15 +208,15 @@ def iso_timestamp() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def markdown_code_block(text: str) -> str:
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}\n{text}\n{fence}"
+
+
 def markdown_json(data: Any) -> str:
     return markdown_code_block(json.dumps(data, indent=2, default=str, ensure_ascii=False))
-
-
-def serialize_message(message: Any) -> Any:
-    for method in ("model_dump", "dict"):
-        if hasattr(message, method):
-            return getattr(message, method)()
-    return repr(message)
 
 
 def http_request_info() -> dict[str, Any] | None:
@@ -264,109 +237,91 @@ def http_request_info() -> dict[str, Any] | None:
     return None
 
 
-def request_metadata(
-    *,
-    ctx: Context | None = None,
-    middleware_context: MiddlewareContext[Any] | None = None,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    data: dict[str, Any] = {
-        "server_start_id": SERVER_START_ID,
-        "http": http_request_info(),
-        "mcp": {},
-    }
-    if ctx is not None:
-        for name in ("request_id", "client_id", "session_id"):
-            with suppress(Exception):
-                data["mcp"][name] = getattr(ctx, name)
-    if middleware_context is not None:
-        data["mcp"].update(
-            {
-                "source": middleware_context.source,
-                "type": middleware_context.type,
-                "method": middleware_context.method,
-                "timestamp": middleware_context.timestamp.isoformat(),
-                "message": serialize_message(middleware_context.message),
-            }
-        )
-    if extra:
-        data["metadata"] = extra
-    return data
-
-
-def request_log_record(metadata: dict[str, Any]) -> dict[str, Any]:
-    http = metadata.get("http") or {}
-    mcp_data = metadata.get("mcp") or metadata
-    message = mcp_data.get("message") or {}
-    params = message.get("params") if isinstance(message, dict) else {}
-    result = {
-        "server_start_id": SERVER_START_ID,
-        "timestamp": iso_timestamp(),
-        "request_id": metadata.get("request_id") or mcp_data.get("request_id"),
-        "session_id": metadata.get("session_id") or mcp_data.get("session_id") or http.get("session_id"),
-        "mcp_method": metadata.get("method") or mcp_data.get("method"),
-        "http_path": http.get("path") or metadata.get("http_path"),
-        "user_agent": http.get("user_agent") or metadata.get("user_agent"),
-        "protocol_version": (
-            http.get("protocol_version")
-            or metadata.get("protocol_version")
-            or mcp_data.get("protocol_version")
-        ),
-        "client_name": metadata.get("client_name") or mcp_data.get("client_name"),
-        "client_version": metadata.get("client_version") or mcp_data.get("client_version"),
-        "client_capabilities": metadata.get("client_capabilities") or mcp_data.get("client_capabilities"),
-        "duration_ms": metadata.get("duration_ms"),
-    }
-    if isinstance(params, dict):
-        result["protocol_version"] = result["protocol_version"] or params.get("protocolVersion")
-        client_info = params.get("clientInfo") or {}
-        result["client_name"] = result["client_name"] or client_info.get("name")
-        result["client_version"] = result["client_version"] or client_info.get("version")
-        result["client_capabilities"] = result["client_capabilities"] or params.get("capabilities")
-    if "result" in metadata:
-        result["result"] = metadata["result"]
-    if "error" in metadata:
-        result["error"] = metadata["error"]
-    return {key: value for key, value in result.items() if value is not None}
-
-
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, separators=(",", ":"), default=str, ensure_ascii=False) + "\n")
 
 
-def log_request_close(metadata: dict[str, Any]) -> dict[str, Any]:
-    record = request_log_record(metadata)
-    append_jsonl(LOG_DIR / f"requests-{datetime.now():%Y-%m-%d}.jsonl", record)
-    if record.get("session_id"):
-        (LOG_DIR / "latest-session").write_text(str(record["session_id"]), encoding="utf-8")
-    return record
-
-
-def log_bash_command(commands: str, output: str, request: dict[str, Any], result: dict[str, Any]) -> None:
+def write_markdown_log(event: dict[str, Any]) -> None:
+    operation = event["operation"]
+    if operation not in {"bash", "download_file", "save_file"}:
+        return
     now = datetime.now(UTC)
     timestamp = now.strftime("%Y-%m-%dT%H-%M-%S.%f")
-    month_dir = LOG_DIR / now.strftime("%Y-%m")
-    month_dir.mkdir(parents=True, exist_ok=True)
-    (month_dir / f"{timestamp}.md").write_text(
-        f"# mcpserver bash log {timestamp}\n\n"
-        f"## Command\n\n{markdown_code_block(commands)}\n\n"
-        f"## Request\n\n{markdown_json(request)}\n\n"
-        f"## Output\n\n{markdown_code_block(output)}\n\n"
-        f"## Result\n\n{markdown_json(result)}\n",
+    sections = [f"# mcpserver {operation} log {timestamp}"]
+    if operation == "bash":
+        sections += [
+            "## Command",
+            markdown_code_block(event["commands"]),
+            "## Request",
+            markdown_json(event["request"]),
+            "## Output",
+            markdown_code_block(event["output"]),
+        ]
+    sections += ["## Result", markdown_json(event["result"])]
+    path = LOG_DIR / now.strftime("%Y-%m") / f"{timestamp}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")
+
+
+def write_request_log(event: dict[str, Any]) -> None:
+    http = event.get("http") or {}
+    record = {
+        "server_start_id": event["server_start_id"],
+        "timestamp": event["timestamp"],
+        "session_id": http.get("session_id"),
+        "mcp_method": event.get("method"),
+        "http_path": http.get("path"),
+        "user_agent": http.get("user_agent"),
+        "protocol_version": http.get("protocol_version") or event.get("protocol_version"),
+        "client_name": event.get("client_name"),
+        "client_version": event.get("client_version"),
+        "client_capabilities": event.get("client_capabilities"),
+        "duration_ms": event.get("duration_ms"),
+        "result": event.get("result"),
+        "error": event.get("error"),
+    }
+    append_jsonl(
+        LOG_DIR / f"requests-{datetime.now():%Y-%m-%d}.jsonl",
+        {key: value for key, value in record.items() if value is not None},
     )
 
 
-def log_file_operation(operation: str, result: dict[str, Any]) -> None:
-    now = datetime.now(UTC)
-    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S.%f")
-    month_dir = LOG_DIR / now.strftime("%Y-%m")
-    month_dir.mkdir(parents=True, exist_ok=True)
-    (month_dir / f"{timestamp}.md").write_text(
-        f"# mcpserver {operation} log {timestamp}\n\n"
-        f"## Result\n\n{markdown_json(result)}\n",
-    )
+def log_event(operation: str, **data: Any) -> dict[str, Any]:
+    """Append one compact, machine-readable tool event."""
+    http = http_request_info()
+    event = {
+        "timestamp": iso_timestamp(),
+        "server_start_id": SERVER_START_ID,
+        "operation": operation,
+        **({"http": http} if http else {}),
+        **data,
+    }
+    append_jsonl(LOG_DIR / "events.jsonl", event)
+    if operation == "request":
+        write_request_log(event)
+    else:
+        write_markdown_log(event)
+    if http and http.get("session_id"):
+        (LOG_DIR / "latest-session").write_text(str(http["session_id"]), encoding="utf-8")
+    return event
+
+
+def client_metadata(context: MiddlewareContext[Any]) -> dict[str, Any]:
+    message = context.message.model_dump()
+    params = message.get("params") or {}
+    client = params.get("clientInfo") or {}
+    return {
+        key: value
+        for key, value in {
+            "protocol_version": params.get("protocolVersion"),
+            "client_name": client.get("name"),
+            "client_version": client.get("version"),
+            "client_capabilities": params.get("capabilities"),
+        }.items()
+        if value is not None
+    }
 
 
 class RequestLogMiddleware(Middleware):
@@ -379,15 +334,21 @@ class RequestLogMiddleware(Middleware):
         try:
             result = await call_next(context)
         except Exception as e:
-            closed = request_metadata(middleware_context=context)
-            closed["duration_ms"] = round((time.monotonic() - start) * 1000, 3)
-            closed["error"] = repr(e)
-            log_request_close(closed)
+            log_event(
+                "request",
+                method=context.method,
+                **client_metadata(context),
+                duration_ms=round((time.monotonic() - start) * 1000, 3),
+                error=repr(e),
+            )
             raise
-        closed = request_metadata(middleware_context=context)
-        closed["duration_ms"] = round((time.monotonic() - start) * 1000, 3)
-        closed["result"] = type(result).__name__
-        log_request_close(closed)
+        log_event(
+            "request",
+            method=context.method,
+            **client_metadata(context),
+            duration_ms=round((time.monotonic() - start) * 1000, 3),
+            result=type(result).__name__,
+        )
         return result
 
 
@@ -467,47 +428,12 @@ def stop_cloudflare_tunnel(process: subprocess.Popen[str] | None) -> None:
         process.wait()
 
 
-def git_state() -> dict[str, Any]:
-    repo = Path(__file__).resolve().parent
-    commit = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    dirty = bool(
-        subprocess.run(
-            ["git", "-C", str(repo), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout.strip()
-    )
-    return {"commit": commit or None, "dirty": dirty}
-
-
-def tool_description_hash() -> str:
-    return hashlib.sha256((bash.__doc__ or "").encode()).hexdigest()
-
-
-def restructure_logs() -> None:
-    """Move legacy per-call Markdown logs into monthly directories."""
-    for path in LOG_DIR.glob("????-??-??T*.md"):
-        destination = LOG_DIR / path.name[:7] / path.name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if not destination.exists():
-            path.replace(destination)
-
-
 def log_startup_record() -> dict[str, Any]:
-    restructure_logs()
     record = {
         "server_start_id": SERVER_START_ID,
         "timestamp": iso_timestamp(),
         "pid": os.getpid(),
         "cwd": os.getcwd(),
-        "git": git_state(),
-        "tool_description_hash": tool_description_hash(),
     }
     append_jsonl(LOG_DIR / "startup.jsonl", record)
     print(mounted_paths_text(), flush=True)
@@ -683,14 +609,14 @@ Summarize and cite paths/lines instead.
 async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> ToolResult:
     ctx: Context = get_context()
     await ctx.info(f"bash: {commands} (cwd={cwd or os.getcwd()})")
-    request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
     output, result = run_bash_command(commands, timeout_ms, cwd)
     request_id = getattr(ctx, "request_id", None)
     result["request_id"] = str(request_id) if request_id is not None else None
     if result["stderr_bytes"]:
         await ctx.warning(f"ERROR: {result['stderr_bytes']} stderr bytes")
     await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
-    log_bash_command(commands, output, request, result)
+    request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
+    log_event("bash", commands=commands, request=request, output=output, result=result)
     return ToolResult(
         content=[TextContent(type="text", text=output)],
         structured_content=result,
@@ -795,7 +721,7 @@ async def download_file(path: str) -> ToolResult:
     result = _download_file(path)
     metadata = result.structured_content
     await get_context().info(f"download_file: {metadata['path']} ({metadata['size']} bytes)")
-    log_file_operation("download_file", metadata)
+    log_event("download_file", result=metadata)
     return result
 
 
@@ -890,21 +816,13 @@ async def save_file(file: ChatGPTUpload, destination: str, overwrite: bool = Fal
     """Stream a ChatGPT-uploaded file to an allowed writable local path."""
     result = _save_file(file, destination, overwrite)
     await get_context().info(f"save_file: {result['path']} ({result['size']} bytes)")
-    log_file_operation("save_file", result)
+    log_event("save_file", result=result)
     return result
 
 
 def latest_session_id() -> str:
     with suppress(OSError):
-        session_id = (LOG_DIR / "latest-session").read_text(encoding="utf-8").strip()
-        if session_id:
-            return session_id
-    for path in sorted(LOG_DIR.glob("requests-*.jsonl"), reverse=True):
-        with suppress(OSError, json.JSONDecodeError):
-            for line in reversed(path.read_text().splitlines()):
-                session_id = json.loads(line).get("session_id")
-                if session_id:
-                    return session_id
+        return (LOG_DIR / "latest-session").read_text(encoding="utf-8").strip()
     return ""
 
 

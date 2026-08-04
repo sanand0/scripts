@@ -52,25 +52,31 @@ def test_limit_total_output_preserves_utf8_head_and_tail() -> None:
     assert omitted == len(text.encode()) - len(encoded)
 
 
-def test_log_bash_command_includes_result_after_output(tmp_path, monkeypatch) -> None:
+def test_log_event_writes_compact_jsonl(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
 
     output, result = mcpserver.run_bash_command("printf ok", timeout_ms=1000)
-    mcpserver.log_bash_command("printf ok", output, {"server_start_id": "start-test"}, result)
+    mcpserver.log_event(
+        "bash",
+        commands="printf ok",
+        request={"server_start_id": "start-test", "timeout_ms": 1000, "cwd": None},
+        output=output,
+        result=result,
+    )
 
+    [line] = (tmp_path / "events.jsonl").read_text().splitlines()
+    event = json.loads(line)
+    assert event["operation"] == "bash"
+    assert event["server_start_id"] == "start-test"
+    assert event["commands"] == "printf ok"
+    assert event["output"] == "ok"
+    assert event["result"]["exit_code"] == 0
+    assert event["result"]["output_bytes_after_limits"] == 2
     [log_path] = tmp_path.glob("????-??/*.md")
     markdown = log_path.read_text()
-    assert markdown.index("## Command") < markdown.index("## Request") < markdown.index("## Output") < markdown.index("## Result")
-    result_json = json.loads(markdown.split("## Result", 1)[1].split("```", 2)[1])
-    assert result_json["server_start_id"] == "start-test"
-    assert result_json["exit_code"] == 0
-    assert result_json["stdout_bytes"] == 2
-    assert result_json["stderr_bytes"] == 0
-    assert result_json["output_bytes_before_limits"] == 2
-    assert result_json["output_bytes_after_limits"] == 2
-    assert result_json["line_trim_count"] == 0
-    assert result_json["total_truncation_omitted_bytes"] == 0
+    assert markdown.index("## Command") < markdown.index("## Request") < markdown.index("## Output")
+    assert markdown.index("## Output") < markdown.index("## Result")
     assert "printf ok" in markdown
 
 
@@ -144,8 +150,6 @@ def test_bash_invalid_input_is_structured_tool_error(tmp_path, monkeypatch) -> N
 def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
-    monkeypatch.setattr(mcpserver, "tool_description_hash", lambda: "hash-test")
-    monkeypatch.setattr(mcpserver, "git_state", lambda: {"commit": "abc123", "dirty": True})
 
     record = mcpserver.log_startup_record()
 
@@ -155,104 +159,144 @@ def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch
     assert logged["server_start_id"] == "start-test"
     assert logged["pid"] > 0
     assert logged["cwd"]
-    assert logged["git"] == {"commit": "abc123", "dirty": True}
-    assert logged["tool_description_hash"] == "hash-test"
     assert capsys.readouterr().out.startswith("mounted paths (rw = read-write, ro = read-only):\n")
 
 
-def test_restructure_logs_moves_only_legacy_markdown(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
-    legacy = tmp_path / "2026-07-03T19-24-17.034882.md"
-    aggregate = tmp_path / "requests-2026-07-03.jsonl"
-    legacy.write_text("call")
-    aggregate.write_text("{}\n")
+def test_cloudflare_tunnel_reuses_matching_process_or_starts_owned_one(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "load_env_token", lambda name: "secret-token")
+    monkeypatch.setattr(mcpserver.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(mcpserver, "matching_cloudflared_running", lambda token: True)
 
-    mcpserver.restructure_logs()
+    assert mcpserver.start_cloudflare_tunnel() is None
 
-    assert not legacy.exists()
-    assert (tmp_path / "2026-07" / legacy.name).read_text() == "call"
-    assert aggregate.read_text() == "{}\n"
-
-
-def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
-    monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
-
-    record = mcpserver.log_request_close(
-        {
-            "request_id": "req-1",
-            "session_id": "sess-1",
-            "method": "tools/call",
-            "protocol_version": "2025-06-18",
-            "client_name": "ChatGPT",
-            "client_version": "1.2.3",
-            "client_capabilities": {"roots": {"listChanged": True}},
-            "http": {
-                "path": "/mcp",
-                "user_agent": "agent/1",
-                "client": ["127.0.0.1", 1234],
-                "headers": [{"name": "authorization", "value": "secret"}],
-                "body": {"openai": "identifier"},
-            },
-            "duration_ms": 12.3,
-            "result": "ok",
-            "trace_id": "trace",
-        }
+    started = object()
+    calls = []
+    monkeypatch.setattr(mcpserver, "matching_cloudflared_running", lambda token: False)
+    monkeypatch.setattr(
+        mcpserver.subprocess,
+        "Popen",
+        lambda command, text: calls.append((command, text)) or started,
     )
 
-    [log_path] = tmp_path.glob("requests-*.jsonl")
-    logged = json.loads(log_path.read_text())
-    assert logged == record
-    assert logged == {
-        "server_start_id": "start-test",
-        "timestamp": logged["timestamp"],
-        "request_id": "req-1",
-        "session_id": "sess-1",
-        "mcp_method": "tools/call",
-        "http_path": "/mcp",
-        "user_agent": "agent/1",
-        "protocol_version": "2025-06-18",
-        "client_name": "ChatGPT",
-        "client_version": "1.2.3",
-        "client_capabilities": {"roots": {"listChanged": True}},
-        "duration_ms": 12.3,
-        "result": "ok",
-    }
-    serialized = json.dumps(logged)
-    assert "secret" not in serialized
-    assert "127.0.0.1" not in serialized
-    assert "trace" not in serialized
-    assert "openai" not in serialized
+    assert mcpserver.start_cloudflare_tunnel() is started
+    command, text = calls[0]
+    assert command[:3] == ["cloudflared", "tunnel", "--logfile"]
+    assert command[-3:] == ["run", "--token", "secret-token"]
+    assert text is True
 
 
-def test_request_record_uses_mcp_headers_and_initialize_details(monkeypatch) -> None:
+def test_cloudflare_tunnel_cleanup_kills_after_timeout() -> None:
+    class Process:
+        killed = False
+        terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            if not self.killed:
+                raise mcpserver.subprocess.TimeoutExpired("cloudflared", timeout)
+
+        def kill(self):
+            self.killed = True
+
+    process = Process()
+    mcpserver.stop_cloudflare_tunnel(process)
+
+    assert process.terminated is True
+    assert process.killed is True
+
+
+def test_log_event_records_safe_http_context_and_session(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
     monkeypatch.setattr(
         mcpserver,
         "http_request_info",
         lambda: {
             "path": "/mcp",
-            "user_agent": "client/1",
-            "session_id": "header-session",
+            "user_agent": "agent/1",
+            "session_id": "sess-1",
             "protocol_version": "2025-06-18",
         },
     )
-    message = {
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "clientInfo": {"name": "ChatGPT", "version": "1.0"},
-            "capabilities": {"sampling": {}},
-        }
-    }
 
-    record = mcpserver.request_log_record(
-        {"http": mcpserver.http_request_info(), "mcp": {"method": "initialize", "message": message}}
+    record = mcpserver.log_event(
+        "request",
+        method="initialize",
+        protocol_version="2025-03-26",
+        client_name="ChatGPT",
+        client_version="1.2.3",
+        client_capabilities={"sampling": {}},
+        duration_ms=12.3,
+        result="ok",
     )
 
-    assert record["session_id"] == "header-session"
-    assert record["protocol_version"] == "2025-06-18"
-    assert record["client_name"] == "ChatGPT"
-    assert record["client_version"] == "1.0"
-    assert record["client_capabilities"] == {"sampling": {}}
+    assert json.loads((tmp_path / "events.jsonl").read_text()) == record
+    assert record == {
+        "server_start_id": "start-test",
+        "timestamp": record["timestamp"],
+        "operation": "request",
+        "http": {
+            "path": "/mcp",
+            "user_agent": "agent/1",
+            "session_id": "sess-1",
+            "protocol_version": "2025-06-18",
+        },
+        "method": "initialize",
+        "protocol_version": "2025-03-26",
+        "client_name": "ChatGPT",
+        "client_version": "1.2.3",
+        "client_capabilities": {"sampling": {}},
+        "duration_ms": 12.3,
+        "result": "ok",
+    }
+    assert (tmp_path / "latest-session").read_text() == "sess-1"
+    [request_path] = tmp_path.glob("requests-*.jsonl")
+    request_record = json.loads(request_path.read_text())
+    assert request_record == {
+        "server_start_id": "start-test",
+        "timestamp": record["timestamp"],
+        "session_id": "sess-1",
+        "mcp_method": "initialize",
+        "http_path": "/mcp",
+        "user_agent": "agent/1",
+        "protocol_version": "2025-06-18",
+        "client_name": "ChatGPT",
+        "client_version": "1.2.3",
+        "client_capabilities": {"sampling": {}},
+        "duration_ms": 12.3,
+        "result": "ok",
+    }
+
+
+def test_client_metadata_extracts_initialize_fields_without_request_arguments() -> None:
+    class Message:
+        def model_dump(self):
+            return {
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "clientInfo": {"name": "ChatGPT", "version": "1.2.3"},
+                    "capabilities": {"sampling": {}},
+                    "arguments": {"token": "secret"},
+                }
+            }
+
+    class Context:
+        message = Message()
+
+    metadata = mcpserver.client_metadata(Context())
+
+    assert metadata == {
+        "protocol_version": "2025-03-26",
+        "client_name": "ChatGPT",
+        "client_version": "1.2.3",
+        "client_capabilities": {"sampling": {}},
+    }
+    assert "secret" not in json.dumps(metadata)
 
 
 def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
@@ -270,11 +314,9 @@ def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
     assert note == "command timed out"
 
 
-def test_latest_session_id_prefers_correlation_marker_and_reads_legacy_logs(tmp_path, monkeypatch) -> None:
+def test_latest_session_id_reads_correlation_marker(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
-    (tmp_path / "requests-2026-08-03.jsonl").write_text('{"session_id":"legacy-session"}\n')
-
-    assert mcpserver.latest_session_id() == "legacy-session"
+    assert mcpserver.latest_session_id() == ""
 
     (tmp_path / "latest-session").write_text("current-session\n")
     assert mcpserver.latest_session_id() == "current-session"
@@ -407,9 +449,15 @@ def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> No
     assert [log.data["msg"] for log in logs if log.level == "info"] == [
         f"download_file: {path.resolve()} (5 bytes)"
     ]
+    [event] = [
+        event
+        for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
+        if (event := json.loads(line))["operation"] == "download_file"
+    ]
+    assert event["operation"] == "download_file"
+    assert event["result"]["size"] == 5
     [log_path] = (tmp_path / "logs").glob("????-??/*.md")
     assert "# mcpserver download_file log " in log_path.read_text()
-    assert '"size": 5' in log_path.read_text()
 
 
 def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypatch) -> None:
@@ -469,9 +517,15 @@ def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypa
     assert [log.data["msg"] for log in logs if log.level == "info"] == [
         f"save_file: {destination.resolve()} ({len(data)} bytes)"
     ]
+    [event] = [
+        event
+        for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
+        if (event := json.loads(line))["operation"] == "save_file"
+    ]
+    assert event["operation"] == "save_file"
+    assert event["result"]["size"] == len(data)
     [log_path] = (tmp_path / "logs").glob("????-??/*.md")
     assert "# mcpserver save_file log " in log_path.read_text()
-    assert f'"size": {len(data)}' in log_path.read_text()
 
 
 def test_save_file_rejects_traversal_overwrite_http_and_oversize(tmp_path, monkeypatch) -> None:
