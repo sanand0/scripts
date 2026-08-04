@@ -2,7 +2,65 @@
 
 TODO
 
-- Split logs by month
+- Allow up to 4 concurrent bash processes.
+
+## Fix ChatGPT compatibility, 04 Aug 2026
+
+<!-- See: https://chatgpt.com/c/6a71c529-52c4-83ec-aa41-60ee3b62ae0c -->
+
+## Log save_file and download_file, 04 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify `~/code/scripts/mcpserver.py` and its tests to log `save_file()` and `download_file()` calls in the same way as `bash()` (if not already done.)
+Also log them on the console in a single line with the operation, path, and size.
+
+---
+
+I would like the console output to be via `logging` - just like bash(): same mechanism please. Also, I'm not entirely sure if the operation is printed correctly - maybe it always prints download_file even if the operation is save_file?
+
+<!-- codex resume 019fcc50-6704-7030-8002-c9a2207df932 --yolo -->
+
+## Add save_file, structure, and improve logging, 04 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+<!-- Source: https://chatgpt.com/c/6a7118a7-db5c-83ec-87f5-756103d2bb2b -->
+
+Modify `~/code/scripts/mcpserver.py` and its tests. Implement only these changes:
+
+1. **Add `save_file()` for ChatGPT uploads**
+   - Declare a top-level `file` parameter using `meta={"openai/fileParams": ["file"]}`.
+   - Accept the ChatGPT file object fields: `download_url`, `file_id`, `file_name`, `mime_type`.
+   - Parameters: `file`, `destination`, `overwrite=False`.
+   - Stream the HTTPS download, enforce a reasonable configurable size limit, prevent path traversal, and allow writes only under detected writable roots.
+   - Refuse overwrites by default.
+   - Return structured metadata: resolved path, size, MIME type, SHA-256, and file ID.
+   - Add accurate MCP annotations.
+2. **Return structured results from `bash()`**
+   - Return a `ToolResult` with human-readable output in `content` and execution metadata in `structured_content`.
+   - Include exit code, timeout status, duration, byte counts, truncation details, error, cwd, and request/server IDs.
+   - Add explicit output schemas for both `bash()` and `download_file()`.
+   - Set `is_error=True` only for timeouts, process-launch/internal failures, or invalid inputs—not merely every non-zero command exit.
+3. **Improve logging**
+   - Persist initialization details: protocol version, client name/version, and client capabilities.
+   - Capture `Mcp-Session-Id` and `MCP-Protocol-Version` HTTP headers where present.
+   - Make `mcp-rate` session correlation work reliably.
+   - Store per-call Markdown logs under `LOG_DIR/YYYY-MM/`; keep aggregate JSONL and TSV files at the root.
+   - Restructure current logs to match the new layout.
+   - Preserve compatibility with existing logs and tooling.
+
+Keep changes minimal and backward-compatible.
+No need toimplement other MCP features or refactor unrelated code.
+Add focused tests, run them, fix failures, and summarize changed behavior and test results.
+
+<!-- codex resume 019fc9d7-87c2-7282-b231-c6eda60ecb54 --yolo -->
 
 ## All parameter, 29 Jul 2026
 

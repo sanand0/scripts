@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -18,6 +19,11 @@ from mcp.types import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mcpserver
+
+
+@pytest.fixture(autouse=True)
+def isolate_log_dir(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
 
 
 def test_trim_long_lines_keeps_each_line_under_50kb() -> None:
@@ -53,7 +59,7 @@ def test_log_bash_command_includes_result_after_output(tmp_path, monkeypatch) ->
     output, result = mcpserver.run_bash_command("printf ok", timeout_ms=1000)
     mcpserver.log_bash_command("printf ok", output, {"server_start_id": "start-test"}, result)
 
-    [log_path] = tmp_path.glob("*.md")
+    [log_path] = tmp_path.glob("????-??/*.md")
     markdown = log_path.read_text()
     assert markdown.index("## Command") < markdown.index("## Request") < markdown.index("## Output") < markdown.index("## Result")
     result_json = json.loads(markdown.split("## Result", 1)[1].split("```", 2)[1])
@@ -87,6 +93,54 @@ def test_run_bash_command_records_nonzero_timeout_and_cwd(tmp_path) -> None:
     assert timeout_result["error"]
 
 
+def test_bash_returns_structured_nonzero_result_without_tool_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp) as client:
+            return await client.call_tool("bash", {"commands": "printf no >&2; exit 7", "cwd": str(tmp_path)})
+
+    result = asyncio.run(exercise_tool())
+
+    assert result.is_error is False
+    assert "Return code: 7" in result.content[0].text
+    assert result.structured_content["exit_code"] == 7
+    assert result.structured_content["timed_out"] is False
+    assert result.structured_content["cwd"] == str(tmp_path.resolve())
+    assert result.structured_content["stderr_bytes"] == 2
+    assert result.structured_content["request_id"]
+    assert result.structured_content["server_start_id"] == mcpserver.SERVER_START_ID
+
+
+def test_bash_timeout_is_tool_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp) as client:
+            return await client.call_tool(
+                "bash", {"commands": "sleep 1", "timeout_ms": 1}, raise_on_error=False
+            )
+
+    result = asyncio.run(exercise_tool())
+
+    assert result.is_error is True
+    assert result.structured_content["timed_out"] is True
+
+
+def test_bash_invalid_input_is_structured_tool_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp) as client:
+            return await client.call_tool("bash", {"commands": " "}, raise_on_error=False)
+
+    result = asyncio.run(exercise_tool())
+
+    assert result.is_error is True
+    assert result.structured_content["exit_code"] is None
+    assert "commands must not be empty" in result.structured_content["error"]
+
+
 def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
@@ -106,6 +160,20 @@ def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch
     assert capsys.readouterr().out.startswith("mounted paths (rw = read-write, ro = read-only):\n")
 
 
+def test_restructure_logs_moves_only_legacy_markdown(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
+    legacy = tmp_path / "2026-07-03T19-24-17.034882.md"
+    aggregate = tmp_path / "requests-2026-07-03.jsonl"
+    legacy.write_text("call")
+    aggregate.write_text("{}\n")
+
+    mcpserver.restructure_logs()
+
+    assert not legacy.exists()
+    assert (tmp_path / "2026-07" / legacy.name).read_text() == "call"
+    assert aggregate.read_text() == "{}\n"
+
+
 def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
@@ -116,6 +184,9 @@ def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch
             "session_id": "sess-1",
             "method": "tools/call",
             "protocol_version": "2025-06-18",
+            "client_name": "ChatGPT",
+            "client_version": "1.2.3",
+            "client_capabilities": {"roots": {"listChanged": True}},
             "http": {
                 "path": "/mcp",
                 "user_agent": "agent/1",
@@ -141,6 +212,9 @@ def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch
         "http_path": "/mcp",
         "user_agent": "agent/1",
         "protocol_version": "2025-06-18",
+        "client_name": "ChatGPT",
+        "client_version": "1.2.3",
+        "client_capabilities": {"roots": {"listChanged": True}},
         "duration_ms": 12.3,
         "result": "ok",
     }
@@ -149,6 +223,36 @@ def test_request_close_log_excludes_sensitive_http_details(tmp_path, monkeypatch
     assert "127.0.0.1" not in serialized
     assert "trace" not in serialized
     assert "openai" not in serialized
+
+
+def test_request_record_uses_mcp_headers_and_initialize_details(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mcpserver,
+        "http_request_info",
+        lambda: {
+            "path": "/mcp",
+            "user_agent": "client/1",
+            "session_id": "header-session",
+            "protocol_version": "2025-06-18",
+        },
+    )
+    message = {
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "clientInfo": {"name": "ChatGPT", "version": "1.0"},
+            "capabilities": {"sampling": {}},
+        }
+    }
+
+    record = mcpserver.request_log_record(
+        {"http": mcpserver.http_request_info(), "mcp": {"method": "initialize", "message": message}}
+    )
+
+    assert record["session_id"] == "header-session"
+    assert record["protocol_version"] == "2025-06-18"
+    assert record["client_name"] == "ChatGPT"
+    assert record["client_version"] == "1.0"
+    assert record["client_capabilities"] == {"sampling": {}}
 
 
 def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
@@ -166,11 +270,21 @@ def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
     assert note == "command timed out"
 
 
+def test_latest_session_id_prefers_correlation_marker_and_reads_legacy_logs(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
+    (tmp_path / "requests-2026-08-03.jsonl").write_text('{"session_id":"legacy-session"}\n')
+
+    assert mcpserver.latest_session_id() == "legacy-session"
+
+    (tmp_path / "latest-session").write_text("current-session\n")
+    assert mcpserver.latest_session_id() == "current-session"
+
+
 def test_download_file_returns_complete_utf8_embedded_resource(tmp_path) -> None:
     path = tmp_path / "hello.txt"
     path.write_text("Hello, αβ!", encoding="utf-8")
 
-    result = mcpserver.download_file(str(path))
+    result = mcpserver._download_file(str(path))
 
     assert result.structured_content == {
         "path": str(path.resolve()),
@@ -198,7 +312,7 @@ def test_download_file_returns_complete_binary_embedded_resource(tmp_path, name,
     path = tmp_path / name
     path.write_bytes(data)
 
-    result = mcpserver.download_file(str(path))
+    result = mcpserver._download_file(str(path))
 
     payload = result.content[1]
     assert isinstance(payload, EmbeddedResource)
@@ -214,7 +328,7 @@ def test_download_file_transfers_binary_larger_than_bash_output_cap(tmp_path) ->
     path = tmp_path / "large.bin"
     path.write_bytes(data)
 
-    result = mcpserver.download_file(str(path))
+    result = mcpserver._download_file(str(path))
 
     assert result.structured_content["bytes_read"] > mcpserver.MAX_TOTAL_OUTPUT_BYTES
     assert base64.b64decode(result.content[1].resource.blob) == data
@@ -224,7 +338,7 @@ def test_download_file_treats_invalid_utf8_text_as_blob(tmp_path) -> None:
     path = tmp_path / "invalid.txt"
     path.write_bytes(b"\xff")
 
-    result = mcpserver.download_file(str(path))
+    result = mcpserver._download_file(str(path))
 
     assert isinstance(result.content[1].resource, BlobResourceContents)
     assert result.content[1].resource.mimeType == "text/plain"
@@ -237,8 +351,8 @@ def test_download_file_empty_and_unknown_utf8_files(tmp_path) -> None:
     extensionless = tmp_path / "README"
     extensionless.write_text("plain text", encoding="utf-8")
 
-    empty_result = mcpserver.download_file(str(empty))
-    text_result = mcpserver.download_file(str(extensionless))
+    empty_result = mcpserver._download_file(str(empty))
+    text_result = mcpserver._download_file(str(extensionless))
 
     assert empty_result.structured_content["bytes_read"] == 0
     assert base64.b64decode(empty_result.content[1].resource.blob) == b""
@@ -251,9 +365,9 @@ def test_download_file_reports_filesystem_errors(tmp_path, monkeypatch) -> None:
     path.write_text("content")
 
     with pytest.raises(ToolError, match="File not found"):
-        mcpserver.download_file(str(tmp_path / "missing.txt"))
+        mcpserver._download_file(str(tmp_path / "missing.txt"))
     with pytest.raises(ToolError, match="Not a regular file"):
-        mcpserver.download_file(str(tmp_path))
+        mcpserver._download_file(str(tmp_path))
 
     original_open = Path.open
 
@@ -264,15 +378,19 @@ def test_download_file_reports_filesystem_errors(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(Path, "open", deny_open)
     with pytest.raises(ToolError, match="Permission denied"):
-        mcpserver.download_file(str(path))
+        mcpserver._download_file(str(path))
 
 
 def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> None:
     path = tmp_path / "hello.txt"
     path.write_text("hello")
+    logs = []
+
+    async def handle_log(log):
+        logs.append(log)
 
     async def exercise_tool():
-        async with Client(mcpserver.mcp) as client:
+        async with Client(mcpserver.mcp, log_handler=handle_log) as client:
             tools = await client.list_tools()
             result = await client.call_tool("download_file", {"path": str(path)})
             return tools, result
@@ -282,9 +400,146 @@ def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> No
     assert all(tool.name != "read" for tool in tools)
     assert download_tool.annotations.readOnlyHint is True
     assert download_tool.annotations.openWorldHint is False
+    assert download_tool.outputSchema == mcpserver.DOWNLOAD_FILE_OUTPUT_SCHEMA
     assert result.is_error is False
     assert result.structured_content["path"] == str(path.resolve())
     assert result.content[1].resource.text == "hello"
+    assert [log.data["msg"] for log in logs if log.level == "info"] == [
+        f"download_file: {path.resolve()} (5 bytes)"
+    ]
+    [log_path] = (tmp_path / "logs").glob("????-??/*.md")
+    assert "# mcpserver download_file log " in log_path.read_text()
+    assert '"size": 5' in log_path.read_text()
+
+
+def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypatch) -> None:
+    data = b"hello upload"
+
+    class Response:
+        def __init__(self):
+            self.headers = {"Content-Length": str(len(data))}
+
+        def __enter__(self):
+            self.remaining = data
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, size):
+            chunk, self.remaining = self.remaining[:size], self.remaining[size:]
+            return chunk
+
+        def geturl(self):
+            return "https://files.openai.com/upload"
+
+    monkeypatch.setattr(mcpserver, "writable_roots", lambda: [tmp_path.resolve()])
+    monkeypatch.setattr(mcpserver.request, "urlopen", lambda *args, **kwargs: Response())
+    destination = tmp_path / "uploads" / "hello.txt"
+    logs = []
+
+    async def handle_log(log):
+        logs.append(log)
+
+    async def exercise_tool():
+        async with Client(mcpserver.mcp, log_handler=handle_log) as client:
+            return await client.call_tool(
+                "save_file",
+                {
+                    "file": {
+                        "download_url": "https://files.openai.com/upload",
+                        "file_id": "file-123",
+                        "file_name": "hello.txt",
+                        "mime_type": "text/plain",
+                    },
+                    "destination": str(destination),
+                },
+            )
+
+    result = asyncio.run(exercise_tool())
+
+    assert destination.read_bytes() == data
+    assert result.structured_content == {
+        "path": str(destination.resolve()),
+        "size": len(data),
+        "mime_type": "text/plain",
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "file_id": "file-123",
+    }
+    assert [log.data["msg"] for log in logs if log.level == "info"] == [
+        f"save_file: {destination.resolve()} ({len(data)} bytes)"
+    ]
+    [log_path] = (tmp_path / "logs").glob("????-??/*.md")
+    assert "# mcpserver save_file log " in log_path.read_text()
+    assert f'"size": {len(data)}' in log_path.read_text()
+
+
+def test_save_file_rejects_traversal_overwrite_http_and_oversize(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    existing = root / "existing.txt"
+    existing.write_text("keep")
+    monkeypatch.setattr(mcpserver, "writable_roots", lambda: [root.resolve()])
+    upload = {
+        "download_url": "https://files.openai.com/upload",
+        "file_id": "file-123",
+        "file_name": "hello.txt",
+        "mime_type": "text/plain",
+    }
+
+    with pytest.raises(ToolError, match="writable root"):
+        mcpserver._save_file(upload, str(root / ".." / "escape.txt"))
+    with pytest.raises(ToolError, match="already exists"):
+        mcpserver._save_file(upload, str(existing))
+    with pytest.raises(ToolError, match="HTTPS"):
+        mcpserver._save_file({**upload, "download_url": "http://example.com/file"}, str(root / "new.txt"))
+
+    class TooLargeResponse:
+        def __init__(self):
+            self.headers = {"Content-Length": str(mcpserver.MAX_UPLOAD_BYTES + 1)}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def geturl(self):
+            return "https://files.openai.com/upload"
+
+    monkeypatch.setattr(mcpserver.request, "urlopen", lambda *args, **kwargs: TooLargeResponse())
+    with pytest.raises(ToolError, match="size limit"):
+        mcpserver._save_file(upload, str(root / "large.txt"))
+
+
+def test_save_file_tool_has_chatgpt_meta_and_write_annotations() -> None:
+    async def list_tools():
+        async with Client(mcpserver.mcp) as client:
+            return await client.list_tools()
+
+    tools = asyncio.run(list_tools())
+    save_tool = next(tool for tool in tools if tool.name == "save_file")
+    bash_tool = next(tool for tool in tools if tool.name == "bash")
+
+    assert save_tool.inputSchema["properties"]["file"]["type"] == "object"
+    assert save_tool.inputSchema["properties"]["file"]["properties"] == {
+            "download_url": {"type": "string"},
+            "file_id": {"type": "string"},
+            "file_name": {"type": "string"},
+            "mime_type": {"type": "string"},
+        }
+    assert save_tool.inputSchema["properties"]["file"]["required"] == [
+            "download_url",
+            "file_id",
+            "file_name",
+            "mime_type",
+        ]
+
+    assert save_tool.meta["openai/fileParams"] == ["file"]
+    assert save_tool.annotations.readOnlyHint is False
+    assert save_tool.annotations.destructiveHint is True
+    assert save_tool.annotations.openWorldHint is True
+    assert bash_tool.outputSchema == mcpserver.BASH_OUTPUT_SCHEMA
 
 
 def test_bash_tool_exposes_and_uses_cwd_and_dynamic_mount_description(tmp_path, monkeypatch) -> None:

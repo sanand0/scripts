@@ -19,12 +19,14 @@ import os
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+from urllib import parse, request
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
@@ -47,6 +49,61 @@ TRIM_MARKER = "... [trimmed to 50KB/line] ..."
 MAX_TOTAL_OUTPUT_BYTES = 512 * 1024
 TOTAL_OUTPUT_HEAD_BYTES = 384 * 1024
 TOTAL_TRIM_MARKER = "\n... [omitted {bytes} bytes to keep total output under 512 KiB] ...\n"
+MAX_UPLOAD_BYTES = int(os.environ.get("MCPSERVER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+DOWNLOAD_FILE_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string"},
+        "mime_type": {"type": "string"},
+        "encoding": {"type": "string", "enum": ["utf-8", "base64"]},
+        "size": {"type": "integer", "minimum": 0},
+        "bytes_read": {"type": "integer", "minimum": 0},
+    },
+    "required": ["path", "mime_type", "encoding", "size", "bytes_read"],
+    "additionalProperties": False,
+}
+BASH_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "server_start_id": {"type": "string"},
+        "request_id": {"type": ["string", "null"]},
+        "started_at": {"type": "string"},
+        "finished_at": {"type": "string"},
+        "duration_ms": {"type": "number", "minimum": 0},
+        "exit_code": {"type": ["integer", "null"]},
+        "timed_out": {"type": "boolean"},
+        "error": {"type": ["string", "null"]},
+        "cwd": {"type": "string"},
+        "stdout_bytes": {"type": "integer", "minimum": 0},
+        "stderr_bytes": {"type": "integer", "minimum": 0},
+        "output_bytes_before_limits": {"type": "integer", "minimum": 0},
+        "output_bytes_after_limits": {"type": "integer", "minimum": 0},
+        "line_trim_count": {"type": "integer", "minimum": 0},
+        "line_trim_omitted_bytes": {"type": "integer", "minimum": 0},
+        "total_limit_omitted_bytes": {"type": "integer", "minimum": 0},
+        "total_truncation_omitted_bytes": {"type": "integer", "minimum": 0},
+    },
+    "required": [
+        "server_start_id",
+        "request_id",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "exit_code",
+        "timed_out",
+        "error",
+        "cwd",
+        "stdout_bytes",
+        "stderr_bytes",
+        "output_bytes_before_limits",
+        "output_bytes_after_limits",
+        "line_trim_count",
+        "line_trim_omitted_bytes",
+        "total_limit_omitted_bytes",
+        "total_truncation_omitted_bytes",
+    ],
+    "additionalProperties": False,
+}
 SERVER_START_ID = uuid.uuid4().hex
 RATE_TAGS = {
     "intent_miss",
@@ -100,6 +157,15 @@ MOUNTED_PATHS = [
     ("~/r2/files/podcast", "podcasts written for myself"),
     ("~/Documents/activities/", "daily activity logs"),
 ]
+
+
+class ChatGPTUpload(TypedDict):
+    """File reference injected by ChatGPT for an openai/fileParams parameter."""
+
+    download_url: str
+    file_id: str
+    file_name: str
+    mime_type: str
 
 
 def markdown_code_block(text: str) -> str:
@@ -191,6 +257,8 @@ def http_request_info() -> dict[str, Any] | None:
         info: dict[str, Any] = {
             "path": scope.get("path"),
             "user_agent": headers.get("user-agent"),
+            "session_id": headers.get("mcp-session-id"),
+            "protocol_version": headers.get("mcp-protocol-version"),
         }
         return info
     return None
@@ -235,15 +303,26 @@ def request_log_record(metadata: dict[str, Any]) -> dict[str, Any]:
         "server_start_id": SERVER_START_ID,
         "timestamp": iso_timestamp(),
         "request_id": metadata.get("request_id") or mcp_data.get("request_id"),
-        "session_id": metadata.get("session_id") or mcp_data.get("session_id"),
+        "session_id": metadata.get("session_id") or mcp_data.get("session_id") or http.get("session_id"),
         "mcp_method": metadata.get("method") or mcp_data.get("method"),
         "http_path": http.get("path") or metadata.get("http_path"),
         "user_agent": http.get("user_agent") or metadata.get("user_agent"),
-        "protocol_version": metadata.get("protocol_version") or mcp_data.get("protocol_version"),
+        "protocol_version": (
+            http.get("protocol_version")
+            or metadata.get("protocol_version")
+            or mcp_data.get("protocol_version")
+        ),
+        "client_name": metadata.get("client_name") or mcp_data.get("client_name"),
+        "client_version": metadata.get("client_version") or mcp_data.get("client_version"),
+        "client_capabilities": metadata.get("client_capabilities") or mcp_data.get("client_capabilities"),
         "duration_ms": metadata.get("duration_ms"),
     }
     if isinstance(params, dict):
         result["protocol_version"] = result["protocol_version"] or params.get("protocolVersion")
+        client_info = params.get("clientInfo") or {}
+        result["client_name"] = result["client_name"] or client_info.get("name")
+        result["client_version"] = result["client_version"] or client_info.get("version")
+        result["client_capabilities"] = result["client_capabilities"] or params.get("capabilities")
     if "result" in metadata:
         result["result"] = metadata["result"]
     if "error" in metadata:
@@ -260,17 +339,32 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
 def log_request_close(metadata: dict[str, Any]) -> dict[str, Any]:
     record = request_log_record(metadata)
     append_jsonl(LOG_DIR / f"requests-{datetime.now():%Y-%m-%d}.jsonl", record)
+    if record.get("session_id"):
+        (LOG_DIR / "latest-session").write_text(str(record["session_id"]), encoding="utf-8")
     return record
 
 
 def log_bash_command(commands: str, output: str, request: dict[str, Any], result: dict[str, Any]) -> None:
-    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S.%f")
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    (LOG_DIR / f"{timestamp}.md").write_text(
+    now = datetime.now(UTC)
+    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S.%f")
+    month_dir = LOG_DIR / now.strftime("%Y-%m")
+    month_dir.mkdir(parents=True, exist_ok=True)
+    (month_dir / f"{timestamp}.md").write_text(
         f"# mcpserver bash log {timestamp}\n\n"
         f"## Command\n\n{markdown_code_block(commands)}\n\n"
         f"## Request\n\n{markdown_json(request)}\n\n"
         f"## Output\n\n{markdown_code_block(output)}\n\n"
+        f"## Result\n\n{markdown_json(result)}\n",
+    )
+
+
+def log_file_operation(operation: str, result: dict[str, Any]) -> None:
+    now = datetime.now(UTC)
+    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S.%f")
+    month_dir = LOG_DIR / now.strftime("%Y-%m")
+    month_dir.mkdir(parents=True, exist_ok=True)
+    (month_dir / f"{timestamp}.md").write_text(
+        f"# mcpserver {operation} log {timestamp}\n\n"
         f"## Result\n\n{markdown_json(result)}\n",
     )
 
@@ -396,7 +490,17 @@ def tool_description_hash() -> str:
     return hashlib.sha256((bash.__doc__ or "").encode()).hexdigest()
 
 
+def restructure_logs() -> None:
+    """Move legacy per-call Markdown logs into monthly directories."""
+    for path in LOG_DIR.glob("????-??-??T*.md"):
+        destination = LOG_DIR / path.name[:7] / path.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            path.replace(destination)
+
+
 def log_startup_record() -> dict[str, Any]:
+    restructure_logs()
     record = {
         "server_start_id": SERVER_START_ID,
         "timestamp": iso_timestamp(),
@@ -441,10 +545,15 @@ def run_bash_command(commands: str, timeout_ms: int, cwd: str | None = None) -> 
         "exit_code": None,
         "timed_out": False,
         "error": None,
+        "cwd": str(Path(cwd).expanduser().resolve() if cwd else Path.cwd().resolve()),
         "stdout_bytes": 0,
         "stderr_bytes": 0,
     }
     try:
+        if not commands.strip():
+            raise ValueError("commands must not be empty")
+        if timeout_ms <= 0:
+            raise ValueError("timeout_ms must be greater than zero")
         completed = subprocess.run(
             commands,
             shell=True,
@@ -571,20 +680,26 @@ Summarize and cite paths/lines instead.
 """
 
 
-async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> str:
+async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> ToolResult:
     ctx: Context = get_context()
     await ctx.info(f"bash: {commands} (cwd={cwd or os.getcwd()})")
     request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
     output, result = run_bash_command(commands, timeout_ms, cwd)
+    request_id = getattr(ctx, "request_id", None)
+    result["request_id"] = str(request_id) if request_id is not None else None
     if result["stderr_bytes"]:
         await ctx.warning(f"ERROR: {result['stderr_bytes']} stderr bytes")
     await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
     log_bash_command(commands, output, request, result)
-    return output
+    return ToolResult(
+        content=[TextContent(type="text", text=output)],
+        structured_content=result,
+        is_error=result["timed_out"] or result["error"] is not None,
+    )
 
 
 bash.__doc__ = build_bash_description()
-mcp.tool(description=bash.__doc__)(bash)
+mcp.tool(description=bash.__doc__, output_schema=BASH_OUTPUT_SCHEMA)(bash)
 
 
 def is_text_mime_type(mime_type: str) -> bool:
@@ -616,8 +731,7 @@ def read_error(action: str, path: Path, error: OSError) -> ToolError:
     return ToolError(f"{action}: {path}: {error.strerror or error}")
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": False}, output_schema=None)
-def download_file(path: str) -> ToolResult:
+def _download_file(path: str) -> ToolResult:
     """Download a complete local file as an MCP embedded resource."""
     file_path = Path(path).expanduser().resolve()
     try:
@@ -672,7 +786,119 @@ def download_file(path: str) -> ToolResult:
     )
 
 
+@mcp.tool(
+    annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    output_schema=DOWNLOAD_FILE_OUTPUT_SCHEMA,
+)
+async def download_file(path: str) -> ToolResult:
+    """Download a complete local file as an MCP embedded resource."""
+    result = _download_file(path)
+    metadata = result.structured_content
+    await get_context().info(f"download_file: {metadata['path']} ({metadata['size']} bytes)")
+    log_file_operation("download_file", metadata)
+    return result
+
+
+def writable_roots() -> list[Path]:
+    """Return detected writable working and mounted directories."""
+    candidates = [Path.cwd(), *(mount_probe_path(display) for display, _ in MOUNTED_PATHS)]
+    roots = []
+    for candidate in candidates:
+        if candidate.is_file():
+            candidate = candidate.parent
+        if candidate.is_dir() and path_access_mode(candidate) == "rw":
+            resolved = candidate.resolve()
+            if resolved not in roots:
+                roots.append(resolved)
+    return roots
+
+
+def _save_file(file: ChatGPTUpload, destination: str, overwrite: bool = False) -> dict[str, Any]:
+    """Stream a ChatGPT-uploaded file to an allowed writable local path."""
+    required = {"download_url", "file_id", "file_name", "mime_type"}
+    missing = required - file.keys()
+    if missing or any(not isinstance(file.get(name), str) or not file[name] for name in required):
+        raise ToolError(f"Invalid file object; required string fields: {', '.join(sorted(required))}")
+    url = file["download_url"]
+    if parse.urlsplit(url).scheme.lower() != "https":
+        raise ToolError("download_url must use HTTPS")
+
+    path = Path(destination).expanduser().resolve()
+    if not any(path.is_relative_to(root) for root in writable_roots()):
+        raise ToolError(f"Destination is not under a detected writable root: {path}")
+    if path.exists() and not overwrite:
+        raise ToolError(f"Destination already exists (set overwrite=true to replace it): {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    digest = hashlib.sha256()
+    size = 0
+    temp_path: Path | None = None
+    try:
+        with request.urlopen(request.Request(url, headers={"User-Agent": "mcpserver/1"}), timeout=30) as response:
+            if parse.urlsplit(response.geturl()).scheme.lower() != "https":
+                raise ToolError("download_url redirected to a non-HTTPS URL")
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None and int(content_length) > MAX_UPLOAD_BYTES:
+                raise ToolError(f"Upload exceeds the {MAX_UPLOAD_BYTES}-byte size limit")
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
+                temp_path = Path(handle.name)
+                while chunk := response.read(64 * 1024):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise ToolError(f"Upload exceeds the {MAX_UPLOAD_BYTES}-byte size limit")
+                    handle.write(chunk)
+                    digest.update(chunk)
+        if overwrite:
+            os.replace(temp_path, path)
+        else:
+            try:
+                os.link(temp_path, path)
+            except FileExistsError as error:
+                raise ToolError(
+                    f"Destination already exists (set overwrite=true to replace it): {path}"
+                ) from error
+            temp_path.unlink()
+        temp_path = None
+    except ToolError:
+        raise
+    except Exception as error:
+        raise ToolError(f"Could not save upload: {error}") from error
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+    result = {
+        "path": str(path),
+        "size": size,
+        "mime_type": file["mime_type"],
+        "sha256": digest.hexdigest(),
+        "file_id": file["file_id"],
+    }
+    return result
+
+
+@mcp.tool(
+    meta={"openai/fileParams": ["file"]},
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    },
+)
+async def save_file(file: ChatGPTUpload, destination: str, overwrite: bool = False) -> dict[str, Any]:
+    """Stream a ChatGPT-uploaded file to an allowed writable local path."""
+    result = _save_file(file, destination, overwrite)
+    await get_context().info(f"save_file: {result['path']} ({result['size']} bytes)")
+    log_file_operation("save_file", result)
+    return result
+
+
 def latest_session_id() -> str:
+    with suppress(OSError):
+        session_id = (LOG_DIR / "latest-session").read_text(encoding="utf-8").strip()
+        if session_id:
+            return session_id
     for path in sorted(LOG_DIR.glob("requests-*.jsonl"), reverse=True):
         with suppress(OSError, json.JSONDecodeError):
             for line in reversed(path.read_text().splitlines()):
