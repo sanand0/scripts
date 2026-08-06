@@ -244,6 +244,7 @@ npm install -g remark-cli remark-inline-links # remark - Markdown processing. E.
 npm install -g trash-cli@latest               # trash - Move files to trash instead of deleting
 npm install -g agent-browser@latest           # agent-browser - Allow AI coding agents to use the browser
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent  # pi - customizable AI coding agent
+npm install -g opencode-ai                    # opencode - agent
 # claude copilot git-standup zx
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
