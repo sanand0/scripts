@@ -9,5 +9,8 @@ description: Use when writing command-line scripts agents will control
 - Fail fast showing reason and correct invocation.
 - Design for context-window efficiency. Document and support filters, field masks, NDJSON pagination, etc. so agents can request only needed data
 - Support environment-variable-driven, headless execution for unattended use (tokens, credential file paths)
-- Log state/progress BEFORE actions and flush - so agents can monitor, write errors that help agents debug, warn agents of unexpected input, data, configs, etc.
+- Observability:
+  - Log state/progress BEFORE actions and flush - so agents can monitor.
+  - Write errors that help agents debug.
+  - Warn agents of unexpected input, data, configs, etc.
 - Document with compact, explicit instructions and examples
