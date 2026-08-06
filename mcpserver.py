@@ -560,8 +560,8 @@ def build_bash_description(
     mounted_paths: list[tuple[str, str]] | None = None,
 ) -> str:
     cwd = cwd or Path.cwd()
-    return f"""Runs multiline bash script.
-Use the sibling `download_file` tool to transfer files, not by printing base64, etc.
+    return f"""Runs multiline bash script. Prints output.
+Use download_file/save_file tools for large/binary files - not printing base64.
 
 cwd: {display_path(cwd)} ({path_access_mode(cwd)})
 
