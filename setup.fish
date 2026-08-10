@@ -156,9 +156,6 @@ abbr --add pdftotext 'PYTHONUTF8=1 uvx --with markitdown[pdf] markitdown'
 # MP3tag alternative
 abbr --add mp3tag puddletag
 
-# Example of FFMpeg concat command for merging video files without re-encoding
-abbr --add ffconcat ffmpeg -i "concat:input1.ext|input2.ext" -c copy output.ext
-
 # Run Python debugger on error
 abbr --add uvd 'PYTHONPATH=~/code/scripts/pdbhook uv'
 
@@ -244,8 +241,6 @@ abbr --add opencode 'npx -y opencode-ai'
 
 function secret --description "Extract secret from .env"
     sops --decrypt "$HOME/Dropbox/scripts/.env" | awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' | string trim -c '"'
-    # Slower version using python-dotenv
-    # dotenv -f $HOME/Dropbox/scripts/.env get $argv[1]
 end
 
 function claudeuse --description "Toggle Claude settings between Anthropic and MiniMax"
@@ -341,7 +336,23 @@ end
 # Notes utilities
 # -----------------------------------------------
 abbr actions 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
+# ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
 abbr ideas 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.ideas\' $file; end'
+# ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
+
+# Concatenate media files without re-encoding.
+function ffconcat --description "Usage: ffconcat a.opus b.opus output.opus"
+    set -l output $argv[-1]
+    set -l inputs
+
+    for f in $argv[1..-2]
+        set -a inputs (realpath -- $f)
+    end
+
+    ffmpeg -f concat -safe 0 \
+        -i (printf "file '%s'\n" $inputs | psub) \
+        -c copy $output
+end
 
 # Audio/video
 # ----------------------------------------------
@@ -835,8 +846,8 @@ end
 
 # NVIDIA GPU encoding
 # Higher preset = better, slower compression (0=slowest, 8=fastest)
-# -cq 51 is the highest compression supported by my ffmpeg (lower = larger file size, higher quality)
-abbr --add videocompress ffmpeg -i input.mp4 -c:v av1_nvenc -preset p6 -tune hq -rc vbr -cq 51 -b:v 0 -spatial-aq 1 -temporal-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
+# -cq 63 is the highest compression supported by AV1 NVENC (lower = larger file, higher quality)
+abbr --add videocompress ffmpeg -i input.mp4 -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq 55 -b:v 0 -spatial-aq 1 -temporal-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 # Older CPU encoding
 # Lower crf = higher quality (55 is poor, 45 is good)
 # abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm

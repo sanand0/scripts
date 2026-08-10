@@ -183,6 +183,7 @@ mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, e
 mise use -g github:rtk-ai/rtk         # rtk - CLI tool proxy that reduces token consumption
 mise use -g github:sinelaw/fresh      # fresh - Text editor
 mise use -g github:walles/moor        # moor - pager with syntax highlighting
+mise use -g github:pranshuparmar/witr # witr - Why is this running? Trace any process, port, container, or file to what started it
 mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
 mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used
@@ -251,7 +252,6 @@ npm install -g opencode-ai                    # opencode - agent
 sudo apt install -y antigravity                   # Google agentic code editor
 sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
 sudo apt install -y fdupes                        # fdupes - Find duplicate files
-sudo apt install -y ffmpeg                        # ffmpeg - Multimedia framework for audio/video processing
 sudo apt install -y flameshot                     # flameshot - Screenshot tool with annotation
 sudo apt install -y gnome-shell-extension-manager # gnome-shell-extension-manager - Install GNOME extensions
 sudo apt install -y gnome-tweaks                  # gnome-tweaks - Advanced GNOME settings via GUI
@@ -314,6 +314,9 @@ cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/lates
 cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o ttyd && chmod +x ttyd   # ttyd - Terminal sharing on web
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
+
+# I used the version at https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-02-28-12-59 since the latest version (2026-08-08) reports: Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0. The minimum required Nvidia driver for nvenc is 610.00 or newer
+cd ~/.local/bin; curl -L https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' '*/bin/ffplay'  # FFmpeg - Audio/video processing
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`
 
 # Set up Agent tools
