@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# Sources:
+#   10 Aug 2026: https://chatgpt.com/c/6a796d54-ffcc-83ec-ad0c-c0d0518f438a
+# References:
+#   https://github.com/openai/codex/blob/main/codex-rs/backend-client/src/client/rate_limit_resets.rs
+# If this reports an error, you may need to log into Codex again.
+
+set -euo pipefail
+
+AUTH=~/.codex/auth.json
+
+TOKEN=$(jq -r '.tokens.access_token' "$AUTH")
+ACCOUNT=$(jq -r '.tokens.account_id' "$AUTH")
+
+# Check usage
+response=$(curl -sS -w $'\n%{http_code}' https://chatgpt.com/backend-api/wham/usage \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "ChatGPT-Account-ID: $ACCOUNT" \
+  -H 'OpenAI-Beta: codex-1' \
+  -H 'originator: codex_cli_rs' \
+  -H 'Accept: application/json')
+status=${response##*$'\n'}
+body=${response%$'\n'*}
+
+# If this reports an error, log in via codex app-server
+if [[ $status == 401 ]]; then
+  coproc CODEX { codex app-server 2>/dev/null; }
+  printf '%s\n' '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexusage","version":"1"}}}' >&"${CODEX[1]}"
+  IFS= read -r _ <&"${CODEX[0]}"
+  printf '%s\n' '{"id":2,"method":"account/rateLimits/read"}' >&"${CODEX[1]}"
+  while IFS= read -r line <&"${CODEX[0]}"; do
+    jq -e '.id == 2 and .result' >/dev/null 2>&1 <<<"$line" && break
+  done
+  kill "$CODEX_PID" 2>/dev/null || true
+  wait "$CODEX_PID" 2>/dev/null || true
+
+  TOKEN=$(jq -r '.tokens.access_token' "$AUTH")
+  ACCOUNT=$(jq -r '.tokens.account_id' "$AUTH")
+  body=$(curl -fsS https://chatgpt.com/backend-api/wham/usage \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "ChatGPT-Account-ID: $ACCOUNT" \
+    -H 'OpenAI-Beta: codex-1' \
+    -H 'originator: codex_cli_rs' \
+    -H 'Accept: application/json')
+elif [[ $status != 200 ]]; then
+  printf 'codexusage: usage API returned HTTP %s\n' "$status" >&2
+  exit 1
+fi
+
+# Print in a friendly format
+jq -r '[.rate_limit.primary_window.used_percent, .rate_limit.primary_window.reset_at] | @tsv' <<<"$body" |
+while IFS=$'\t' read -r usage reset; do
+  when=$(TZ=Asia/Singapore date -d "@$reset" '+%-I:%M %P SGT on %a %d %b %Y')
+  printf "7d: %.0f%% - resets at %s\n" "$usage" "$when"
+done

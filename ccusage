@@ -1,21 +1,44 @@
 #!/usr/bin/env bash
 
-# Source: https://chatgpt.com/c/69f238ce-1364-83ea-855e-4317642395d9
-# Alternative to: uvx ccusage
+# Alternative to: uvx ccusage / codexbar
+# Sources:
+#   29 Apr 2026: https://chatgpt.com/c/69f238ce-1364-83ea-855e-4317642395d9
+#   10 Aug 2026: https://chatgpt.com/c/6a796d54-ffcc-83ec-ad0c-c0d0518f438a
 
-# If this reports an error, you may need to log into Claude Code
+CRED=~/.claude/.credentials.json
 
-TOKEN=$(jq -r '.claudeAiOauth.accessToken // .accessToken' ~/.claude/.credentials.json)
+TOKEN=$(jq -r '.claudeAiOauth.accessToken // .accessToken' "$CRED")
 
-curl -sS https://api.anthropic.com/api/oauth/usage \
+# Check usage
+response=$(curl -sS -w $'\n%{http_code}' https://api.anthropic.com/api/oauth/usage \
   -H "Authorization: Bearer $TOKEN" \
   -H "anthropic-beta: oauth-2025-04-20" \
-  -H "Accept: application/json" |
+  -H "Accept: application/json")
+status=${response##*$'\n'}
+body=${response%$'\n'*}
+
+# If this reports an error, log in via Claude Code
+if [[ $status == 401 ]]; then
+  CLAUDE_CODE_OAUTH_REFRESH_TOKEN=$(jq -r '.claudeAiOauth.refreshToken' "$CRED") \
+  CLAUDE_CODE_OAUTH_SCOPES=$(jq -r '.claudeAiOauth.scopes | join(" ")' "$CRED") \
+    claude auth login --claudeai >/dev/null
+
+  TOKEN=$(jq -r '.claudeAiOauth.accessToken // .accessToken' "$CRED")
+  body=$(curl -fsS https://api.anthropic.com/api/oauth/usage \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    -H "Accept: application/json")
+elif [[ $status != 200 ]]; then
+  printf 'ccusage: usage API returned HTTP %s\n' "$status" >&2
+  exit 1
+fi
+
+# Print in a friendly format
 jq -r '
   ["5h", .five_hour.utilization, .five_hour.resets_at],
   ["7d", .seven_day.utilization, .seven_day.resets_at]
   | @tsv
-' |
+' <<<"$body" |
 while IFS=$'\t' read -r label usage reset; do
   when=$(TZ=Asia/Singapore date -d "$reset" '+%-I:%M %P SGT on %a %d %b %Y')
   printf "%s: %.0f%% - resets at %s\n" "$label" "$usage" "$when"
