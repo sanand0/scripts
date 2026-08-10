@@ -131,6 +131,8 @@ MOUNTED_PATHS = [
         "2005-2025 email archives (use ?immutable=1)",
     ),
     ("~/Documents/data/linkedin-invites.json", "LinkedIn invites"),
+    ("~/Documents/chatgpt/", "ChatGPT chat dumps"),
+    ("~/Documents/claude/", "Claude chat dumps"),
     ("~/code/talks/README.md", "talk transcripts, slides"),
     ("~/code/datastories/config.json", "data stories"),
     ("~/code/llmdemos/config.json", "innovation team demos"),
@@ -561,7 +563,6 @@ def build_bash_description(
 ) -> str:
     cwd = cwd or Path.cwd()
     return f"""Runs multiline bash script. Prints output.
-Use download_file/save_file tools for large/binary files - not printing base64.
 
 cwd: {display_path(cwd)} ({path_access_mode(cwd)})
 
@@ -597,9 +598,8 @@ Batch related probes into one script with section headers.
   Avoid re-running identical discovery commands unless new evidence changed the scope.
 Batch multiple commands into fewer tool calls to avoid call overhead.
 
-Keep stdout bounded to ~200 lines/ ~20KB.
-  Save large intermediate output to /tmp; print only summaries and paths.
-  Use `download_file` tool to transfer large files.
+stdout longer than {MAX_LINE_BYTES} bytes / line and over {MAX_TOTAL_OUTPUT_BYTES} bytes is trimmed.
+Save larger text or binaries to /tmp and use `download_file` tool to transfer.
 
 Do not print secrets, tokens, or credentials, unless explicitly requested.
 Summarize and cite paths/lines instead.
@@ -658,7 +658,6 @@ def read_error(action: str, path: Path, error: OSError) -> ToolError:
 
 
 def _download_file(path: str) -> ToolResult:
-    """Download a complete local file as an MCP embedded resource."""
     file_path = Path(path).expanduser().resolve()
     try:
         file_stat = file_path.stat()
@@ -717,7 +716,7 @@ def _download_file(path: str) -> ToolResult:
     output_schema=DOWNLOAD_FILE_OUTPUT_SCHEMA,
 )
 async def download_file(path: str) -> ToolResult:
-    """Download a complete local file as an MCP embedded resource."""
+    """Download large/binary files as an MCP embedded resource. Use bash tool for small text."""
     result = _download_file(path)
     metadata = result.structured_content
     await get_context().info(f"download_file: {metadata['path']} ({metadata['size']} bytes)")
