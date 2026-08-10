@@ -12,7 +12,7 @@ gws workflow +weekly-digest
 gws workflow +meeting-prep
 gws workflow +email-to-task # (created a task from an email, then deleted it)
 gws drive files list # or: `about get`, `+upload`
-gws tasks tasklists list` # or: `tasks insert`, `tasks delete`
+gws tasks tasklists list # or: `tasks insert`, `tasks delete`
 gws docs documents create` # or: `gws docs +write`
 gws sheets spreadsheets create` # or: `gws sheets +append`, `gws sheets +read`
 gws slides presentations create` # or: `presentations batchUpdate`
