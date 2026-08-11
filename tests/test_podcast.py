@@ -106,8 +106,7 @@ def test_default_output_is_mp3(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["audio_format"] == "mp3"
     output_path = Path(payload["output"])
-    assert output_path.suffix == ".mp3"
-    assert output_path.name.startswith("script-")
+    assert output_path.name == "script.mp3"
 
 
 def test_default_output_uses_markdown_basename(tmp_path: Path) -> None:
@@ -118,7 +117,19 @@ def test_default_output_uses_markdown_basename(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.stdout
     output_path = Path(json.loads(result.stdout)["output"])
-    assert output_path.name.startswith("weekly.notes-")
+    assert output_path.name == "weekly.notes.mp3"
+
+
+def test_default_output_adds_timestamp_on_collision(tmp_path: Path) -> None:
+    input_path = tmp_path / "script.md"
+    input_path.write_text(SAMPLE, encoding="utf-8")
+    input_path.with_suffix(".mp3").touch()
+
+    result = RUNNER.invoke(podcast.app, [str(input_path), "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 0, result.stdout
+    output_path = Path(json.loads(result.stdout)["output"])
+    assert output_path.name.startswith("script-")
     assert output_path.suffix == ".mp3"
 
 

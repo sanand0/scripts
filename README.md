@@ -18,6 +18,10 @@ echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 
 See [`agents/`](agents/README.md) for setting up AI code editors.
 
+## Tests
+
+Run the complete suite with `just test`. The first run downloads the Chromium build pinned to the Playwright tests; later runs reuse it from Playwright's cache. Each test module has a focused recipe such as `just test-chatgpt` or `just test-mcpserver`; list them with `just --list`. Recipes use isolated, cached uv environments, so there is no test requirements file or lockfile to maintain.
+
 ## Windows Setup
 
 On an **Admin** command prompt, run:

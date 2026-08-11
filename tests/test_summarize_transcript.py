@@ -99,9 +99,10 @@ def test_force_selected_field_preserves_unselected_metadata(tmp_path: Path, monk
     def fake_call(*_args, **_kwargs):
         return SimpleNamespace(actions=['Owner: By 20 Jul 2026. Send the report.']), summarize.Usage()
 
-    monkeypatch.setattr(summarize, 'call_gemini', fake_call)
+    monkeypatch.setattr(summarize, 'call_ai', fake_call)
     result = summarize.process_file(
-        path, None, 'fake-model', False, True, transcript_set(), {'actions'}
+        path=path, provider='gemini', client=None, model='fake-model', dry_run=False, force=True,
+        content_set=transcript_set(), selected_fields={'actions'},
     )
     metadata, _, _ = summarize.parse_frontmatter(path.read_text(encoding='utf-8'))
 
@@ -125,9 +126,10 @@ def test_missing_selected_field_is_added_without_regenerating_existing_fields(
     def fake_call(*_args, **_kwargs):
         return SimpleNamespace(**{'what-i-missed': []}), summarize.Usage()
 
-    monkeypatch.setattr(summarize, 'call_gemini', fake_call)
+    monkeypatch.setattr(summarize, 'call_ai', fake_call)
     result = summarize.process_file(
-        path, None, 'fake-model', False, False, transcript_set(), {'what-i-missed'}
+        path=path, provider='gemini', client=None, model='fake-model', dry_run=False, force=False,
+        content_set=transcript_set(), selected_fields={'what-i-missed'},
     )
     metadata, _, _ = summarize.parse_frontmatter(path.read_text(encoding='utf-8'))
 
@@ -168,9 +170,10 @@ def test_process_file_generates_what_i_missed_in_one_model_call(
             'Possible reason: topic.'
         ]}), usage
 
-    monkeypatch.setattr(summarize, 'call_gemini', fake_call)
+    monkeypatch.setattr(summarize, 'call_ai', fake_call)
     result = summarize.process_file(
-        path, None, 'fake-model', False, False, transcript_set(), {'what-i-missed'}
+        path=path, provider='gemini', client=None, model='fake-model', dry_run=False, force=False,
+        content_set=transcript_set(), selected_fields={'what-i-missed'},
     )
     metadata, _, _ = summarize.parse_frontmatter(path.read_text(encoding='utf-8'))
 
@@ -182,10 +185,9 @@ def test_process_file_generates_what_i_missed_in_one_model_call(
     ]
 
 
-def test_what_i_missed_prompt_is_conservative_and_checks_later_closure() -> None:
+def test_what_i_missed_prompt_requires_evidence_and_avoids_invented_reasons() -> None:
     field = next(field for field in transcript_set().fields if field.name == 'what-i-missed')
-    assert 'usually 0' in field.description
-    assert "continues without checking what the speaker missed" in field.description
-    assert "every later turn" in field.description
-    assert "response that could have been better" in field.description
-    assert "Merge repeated manifestations" in field.description
+    assert 'anchored to transcript evidence' in field.description
+    assert 'exact quote, fragment, or close paraphrase' in field.description
+    assert 'Do not invent a psychological explanation' in field.description
+    assert 'Reserve an empty list for transcripts with essentially no meaningful bids' in field.description

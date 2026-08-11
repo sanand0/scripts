@@ -1137,6 +1137,7 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     env["FAKE_FFMPEG_LOG"] = str(ffmpeg_log_path)
     env["FAKE_FFPROBE_DURATION"] = "3900"
     env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["TRANSCRIBE_CALLS_CACHE_DIR"] = str(tmp_path / "cache")
     env.pop("GEMINI_API_KEY", None)
 
     result = run_script(
@@ -1271,6 +1272,7 @@ def test_script_warns_when_chunk_response_does_not_look_like_transcript(tmp_path
     env["FAKE_GENAI_LOG"] = str(log_path)
     env["FAKE_FFPROBE_DURATION"] = "3900"
     env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["TRANSCRIBE_CALLS_CACHE_DIR"] = str(tmp_path / "cache")
     env["FAKE_GENAI_RESPONSE_BY_FILE"] = json.dumps(
         {"long.part002.opus": "It appears that you forgot to attach the audio file."}
     )

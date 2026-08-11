@@ -2,14 +2,14 @@
 
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["fastmcp"]
+# dependencies = ["fastmcp>=3.4,<4"]
 # ///
 
 # Usage: uv run mcpserver.py
 #   Exposes an MCP server on localhost:2428 that lets LLMs run bash commands.
 #   curl localhost:2428/mcp to test
 # Test with
-#   uv run --with pytest --with fastmcp pytest -q tests/test_mcpserver.py
+#   just test-mcpserver
 
 import base64
 import hashlib

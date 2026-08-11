@@ -138,15 +138,17 @@ def test_summarize_dry_run_does_not_write_proposal_ledger(tmp_path, monkeypatch)
     post.write_text("# Title\n\nOne\nTwo\nThree\nFour\nFive\n", encoding="utf-8")
     ledger = tmp_path / "metadata-tag-proposals.yml"
     monkeypatch.setattr(summarize, "BLOG_PROPOSALS_PATH", ledger)
-    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.setattr(summarize, "resolve_files", lambda *_: [post])
-    monkeypatch.setattr(summarize, "call_gemini", lambda *_: (_FakeMeta(), summarize.Usage()))
+    monkeypatch.setattr(summarize, "call_ai", lambda *_: (_FakeMeta(), summarize.Usage()))
     monkeypatch.setitem(summarize.CONTENT_SET_MAP, "blog-test", summarize.CONTENT_SET_MAP["blog"])
-    monkeypatch.setattr("google.genai.Client", lambda **_: object())
+    monkeypatch.setattr("openai.OpenAI", lambda **_: object())
 
     result = CliRunner().invoke(summarize.app, ["blog-test", "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0
+    assert '"status": "dry-run"' in result.stdout
+    assert '"proposals": ["agent-memory"]' in result.stdout
     assert not ledger.exists()
 
 
@@ -156,11 +158,11 @@ def test_summarize_merges_proposals_once_after_workers(tmp_path, monkeypatch):
         post = tmp_path / name
         post.write_text("# Title\n\nOne\nTwo\nThree\nFour\nFive\n", encoding="utf-8")
         posts.append(post)
-    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
     monkeypatch.setattr(summarize, "resolve_files", lambda *_: posts)
-    monkeypatch.setattr(summarize, "call_gemini", lambda *_: (_FakeMeta(), summarize.Usage()))
+    monkeypatch.setattr(summarize, "call_ai", lambda *_: (_FakeMeta(), summarize.Usage()))
     monkeypatch.setitem(summarize.CONTENT_SET_MAP, "blog-test", summarize.CONTENT_SET_MAP["blog"])
-    monkeypatch.setattr("google.genai.Client", lambda **_: object())
+    monkeypatch.setattr("openai.OpenAI", lambda **_: object())
     calls = []
     monkeypatch.setattr(summarize, "merge_blog_tag_proposals", lambda path, evidence: calls.append((path, evidence)))
 
