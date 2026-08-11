@@ -110,6 +110,7 @@ Here are the setup details for my laptops.
 - [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rofi-prompts.sh](rofi-prompts.sh) shows prompts from Markdown files in `~/code/blog/pages/prompts` and `~/code/scripts/agents/**/SKILL.md` lets you pick one via rofi, then copies/pastes the selected fenced code block. Triggered by Ctrl + Alt + P.
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
+- [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
 - [skilluse.py](skilluse.py) scans Codex, Claude, and Copilot logs for agent skill usage. Examples: `skilluse.py --agent codex --skill "github:*"`, `skilluse.py --format json | jaq .`, `skilluse.py --describe | jaq .`.
 - [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
 - [summarize.py](summarize.py) adds AI-generated metadata (summary, keywords, people, actions for transcripts; description and keywords for blog posts) to Markdown files. Already-processed files are skipped.

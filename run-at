@@ -1,0 +1,306 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Run a command once at a given time, catching up after laptop downtime.
+
+Uses persistent systemd user timers. Successful jobs leave a completion marker;
+re-scheduling the same time + command is therefore safe.
+
+Examples:
+  run-at '2026-08-15 14:00' ~/bin/report.py
+  run-at --name backup 'tomorrow 3pm' bash backup.sh --fast
+  run-at --list
+  run-at --status report-a1b2c3d4
+  run-at --logs report-a1b2c3d4
+  run-at --cancel report-a1b2c3d4
+  run-at --clear report-a1b2c3d4
+  run-at --clear-done
+  run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"
+  run-at --dry-run '2026-08-15 14:00' echo hello
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "systemd/user"
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "run-at"
+JOBS_DIR = STATE_DIR / "jobs"
+
+
+def die(message: str, code: int = 2) -> None:
+    print(f"run-at: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(args, text=True, capture_output=True, check=check)
+    except FileNotFoundError:
+        die(f"required command not found: {args[0]}")
+
+
+def parse_when(text: str) -> str:
+    """Return an exact local timestamp accepted by OnCalendar."""
+    result = run("date", "-d", text, "+%Y-%m-%d %H:%M:%S", check=False)
+    if result.returncode:
+        die(f"cannot parse time {text!r}. Try e.g. '2026-08-15 14:00' or 'tomorrow 3pm'.")
+    when = result.stdout.strip()
+    verify = run("systemd-analyze", "calendar", "--iterations=1", when, check=False)
+    if verify.returncode:
+        die(f"systemd rejected time {when!r}: {verify.stderr.strip()}")
+    return when
+
+
+def job_id(when: str, command: list[str]) -> str:
+    digest = hashlib.sha256(json.dumps([when, command], separators=(",", ":")).encode()).hexdigest()[:8]
+    base = re.sub(r"[^A-Za-z0-9_.-]+", "-", Path(command[0]).name).strip("-.") or "job"
+    return f"{base[:24]}-{digest}"
+
+
+def paths(job: str) -> dict[str, Path]:
+    return {
+        "timer": CONFIG_DIR / f"run-at-{job}.timer",
+        "service": CONFIG_DIR / f"run-at-{job}.service",
+        "meta": JOBS_DIR / f"{job}.json",
+        "runner": JOBS_DIR / f"{job}.sh",
+        "done": JOBS_DIR / f"{job}.done",
+        "lock": JOBS_DIR / f"{job}.lock",
+    }
+
+
+def systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run("systemctl", "--user", *args, check=check)
+
+
+def enable_timer(job: str) -> None:
+    result = systemctl("daemon-reload", check=False)
+    if result.returncode:
+        die(result.stderr.strip() or "systemctl --user daemon-reload failed", 1)
+    result = systemctl("enable", "--now", f"run-at-{job}.timer", check=False)
+    if result.returncode:
+        die(result.stderr.strip() or "could not enable timer", 1)
+
+
+def load_meta(job: str) -> dict:
+    p = paths(job)["meta"]
+    if not p.exists():
+        die(f"unknown job {job!r}. Use --list to see jobs.")
+    return json.loads(p.read_text())
+
+
+def status_of(job: str) -> str:
+    p = paths(job)
+    if p["done"].exists():
+        return "done"
+    failed = systemctl("is-failed", f"run-at-{job}.service", check=False)
+    if failed.returncode == 0:
+        return "failed"
+    active = systemctl("is-active", f"run-at-{job}.timer", check=False)
+    return "pending" if active.returncode == 0 else "inactive"
+
+
+def schedule(when_text: str, command: list[str], name: str | None, dry_run: bool) -> None:
+    if not command:
+        die("missing command")
+    when = parse_when(when_text)
+    job = job_id(when, command)
+    p = paths(job)
+    label = name or shlex.join(command)
+
+    cwd = str(Path.cwd())
+    path_env = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    meta = {
+        "id": job,
+        "name": name,
+        "when": when,
+        "when_input": when_text,
+        "command": command,
+        "cwd": cwd,
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+    runner = f"""#!/usr/bin/env bash
+set -uo pipefail
+export PATH={shlex.quote(path_env)}
+cd {shlex.quote(cwd)}
+exec 9>{shlex.quote(str(p['lock']))}
+flock -n 9 || exit 0
+[[ -e {shlex.quote(str(p['done']))} ]] && exit 0
+{shlex.join(command)}
+status=$?
+if (( status == 0 )); then
+  date --iso-8601=seconds > {shlex.quote(str(p['done']))}
+fi
+exit "$status"
+"""
+    description = label.replace("\\", "/").replace("%", "%%").replace("\n", " ")[:160]
+    service = f"""[Unit]
+Description=run-at: {description}
+
+[Service]
+Type=oneshot
+ExecStart={p['runner']}
+"""
+    timer = f"""[Unit]
+Description=run-at: {description}
+
+[Timer]
+OnCalendar={when}
+Persistent=true
+AccuracySec=1s
+Unit=run-at-{job}.service
+
+[Install]
+WantedBy=timers.target
+"""
+
+    if dry_run:
+        print(json.dumps(meta, indent=2))
+        print("\n# service\n" + service.rstrip())
+        print("\n# timer\n" + timer.rstrip())
+        return
+
+    if p["meta"].exists():
+        old = json.loads(p["meta"].read_text())
+        if old.get("when") == when and old.get("command") == command:
+            state = status_of(job)
+            if state != "done":
+                enable_timer(job)  # Safe recovery if a previous enable was interrupted.
+            print(f"{job}: already {state}")
+            return
+        die(f"job ID collision for {job}")
+
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    p["runner"].write_text(runner)
+    p["runner"].chmod(0o700)
+    p["meta"].write_text(json.dumps(meta, indent=2) + "\n")
+    p["service"].write_text(service)
+    p["timer"].write_text(timer)
+
+    enable_timer(job)
+
+    print(f"{job}: scheduled for {when}")
+    print(f"  {shlex.join(command)}")
+
+
+def list_jobs() -> None:
+    if not JOBS_DIR.exists():
+        return
+    rows = []
+    for file in JOBS_DIR.glob("*.json"):
+        try:
+            meta = json.loads(file.read_text())
+            rows.append((meta["when"], status_of(meta["id"]), meta))
+        except (KeyError, json.JSONDecodeError):
+            continue
+    for _, status, meta in sorted(rows):
+        label = meta.get("name") or shlex.join(meta["command"])
+        print(f"{status:8} {meta['when']}  {meta['id']:34} {label}")
+
+
+def show_status(job: str) -> None:
+    meta = load_meta(job)
+    print(json.dumps({**meta, "status": status_of(job)}, indent=2))
+    result = systemctl("status", f"run-at-{job}.timer", f"run-at-{job}.service", "--no-pager", check=False)
+    if result.stdout:
+        print("\n" + result.stdout.rstrip())
+
+
+def show_logs(job: str) -> None:
+    load_meta(job)
+    os.execvp("journalctl", ["journalctl", "--user", "-u", f"run-at-{job}.service", "--no-pager"])
+
+
+def remove_job(job: str, *, keep_done: bool) -> None:
+    p = paths(job)
+    systemctl("disable", "--now", f"run-at-{job}.timer", check=False)
+    keys = ("timer", "service", "meta", "runner", "lock") if keep_done else p.keys()
+    for key in keys:
+        p[key].unlink(missing_ok=True)
+
+
+def cancel(job: str) -> None:
+    load_meta(job)
+    remove_job(job, keep_done=True)
+    systemctl("daemon-reload", check=False)
+    # Keep .done deliberately: recreating an already-completed identical job stays a no-op.
+    print(f"{job}: cancelled")
+
+
+def clear(job: str) -> None:
+    p = paths(job)
+    if not any(path.exists() for path in p.values()):
+        die(f"unknown job {job!r}. Use --list to see jobs.")
+    remove_job(job, keep_done=False)
+    systemctl("daemon-reload", check=False)
+    print(f"{job}: cleared")
+
+
+def clear_done() -> None:
+    if not JOBS_DIR.exists():
+        print("0 done jobs cleared")
+        return
+    jobs = sorted(file.name.removesuffix(".done") for file in JOBS_DIR.glob("*.done"))
+    for job in jobs:
+        remove_job(job, keep_done=False)
+    if jobs:
+        systemctl("daemon-reload", check=False)
+    print(f"{len(jobs)} done job{'s' if len(jobs) != 1 else ''} cleared")
+
+
+def usage() -> None:
+    print(__doc__.strip())
+
+
+def main(argv: list[str]) -> None:
+    if not argv or argv[0] in {"-h", "--help"}:
+        usage()
+        return
+    if argv[0] in {"-l", "--list"}:
+        list_jobs()
+        return
+    if argv[0] == "--clear-done":
+        if len(argv) != 1:
+            die("usage: run-at --clear-done")
+        clear_done()
+        return
+    for flag, fn in (("--status", show_status), ("--logs", show_logs), ("--cancel", cancel), ("--clear", clear)):
+        if argv[0] == flag:
+            if len(argv) != 2:
+                die(f"usage: run-at {flag} JOB")
+            fn(argv[1])
+            return
+
+    name = None
+    dry_run = False
+    i = 0
+    while i < len(argv) and argv[i].startswith("-"):
+        if argv[i] == "--dry-run":
+            dry_run = True
+            i += 1
+        elif argv[i] == "--name":
+            if i + 1 >= len(argv):
+                die("--name requires a value")
+            name = argv[i + 1]
+            i += 2
+        else:
+            die(f"unknown option {argv[i]!r}")
+    if len(argv) - i < 2:
+        die("usage: run-at [--name NAME] [--dry-run] WHEN COMMAND [ARG ...]")
+    schedule(argv[i], argv[i + 1 :], name, dry_run)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
