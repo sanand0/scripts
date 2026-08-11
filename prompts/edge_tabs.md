@@ -3,6 +3,26 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Cookies, 11 Aug 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Update `~/code/scripts/edge` with a minimal `cookies` subcommand.
+
+- `edge cookies google.com` returns all cookies whose domain is `google.com` or any subdomain such as `.google.com`, `accounts.google.com`, etc.
+- `edge cookies https://www.linkedin.com` and `edge cookies www.linkedin.com` should more or less be equivalent to `edge cookies linkedin.com` (i.e. subset of cookies for the domain and its subdomains and protocol - if that's the case).
+- Use the existing Edge CDP connection; do not read/decrypt the browser cookie database directly.
+- Fetch cookies via CDP (`Storage.getCookies` is fine), then filter by parent domain. Or any more efficient mechanism is fine, too. Benchmark.
+- Default output: curl-compatible cookie string, e.g. `name1=value1; name2=value2`.
+- `edge cookies google.com --json` returns the matching cookie objects as JSON.
+- Keep the implementation small and consistent with the existing script's style and CLI conventions. Preserve all existing behavior.
+- Test it against at least one domain with cookies and show the commands/results.
+
+<!-- codex resume 019ff19f-43a9-7922-8168-70923eb4c959 -->
+
 ## Switch profile, 17 Jul 2026
 
 <!--

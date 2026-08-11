@@ -15,6 +15,7 @@ Examples:
   edge tabs --json | jaq '.tab_count'
   edge md 'article title' | moor
   edge md docs.example.com | xclip -selection clipboard
+  edge cookies google.com
 """
 
 from __future__ import annotations
@@ -335,6 +336,52 @@ def cdp_targets(cdp_url: str) -> list[dict[str, object]]:
     return [target for target in response.json() if target.get("type") == "page"]
 
 
+def cdp_cookies(cdp_url: str) -> list[dict[str, object]]:
+    """Return all cookies exposed by the Edge browser's CDP endpoint."""
+    import httpx
+    import websocket
+
+    response = httpx.get(f"{cdp_url.rstrip('/')}/json/version", timeout=10)
+    response.raise_for_status()
+    websocket_url = response.json()["webSocketDebuggerUrl"]
+    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
+        connection.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
+        while True:
+            response = json.loads(connection.recv())
+            if response.get("id") == 1:
+                break
+    if "error" in response:
+        raise RuntimeError(response["error"]["message"])
+    return response["result"]["cookies"]
+
+
+def cookie_domain(value: str) -> str:
+    """Normalize a domain or URL, treating a leading www as the same site."""
+    domain = (urlsplit(value if "://" in value else f"//{value}").hostname or "").lstrip(".").rstrip(".").casefold()
+    domain = domain.removeprefix("www.")
+    if not domain:
+        raise ValueError(f"Invalid domain or URL: {value}")
+    return domain
+
+
+def filter_cookies(cookies: list[dict[str, object]], domain: str) -> list[dict[str, object]]:
+    suffix = f".{domain}"
+    return [
+        cookie
+        for cookie in cookies
+        if (cookie_domain := str(cookie["domain"]).lstrip(".").casefold()) == domain
+        or cookie_domain.endswith(suffix)
+    ]
+
+
+def cookies_command(domain: str, cdp_url: str, json_output: bool) -> None:
+    cookies = filter_cookies(cdp_cookies(cdp_url), cookie_domain(domain))
+    if json_output:
+        print(json.dumps(cookies, indent=2, ensure_ascii=False))
+    else:
+        print("; ".join(f'{cookie["name"]}={cookie["value"]}' for cookie in cookies))
+
+
 def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
     """Map session (window ID, tab index) pairs to CDP tab target IDs."""
     from http.client import HTTPConnection, HTTPSConnection
@@ -526,7 +573,16 @@ def main() -> None:
     )
     add_session_arguments(md_parser)
     md_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
+    cookies_parser = subparsers.add_parser("cookies", help="Print cookies for a domain and its subdomains")
+    cookies_parser.add_argument("domain", help="Domain or URL, with www treated as the parent domain")
+    cookies_parser.add_argument("--json", action="store_true", help="Print matching cookie objects as JSON")
+    cookies_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
+
+    if args.command == "cookies":
+        cookies_command(args.domain, args.cdp_url, args.json)
+        return
 
     profiles = args.profile or DEFAULT_PROFILES
     if args.command == "md":

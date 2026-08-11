@@ -64,6 +64,77 @@ def snss(*commands):
 
 
 class EdgeTest(unittest.TestCase):
+    def test_cookie_domain_normalizes_urls_and_www(self):
+        self.assertEqual(edge.cookie_domain("google.com"), "google.com")
+        self.assertEqual(edge.cookie_domain("www.linkedin.com"), "linkedin.com")
+        self.assertEqual(edge.cookie_domain("https://www.LinkedIn.com/in/example"), "linkedin.com")
+        self.assertEqual(edge.cookie_domain("HTTPS://WWW.LINKEDIN.COM.:443/in/example"), "linkedin.com")
+
+    def test_filter_cookies_matches_domain_and_subdomains_only(self):
+        cookies = [
+            {"name": "root", "value": "1", "domain": "google.com"},
+            {"name": "dot", "value": "2", "domain": ".google.com"},
+            {"name": "account", "value": "3", "domain": "accounts.google.com"},
+            {"name": "lookalike", "value": "4", "domain": "notgoogle.com"},
+            {"name": "child-of-lookalike", "value": "5", "domain": "google.com.evil"},
+            {"name": "other", "value": "6", "domain": ".example.com"},
+        ]
+
+        self.assertEqual(
+            [cookie["name"] for cookie in edge.filter_cookies(cookies, "google.com")],
+            ["root", "dot", "account"],
+        )
+
+    def test_cookies_command_outputs_cookie_header(self):
+        cookies = [
+            {"name": "li_at", "value": "secret", "domain": ".linkedin.com"},
+            {"name": "lang", "value": "en", "domain": "www.linkedin.com"},
+            {"name": "other", "value": "skip", "domain": ".example.com"},
+        ]
+        output = StringIO()
+
+        with patch.object(edge, "cdp_cookies", return_value=cookies), redirect_stdout(output):
+            edge.cookies_command("https://www.linkedin.com", "http://localhost:9222", False)
+
+        self.assertEqual(output.getvalue(), "li_at=secret; lang=en\n")
+
+    def test_cookies_command_outputs_matching_objects_as_json(self):
+        cookies = [
+            {"name": "one", "value": "1", "domain": ".google.com", "secure": True},
+            {"name": "two", "value": "2", "domain": ".example.com", "secure": False},
+        ]
+        output = StringIO()
+
+        with patch.object(edge, "cdp_cookies", return_value=cookies), redirect_stdout(output):
+            edge.cookies_command("google.com", "http://localhost:9222", True)
+
+        self.assertEqual(json.loads(output.getvalue()), [cookies[0]])
+
+    def test_cdp_cookies_uses_browser_storage_command(self):
+        http_response = MagicMock()
+        http_response.json.return_value = {"webSocketDebuggerUrl": "ws://edge/devtools/browser/1"}
+        connection = MagicMock()
+        connection.recv.side_effect = [
+            json.dumps({"method": "Storage.cacheStorageContentUpdated"}),
+            json.dumps({"id": 1, "result": {"cookies": [{"name": "one"}]}}),
+        ]
+        websocket = MagicMock()
+        websocket.create_connection.return_value = connection
+
+        with patch("httpx.get", return_value=http_response), patch.dict(sys.modules, {"websocket": websocket}):
+            result = edge.cdp_cookies("http://localhost:9222")
+
+        self.assertEqual(result, [{"name": "one"}])
+        connection.send.assert_called_once_with(json.dumps({"id": 1, "method": "Storage.getCookies"}))
+
+    def test_main_dispatches_cookies_subcommand(self):
+        with patch.object(edge, "cookies_command") as cookies_command, patch.object(
+            sys, "argv", ["edge", "cookies", "google.com", "--json", "--cdp-url", "http://edge:9333"]
+        ):
+            edge.main()
+
+        cookies_command.assert_called_once_with("google.com", "http://edge:9333", True)
+
     def test_profile_argument_is_repeatable_with_requested_defaults(self):
         parser = argparse.ArgumentParser()
         edge.add_session_arguments(parser)
