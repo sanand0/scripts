@@ -19,9 +19,26 @@ body=${response%$'\n'*}
 
 # If this reports an error, log in via Claude Code
 if [[ $status == 401 ]]; then
-  CLAUDE_CODE_OAUTH_REFRESH_TOKEN=$(jq -r '.claudeAiOauth.refreshToken' "$CRED") \
-  CLAUDE_CODE_OAUTH_SCOPES=$(jq -r '.claudeAiOauth.scopes | join(" ")' "$CRED") \
-    claude auth login --claudeai >/dev/null
+  REFRESH=$(jq -r '.claudeAiOauth.refreshToken' "$CRED")
+  SCOPES=$(jq -r '.claudeAiOauth.scopes | join(" ")' "$CRED")
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+
+  if ! env -u ANTHROPIC_API_KEY \
+    CLAUDE_CONFIG_DIR="$tmp" \
+    CLAUDE_CODE_OAUTH_REFRESH_TOKEN="$REFRESH" \
+    CLAUDE_CODE_OAUTH_SCOPES="$SCOPES" \
+      claude auth login --claudeai >/dev/null; then
+    echo 'ccusage: OAuth refresh failed; run: env -u ANTHROPIC_API_KEY claude auth login --claudeai' >&2
+    exit 1
+  fi
+
+  if ! jq -e '.claudeAiOauth.accessToken and .claudeAiOauth.refreshToken' "$tmp/.credentials.json" >/dev/null 2>&1; then
+    echo 'ccusage: OAuth refresh returned no usable credentials' >&2
+    exit 1
+  fi
+
+  cp "$tmp/.credentials.json" "$CRED"
 
   TOKEN=$(jq -r '.claudeAiOauth.accessToken // .accessToken' "$CRED")
   body=$(curl -fsS https://api.anthropic.com/api/oauth/usage \
