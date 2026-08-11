@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["typer>=0.9", "google-genai", "python-dotenv", "ruamel.yaml", "rich", "pydantic", "tenacity"]
+# dependencies = ["typer>=0.9", "google-genai", "openai", "python-dotenv", "ruamel.yaml", "rich", "pydantic", "tenacity"]
 # ///
 """
 Add AI-generated YAML metadata to content files (transcripts, blog posts, etc.).
@@ -46,7 +46,7 @@ from threading import Lock
 from typing import Any
 
 import typer
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from pydantic import Field as PydanticField
 from pydantic import create_model
 from rich.console import Console
@@ -69,9 +69,11 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash":       (0.075, 0.30),
     "gemini-2.5-pro":         (1.25,  5.00),
     "gemini-2.0-flash":       (0.075, 0.30),
+    "gpt-5.6-luna":           (1.00,  6.00),
 }
 # Default price if user specifies a model not in PRICING dict
 DEFAULT_PRICING = (1.50,  9.00)
+DEFAULT_MODELS = {"gemini": "gemini-3.5-flash", "openai": "gpt-5.6-luna"}
 
 
 # ── Field definition ────────────────────────────────────────────────────────────
@@ -525,20 +527,34 @@ CONTENT_SETS: list[ContentSet] = [
             "forward (but drop the literal \"#IDEA\" tag from the text). Write the way the note-taker does: "
             "terse, concrete, ~6-15 words, plain conversational English. A sentence fragment or a bare "
             "question is good. NO preamble verbs like \"Leverage/Utilize/Implement\", no buzzwords, no "
-            "phrases-in-quotes, no two-clause explanations. Ideas are generative, not a recap of what was "
-            "said (that's 'summary') and not assigned to-dos (those are 'actions').\n\n"
+            "phrases-in-quotes, no two-clause explanations. An explicitly raised forward-looking idea remains "
+            "an idea; 'not a recap' means do not restate facts, decisions, completed work, or assigned to-dos.\n\n"
         ),
         skip_if=_transcript_skip,
         fields=[
             FieldDef(
                 name="summary",
-                description="3-8 who-said-what summaries of the most important items, one sentence each.",
+                description=(
+                    "3-8 who-said-what summaries of the highest-value items, one sentence each. Preserve concrete "
+                    "numbers, named mechanisms, decisions, contrasts, and non-obvious specifics when they carry the "
+                    "point. Prefer a specific claim over generic 'the group discussed X' topic-list bullets. Cover "
+                    "important late-transcript developments, not just the opening. When the conversation reaches an "
+                    "assessment, verdict, recommendation, or decision — a hiring call, go/no-go, or chosen option — "
+                    "state it explicitly, including when it appears only in notes rather than dialogue. Never let "
+                    "specificity about what participants said crowd out what was concluded."
+                ),
                 pydantic_type=list[str],
                 to_yaml=list,
             ),
             FieldDef(
                 name="keywords",
-                description="5-15 topics, names, tools, and concepts for keyword search.",
+                description=(
+                    "5-15 distinctive retrieval handles. Prioritize organizations/clients, products/tools, acronyms, "
+                    "named methods or mechanisms, datasets/artifacts, and unusually specific concepts actually present. "
+                    "Prefer terms someone might remember and search months later; replace generic categories with more "
+                    "specific terms when possible. Speaker names are already captured in 'people', so include a speaker "
+                    "name only when it is itself a useful retrieval handle; include other named people when relevant."
+                ),
                 pydantic_type=list[str],
                 to_yaml=flow_list,
             ),
@@ -553,14 +569,22 @@ CONTENT_SETS: list[ContentSet] = [
             FieldDef(
                 name="actions",
                 description=(
-                    "ALL agreed or clearly assigned actions. Silently build a final commitment ledger: for each "
-                    "owner and outcome, scan the entire transcript and keep only the latest accepted instruction. "
+                    "ALL agreed or clearly assigned actions, including minor or secondary commitments and handoffs. "
+                    "Silently scan the entire transcript for every candidate commitment, not just the most salient ones. "
+                    "For each candidate verify that someone accepted it or was explicitly assigned it; verify the owner "
+                    "and direction/recipient when stated; verify it was not completed during the call unless follow-up "
+                    "remains; and verify later evidence did not supersede or cancel it. Do not infer an owner merely from "
+                    "who asked a question, gave advice, or spoke nearby. Then build a final commitment ledger: for each "
+                    "owner and outcome, keep only the latest accepted instruction. "
                     "A later explicit direction overrides an earlier one, especially phrases such as 'instead' or "
                     "'no choice but', or a changed model, approach, or plan. Merge due date, artifact, recipient or "
                     "handoff, channel, escalation, and completion condition only when stated. Preserve explicit scope "
                     "such as both, each, all, and same. Drop completed-during-call work unless follow-up remains, "
                     "unaccepted suggestions, optional or conditional plans, exploratory ideas, duplicates, and "
-                    "superseded actions. Format each as 'Owner: By D Mon YYYY. Specific observable action or "
+                    "superseded actions. Also exclude asks made during the call that were never verbally accepted, "
+                    "items already resolved before the call ended, and hedged personal intentions ('I should/might/could') "
+                    "that were not assigned or explicitly offered as a follow-up to someone present. Format each as "
+                    "'Owner: By D Mon YYYY. Specific observable action or "
                     "handoff.' Omit the date and any other unsupported detail. Resolve relative dates from the meeting "
                     "date, never the script run date. Empty list if none."
                 ),
@@ -572,12 +596,17 @@ CONTENT_SETS: list[ContentSet] = [
                 description=(
                     "List the highest-leverage moments where I (Anand) missed or under-reacted to a “bid” "
                     "(request, concern, constraint, opportunity, or emotional signal) from others. "
-                    "Read between the lines. Consider what went unsaid. Mentally list, pick the top. "
-                    "For each moment, concisely include "
-                    "(a) the exact quote, fragment or a close paraphrase of what they said, "
-                    "(b) the follow-up question or move I _should_ have made in the moment, and "
-                    "(c) why I might have missed it (cognitive, bias, interaction, time pressure, etc.)."
-                    "Empty list if none."
+                    "Read between the lines, but keep every item anchored to transcript evidence. Mentally list candidates "
+                    "and pick only the highest-leverage ones. For each moment, concisely include (a) the exact quote, "
+                    "fragment, or close paraphrase of what they said and (b) the follow-up question or move I _should_ "
+                    "have made in the moment. Do not invent a psychological explanation for why I missed it. Only if a "
+                    "situational reason is directly supported by the transcript (for example an interruption or explicit "
+                    "time pressure), you may add it as a tentative 'Possible reason'. If anyone other than me speaks "
+                    "substantively — asks questions, raises concerns or constraints, makes requests, or pushes back — "
+                    "return at least 2 evidence-grounded items when such bids exist. Reserve an empty list for transcripts "
+                    "with essentially no meaningful bids. Talks, workshops, and demos where I am the main speaker still "
+                    "require scanning the Q&A and any explicit admissions of gaps or uncertainty for missed follow-ups. "
+                    "Never invent filler merely to meet the count."
                 ),
                 pydantic_type=list[str],
                 to_yaml=list,
@@ -588,11 +617,16 @@ CONTENT_SETS: list[ContentSet] = [
                 description=(
                     "3-10 forward-looking sparks worth revisiting — opportunities, product/venture concepts, "
                     "experiments to try, provocative \"what if\" questions, go-to-market/recruiting tactics, "
-                    "tooling ideas, or reusable principles. Capture BOTH ideas explicitly raised (including any "
+                    "tooling ideas, or reusable principles. Capture BOTH forward-looking ideas explicitly raised (including any "
                     "lines tagged \"#IDEA\", but omit that literal tag) AND fresh ones that emerge from the "
-                    "discussion. Each a terse, concrete one-liner of ~6-15 words in plain conversational English; "
-                    "a fragment or a bare question is fine. No \"Leverage/Utilize/Implement\" preambles, no "
-                    "buzzwords, no quoted phrases. Generative sparks, not a recap and not to-dos. Empty list if none."
+                    "discussion. An explicitly raised forward-looking idea is valid even though it appears in the transcript: "
+                    "'not a recap' means do not restate facts, decisions, completed work, or assigned actions as ideas. "
+                    "A capability, feature, or practice that already exists and was merely described is not an idea, even "
+                    "when phrased forward-lookingly. Fresh ideas must be directly grounded in the discussion; prefer "
+                    "portable, testable, or surprising "
+                    "sparks over generic advice. Each a terse, concrete one-liner of ~6-15 words in plain conversational "
+                    "English; a fragment or bare question is fine. No \"Leverage/Utilize/Implement\" preambles, "
+                    "buzzwords, or quoted phrases. Empty list if none."
                 ),
                 pydantic_type=list[str],
                 to_yaml=list,
@@ -659,23 +693,33 @@ class Usage:
 
 # ── AI call ───────────────────────────────────────────────────────────────────
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
-def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
-    from google.genai import types
-
-    ResponseModel = create_model(
+def response_model(fields: list[FieldDef]):
+    return create_model(
         "ResponseModel",
         **{f.name: (f.pydantic_type, PydanticField(description=f.description))
            for f in fields},
     )
+
+
+def ai_input(content_set: ContentSet, text: str, fields: list[FieldDef]) -> str:
+    return (
+        content_set.prompt_for(text, fields)
+        + without_frontmatter_fields(text, {field.name for field in fields})
+    )
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
+def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
+    from google.genai import types
+
+    ResponseModel = response_model(fields)
     response = client.models.generate_content(
         model=model,
-        contents=(
-            content_set.prompt_for(text, fields)
-            + without_frontmatter_fields(text, {field.name for field in fields})
-        ),
+        contents=ai_input(content_set, text, fields),
         config=types.GenerateContentConfig(
             temperature=0,
+            # Pin the API default used by this benchmark for reproducibility.
+            thinking_config=types.ThinkingConfig(thinking_level="medium"),
             response_mime_type="application/json",
             response_json_schema=ResponseModel.model_json_schema(),
         ),
@@ -689,15 +733,44 @@ def call_gemini(client, model: str, content_set: ContentSet, text: str, fields: 
     if response.usage_metadata:
         usage.add(
             response.usage_metadata.prompt_token_count or 0,
-            response.usage_metadata.candidates_token_count or 0,
+            (response.usage_metadata.candidates_token_count or 0)
+            + (response.usage_metadata.thoughts_token_count or 0),
         )
     return meta, usage
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=30))
+def call_openai(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
+    ResponseModel = response_model(fields)
+    response = client.responses.parse(
+        model=model,
+        input=ai_input(content_set, text, fields),
+        text_format=ResponseModel,
+        # This was the GPT-5.6 default during the benchmark; pin it for reruns.
+        reasoning={"effort": "medium"},
+        store=False,
+    )
+    if not response.output_parsed:
+        raise ValueError("OpenAI returned no parsed output")
+
+    usage = Usage()
+    if response.usage:
+        usage.add(response.usage.input_tokens or 0, response.usage.output_tokens or 0)
+    return response.output_parsed, usage
+
+
+def call_ai(provider: str, client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
+    if provider == "gemini":
+        return call_gemini(client, model, content_set, text, fields)
+    if provider == "openai":
+        return call_openai(client, model, content_set, text, fields)
+    raise ValueError(f"Unknown provider: {provider}")
 
 
 # ── Per-file processing ───────────────────────────────────────────────────────
 
 def process_file(
-    path: Path, client, model: str, dry_run: bool, force: bool, content_set: ContentSet,
+    path: Path, provider: str, client, model: str, dry_run: bool, force: bool, content_set: ContentSet,
     selected_fields: set[str] | None = None,
 ) -> dict:
     result: dict = {
@@ -744,7 +817,7 @@ def process_file(
     if missing:
         try:
             missing_fields = [fdef for fdef in content_set.fields if fdef.name in missing]
-            ai, usage = call_gemini(client, model, content_set, text, missing_fields)
+            ai, usage = call_ai(provider, client, model, content_set, text, missing_fields)
             for fdef in content_set.fields:
                 if fdef.name not in missing:
                     continue
@@ -779,7 +852,8 @@ def process_file(
 def main(
     content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}"),
     patterns:  list[str] | None    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
-    model:     str                    = typer.Option("gemini-3.5-flash", help="Gemini model ID"),
+    model:     str | None             = typer.Option(None, help="Model ID; defaults by provider"),
+    provider:  str                    = typer.Option("openai", help="Provider: gemini|openai"),
     workers:   int                    = typer.Option(4, "--workers", help="Parallel API workers"),
     dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
@@ -803,10 +877,22 @@ def main(
             raise typer.Exit(1)
         selected_fields = requested
 
-    load_dotenv()
-    api_key = os.environ.get("GEMINI_API_KEY")
+    if provider not in DEFAULT_MODELS:
+        console.print(f"[red]Unknown provider '{provider}'. Valid: gemini, openai[/red]")
+        raise typer.Exit(1)
+    model = model or DEFAULT_MODELS[provider]
+
+    env_path = Path.home() / "code/scripts/.env"
+    load_dotenv(env_path)
+    if provider == "gemini":
+        key_name = "GEMINI_API_KEY"
+    else:
+        key_name = "OPENAI_API_KEY"
+    # Respect a non-empty process environment value; fall back to the scripts .env even
+    # when this runtime predefines the variable as an empty string.
+    api_key = os.environ.get(key_name) or dotenv_values(env_path).get(key_name)
     if not api_key:
-        console.print("[red]GEMINI_API_KEY not found in environment or .env[/red]")
+        console.print(f"[red]{key_name} not found in environment or .env[/red]")
         raise typer.Exit(1)
 
     quiet = os.environ.get("DAILY_ACTIVITIES_QUIET") == "1"
@@ -817,8 +903,12 @@ def main(
         print(json.dumps({"error": msg}) if use_json else msg)
         raise typer.Exit(1)
 
-    from google import genai
-    client = genai.Client(api_key=api_key)
+    if provider == "gemini":
+        from google import genai
+        client = genai.Client(api_key=api_key)
+    else:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
 
     results: list[dict] = []
     total_usage = Usage()
@@ -853,7 +943,7 @@ def main(
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
-                process_file, path, client, model, dry_run, force, content_set, selected_fields
+                process_file, path, provider, client, model, dry_run, force, content_set, selected_fields
             ): path
             for path in files
         }
