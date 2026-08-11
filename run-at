@@ -141,6 +141,9 @@ flock -n 9 || exit 0
 status=$?
 if (( status == 0 )); then
   date --iso-8601=seconds > {shlex.quote(str(p['done']))}
+  command -v notify-send >/dev/null && notify-send -a run-at "run-at: succeeded" {shlex.quote(label)} || true
+else
+  command -v notify-send >/dev/null && notify-send -a run-at "run-at: failed (exit $status)" {shlex.quote(label)} || true
 fi
 exit "$status"
 """
