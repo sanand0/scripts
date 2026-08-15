@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["playwright>=1.52", "typer>=0.12"]
+# dependencies = ["typer>=0.12", "websockets>=15"]
 # ///
 """Back up WhatsApp Web conversations through Chrome DevTools Protocol.
 
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -23,10 +24,12 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import typer
-from playwright.async_api import Browser, Page, async_playwright
+import websockets
 
 import sanand_observability as obs
 
@@ -44,6 +47,106 @@ INCREMENTAL_PAST_CUTOFF_PAGES = 2
 CHAT_LIST_SCROLL_PAGE_FACTOR = 1.5
 RUN_FIELDS = {"scrapedAt"}
 METADATA_FIELDS = {"conversationTitle", "conversationId", "userId"}
+
+
+class _UnsupportedLocator:
+    async def aria_snapshot(self, timeout: int = 0) -> str:
+        raise NotImplementedError("ARIA snapshots are unavailable through the lightweight CDP client")
+
+
+class CDPPage:
+    """Small direct-CDP page adapter for the operations this script needs.
+
+    Connecting Playwright at the browser target can stall when another CDP client
+    already auto-attached to many tabs. A page-target WebSocket remains independent
+    and avoids taking ownership of (or closing) the user's browser.
+    """
+
+    def __init__(self, socket: Any, url: str, browser_version: str) -> None:
+        self.socket = socket
+        self.url = url
+        self.browser_version = browser_version
+        self.command_id = 0
+
+    async def command(self, method: str, **params: Any) -> dict[str, Any]:
+        self.command_id += 1
+        command_id = self.command_id
+        await self.socket.send(compact_json({"id": command_id, "method": method, "params": params}))
+        try:
+            async with asyncio.timeout(30):
+                while True:
+                    response = json.loads(await self.socket.recv())
+                    if response.get("id") != command_id:
+                        continue
+                    if response.get("error"):
+                        raise RuntimeError(f"CDP {method}: {response['error'].get('message', response['error'])}")
+                    return response.get("result") or {}
+        except TimeoutError as exc:
+            raise TimeoutError(f"CDP {method} did not respond within 30s") from exc
+
+    async def evaluate(self, expression: str, arg: Any = ...) -> Any:
+        source = f"({expression})()" if arg is ... else f"({expression})({compact_json(arg)})"
+        result = await self.command("Runtime.evaluate", expression=source, awaitPromise=True, returnByValue=True, userGesture=True)
+        if details := result.get("exceptionDetails"):
+            exception = details.get("exception") or {}
+            raise RuntimeError(exception.get("description") or details.get("text") or "JavaScript evaluation failed")
+        return (result.get("result") or {}).get("value")
+
+    async def eval_on_selector(self, selector: str, expression: str) -> Any:
+        source = f"(selector => ({expression})(document.querySelector(selector)))({compact_json(selector)})"
+        result = await self.command("Runtime.evaluate", expression=source, awaitPromise=True, returnByValue=True, userGesture=True)
+        if details := result.get("exceptionDetails"):
+            exception = details.get("exception") or {}
+            raise RuntimeError(exception.get("description") or details.get("text") or "JavaScript evaluation failed")
+        return (result.get("result") or {}).get("value")
+
+    async def wait_for_selector(self, selector: str, timeout: int) -> None:
+        deadline = time.monotonic() + timeout / 1000
+        while time.monotonic() < deadline:
+            if await self.evaluate("selector => Boolean(document.querySelector(selector))", selector):
+                return
+            await asyncio.sleep(0.1)
+        raise TimeoutError(f"selector not found after {timeout}ms: {selector}")
+
+    async def wait_for_timeout(self, timeout: int) -> None:
+        await asyncio.sleep(timeout / 1000)
+
+    async def title(self) -> str:
+        return await self.evaluate("() => document.title")
+
+    def locator(self, selector: str) -> _UnsupportedLocator:
+        return _UnsupportedLocator()
+
+    def on(self, event: str, callback: Any) -> None:
+        # Runtime events are deliberately not enabled: they can contain private
+        # chat text, while command failures still flow through observability.
+        return None
+
+    async def close(self) -> None:
+        await self.socket.close()
+
+
+def cdp_http_base(cdp_url: str) -> str:
+    parsed = urlparse(cdp_url)
+    if parsed.scheme not in {"http", "https", "ws", "wss"} or not parsed.netloc:
+        raise ValueError(f"invalid CDP URL: {cdp_url}")
+    scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
+    return f"{scheme}://{parsed.netloc}"
+
+
+async def connect_whatsapp_page(cdp_url: str) -> CDPPage:
+    base = cdp_http_base(cdp_url)
+
+    def fetch(path: str) -> Any:
+        with urlopen(f"{base}{path}", timeout=5) as response:
+            return json.load(response)
+
+    version, targets = await asyncio.gather(asyncio.to_thread(fetch, "/json/version"), asyncio.to_thread(fetch, "/json/list"))
+    target = next((item for item in targets if "web.whatsapp.com" in item.get("url", "") and item.get("webSocketDebuggerUrl")), None)
+    if not target:
+        raise RuntimeError("No WhatsApp Web tab found. Open https://web.whatsapp.com/ in a CDP-enabled browser first.")
+    socket = await websockets.connect(target["webSocketDebuggerUrl"], max_size=None, open_timeout=10)
+    return CDPPage(socket, target["url"], version.get("Browser") or "")
 CHAT_ID_JS = r"""
 (root) => {
   const seen = new WeakSet();
@@ -286,6 +389,16 @@ SCROLL_HISTORY_JS = r"""
     const text = lines.filter((line) => !/^\+?\d[\d\s().-]{6,}$/.test(line)).join("\n").trim();
     return { ...(author ? { author } : {}), ...(text ? { text } : {}) };
   };
+  const additionalFields = (row) => {
+    const video = row.querySelector('[data-testid~="video-content"], [aria-label="Open video player" i]');
+    const videoCaption = row.querySelector('[data-testid~="video-caption"]')?.innerText?.trim();
+    return {
+      ...(row.querySelector('[data-testid="forwarded-header"]') ? { isForwarded: true } : {}),
+      ...([...row.querySelectorAll("span")].some((node) => node.innerText?.trim().toLowerCase() === "edited") ? { isEdited: true } : {}),
+      ...(video ? { mediaType: "video" } : {}),
+      ...(videoCaption ? { mediaCaption: videoCaption } : {}),
+    };
+  };
   const rowsFromDateChips = () => {
     const times = Object.create(null);
     const rows = Object.create(null);
@@ -306,11 +419,12 @@ SCROLL_HISTORY_JS = r"""
             time: when.toISOString(),
             ...(row.querySelector(".message-out") ? { isOutgoing: true } : {}),
             ...fallbackText(row, clock),
+            ...additionalFields(row),
           };
         }
         continue;
       }
-      if (node.querySelector?.("[data-id]")) continue;
+      if (node.closest?.('[role="row"]') || node.querySelector?.("[data-id]")) continue;
       const text = node.innerText?.trim();
       if (!text || text.length > 20) continue;
       const date = parseDateLabel(text);
@@ -323,7 +437,11 @@ SCROLL_HISTORY_JS = r"""
     const messages = (globalThis.whatsappscraper?.whatsappMessages(document) || [])
       .filter((msg) => msg.messageId);
     for (const msg of messages) {
-      if (corrected.times[msg.messageId]) msg.time = corrected.times[msg.messageId];
+      const domRow = corrected.rows[msg.messageId];
+      if (domRow?.time) msg.time = domRow.time;
+      for (const key of ["isForwarded", "isEdited", "mediaType", "mediaCaption"]) {
+        if (domRow?.[key] !== undefined) msg[key] = domRow[key];
+      }
     }
     const messageIds = new Set(messages.map((msg) => msg.messageId));
     for (const row of Object.values(corrected.rows)) {
@@ -481,7 +599,7 @@ def files_for_id(conversation_id: str) -> list[Path]:
     if not conversation_id:
         return []
     safe_id = safe_name(conversation_id, "unknown", 96)
-    return sorted(OUT_DIR.glob(f"* [{safe_id}].jsonl"))
+    return sorted(OUT_DIR.glob("* [[]" + safe_id + "[]].jsonl"))
 
 
 def path_for(title: str, conversation_id: str = "") -> Path:
@@ -565,9 +683,7 @@ def already_checked(state: dict[str, Any], key: str, chat: dict[str, Any], list_
     row = state.get(key)
     if not row:
         return False
-    if row.get("lastActiveText") == (chat.get("lastActiveText") or "") and row.get("listTime") == (list_time.isoformat() if list_time else ""):
-        return True
-    return bool(row.get("lastActiveDay") and row.get("lastActiveDay") == (chat.get("lastActiveDay") or ""))
+    return row.get("lastActiveText") == (chat.get("lastActiveText") or "") and row.get("listTime") == (list_time.isoformat() if list_time else "")
 
 
 def chat_list_time(chat: dict[str, Any]) -> dt.datetime | None:
@@ -602,9 +718,7 @@ def known_no_new_content(chat: dict[str, Any], checked_state: dict[str, Any]) ->
     if list_time and list_time <= local_since:
         return True
     key = chat_key(title, conversation_id)
-    if already_checked(checked_state, key, chat, list_time):
-        return True
-    return bool(chat.get("lastActiveDay") and chat["lastActiveDay"] == local_day(local_since, chat.get("browserTimeZone") or ""))
+    return already_checked(checked_state, key, chat, list_time)
 
 
 def sorted_time_violations(chats: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -629,12 +743,26 @@ def newest_chat_time(chats: list[dict[str, Any]]) -> dt.datetime | None:
 
 def merge_jsonl_files(target: Path, sources: list[Path]) -> None:
     rows: dict[str, dict[str, Any]] = {}
+    history: list[dict[str, Any]] = []
+    archived_at = dt.datetime.now(dt.UTC).isoformat()
     for path in [target, *sources]:
         for row in load_jsonl(path):
             key = row_key(row)
-            rows[key], _ = merge_row(rows.get(key, {}), row)
+            rows[key], conflicts = merge_row(rows.get(key, {}), row)
+            if conflicts:
+                history.append(
+                    {
+                        "archivedAt": archived_at,
+                        "reason": "file-merge-conflict",
+                        "path": str(path),
+                        "rowKey": key,
+                        "messageId": row.get("messageId") or "",
+                        "fields": conflicts,
+                    }
+                )
     if rows:
         write_jsonl(target, sorted(rows.values(), key=sort_key))
+    append_history(target, history)
     for source in sources:
         if source.exists() and source != target:
             source.unlink()
@@ -672,7 +800,15 @@ def merged_value(key: str, old: Any, new: Any) -> tuple[Any, bool]:
     if key == "reactions":
         return new, old != new
     if key in METADATA_FIELDS:
-        return (new, True) if richness(new) > richness(old) else (old, False)
+        return (new, old != new) if richness(new) else (old, False)
+    if isinstance(old, bool) and isinstance(new, bool):
+        selected = old or new
+        return selected, selected != old
+    if isinstance(old, (int, float)) and not isinstance(old, bool) and isinstance(new, (int, float)) and not isinstance(new, bool):
+        selected = max(old, new)
+        return selected, selected != old
+    if isinstance(old, str) and isinstance(new, str) and key in {"time", "mediaDuration"} and len(new) == len(old) and new != old:
+        return new, True
     if richness(new) > richness(old):
         return new, True
     return old, False
@@ -686,8 +822,8 @@ def merge_row(old: dict[str, Any], new: dict[str, Any]) -> tuple[dict[str, Any],
         selected, changed = merged_value(key, current, value)
         if changed:
             merged[key] = selected
-        elif key not in RUN_FIELDS and richness(value) and current not in (None, "", [], {}, False) and current != value:
-            conflicts[key] = {"kept": current, "incoming": value}
+        if key not in RUN_FIELDS | METADATA_FIELDS | {"reactions"} and richness(value) and current not in (None, "", [], {}, False) and current != value:
+            conflicts[key] = {"kept": selected, "incoming": current if changed else value}
     return merged, conflicts
 
 
@@ -733,19 +869,26 @@ def update_conversation(path: Path, title: str, conversation_id: str, messages: 
     history: list[dict[str, Any]] = []
     changed = 0
     if conversation_id:
+        user_id = conversation_id.partition("@")[0]
         for key, row in existing.items():
+            updates = {}
             if row.get("conversationId") != conversation_id:
-                history.append(
-                    {
-                        "archivedAt": scraped_at,
-                        "reason": "metadata-update",
-                        "path": str(path),
-                        "rowKey": key,
-                        "messageId": row.get("messageId") or "",
-                        "fields": {"conversationId": {"kept": row.get("conversationId"), "incoming": conversation_id}},
-                    }
-                )
-                existing[key] = {**row, "conversationId": conversation_id}
+                updates["conversationId"] = conversation_id
+            if row.get("userId") != user_id:
+                updates["userId"] = user_id
+            if updates:
+                if "conversationId" in updates:
+                    history.append(
+                        {
+                            "archivedAt": scraped_at,
+                            "reason": "metadata-update",
+                            "path": str(path),
+                            "rowKey": key,
+                            "messageId": row.get("messageId") or "",
+                            "fields": {"conversationId": {"kept": row.get("conversationId"), "incoming": conversation_id}},
+                        }
+                    )
+                existing[key] = {**row, **updates}
                 changed += 1
     for message in filtered_messages(messages, since, until, max_messages):
         row = {**message, "conversationTitle": title, "conversationId": conversation_id, "scrapedAt": scraped_at}
@@ -756,7 +899,7 @@ def update_conversation(path: Path, title: str, conversation_id: str, messages: 
             history.append(
                 {
                     "archivedAt": scraped_at,
-                    "reason": "conflict-kept-existing",
+                        "reason": "field-conflict",
                     "path": str(path),
                     "rowKey": key,
                     "messageId": row.get("messageId") or "",
@@ -790,20 +933,12 @@ def describe() -> dict[str, Any]:
     }
 
 
-async def whatsapp_page(browser: Browser) -> Page:
-    for context in browser.contexts:
-        for page in context.pages:
-            if "web.whatsapp.com" in page.url:
-                await page.bring_to_front()
-                return page
-    raise RuntimeError("No WhatsApp Web tab found. Open https://web.whatsapp.com/ in a CDP-enabled browser first.")
-
-
-async def inject_scraper(page: Page, scraper: Path) -> None:
+async def inject_scraper(page: CDPPage, scraper: Path) -> None:
     code = scraper.read_text()
+    bundle_hash = hashlib.sha256(code.encode()).hexdigest()[:16]
     await page.evaluate(
-        """async (src) => {
-          if (globalThis.whatsappscraper?.whatsappMessages) return;
+        """async ({ src, bundleHash }) => {
+          if (globalThis.whatsappscraper?.whatsappMessages && globalThis.whatsappscraper.__backupBundleHash === bundleHash) return;
           const blob = new Blob([src], { type: "text/javascript" });
           const url = URL.createObjectURL(blob);
           try {
@@ -817,23 +952,25 @@ async def inject_scraper(page: Page, scraper: Path) -> None:
           } finally {
             URL.revokeObjectURL(url);
           }
+          if (!globalThis.whatsappscraper?.whatsappMessages) throw new Error("whatsappscraper bundle did not expose whatsappMessages");
+          globalThis.whatsappscraper.__backupBundleHash = bundleHash;
         }""",
-        code,
+        {"src": code, "bundleHash": bundle_hash},
     )
 
 
-async def current_chat_id(page: Page) -> str:
+async def current_chat_id(page: CDPPage) -> str:
     return await page.evaluate(f"() => ({CHAT_ID_JS})(document.querySelector('div#main') || document)")
 
 
-async def list_chats(page: Page) -> dict[str, Any]:
+async def list_chats(page: CDPPage) -> dict[str, Any]:
     data = await page.evaluate(CHAT_LIST_JS)
     if data.get("error"):
         raise RuntimeError(data["error"])
     return data
 
 
-async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = None, checked_state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+async def iter_chats(page: CDPPage, max_scan: int, stop_at: dt.datetime | None = None, checked_state: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     await page.wait_for_selector(CHAT_LIST_SELECTOR, timeout=10000)
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(400)
@@ -895,7 +1032,7 @@ async def iter_chats(page: Page, max_scan: int, stop_at: dt.datetime | None = No
     return list(seen.values())
 
 
-async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int) -> tuple[bool, str]:
+async def open_chat(page: CDPPage, title: str, conversation_id: str, max_scan: int) -> tuple[bool, str]:
     async def click_if_visible() -> bool | None:
         data = await list_chats(page)
         for chat in data["chats"]:
@@ -903,8 +1040,12 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
                 if not await page.evaluate(CLICK_CHAT_JS, {"title": title, "conversationId": conversation_id}):
                     return False
                 await page.wait_for_selector(MAIN_SELECTOR, timeout=10000)
-                await page.wait_for_timeout(1200)
-                return True
+                for _ in range(20):
+                    if not conversation_id or await current_chat_id(page) == conversation_id:
+                        await page.wait_for_timeout(1200)
+                        return True
+                    await page.wait_for_timeout(100)
+                return False
         return None
 
     visible = await click_if_visible()
@@ -936,7 +1077,7 @@ async def open_chat(page: Page, title: str, conversation_id: str, max_scan: int)
     return False, "not-found"
 
 
-async def scrape_open_chat(page: Page, cutoff: dt.datetime | None, max_messages: int, max_rounds: int, settle_ms: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+async def scrape_open_chat(page: CDPPage, cutoff: dt.datetime | None, max_messages: int, max_rounds: int, settle_ms: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     await inject_scraper(page, SCRAPER)
     cutoff_text = cutoff.isoformat() if cutoff else ""
     scroll = await page.evaluate(SCROLL_HISTORY_JS, {"cutoff": cutoff_text, "maxMessages": max_messages, "maxRounds": max_rounds, "settleMs": settle_ms})
@@ -951,7 +1092,7 @@ async def scrape_open_chat(page: Page, cutoff: dt.datetime | None, max_messages:
     )
     for row in unique.values():
         if conversation_id:
-            row.setdefault("userId", conversation_id)
+            row.setdefault("userId", conversation_id.partition("@")[0])
     return list(unique.values()), {**scroll, **dom_counts, "scraper_dom_count": len(messages), "conversation_id": conversation_id}
 
 
@@ -995,17 +1136,15 @@ async def run_backup(
             }
         ),
     )
-    page: Page | None = None
+    page: CDPPage | None = None
     run_stats: dict[str, Any] = {"opened_chats": 0, "skipped_chats": 0, "messages_seen": 0, "messages_kept": 0, "rows_changed": 0}
     try:
-        async with async_playwright() as p:
-            with trace.span("cdp_connection", {"cdp_url": cdp_url}):
-                browser = await p.chromium.connect_over_cdp(cdp_url)
-                trace.event("runtime", await obs.browser_versions(browser))
-            with trace.span("page_discovery"):
-                page = await whatsapp_page(browser)
-                obs.attach_page_observers(page, trace)
-                trace.event("page", {"url": page.url, "title": await page.title()})
+        with trace.span("cdp_connection", {"cdp_url": cdp_url}):
+            page = await connect_whatsapp_page(cdp_url)
+            trace.event("runtime", {"browser_version": page.browser_version, "cdp_client": "direct-page-websocket"})
+        with trace.span("page_session"):
+            obs.attach_page_observers(page, trace)
+            trace.event("page", {"url": page.url, "title": await page.title()})
             with trace.span("dom_validation"):
                 await inject_scraper(page, SCRAPER)
                 counts = await page.evaluate(
@@ -1073,7 +1212,8 @@ async def run_backup(
                 run_stats["opened_chats"] += 1
                 with trace.span("scrolling", {"conversation_hash": obs.short_hash(chat_key(title, expected_id))}):
                     messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
-                conversation_id = scroll.get("conversation_id") or chat.get("conversationId") or ""
+                opened_conversation_id = scroll.get("conversation_id") or ""
+                conversation_id = opened_conversation_id or ("" if expected_id else chat.get("conversationId") or "")
                 chat_stats = {
                     "selected_chats": 1,
                     "opened_chats": 1,
@@ -1081,14 +1221,15 @@ async def run_backup(
                     "local_rows": chat["local_rows"],
                     "newer_chat_list_activity": bool(chat["list_time"] and chat["local_since"] and chat["list_time"] > chat["local_since"]),
                     "expected_conversation_id": expected_id,
-                    "opened_conversation_id": conversation_id,
+                    "opened_conversation_id": opened_conversation_id,
                     **scroll,
                 }
                 anomalies = obs.classify_whatsapp_anomalies(chat_stats)
-                if expected_id and conversation_id and conversation_id != expected_id:
+                if expected_id and opened_conversation_id != expected_id:
                     run_stats["skipped_chats"] += 1
                     trace.event("chat_anomalies", {"anomalies": anomalies, "conversation_hash": obs.short_hash(chat_key(title, expected_id))})
-                    emit({**summary, "event": "skipped", "reason": f"opened-different-conversation:{conversation_id}", "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
+                    reason = f"opened-different-conversation:{opened_conversation_id}" if opened_conversation_id else "opened-conversation-id-missing"
+                    emit({**summary, "event": "skipped", "reason": reason, "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
                     continue
                 path = migrate_path(title, conversation_id) if conversation_id else path
                 summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
@@ -1112,8 +1253,9 @@ async def run_backup(
                     checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], local_since)
                     write_checked_state(checked_state)
                 emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "scroll": scroll}, format)
-            dom = await obs.capture_dom_outline(page)
-            await browser.close()
+        dom = await obs.capture_dom_outline(page)
+        await page.close()
+        page = None
         run_anomalies = obs.classify_whatsapp_anomalies(run_stats)
         if run_anomalies:
             trace.write_zip("anomaly", {**run_stats, "status": "ok", "anomalies": run_anomalies}, dom)
@@ -1127,6 +1269,7 @@ async def run_backup(
                 trace.write_zip("anomaly", {"status": "failed"}, await obs.capture_dom_outline(page))
             except Exception as zip_exc:
                 trace.exception(zip_exc, during="failure_zip")
+            await page.close()
         trace.finish({"status": "failed", "error_type": type(exc).__name__, "error_message": str(exc)})
         raise
 

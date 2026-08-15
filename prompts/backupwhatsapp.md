@@ -1,5 +1,18 @@
 # backupwhatsapp.py
 
+## Run, fix errors, 15 Jun 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/code/tools/whatsappscraper:ro,~/Documents/data/whatsapp -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Check if the assumptions made in `backupwhatsapp.py` are still valid on WhatsApp Web on CDP.
+Read `prompts/backupwhatsapp.md` for how the prompting has evolved, along with `~/Documents/data/whatsapp/changes-*.md` - it might help.
+Carefully review what's changed, if additional information can be extracted, if existing information needs to be sourced differently, etc.
+Revise `backupwhatsapp.py` and tests as required. Run and test.
+Document changes in `/~Documents/data/whatsapp/changes-*.md` and ensure that there's enough information for a future thread to pick up from where you left off.
+
 ## Reduce conflicts, 07 Jun 2026
 
 <!--
