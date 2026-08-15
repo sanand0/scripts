@@ -1,4 +1,43 @@
-# Unused fish functions from setup.fish
+# Archived fish functions from setup.fish
+
+# Archived: 15 Aug 2026. Migrated to ~/code/scripts/pages since pressing Ctrl+C leaves cloudflared running in the background.
+# https://chatgpt.com/c/6a807fda-7f00-83ee-8a6e-77bdfaa6bcf5
+function pages --description "pages XXX serves pwd at https://pages.s-anand.net/XXX/"
+    set base $argv[1]
+    test -n "$base"; or set base "/"
+
+    if not string match -q '/*' "$base"
+        set base "/$base"
+    end
+    if not string match -q '*/' "$base"
+        set base "$base/"
+    end
+
+    set port 9000
+    set host pages.s-anand.net
+    set started_cloudflared 0
+
+    if not pgrep -x cloudflared >/dev/null
+        set started_cloudflared 1
+        cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN) &
+        set cloudflared_pid $last_pid
+    end
+
+    env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=$host \
+        npx --yes vite . \
+        --host 127.0.0.1 \
+        --port $port \
+        --strictPort \
+        --base "$base"
+
+    set vite_status $status
+
+    if test $started_cloudflared -eq 1
+        kill $cloudflared_pid 2>/dev/null
+    end
+
+    return $vite_status
+end
 
 # Archived: 31 Jul 2026. I'm not using llm much on the CLI. Agents have taken over.
 # Like llm -e but with streaming.

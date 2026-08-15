@@ -55,6 +55,17 @@ Here are the setup details for my laptops.
 - [.tmux.conf](.tmux.conf): tmux config file. Symlinked to `~/.tmux.conf` on Linux/Cygwin.
 - [espanso-match-base.yml](espanso-match-base.yml): espanso match file. Symlinked to `~/.config/espanso/match/base.yml` on Linux/Cygwin.
 - [touchegg.conf](touchegg.conf): touchpad gesture config file. Symlinked to `~/.config/touchegg/touchegg.conf` on Linux/Cygwin.
+  - Global Gestures (Application: All)
+    - Swipe Up 4 fingers: Increase volume 5%
+    - Swipe Down 4 fingers: Decrease volume 5%
+    - Swipe Left/Right 4 fingers: Pause / Play on VLC
+    - Tap 2 fingers: Right mouse click (Button 3) on gesture begin.
+    - Tap 3 fingers: Middle mouse click (Button 2) on gesture begin.
+  - Application: microsoft-edge
+    - Pinch Out 2 fingers: Zoom In
+    - Pinch In 2 fingers: Zoom Out
+    - Swipe Left 3 fingers: Back
+    - Swipe Right 3 fingers: Forward
 
 # Scripts
 
@@ -62,7 +73,6 @@ Here are the setup details for my laptops.
 - [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. By default it fills pending days through yesterday. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0
-- [asu](asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
 - [backupgoogle.py](backupgoogle.py) archives Google Mail, Calendar, and Chat from currently logged in `gws` user into `/home/sanand/Documents/data/$EMAIL/`. `backupgoogle.py --since YYYY-MM-DD --until YYYY-MM-DD`.
 - [backuplinkedin.py](backuplinkedin.py) backs up LinkedIn posts and comments that the standard export misses via a logged-in CDP browser. Examples: `backuplinkedin.py posts --username sanand0 --limit 5`, `backuplinkedin.py posts --username sanand0 --no-comments --dry-run`, `backuplinkedin.py --describe | jaq .`.
@@ -81,7 +91,6 @@ Here are the setup details for my laptops.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
-- [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [discourse.py](discourse.py) extracts recent posts from a Discourse category or topic.
 - [dock.sh](dock.sh) restarts GNOME user extensions and the Ubuntu AppIndicators extension after screen blanking breaks the dock/tray state.
 - [fish_usage.py](fish_usage.py) shows the most common fish commands used in the last 90 days.
@@ -102,13 +111,11 @@ Here are the setup details for my laptops.
 - [htmlemail.py](htmlemail.py) renders Markdown to HTML and sends as email via Gmail API. Usage: `uv run htmlemail.py --from EMAIL --email EMAIL body.md`.
   - Initialized via `htmlemail.py --init --client-secrets google-root.node-desktop_872568319651-7pde9a28vem61qfvon8pu0d9bgijv8lf.apps.googleusercontent.com.json` with Google OAuth desktop client secrets JSON.
 - [linkedin.py](linkedin.py) is a CLI for LinkedIn that uses CDP to fetch profiles, etc. `linkedin.py profile sanand0` fetches my profile.
-- [livetranscribe](livetranscribe) watches a growing `.opus` recording and streams timestamped transcription via the Gemini Live API. Examples: `livetranscribe ~/Documents/calls/meeting.opus`, `livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"`, `livetranscribe meeting.opus --dry-run`.
 - [mailindex.py](mailindex.py) builds a compact, resumable SQLite FTS index for `~/Documents/Mail/*.mbox` at `~/Documents/Mail/mail-index.sqlite`.
 - [mcpserver.py](mcpserver.py) exposes an MCP server on localhost:8000 that lets LLMs run bash commands. Useful for ChatGPT to control your machine. Run in sandbox to reduce risk.
 - [musictag.py](musictag.py) manages MP3 ID3 tags from `~/Music/musicdump.csv`, with dry-run cleanup diffs, CSV dump/apply parity, managed tag columns, and preserved personal `POPM`/clean long `USLT` frames. Examples: `musictag.py dump`, `musictag.py fix "Album.Title.mp3"`, `musictag.py fix --write --genre Tamil --year 2014 *.mp3`, `musictag.py check | moor`.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
-- [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [rename_receipts.py](rename_receipts.py) renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text.
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
@@ -120,23 +127,9 @@ Here are the setup details for my laptops.
 - [summarize.py](summarize.py) adds AI-generated metadata (summary, keywords, people, actions for transcripts; description and keywords for blog posts) to Markdown files. Already-processed files are skipped.
   - New transcripts: `summarize.py transcript "/home/sanand/Dropbox/notes/transcripts/2026-04-*.md"` (edit `2026-04` to the target month)
   - New blog posts: `ug -rl '^date: "?2026-04' /home/sanand/code/blog/posts/ | xargs summarize.py blog` (edit `2026-04` to the target month)
-- [touchegg.conf](touchegg.conf) is my touchpad gesture config for Touchegg on Ubuntu.
-  - Global Gestures (Application: All)
-    - Swipe Up 4 fingers: Increase volume 5%
-    - Swipe Down 4 fingers: Decrease volume 5%
-    - Swipe Left/Right 4 fingers: Pause / Play on VLC
-    - Tap 2 fingers: Right mouse click (Button 3) on gesture begin.
-    - Tap 3 fingers: Middle mouse click (Button 2) on gesture begin.
-  - Application: microsoft-edge
-    - Pinch Out 2 fingers: Zoom In
-    - Pinch In 2 fingers: Zoom Out
-    - Swipe Left 3 fingers: Back
-    - Swipe Right 3 fingers: Forward
 - [timers](timers) picks a systemd user timer with `fzf`, sorted by its most recent run, then follows the activated service's journal.
-- [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
 - [transcribe_calls.py](transcribe_calls.py) transcribes missing audio call recordings from `~/Documents/calls` into Markdown notes under `~/Dropbox/notes/transcripts`, with chunking and patching for invalid transcript sections. Examples: `transcribe_calls.py --dry-run`, `transcribe_calls.py --glob "*.opus"`, `transcribe_calls.py --patch-invalid-sections`.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
-- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
 
 ## AI coding agent scripts
 
@@ -166,3 +159,12 @@ Here are the setup details for my laptops.
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files
+
+## Archive
+
+- [asu](asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
+- [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [livetranscribe](livetranscribe) watches a growing `.opus` recording and streams timestamped transcription via the Gemini Live API. Examples: `livetranscribe ~/Documents/calls/meeting.opus`, `livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"`, `livetranscribe meeting.opus --dry-run`.
+- [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
+- [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
+- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.

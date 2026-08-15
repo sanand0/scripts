@@ -739,44 +739,6 @@ function aimode --description "Example: aimode 'What is AI?' opens Google AI Mod
     open "https://www.google.com/search?udm=50&q=$encoded"
 end
 
-# NOTE: mcpserver is now like `dev.sh -p ~/code,~/r2:ro -- mcpserver.py`
-function pages --description "Serve current directory under a base path via Vite"
-    set base $argv[1]
-    test -n "$base"; or set base "/"
-
-    if not string match -q '/*' "$base"
-        set base "/$base"
-    end
-    if not string match -q '*/' "$base"
-        set base "$base/"
-    end
-
-    set port 9000
-    set host pages.s-anand.net
-    set started_cloudflared 0
-
-    if not pgrep -x cloudflared >/dev/null
-        set started_cloudflared 1
-        cloudflared tunnel run --token (secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN) &
-        set cloudflared_pid $last_pid
-    end
-
-    env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=$host \
-        npx --yes vite . \
-        --host 127.0.0.1 \
-        --port $port \
-        --strictPort \
-        --base "$base"
-
-    set vite_status $status
-
-    if test $started_cloudflared -eq 1
-        kill $cloudflared_pid 2>/dev/null
-    end
-
-    return $vite_status
-end
-
 # #TODO - unused so far
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
     curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"

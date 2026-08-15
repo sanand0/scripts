@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# pages XXX serves current working directory at https://pages.s-anand.net/XXX/
+
+set -e
+
+base="/${1#/}"
+[[ $base == */ ]] || base+=/
+
+secret() {
+  sops --decrypt "$HOME/Dropbox/scripts/.env" |
+    awk -F= -v k="$1" '$1==k{v=substr($0,index($0,"=")+1); gsub(/^"|"$/, "", v); print v; exit}'
+}
+
+if ! pgrep -x cloudflared >/dev/null; then
+  cloudflared tunnel run --token "$(secret CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN)" &
+  pid=$!
+  trap 'kill "$pid" 2>/dev/null || true' EXIT
+fi
+
+env __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=pages.s-anand.net \
+  npx --yes vite . \
+  --host 127.0.0.1 \
+  --port 9000 \
+  --strictPort \
+  --base "$base"
