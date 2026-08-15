@@ -1,5 +1,26 @@
 # services
 
+## Check logs, 15 Aug 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.5 --config model_reasoning_effort=medium
+-->
+
+Check the logs of the `daily-activities` timer / systemd service.
+Why do I see:
+
+```
+Aug 15 07:15:48 graphene systemd[1802]: daily-activities.service: Failed with result 'exit-code'.
+Aug 15 07:15:48 graphene systemd[1802]: Failed to start daily-activities.service - Run daily activity and backup jobs.
+```
+
+Are there any errors that need fixing? Even independent of the above message, explore the nature of failures.
+If there are any OBVIOUS fixes that will not worsen anything and clearly must be fixed, go ahead.
+For the rest, report to me and let me decide what to fix.
+
+<!-- codex resume 01a00342-2304-73d2-88a4-43058be72165 -->
+
 ## Capture browser tabs, 05 Jul 2026
 
 <!--

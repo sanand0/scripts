@@ -178,7 +178,7 @@ if ! exec 9>"$LOCK_FILE"; then
 fi
 if ! flock -n 9; then
   log "another daily-activities run is already active; skipping this run"
-  exit 75
+  exit 0
 fi
 
 failures=0
@@ -222,3 +222,4 @@ if [[ "$failures" -gt 0 ]]; then
 fi
 
 log "completed successfully"
+exit 0

@@ -13,6 +13,8 @@ Carefully review what's changed, if additional information can be extracted, if 
 Revise `backupwhatsapp.py` and tests as required. Run and test.
 Document changes in `/~Documents/data/whatsapp/changes-*.md` and ensure that there's enough information for a future thread to pick up from where you left off.
 
+<!-- codex resume 01a0031d-decb-74a2-9a43-c04fcc5b92ce --yolo -->
+
 ## Reduce conflicts, 07 Jun 2026
 
 <!--

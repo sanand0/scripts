@@ -1,16 +1,16 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["playwright>=1.52", "typer>=0.12"]
+# dependencies = ["typer>=0.12", "websockets>=15"]
 # ///
 """Back up LinkedIn data that the standard export misses via CDP.
 
 Examples:
-  backup_linkedin.py posts --username sanand0 --limit 5
-  backup_linkedin.py posts --username sanand0 --limit 100 --format jsonl | moor
-  backup_linkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000
-  backup_linkedin.py posts --username sanand0 --no-comments --dry-run
-  backup_linkedin.py --describe | jaq .
+  backuplinkedin.py posts --username sanand0 --limit 5
+  backuplinkedin.py posts --username sanand0 --limit 100 --format jsonl | moor
+  backuplinkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000
+  backuplinkedin.py posts --username sanand0 --no-comments --dry-run
+  backuplinkedin.py --describe | jaq .
 """
 
 from __future__ import annotations
@@ -23,9 +23,11 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 import typer
-from playwright.async_api import Browser, ElementHandle, Page, async_playwright
+import websockets
 
 import sanand_observability as obs
 
@@ -36,12 +38,172 @@ OUT_PATH = Path("/home/sanand/Documents/data/linkedin-posts.jsonl")
 POST_SELECTOR = '[data-urn][role="article"], .feed-shared-update-v2[data-urn]'
 
 
+def selector_expression(root: str, selector: str) -> str:
+    """Return a DOM expression supporting Playwright's simple :has-text form."""
+    return rf"""((root, selector) => {{
+      const rows = [];
+      for (const part of selector.split(/,\s*/)) {{
+        const text = part.match(/:has-text\(\"([^\"]*)\"\)/)?.[1];
+        const css = part.replace(/:has-text\(\"[^\"]*\"\)/g, "");
+        for (const item of root.querySelectorAll(css))
+          if (!text || (item.innerText || item.textContent || "").includes(text)) rows.push(item);
+      }}
+      return [...new Set(rows)];
+    }})({root}, {compact_json(selector)})"""
+
+
+class _UnsupportedLocator:
+    async def aria_snapshot(self, timeout: int = 0) -> str:
+        raise NotImplementedError("ARIA snapshots are unavailable through direct CDP")
+
+
+class CDPPage:
+    """Small page-target CDP client that does not attach every browser tab."""
+
+    def __init__(self, socket: Any, url: str, browser_version: str) -> None:
+        self.socket = socket
+        self.url = url
+        self.browser_version = browser_version
+        self.command_id = 0
+
+    async def command(self, method: str, **params: Any) -> dict[str, Any]:
+        self.command_id += 1
+        command_id = self.command_id
+        await self.socket.send(compact_json({"id": command_id, "method": method, "params": params}))
+        async with asyncio.timeout(30):
+            while True:
+                response = json.loads(await self.socket.recv())
+                if response.get("id") != command_id:
+                    continue
+                if response.get("error"):
+                    raise RuntimeError(f"CDP {method}: {response['error'].get('message', response['error'])}")
+                return response.get("result") or {}
+
+    async def evaluate(self, expression: str, arg: Any = ...) -> Any:
+        source = f"({expression})()" if arg is ... else f"({expression})({compact_json(arg)})"
+        result = await self.command("Runtime.evaluate", expression=source, awaitPromise=True, returnByValue=True, userGesture=True)
+        if details := result.get("exceptionDetails"):
+            raise RuntimeError((details.get("exception") or {}).get("description") or details.get("text"))
+        return (result.get("result") or {}).get("value")
+
+    async def goto(self, url: str, **_: Any) -> None:
+        await self.command("Page.navigate", url=url)
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            state = await self.evaluate("() => ({ ready: document.readyState, url: location.href })")
+            self.url = state["url"]
+            if state["ready"] in {"interactive", "complete"}:
+                return
+            await asyncio.sleep(0.1)
+        raise TimeoutError(f"navigation did not settle within 45s: {url}")
+
+    async def wait_for_selector(self, selector: str, timeout: int) -> None:
+        deadline = time.monotonic() + timeout / 1000
+        while time.monotonic() < deadline:
+            if await self.evaluate("selector => Boolean(document.querySelector(selector))", selector):
+                return
+            await asyncio.sleep(0.1)
+        raise TimeoutError(f"selector not found after {timeout}ms: {selector}")
+
+    async def query_selector_all(self, selector: str) -> list[CDPElement]:
+        expression = selector_expression("document", selector)
+        count = await self.evaluate(f"() => ({expression}).length")
+        return [CDPElement(self, f"({expression})[{index}]") for index in range(count)]
+
+    async def wait_for_timeout(self, timeout: int) -> None:
+        await asyncio.sleep(timeout / 1000)
+
+    async def title(self) -> str:
+        return await self.evaluate("() => document.title")
+
+    async def bring_to_front(self) -> None:
+        await self.command("Page.bringToFront")
+
+    async def version(self) -> str:
+        return self.browser_version
+
+    def locator(self, selector: str) -> _UnsupportedLocator:
+        return _UnsupportedLocator()
+
+    def on(self, event: str, callback: Any) -> None:
+        return None
+
+    async def close(self) -> None:
+        await self.socket.close()
+
+
+class CDPElement:
+    def __init__(self, page: CDPPage, expression: str) -> None:
+        self.page = page
+        self.expression = expression
+
+    async def evaluate(self, expression: str, arg: Any = ...) -> Any:
+        suffix = "" if arg is ... else f",{compact_json(arg)}"
+        return await self.page.evaluate(f"() => ({expression})({self.expression}{suffix})")
+
+    async def query_selector_all(self, selector: str) -> list[CDPElement]:
+        expression = selector_expression(self.expression, selector)
+        count = await self.page.evaluate(f"() => ({expression}).length")
+        return [CDPElement(self.page, f"({expression})[{index}]") for index in range(count)]
+
+    async def get_attribute(self, name: str) -> str | None:
+        return await self.evaluate("(el, name) => el.getAttribute(name)", name)
+
+    async def click(self, **_: Any) -> None:
+        point = await self.evaluate(
+            """el => {
+              const rect = el.getBoundingClientRect();
+              return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            }"""
+        )
+        await self.page.command("Input.dispatchMouseEvent", type="mousePressed", button="left", clickCount=1, **point)
+        await self.page.command("Input.dispatchMouseEvent", type="mouseReleased", button="left", clickCount=1, **point)
+
+    async def scroll_into_view_if_needed(self, **_: Any) -> None:
+        await self.evaluate("el => el.scrollIntoView({ block: 'center', inline: 'nearest' })")
+
+
 def eprint(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def page_cdp_url(cdp_url: str) -> str:
+    """Resolve one LinkedIn page target to avoid attaching every open browser tab."""
+    if cdp_url.startswith("ws"):
+        return cdp_url
+    base = cdp_url.rstrip("/")
+    targets = json.load(urlopen(f"{base}/json/list", timeout=5))
+    target = next(
+        (
+            item
+            for item in targets
+            if item.get("type") == "page" and "linkedin.com" in item.get("url", "")
+        ),
+        None,
+    )
+    if target is None:
+        request = Request(
+            f"{base}/json/new?{quote('https://www.linkedin.com/', safe=':/')}",
+            method="PUT",
+        )
+        target = json.load(urlopen(request, timeout=5))
+    return target["webSocketDebuggerUrl"]
+
+
+async def connect_linkedin_page(cdp_url: str) -> CDPPage:
+    direct_url = await asyncio.to_thread(page_cdp_url, cdp_url)
+    base = cdp_url.rstrip("/")
+    version = {}
+    if cdp_url.startswith("http"):
+        version = await asyncio.to_thread(lambda: json.load(urlopen(f"{base}/json/version", timeout=5)))
+    socket = await websockets.connect(direct_url, max_size=None, open_timeout=10)
+    page = CDPPage(socket, "", version.get("Browser") or "")
+    page.url = await page.evaluate("() => location.href")
+    return page
 
 
 def now_utc() -> dt.datetime:
@@ -233,32 +395,21 @@ def add_time_fields(row: dict[str, Any], scraped_at: dt.datetime) -> dict[str, A
 
 def describe() -> dict[str, Any]:
     return {
-        "name": "backup_linkedin.py",
+        "name": "backuplinkedin.py",
         "cdp": CDP_URL,
         "commands": ["posts"],
         "output": str(OUT_PATH),
         "primary_key": "type:id",
         "examples": [
-            "backup_linkedin.py posts --username sanand0",
-            "backup_linkedin.py posts --username sanand0 --limit 100 --format jsonl",
-            "backup_linkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000",
-            "backup_linkedin.py posts --username sanand0 --no-comments --dry-run",
+            "backuplinkedin.py posts --username sanand0",
+            "backuplinkedin.py posts --username sanand0 --limit 100 --format jsonl",
+            "backuplinkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000",
+            "backuplinkedin.py posts --username sanand0 --no-comments --dry-run",
         ],
     }
 
 
-async def linkedin_page(browser: Browser) -> Page:
-    for context in browser.contexts:
-        for page in context.pages:
-            if "linkedin.com" in page.url:
-                await page.bring_to_front()
-                return page
-    if browser.contexts:
-        return await browser.contexts[0].new_page()
-    raise RuntimeError("No CDP browser context found. Start Chrome/Edge with remote debugging on port 9222.")
-
-
-async def navigate_posts(page: Page, username: str) -> None:
+async def navigate_posts(page: CDPPage, username: str) -> None:
     await page.goto(f"https://www.linkedin.com/in/{username}/recent-activity/all/", wait_until="domcontentloaded", timeout=45000)
     await page.wait_for_timeout(3500)
     if "login" in page.url or "Sign in" in await page.title():
@@ -266,9 +417,11 @@ async def navigate_posts(page: Page, username: str) -> None:
     await page.wait_for_selector(POST_SELECTOR, timeout=20000)
 
 
-async def click_all(handles: list[ElementHandle], label: str, settle_ms: int) -> int:
+async def click_all(handles: list[CDPElement], label: str, settle_ms: int) -> int:
     clicked = 0
     for handle in handles:
+        if not await handle.evaluate("el => Boolean(el)"):
+            continue
         try:
             await handle.evaluate("(el) => el.scrollIntoView({ block: 'center', inline: 'nearest' })")
             await handle.click(timeout=800, force=True, no_wait_after=True)
@@ -291,7 +444,7 @@ async def click_all(handles: list[ElementHandle], label: str, settle_ms: int) ->
     return clicked
 
 
-async def expand_text(post: ElementHandle, settle_ms: int) -> None:
+async def expand_text(post: CDPElement, settle_ms: int) -> None:
     handles = await post.query_selector_all(
         'button[aria-label^="see more"], button[aria-label*="visually reveals content"], '
         'button.see-more, button:has-text("… more"), button:has-text("... more"), '
@@ -300,12 +453,12 @@ async def expand_text(post: ElementHandle, settle_ms: int) -> None:
     await click_all(handles[:12], "see-more", settle_ms)
 
 
-async def open_comments(post: ElementHandle, settle_ms: int) -> None:
+async def open_comments(post: CDPElement, settle_ms: int) -> None:
     buttons = await post.query_selector_all('button[aria-label="Comment"], button.comment-button, [aria-label*="comments on"]')
     await click_all(buttons[:2], "comments", settle_ms)
 
 
-async def load_all_comments(post: ElementHandle, max_rounds: int, settle_ms: int) -> dict[str, int]:
+async def load_all_comments(post: CDPElement, max_rounds: int, settle_ms: int) -> dict[str, int]:
     stats = {"loadMoreClicks": 0, "replyClicks": 0, "staleRounds": 0}
     previous = -1
     for _ in range(max_rounds):
@@ -329,7 +482,7 @@ async def load_all_comments(post: ElementHandle, max_rounds: int, settle_ms: int
             stats["staleRounds"] += 1
         else:
             stats["staleRounds"] = 0
-        if not remaining_buttons and stats["staleRounds"] >= 2:
+        if not remaining_buttons and stats["staleRounds"] >= 5:
             break
         if remaining_buttons and stats["staleRounds"] >= 3:
             eprint("warning: comment loader buttons remain visible but no new comment rows appeared; moving on")
@@ -501,12 +654,12 @@ EXTRACT_JS = r"""
 """
 
 
-async def extract_post(post: ElementHandle, scraped_at: dt.datetime) -> list[dict[str, Any]]:
+async def extract_post(post: CDPElement, scraped_at: dt.datetime) -> list[dict[str, Any]]:
     rows = await post.evaluate(EXTRACT_JS, {"scrapedAt": scraped_at.isoformat()})
     return [add_time_fields(normalize_counts(row), scraped_at) for row in rows if row.get("id")]
 
 
-async def scroll_page(page: Page, settle_ms: int) -> dict[str, Any]:
+async def scroll_page(page: CDPPage, settle_ms: int) -> dict[str, Any]:
     data = await page.evaluate(
         """() => {
           const main = document.querySelector("main");
@@ -555,14 +708,14 @@ async def scrape_posts(
     rows: list[dict[str, Any]] = []
     processed: set[str] = set()
     changed = 0
-    page: Page | None = None
+    page: CDPPage | None = None
     try:
-        async with async_playwright() as p:
-            with trace.span("cdp_connection", {"cdp_url": cdp_url}):
-                browser = await p.chromium.connect_over_cdp(cdp_url)
-                trace.event("runtime", await obs.browser_versions(browser))
+        with trace.span("cdp_connection", {"cdp_url": cdp_url}):
+            page = await connect_linkedin_page(cdp_url)
+            trace.event("runtime", await obs.browser_versions(page))
+        with trace.span("page_session"):
             with trace.span("page_discovery"):
-                page = await linkedin_page(browser)
+                await page.bring_to_front()
                 obs.attach_page_observers(page, trace)
                 trace.event("page", {"url": page.url, "title": await page.title()})
             with trace.span("page_navigation", {"username_hash": obs.short_hash(username)}):
@@ -627,7 +780,7 @@ async def scrape_posts(
                     if not clicks:
                         break
             dom = await obs.capture_dom_outline(page)
-            await browser.close()
+            await page.close()
         post_rows = sum(1 for row in rows if row.get("type") == "post")
         previous = obs.latest_summary(cache_dir).get("selector_used")
         summary_stats = {
@@ -697,7 +850,7 @@ def posts(
     try:
         asyncio.run(scrape_posts(cdp_url, username, limit, out.expanduser(), comments, max_scrolls, max_comment_rounds, settle_ms, dry_run, format))
     except Exception as exc:
-        typer.echo(f"backup_linkedin.py: {exc}", err=True)
+        typer.echo(f"backuplinkedin.py: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 

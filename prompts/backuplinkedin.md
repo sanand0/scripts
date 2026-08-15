@@ -1,5 +1,20 @@
 # backup_linkedin.py
 
+## Run, fix errors, 15 Jun 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data/ -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Check if the assumptions made in `backuplinkedin.py` are still valid on Linkedin Web on CDP.
+Read `prompts/backuplinkedin.md` for how the prompting has evolved. Also `prompts/backupwhatsapp.py` along with recent `~/Documents/data/whatsapp/changes-*.md` and the last commit / tests for `backupwhatsapp.py` - it might help with some recent updates in the WhatsApp scraper.
+Carefully review what's changed, if additional information can be extracted, if existing information needs to be sourced differently, etc.
+Revise `backuplinkedin.py` and tests as required. Run and test.
+Document changes in `/~Documents/data/linkedin-changes.md` in an update with today's date and ensure that there's enough information for a future thread to pick up from where you left off.
+
+<!-- codex resume 01a0033c-3b75-7203-9190-e6dbccc223ca --yolo -->
+
 ## Observability, 03 Jul 2026
 
 <!--
