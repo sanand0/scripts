@@ -575,6 +575,12 @@ rclone config create gdrive-straive
   # client_id = 872568319651-9lppm3ho0b068ddq7n6333qqdu0jn960.apps.googleusercontent.com  # Desktop app: root.node@gmail.com
 # Test: rclone mount gdrive-straive: /mnt/gdrive-straive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --daemon
 
+# RClone with Hetzner is very slow
+sudo mkdir /mnt/hetzner
+sudo chown -R sanand:sanand /mnt/hetzner
+rclone config create hetzner sftp host u452447.your-storagebox.de user u452447 shell_type unix
+# Test: rclone mount hetzner:/ /mnt/hetzner --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G
+
 # Enable Edge CDP (remote debugging): https://chatgpt.com/share/68528565-0d34-800c-b9ec-6dccca01c24c
 # For Wayland, add --enable-features=UseOzonePlatform --ozone-platform=wayland
 # You can't enable CDP on the default profile, so I created a new one at ~/.config/microsoft-edge-cdp instead of ~/.config/microsoft-edge and synced my account, workspaces, etc.: https://chatgpt.com/c/6a59ac8b-de88-83ee-a050-a38f70e9b219
@@ -600,6 +606,15 @@ systemctl --user daemon-reload
 systemctl --user restart espanso
 ```
 
+- Update DNS via `sudo /etc/systemd/resolved.conf` to ensure these lines:
+  ```ini
+  # Use Cloudflare DNS with TLS. The #domain.com is required for DNSOverTLS.
+  DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com
+  DNSOverTLS=yes
+  # Ensure specific interfaces don't override Cloudflare DNS.
+  FallbackDNS=1.1.1.1 1.0.0.1
+  Domains=~.
+  ```
 - Install Gnome extensions via Extension Manager:
   - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V
