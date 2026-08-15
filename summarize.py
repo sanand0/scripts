@@ -61,6 +61,7 @@ MIN_CONTENT_LINES = 5
 
 # Pricing in $ per 1M tokens (input, output) — update as needed
 PRICING: dict[str, tuple[float, float]] = {
+    "gemini-3.7-flash":       (1.50,  7.50),
     "gemini-3.5-flash":       (1.50,  9.00),
     "gemini-3.1-flash-lite":  (0.25,  1.50),
     "gemini-3.1-pro-preview": (2.00, 12.00),
@@ -72,8 +73,8 @@ PRICING: dict[str, tuple[float, float]] = {
     "gpt-5.6-luna":           (1.00,  6.00),
 }
 # Default price if user specifies a model not in PRICING dict
-DEFAULT_PRICING = (1.50,  9.00)
-DEFAULT_MODELS = {"gemini": "gemini-3.5-flash", "openai": "gpt-5.6-luna"}
+DEFAULT_PRICING = (1.50,  7.50)
+DEFAULT_MODELS = {"gemini": "gemini-3.7-flash", "openai": "gpt-5.6-luna"}
 
 
 # ── Field definition ────────────────────────────────────────────────────────────

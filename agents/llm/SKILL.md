@@ -30,7 +30,7 @@ Preferred models:
 gpt-5.4-mini: default
 gpt-5.4-nano: cheapest
 gemini-2.5-flash: cheap transcription
-gemini-3.5-flash: best for transcription
+gemini-3.7-flash: best for transcription
 
 Generate speech:
 
