@@ -1,0 +1,294 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.14"
+# dependencies = []
+# ///
+"""Pick a prompt interactively or print the closest match for a filter.
+
+Examples:
+  prompt                               # pick with rofi, then paste
+  prompt git-commit                    # print the closest prompt
+  prompt review --format json | jaq .
+  prompt --list --format jsonl | moor
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime
+from difflib import SequenceMatcher
+from html import escape
+from pathlib import Path
+
+DESCRIPTION_MAX = 44
+
+
+@dataclass
+class Entry:
+    label: str
+    kind: str
+    source: Path
+    content: str
+    search: str
+
+    def record(self, include_content: bool = True) -> dict[str, str]:
+        result = {"label": self.label, "kind": self.kind, "source": str(self.source)}
+        if include_content:
+            result["content"] = self.content
+        return result
+
+
+def front_matter(text: str) -> tuple[dict[str, str], str]:
+    """Return simple YAML metadata and body without adding a YAML dependency."""
+    match = re.match(r"\A---\n(.*?)\n---(?:\n|\Z)(.*)\Z", text, re.DOTALL)
+    if not match:
+        return {}, text
+    metadata = {}
+    for line in match.group(1).splitlines():
+        if field := re.match(r"^(title|description):\s*(.*)$", line):
+            metadata[field[1]] = field[2].strip().strip('"')
+    return metadata, match.group(2)
+
+
+def first_fence(text: str) -> str | None:
+    match = re.search(r"^```[^\n]*\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
+    return match[1].strip() if match else None
+
+
+def heading_fences(text: str) -> list[tuple[str, str]]:
+    """Return the first fenced block beneath every H2 that contains one."""
+    headings = list(re.finditer(r"^##\s+(.+?)\s*$", text, re.MULTILINE))
+    result = []
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        if content := first_fence(text[heading.end() : end]):
+            result.append((heading[1], content))
+    return result
+
+
+def label_description(description: str) -> str:
+    return (
+        description
+        if len(description) <= DESCRIPTION_MAX
+        else f"{description[:DESCRIPTION_MAX]}..."
+    )
+
+
+def prompt_entries(path: Path, allow_plain_body: bool = False) -> list[Entry]:
+    metadata, body = front_matter(path.read_text())
+    title = metadata.get("title", path.stem)
+    suffix = (
+        f": {label_description(metadata['description'])}"
+        if metadata.get("description")
+        else ""
+    )
+    sections = heading_fences(body)
+    if sections:
+        return [
+            Entry(
+                f"{title} › {heading}{suffix}",
+                "prompt",
+                path,
+                content,
+                f"{path.stem} {title} {heading}",
+            )
+            for heading, content in sections
+        ]
+    content = first_fence(body)
+    if content is None and allow_plain_body:
+        content = body.strip()
+    return (
+        [Entry(f"{title}{suffix}", "prompt", path, content, f"{path.stem} {title}")]
+        if content
+        else []
+    )
+
+
+def skill_entry(path: Path) -> Entry:
+    metadata, body = front_matter(path.read_text())
+    name = path.parent.name
+    description = metadata.get("description", "")
+    suffix = f": {label_description(description)}" if description else ""
+    attribute = (
+        f' description="{escape(description, quote=True)}"' if description else ""
+    )
+    content = f'<skill name="{name}"{attribute}>\n{body}\n</skill>'
+    return Entry(f"Skill › {name}{suffix}", "skill", path, content, f"skill {name}")
+
+
+def discover() -> list[Entry]:
+    home = Path.home()
+    prompt_dirs = [
+        (home / "code/blog/pages/prompts", False),
+        (home / "code/scripts/agents/custom-prompts", True),
+        (home / "code/prompts", True),
+    ]
+    entries = []
+    seen_slugs = set()
+    for directory, allow_plain_body in prompt_dirs:
+        for path in sorted(directory.glob("*.md")):
+            if path.name == "_index.md" or path.stem in seen_slugs:
+                continue
+            found = prompt_entries(path, allow_plain_body)
+            if found:
+                entries.extend(found)
+                seen_slugs.add(path.stem)
+
+    skill_paths = set((home / "code/scripts/agents").glob("**/SKILL.md"))
+    skill_paths.update((home / "code/blog/pages/skills").glob("*/SKILL.md"))
+    entries.extend(skill_entry(path) for path in sorted(skill_paths))
+    return entries
+
+
+def normalized(text: str) -> str:
+    return "".join(character for character in text.casefold() if character.isalnum())
+
+
+def match_entry(entries: list[Entry], query: str) -> Entry:
+    needle = normalized(query)
+    if not needle:
+        raise ValueError("FILTER must contain at least one letter or number")
+
+    def rank(entry: Entry) -> tuple[int, float, int]:
+        haystack = normalized(entry.search)
+        if haystack == needle:
+            return 0, 0, len(haystack)
+        if needle in haystack:
+            return 1, haystack.index(needle), len(haystack)
+        return 2, -SequenceMatcher(None, needle, haystack).ratio(), len(haystack)
+
+    return min(entries, key=rank)
+
+
+def choose(entries: list[Entry]) -> Entry | None:
+    if not shutil.which("rofi"):
+        raise RuntimeError(
+            "rofi is required for interactive selection; pass FILTER for terminal use"
+        )
+    result = subprocess.run(
+        ["rofi", "-dmenu", "-i", "-p", "Prompt"],
+        input="\n".join(entry.label for entry in entries) + "\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    choice = result.stdout.rstrip("\n")
+    return next((entry for entry in entries if entry.label == choice), None)
+
+
+def copy_and_type(text: str) -> bool:
+    if shutil.which("wl-copy"):
+        subprocess.run(["wl-copy"], input=text, text=True, check=True)
+        if shutil.which("wtype"):
+            subprocess.run(["wtype", text], check=True)
+        return True
+    if shutil.which("xclip"):
+        subprocess.run(
+            ["xclip", "-selection", "clipboard"], input=text, text=True, check=True
+        )
+        if shutil.which("xdotool"):
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], check=True)
+        return True
+    return False
+
+
+def describe() -> dict[str, object]:
+    return {
+        "name": "prompt",
+        "description": "Pick a prompt with rofi or print the closest match.",
+        "arguments": {
+            "filter": "Optional fuzzy prompt name; bypasses rofi and writes content to stdout."
+        },
+        "options": {
+            "--list": "List choices.",
+            "--format": ["text", "json", "jsonl"],
+            "--describe": "Print this contract.",
+        },
+    }
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "filter", nargs="?", help="Fuzzy prompt name; prints the closest match."
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json", "jsonl"),
+        default="text",
+        help="Output format.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List available prompts instead of selecting one.",
+    )
+    parser.add_argument(
+        "--describe",
+        action="store_true",
+        help="Print the machine-readable CLI contract.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.describe:
+        print(json.dumps(describe(), ensure_ascii=False))
+        return 0
+
+    entries = discover()
+    if not entries:
+        raise RuntimeError("no prompts or skills found")
+    if args.list:
+        if args.format == "json":
+            print(
+                json.dumps(
+                    [entry.record(False) for entry in entries], ensure_ascii=False
+                )
+            )
+        elif args.format == "jsonl":
+            for entry in entries:
+                print(json.dumps(entry.record(False), ensure_ascii=False))
+        else:
+            for entry in entries:
+                print(entry.label)
+        return 0
+    if args.filter:
+        entry = match_entry(entries, args.filter)
+        if args.format == "text":
+            print(entry.content)
+        else:
+            print(json.dumps(entry.record(), ensure_ascii=False))
+        return 0
+
+    entry = choose(entries)
+    if entry is None:
+        return 0
+    log = Path.home() / ".local/share/sanand-scripts/rofi-prompts-log.tsv"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as stream:
+        stream.write(
+            f"{datetime.now().astimezone().isoformat(timespec='seconds')}\t{entry.label}\n"
+        )
+    if not copy_and_type(entry.content):
+        print(entry.content)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (RuntimeError, ValueError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

@@ -5,7 +5,7 @@ playwright_revision := "1234"
 fastmcp := "3.4.7"
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-chatgpt test-codextags test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-transcribe-calls
+test: test-agentlog test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-chatgpt test-codextags test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-transcribe-calls
 
 # Run the agentlog tests.
 test-agentlog:
@@ -66,6 +66,10 @@ test-podcast:
 # Run the Rofi clipboard tests.
 test-rofi-clip:
     {{ pytest }} pytest -q tests/test_rofi_clip.py
+
+# Run the prompt picker and filtered-output tests.
+test-prompt:
+    {{ pytest }} pytest -q tests/test_prompts.py
 
 # Run the delayed-command tests.
 test-run-at:

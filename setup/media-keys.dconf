@@ -51,7 +51,7 @@ name='Picker'
 # Ctrl+Alt+P opens rofi prompts picker
 [custom-keybindings/prompts]
 binding='<Control><Alt>p'
-command='/home/sanand/code/scripts/rofi-prompts.sh'
+command='/home/sanand/code/scripts/prompt'
 name='Prompts'
 
 # Ctrl+Alt+M opens rofi clipboard transformer

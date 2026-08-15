@@ -717,16 +717,6 @@ function livesync --description "Merge live branch into main (or specified) bran
     git push -u origin live
 end
 
-function prompt --description "Example: llm --system \"(prompt core-concepts)\" Parenting"
-    for dir in $HOME/code/prompts $HOME/code/scripts/agents/custom-prompts
-        set file $dir/$argv[1].md
-        if test -f $file
-            awk '/^---$/ {count++; next} count >= 2' $file | string trim
-            return
-        end
-    end
-end
-
 # This is a very useful function. Ask for a command on the CLI and you get it. Paste and run.
 function with --description "Example: with gh,jq 'Find last 3 repos I committed to'"
     llm --system "Write JUST a fish command using $argv[1]" "$argv[2..]" -o reasoning_effort none \

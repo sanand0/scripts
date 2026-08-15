@@ -1,4 +1,27 @@
-# Rofi prompts
+# Prompt
+
+## Rewrite in Python, rename to `prompt`, 15 Jul 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/code/:ro,~/.cache/sanand-scripts,~/.local/share/sanand-scripts -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Is it possible to rewrite `rofi-prompts.sh` in Python in a way that's faster, shorter, AND simpler + readable?
+If so, create an agent-friendly CLI called `prompts` that does that, writing test cases first (similar to other uv scripts in this directory).
+I would also want to replace the `prompt` function in `~/code/scripts/setup.fish` to use this new Python script instead of `rofi-prompts.sh`.
+Make sure that `prompts` will work with Ctrl+Alt+P via `~/code/scripts/setup/media-keys.dconf` instead of `rofi-prompts.sh` but will also be compatible with the `prompt` function in `setup.fish` (which is used in other functions live `livesync`).
+I don't think the current positional argument of `rofi-prompts.sh`, i.e. `[PROMPTS_DIR_OR_FILE]` is used anywhere - check and verify - and if so, it's fine to replace that with a fuzzy prompt filter as the positional argument instead - roughly the equivalent of the first choice that would appear if we typed that in rofi.
+
+---
+
+Rename the script to `prompt` instead of `prompts`. Update wherever required.
+
+--- <!-- steering -->
+
+I mean, move bin/prompt to ./prompt
+
+<!-- codex resume 01a0052d-80a5-7142-bb33-39b1ee575abd --yolo -->
 
 ## Save usage, 30 Jul 2026
 
