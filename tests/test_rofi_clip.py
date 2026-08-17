@@ -122,3 +122,51 @@ def test_menu_exposes_html_to_markdown_command() -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "transform_html_to_md"
+
+
+def test_transform_strip_tracking_cleans_standalone_url() -> None:
+    result = run_transform(
+        "transform_strip_tracking",
+        "https://example.com/article?utm_source=newsletter&chapter=2&ref=sidebar",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "https://example.com/article?chapter=2"
+
+
+def test_transform_strip_tracking_cleans_links_in_markdown_list() -> None:
+    text = (
+        "- [First](https://example.com/a?utm_source=email&keep=1)\n"
+        "\n"
+        "  - [Second link](https://example.org/b?gclid=abc&lang=en&ref=menu)  \n"
+        "    Notes stay here.\n"
+    )
+    expected = (
+        "- [First](https://example.com/a?keep=1)\n"
+        "\n"
+        "  - [Second link](https://example.org/b?lang=en)  \n"
+        "    Notes stay here.\n"
+    )
+
+    result = run_transform("transform_strip_tracking", text)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected
+
+
+def test_transform_strip_tracking_changes_only_embedded_urls() -> None:
+    text = (
+        "Before  https://one.example/path?utm_medium=social&id=7, then\t"
+        "https://two.example/?fbclid=abc.\n"
+        "Keep literal utm_source=yes and all surrounding whitespace.\n"
+    )
+    expected = (
+        "Before  https://one.example/path?id=7, then\t"
+        "https://two.example/.\n"
+        "Keep literal utm_source=yes and all surrounding whitespace.\n"
+    )
+
+    result = run_transform("transform_strip_tracking", text)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected

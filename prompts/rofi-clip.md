@@ -1,5 +1,16 @@
 # Rofi Clip
 
+## Update strip-tracking, 17 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify rofi-clip.sh so that the `transform_strip_tracking` will work on text with multiple links embedded, e.g. a Markdown list of links. Only the links should be transformed - the rest of the text remains as-is (including whitespaces). Write and run failing tests first, then implement.
+
+<!-- codex resume 01a01003-8cd4-76c1-b831-f17b761d17f4 -->
+
 ## Save usage, 30 Jul 2026
 
 <!--

@@ -282,24 +282,38 @@ transform_md_to_text() {
 
 transform_strip_tracking() {
     with_input_file uvx python - <<'PYEOF'
+import re
 import sys
 from pathlib import Path
-from urllib.parse import urlparse, urlencode, parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 STRIP_PREFIXES = ('utm_', 'gclid', 'fbclid', 'mc_', 'igshid', 'msclkid')
 STRIP_EXACT    = {'ref', 'source', 'yclid', 's_kwcid', 'dclid', 'rcm'}
+URL_PATTERN = re.compile(r'''https?://[^\s<>\[\]"'`]+''')
 
-url = Path(sys.argv[1]).read_text(encoding='utf-8').strip()
-parsed = urlparse(url)
-kept = [
-    (k, v) for k, v in parse_qsl(parsed.query)
-    if not any(k.startswith(p) for p in STRIP_PREFIXES)
-    and k not in STRIP_EXACT
-]
-clean = parsed._replace(query=urlencode(kept))
-# remove trailing ? if no params remain
-result = clean.geturl().rstrip('?')
-sys.stdout.write(result)
+def clean_url(match):
+    url = match.group()
+    suffix = ''
+    while url[-1] in '.,;:!?':
+        url, suffix = url[:-1], url[-1] + suffix
+    for opening, closing in (('(', ')'), ('{', '}')):
+        while url.endswith(closing) and url.count(closing) > url.count(opening):
+            url, suffix = url[:-1], closing + suffix
+
+    parsed = urlparse(url)
+    params = parse_qsl(parsed.query)
+    kept = [
+        (key, value) for key, value in params
+        if not any(key.startswith(prefix) for prefix in STRIP_PREFIXES)
+        and key not in STRIP_EXACT
+    ]
+    if kept == params:
+        return url + suffix
+    return parsed._replace(query=urlencode(kept)).geturl() + suffix
+
+
+text = Path(sys.argv[1]).read_text(encoding='utf-8')
+sys.stdout.write(URL_PATTERN.sub(clean_url, text))
 PYEOF
 }
 
