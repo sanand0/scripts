@@ -16,6 +16,7 @@ Examples:
   edge md 'article title' | moor
   edge md docs.example.com | xclip -selection clipboard
   edge cookies google.com
+  edge contents google.com | jaq 'length'
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import struct
 import sys
 from contextlib import closing
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -382,11 +384,9 @@ def cookies_command(domain: str, cdp_url: str, json_output: bool) -> None:
         print("; ".join(f'{cookie["name"]}={cookie["value"]}' for cookie in cookies))
 
 
-def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
-    """Map session (window ID, tab index) pairs to CDP tab target IDs."""
+def cdp_browser_url(cdp_url: str) -> str:
+    """Return the browser-level WebSocket URL for a CDP HTTP endpoint."""
     from http.client import HTTPConnection, HTTPSConnection
-
-    import websocket
 
     endpoint = urlsplit(cdp_url)
     http = (HTTPSConnection if endpoint.scheme == "https" else HTTPConnection)(endpoint.netloc, timeout=10)
@@ -396,25 +396,32 @@ def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
         raise RuntimeError(f"CDP version endpoint returned HTTP {response.status}")
     websocket_url = json.load(response)["webSocketDebuggerUrl"]
     http.close()
+    return websocket_url
 
-    def command(connection: websocket.WebSocket, request_id: int, method: str, params: dict) -> dict:
-        connection.send(json.dumps({"id": request_id, "method": method, "params": params}))
-        while True:
-            result = json.loads(connection.recv())
-            if result.get("id") == request_id:
-                break
-        if "error" in result:
-            raise RuntimeError(result["error"]["message"])
-        return result["result"]
 
-    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
-        targets = command(
+def cdp_command(connection: object, request_id: int, method: str, params: dict | None = None) -> dict:
+    connection.send(json.dumps({"id": request_id, "method": method, "params": params or {}}))
+    while True:
+        result = json.loads(connection.recv())
+        if result.get("id") == request_id:
+            break
+    if "error" in result:
+        raise RuntimeError(result["error"]["message"])
+    return result["result"]
+
+
+def cdp_tab_targets(cdp_url: str) -> dict[tuple[int, int], dict[str, object]]:
+    """Map session (window ID, tab index) pairs to Edge tab target metadata."""
+    import websocket
+
+    with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=10, suppress_origin=True)) as connection:
+        targets = cdp_command(
             connection,
             1,
             "Target.getTargets",
             {"filter": [{"type": "tab", "exclude": False}, {"exclude": True}]},
         )["targetInfos"]
-        result = {}
+        result: dict[tuple[int, int], dict[str, object]] = {}
         pending = {}
         request_id = 2
         for target in targets:
@@ -430,7 +437,7 @@ def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
                     }
                 )
             )
-            pending[request_id] = (target["targetId"], tab_index)
+            pending[request_id] = (target, tab_index)
             request_id += 1
         while pending:
             response = json.loads(connection.recv())
@@ -439,18 +446,62 @@ def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
                 continue
             if "error" in response:
                 raise RuntimeError(response["error"]["message"])
-            target_id, tab_index = target
-            result[(response["result"]["windowId"], tab_index)] = target_id
+            target_info, tab_index = target
+            result[(response["result"]["windowId"], tab_index)] = target_info
     return result
 
 
-def tab_html(tab: Tab, cdp_url: str) -> str:
+def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
+    """Map session (window ID, tab index) pairs to CDP tab target IDs."""
+    return {key: str(target["targetId"]) for key, target in cdp_tab_targets(cdp_url).items()}
+
+
+def wake_cdp_targets(cdp_url: str, target_ids: list[str]) -> dict[str, str]:
+    """Wake Edge tabs without focusing them, waiting for each child page target."""
+    import websocket
+
+    errors = {}
+    with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=10, suppress_origin=True)) as connection:
+        request_id = 1
+        for target_id in target_ids:
+            attach_id, auto_attach_id = request_id, request_id + 1
+            request_id += 2
+            try:
+                tab_session = cdp_command(
+                    connection, attach_id, "Target.attachToTarget", {"targetId": target_id, "flatten": True}
+                )["sessionId"]
+                connection.send(
+                    json.dumps(
+                        {
+                            "id": auto_attach_id,
+                            "method": "Target.setAutoAttach",
+                            "params": {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
+                            "sessionId": tab_session,
+                        }
+                    )
+                )
+                attached = responded = False
+                while not (attached and responded):
+                    response = json.loads(connection.recv())
+                    if response.get("id") == auto_attach_id:
+                        if "error" in response:
+                            raise RuntimeError(response["error"]["message"])
+                        responded = True
+                    elif response.get("method") == "Target.attachedToTarget":
+                        attached = response.get("params", {}).get("targetInfo", {}).get("type") == "page" or attached
+            except Exception as exc:
+                errors[target_id] = str(exc)
+    return errors
+
+
+def tab_html(tab: Tab, cdp_url: str, target: dict[str, object] | None = None) -> str:
     """Return the current DOM HTML for tab using its CDP page target."""
     import websocket
 
-    targets = [target for target in cdp_targets(cdp_url) if target.get("url") == tab.url]
-    titled = [target for target in targets if target.get("title") == tab.title]
-    target = (titled or targets or [None])[0]
+    if target is None:
+        targets = [item for item in cdp_targets(cdp_url) if item.get("url") == tab.url]
+        titled = [item for item in targets if item.get("title") == tab.title]
+        target = (titled or targets or [None])[0]
     if target is None:
         raise RuntimeError(f"Tab is not available over CDP: {tab.title} ({tab.url})")
     websocket_url = target.get("webSocketDebuggerUrl")
@@ -509,6 +560,87 @@ def html_to_markdown(html: str, url: str) -> str:
 
 def tab_markdown(tab: Tab, cdp_url: str) -> str:
     return html_to_markdown(tab_html(tab, cdp_url), tab.url)
+
+
+def match_page_targets(
+    tabs: list[tuple[Window, Tab, dict[str, object] | None]],
+    targets: list[dict[str, object]],
+) -> list[dict[str, object] | None]:
+    """Match each Edge tab to at most one live page target."""
+    available = list(targets)
+    matches = []
+    for _, tab, target in tabs:
+        url = str((target or {}).get("url") or tab.url)
+        title = str((target or {}).get("title") or tab.title)
+        candidates = [item for item in available if item.get("url") == url]
+        titled = [item for item in candidates if item.get("title") == title]
+        match = (titled or candidates or [None])[0]
+        matches.append(match)
+        if match is not None:
+            available.remove(match)
+    return matches
+
+
+def contents_command(
+    profiles: list[Path], session_file: Path | None, cdp_url: str, wake: bool, query: str | None = None
+) -> None:
+    """Print readable content for matching live Edge tabs as JSON."""
+    loaded = load_profiles(profiles, session_file)
+    target_map = cdp_tab_targets(cdp_url)
+    tabs = [
+        (window, tab, target_map.get((window.id, tab.visual_index)))
+        for _, windows, _ in loaded
+        for window in windows
+        for tab in window.tabs
+    ]
+    if query:
+        needle = query.casefold()
+        tabs = [
+            (window, tab, target)
+            for window, tab, target in tabs
+            if any(
+                needle in str((target or {}).get(field) or getattr(tab, field)).casefold()
+                for field in ("url", "title")
+            )
+        ]
+    pages = cdp_targets(cdp_url)
+    matches = match_page_targets(tabs, pages)
+    sleeping = [match is None for match in matches]
+    wake_errors: dict[str, str] = {}
+
+    if wake:
+        target_ids = [str(target["targetId"]) for (_, _, target), asleep in zip(tabs, sleeping) if asleep and target]
+        if target_ids:
+            wake_errors = wake_cdp_targets(cdp_url, target_ids) or {}
+            matches = match_page_targets(tabs, cdp_targets(cdp_url))
+
+    selected = [item for item in zip(tabs, matches, sleeping) if wake or item[1] is not None]
+
+    def extract(item: tuple[tuple[Window, Tab, dict[str, object] | None], dict[str, object] | None, bool]) -> dict[str, object]:
+        (window, tab, target), page, was_sleeping = item
+        title = str((target or {}).get("title") or tab.title)
+        url = str((target or {}).get("url") or tab.url)
+        row: dict[str, object] = {
+            "window": window.id,
+            "index": tab.visual_index,
+            "title": title,
+            "url": url,
+            "active": bool((target or {}).get("embedderData", {}).get("tabActive", tab.visual_index == window.selected_tab_index)),
+            "sleeping": was_sleeping,
+            "content": "",
+        }
+        try:
+            if page is None:
+                target_id = str((target or {}).get("targetId") or "")
+                raise RuntimeError(wake_errors.get(target_id, "Tab did not become available over CDP"))
+            row["content"] = html_to_markdown(tab_html(tab, cdp_url, page), url)
+        except Exception as exc:
+            row["error"] = str(exc)
+        return row
+
+    with ThreadPoolExecutor(max_workers=min(4, len(selected)) or 1) as executor:
+        rows = list(executor.map(extract, selected))
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
 
 
 def md_command(queries: list[str], profiles: list[Path] | Path, session_file: Path | None, cdp_url: str) -> int:
@@ -578,6 +710,12 @@ def main() -> None:
     cookies_parser.add_argument("domain", help="Domain or URL, with www treated as the parent domain")
     cookies_parser.add_argument("--json", action="store_true", help="Print matching cookie objects as JSON")
     cookies_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
+    contents_parser = subparsers.add_parser("contents", help="Print readable content for every live tab as JSON")
+    contents_parser.add_argument("query", nargs="?", help="Partial URL or title match")
+    add_session_arguments(contents_parser)
+    contents_parser.add_argument("--wake", action="store_true", help="Wake sleeping tabs before extracting them")
+    contents_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
 
     if args.command == "cookies":
@@ -585,6 +723,9 @@ def main() -> None:
         return
 
     profiles = args.profile or DEFAULT_PROFILES
+    if args.command == "contents":
+        contents_command(profiles, args.file, args.cdp_url, args.wake, args.query)
+        return
     if args.command == "md":
         raise SystemExit(md_command(args.queries, profiles, args.file, args.cdp_url))
 

@@ -135,6 +135,120 @@ class EdgeTest(unittest.TestCase):
 
         cookies_command.assert_called_once_with("google.com", "http://edge:9333", True)
 
+    def test_contents_skips_sleeping_tabs_and_isolates_extraction_errors(self):
+        live = edge.Tab(1, window_id=100, visual_index=0, navigations={0: edge.Navigation("https://live.example/", "Live")})
+        broken = edge.Tab(2, window_id=100, visual_index=1, navigations={0: edge.Navigation("https://broken.example/", "Broken")})
+        sleeping = edge.Tab(3, window_id=100, visual_index=2, navigations={0: edge.Navigation("https://sleep.example/", "Sleeping")})
+        loaded = [(Path("profile"), [edge.Window(100, selected_tab_index=0, tabs=[live, broken, sleeping])], Path("Session"))]
+        tab_targets = {
+            (100, 0): {"targetId": "tab-live", "title": "Live", "url": live.url, "embedderData": {"tabActive": True}},
+            (100, 1): {"targetId": "tab-broken", "title": "Broken", "url": broken.url, "embedderData": {"tabActive": False}},
+            (100, 2): {"targetId": "tab-sleep", "title": "Sleeping", "url": sleeping.url, "embedderData": {"tabActive": False}},
+        }
+        page_targets = [
+            {"id": "page-live", "title": "Live", "url": live.url, "webSocketDebuggerUrl": "ws://live"},
+            {"id": "page-broken", "title": "Broken", "url": broken.url, "webSocketDebuggerUrl": "ws://broken"},
+        ]
+        output = StringIO()
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(
+            edge, "cdp_tab_targets", return_value=tab_targets
+        ), patch.object(edge, "cdp_targets", return_value=page_targets) as cdp_targets, patch.object(
+            edge, "tab_html", side_effect=["<main>Live body</main>", RuntimeError("evaluation failed")]
+        ) as tab_html, redirect_stdout(output):
+            edge.contents_command(edge.DEFAULT_PROFILES, None, "http://localhost:9222", wake=False)
+
+        rows = json.loads(output.getvalue())
+        self.assertEqual([row["title"] for row in rows], ["Live", "Broken"])
+        self.assertEqual(rows[0], {"window": 100, "index": 0, "title": "Live", "url": live.url, "active": True, "sleeping": False, "content": "Live body"})
+        self.assertEqual(rows[1]["error"], "evaluation failed")
+        self.assertEqual(rows[1]["content"], "")
+        self.assertEqual(cdp_targets.call_count, 1)
+        self.assertEqual([call.args[2]["id"] for call in tab_html.call_args_list], ["page-live", "page-broken"])
+
+    def test_contents_wakes_missing_tabs_then_extracts_them(self):
+        tab = edge.Tab(1, window_id=100, visual_index=3, navigations={0: edge.Navigation("https://sleep.example/", "Sleeping")})
+        loaded = [(Path("profile"), [edge.Window(100, tabs=[tab])], Path("Session"))]
+        tab_target = {"targetId": "tab-sleep", "title": "Sleeping", "url": tab.url, "embedderData": {"tabActive": False}}
+        page_target = {"id": "page-sleep", "title": "Sleeping", "url": tab.url, "webSocketDebuggerUrl": "ws://sleep"}
+        output = StringIO()
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(
+            edge, "cdp_tab_targets", return_value={(100, 3): tab_target}
+        ), patch.object(edge, "cdp_targets", side_effect=[[], [page_target]]), patch.object(
+            edge, "wake_cdp_targets"
+        ) as wake_targets, patch.object(edge, "tab_html", return_value="<article>Awake</article>"), redirect_stdout(output):
+            edge.contents_command(edge.DEFAULT_PROFILES, None, "http://localhost:9222", wake=True)
+
+        rows = json.loads(output.getvalue())
+        wake_targets.assert_called_once_with("http://localhost:9222", ["tab-sleep"])
+        self.assertEqual(rows[0]["sleeping"], True)
+        self.assertEqual(rows[0]["content"], "Awake")
+
+    def test_contents_filters_tabs_by_url_or_title(self):
+        url_match = edge.Tab(1, window_id=100, visual_index=0, navigations={0: edge.Navigation("https://stale.example/", "Search")})
+        title_match = edge.Tab(2, window_id=100, visual_index=1, navigations={0: edge.Navigation("https://example.com/", "Account")})
+        other = edge.Tab(3, window_id=100, visual_index=2, navigations={0: edge.Navigation("https://other.example/", "Other")})
+        loaded = [(Path("profile"), [edge.Window(100, tabs=[url_match, title_match, other])], Path("Session"))]
+        tab_targets = {
+            (100, 0): {"targetId": "tab-url", "title": url_match.title, "url": "https://google.com/search"},
+            (100, 1): {"targetId": "tab-title", "title": "Google.com account", "url": title_match.url},
+            (100, 2): {"targetId": "tab-other", "title": other.title, "url": other.url},
+        }
+        page_targets = [
+            {"id": "page-url", "title": url_match.title, "url": "https://google.com/search", "webSocketDebuggerUrl": "ws://url"},
+            {"id": "page-title", "title": "Google.com account", "url": title_match.url, "webSocketDebuggerUrl": "ws://title"},
+            {"id": "page-other", "title": other.title, "url": other.url, "webSocketDebuggerUrl": "ws://other"},
+        ]
+        output = StringIO()
+        with patch.object(edge, "load_profiles", return_value=loaded), patch.object(
+            edge, "cdp_tab_targets", return_value=tab_targets
+        ), patch.object(edge, "cdp_targets", return_value=page_targets), patch.object(
+            edge, "tab_html", side_effect=["<main>URL</main>", "<main>Title</main>"]
+        ) as tab_html, redirect_stdout(output):
+            edge.contents_command(edge.DEFAULT_PROFILES, None, "http://localhost:9222", wake=False, query="GOOGLE.COM")
+
+        rows = json.loads(output.getvalue())
+        self.assertEqual([row["url"] for row in rows], ["https://google.com/search", title_match.url])
+        self.assertEqual(tab_html.call_count, 2)
+
+    def test_wake_cdp_targets_auto_attaches_without_activating_tabs(self):
+        connection = MagicMock()
+        connection.recv.side_effect = [
+            json.dumps({"id": 1, "result": {"sessionId": "tab-session"}}),
+            json.dumps({"method": "Target.attachedToTarget", "params": {"sessionId": "page-session", "targetInfo": {"type": "page"}}}),
+            json.dumps({"id": 2, "result": {}}),
+        ]
+        websocket = MagicMock()
+        websocket.create_connection.return_value = connection
+
+        with patch.object(edge, "cdp_browser_url", return_value="ws://browser"), patch.dict(sys.modules, {"websocket": websocket}):
+            edge.wake_cdp_targets("http://localhost:9222", ["tab-sleep"])
+
+        messages = [json.loads(call.args[0]) for call in connection.send.call_args_list]
+        self.assertEqual([message["method"] for message in messages], ["Target.attachToTarget", "Target.setAutoAttach"])
+        self.assertEqual(messages[1]["sessionId"], "tab-session")
+        self.assertNotIn("Target.activateTarget", {message["method"] for message in messages})
+
+    def test_contents_reports_wake_failure_on_only_that_tab(self):
+        tab = edge.Tab(1, window_id=100, navigations={0: edge.Navigation("https://sleep.example/", "Sleeping")})
+        target = {"targetId": "tab-sleep", "title": "Sleeping", "url": tab.url, "embedderData": {}}
+        output = StringIO()
+        with patch.object(
+            edge, "load_profiles", return_value=[(Path("profile"), [edge.Window(100, tabs=[tab])], Path("Session"))]
+        ), patch.object(edge, "cdp_tab_targets", return_value={(100, 0): target}), patch.object(
+            edge, "cdp_targets", side_effect=[[], []]
+        ), patch.object(edge, "wake_cdp_targets", return_value={"tab-sleep": "wake timed out"}), redirect_stdout(output):
+            edge.contents_command(edge.DEFAULT_PROFILES, None, "http://localhost:9222", wake=True)
+
+        self.assertEqual(json.loads(output.getvalue())[0]["error"], "wake timed out")
+
+    def test_main_dispatches_contents_subcommand(self):
+        with patch.object(edge, "contents_command") as contents_command, patch.object(
+            sys, "argv", ["edge", "contents", "google.com", "--wake", "--cdp-url", "http://edge:9333"]
+        ):
+            edge.main()
+
+        contents_command.assert_called_once_with(edge.DEFAULT_PROFILES, None, "http://edge:9333", True, "google.com")
+
     def test_profile_argument_is_repeatable_with_requested_defaults(self):
         parser = argparse.ArgumentParser()
         edge.add_session_arguments(parser)

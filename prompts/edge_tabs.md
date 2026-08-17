@@ -3,6 +3,55 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Contents filter, 18 Aug 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Update `~/code/scripts/edge` so that `edge contents google.com` will filter tabs whose URL or title match `google.com` and only return the contents for those.
+Update tests.
+
+<!-- codex resume 01a011e2-9cf0-71c0-bc81-cb4847ebe886 -->
+
+## Contents, 17 Aug 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+<!-- Source: https://chatgpt.com/c/6a831414-5fec-83ee-bc2d-39df6f5c71c4 -->
+
+Update `~/code/scripts/edge` to add:
+
+```bash
+edge contents [--wake] [--cdp-url URL]
+```
+
+It should output agent-friendly JSON containing every Edge tab that is currently live/non-sleeping, with roughly:
+
+```json
+{"window": ..., "index": ..., "title": ..., "url": ..., "active": ..., "sleeping": ..., "content": "...Markdown..."}
+```
+
+Reuse the existing SNSS tab parsing, `cdp_tab_ids()`, `tab_html()`, and `html_to_markdown()` machinery. Prefer direct Chrome DevTools Protocol WebSockets, using `~/code/scripts/backupwhatsapp.py` as the model for clean WebSocket/CDP handling.
+
+Requirements:
+
+- Default: skip sleeping/discarded tabs rather than waking them.
+- `--wake`: wake sleeping tabs, wait until usable, then extract their content.
+- Determine sleeping/discarded status robustly from CDP/Edge state where possible; investigate `Target.getTargets`, `embedderData`, etc. before using absence of a page target as a heuristic.
+- Prefer `Target.activateTarget` or another non-destructive wake mechanism; do not reload pages unnecessarily.
+- Extract readable Markdown or text, not raw HTML.
+- Include an `error` field per tab if extraction fails rather than failing the whole command.
+- Enumerate targets once and use a small amount of concurrency rather than reconnecting serially for every tab.
+- Keep `--cdp-url`, defaulting consistently with existing commands.
+- Keep the implementation small and reuse/refactor existing functions rather than duplicating CDP code.
+- Write failing tests first, then implement and verify.
+
+<!-- codex resume 01a0100f-5cdd-7aa0-ac4b-cc4c38846896 --yolo -->
+
 ## Cookies, 11 Aug 2026
 
 <!--
