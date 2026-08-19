@@ -1,5 +1,44 @@
 # Transcribe Calls
 
+## Refactor, 19 Aug 2026
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+I'm not too happy with the code in `transcribe_calls.py`. It was developed over many weeks, and doesn't seem to be as well-structured or elegantly written as I'd like.
+
+First, I'd like you to take a look at my patterns of usage (see my fish history and ~/Downloads/transcribe.sh which I update incrementally). Mostly, I'm transcribing a specific file from the documents calls folder. Very rarely, I transcribe a specific file from some other directory. So rather than --glob, could we maybe simplify that interface? Is there any other kind of over-engineering going on here?
+
+Suggest what changes you'd make, prioritized by feature improvement and code simplification. Recommend what I should do.
+
+---
+
+Start on commit 1
+
+---
+
+Commit this and proceed with commit 2 please
+
+---
+
+Commit this and proceed with the judgement calls you mentioned earlier. Cache where other scripts in this repo cache stuff
+
+---
+
+Modify to accept a bare stem and prefix-match, as you had suggested. I don't think this is implemented.
+
+---
+
+OK, then maybe instead of a pure prefix match, I want a substring match, e.g. if I type "Fifth elephant" it'd be great if it could transcribe the first case insensitive match.
+
+---
+
+The --list-changes feature from before was useful. Let's bring that back, minimally. Commit - and also rewrite history so that all the commits made so far and converted into a single commit.
+
+<!-- claude --resume 705b5931-c5cf-4a74-ba45-1d974a9db66a -->
+
 ## Save model and cost, 01 Aug 2026
 
 <!--

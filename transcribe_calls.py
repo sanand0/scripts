@@ -12,12 +12,10 @@ import json
 import math
 import os
 import re
-import shlex
 import subprocess
 import tempfile
 import time
-from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -33,18 +31,16 @@ DEFAULT_PROMPT_FILE = Path("/home/sanand/code/blog/pages/prompts/transcribe-call
 DEFAULT_SYSTEM_PROMPT = "Transcribe"
 DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_CHUNK_MINUTES = 30.0
-DEFAULT_GLOB_PATTERN = "*"
-DEFAULT_PENDING_GLOB_PATTERN = "*.opus"
-DEFAULT_CACHE_DIR = Path.home() / ".cache" / "sanand-scripts" / "transcribe_calls" / "chunks"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "sanand-scripts" / "transcribe_calls"
 CHUNK_CACHE_TTL_SECONDS = 24 * 60 * 60
 CHUNK_OVERLAP_SECONDS = 1.0
 FRIENDLY_CHUNK_MINUTES = (30.0, 25.0, 20.0, 15.0)
 CHUNK_CONTEXT_MAX_LINES = 40
 CHUNK_CONTEXT_MAX_CHARS = 12_000
 PRICES_URL = "https://raw.githubusercontent.com/simonw/llm-prices/refs/heads/main/data/google.json"
+DEFAULT_PRICES_CACHE_PATH = DEFAULT_CACHE_DIR / "google-prices.json"
 AUDIO_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm"}
 CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
-TRAILING_SINGLE_DIGIT_RE = re.compile(r"^(?P<base>.+?) (?P<digit>\d)$")
 TRANSCRIPT_PART_SEPARATOR = "\n\n---\n\n"
 TRANSCRIPT_LINE_RE = re.compile(
     r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[\d{2}:\d{2}(?::\d{2})?\])? .+"
@@ -94,48 +90,36 @@ class InvalidTranscriptWarning:
     matching_lines: int
 
 
-def build_note_prompt(system_prompt: str, user_prompt: str | None = None) -> str:
-    """Return the stored prompt context for a transcript note."""
-    if user_prompt:
-        return user_prompt.strip()
-    return system_prompt.strip()
+@dataclass(frozen=True)
+class ResolvedPrompts:
+    system_prompt: str
+    user_prompt: str | None
+    note_prompt: str
 
 
-def resolve_transcription_prompts(
-    system_prompt: str, stored_prompt: str | None, user_prompt: str | None
-) -> tuple[str, str | None]:
-    """Return `(system_prompt, user_prompt)` using CLI, stored, then default context."""
-    if user_prompt is not None:
-        return system_prompt, user_prompt
-    if not stored_prompt:
-        return system_prompt, None
-    cleaned_stored_prompt = stored_prompt.strip()
+def resolve_prompts(system_prompt: str, stored_prompt: str | None, cli_prompt: str | None) -> ResolvedPrompts:
+    """Resolve the prompt to send to Gemini and the prompt to persist in frontmatter.
+
+    Both prefer the CLI `--prompt`, then the note's stored prompt, then the system prompt.
+    The stored/system prompt is only sent to Gemini as user context when it differs from
+    the system prompt; sending it verbatim as both would be redundant.
+    """
     cleaned_system_prompt = system_prompt.strip()
-    if not cleaned_stored_prompt or cleaned_stored_prompt == cleaned_system_prompt:
-        return system_prompt, None
-    return system_prompt, cleaned_stored_prompt
+    cleaned_stored_prompt = stored_prompt.strip() if stored_prompt else None
+    if cli_prompt is not None:
+        user_prompt = cli_prompt
+    elif cleaned_stored_prompt and cleaned_stored_prompt != cleaned_system_prompt:
+        user_prompt = cleaned_stored_prompt
+    else:
+        user_prompt = None
+    note_prompt = cli_prompt or cleaned_stored_prompt or cleaned_system_prompt
+    return ResolvedPrompts(system_prompt=system_prompt, user_prompt=user_prompt, note_prompt=note_prompt)
 
 
 def render_prompt_metadata(prompt: str) -> str:
     """Render prompt metadata as a YAML block scalar."""
     lines = prompt.strip().splitlines() or [""]
     return "prompt: |-\n" + "".join(f"  {line}\n" for line in lines)
-
-
-def strip_prompt_metadata(frontmatter_body: str) -> str:
-    """Remove any existing prompt metadata from YAML frontmatter text."""
-    cleaned_lines: list[str] = []
-    skipping_prompt = False
-    for line in frontmatter_body.splitlines():
-        if skipping_prompt:
-            if line.startswith((" ", "\t")):
-                continue
-            skipping_prompt = False
-        if line.startswith("prompt:"):
-            skipping_prompt = True
-            continue
-        cleaned_lines.append(line)
-    return "\n".join(cleaned_lines).strip()
 
 
 def extract_prompt_metadata(markdown: str) -> str | None:
@@ -156,32 +140,45 @@ def extract_prompt_metadata(markdown: str) -> str | None:
     return str(prompt).rstrip()
 
 
-def set_prompt_metadata(markdown: str, prompt: str) -> str:
-    """Add or update the prompt key in note frontmatter."""
-    prompt_block = render_prompt_metadata(prompt).rstrip()
+def set_frontmatter_fields(markdown: str, fields: dict[str, str], *, prepend: bool) -> str:
+    """Add or update the given YAML frontmatter keys, preserving unrelated ones.
+
+    `prepend` controls whether the new keys go before or after what's kept, so callers can
+    build up frontmatter (e.g. model/cost first, prompt last) across multiple calls.
+    """
+    new_lines = [
+        render_prompt_metadata(value).rstrip() if key == "prompt" else f"{key}: {value}"
+        for key, value in fields.items()
+    ]
     match = FRONTMATTER_RE.match(markdown)
     if not match:
-        return f"---\n{prompt_block}\n---\n\n{markdown.lstrip()}"
-    body = strip_prompt_metadata(match.group("body"))
-    updated_body = f"{body}\n{prompt_block}" if body else prompt_block
+        body = "\n".join(new_lines)
+        return f"---\n{body}\n---\n\n{markdown.lstrip()}"
+    kept_lines: list[str] = []
+    skipping = False
+    for line in match.group("body").splitlines():
+        if skipping:
+            if line.startswith((" ", "\t")):
+                continue
+            skipping = False
+        if line.split(":", 1)[0] in fields:
+            skipping = True
+            continue
+        kept_lines.append(line)
+    ordered_lines = new_lines + kept_lines if prepend else kept_lines + new_lines
+    body = "\n".join(ordered_lines).strip()
     remainder = markdown[match.end() :].lstrip("\n")
-    return f"---\n{updated_body}\n---\n\n{remainder}" if remainder else f"---\n{updated_body}\n---\n"
+    return f"---\n{body}\n---\n\n{remainder}" if remainder else f"---\n{body}\n---\n"
+
+
+def set_prompt_metadata(markdown: str, prompt: str) -> str:
+    """Add or update the prompt key in note frontmatter, keeping it last."""
+    return set_frontmatter_fields(markdown, {"prompt": prompt}, prepend=False)
 
 
 def set_model_cost_metadata(markdown: str, model: str, cost_usd: float) -> str:
-    """Add or update the transcription model and dollar cost in note frontmatter."""
-    metadata = f"model: {model}\ncost: {cost_usd:.6f}"
-    match = FRONTMATTER_RE.match(markdown)
-    if not match:
-        return f"---\n{metadata}\n---\n\n{markdown.lstrip()}"
-    body = "\n".join(
-        line
-        for line in match.group("body").splitlines()
-        if not line.startswith(("model:", "cost:"))
-    ).strip()
-    updated_body = f"{metadata}\n{body}" if body else metadata
-    remainder = markdown[match.end() :].lstrip("\n")
-    return f"---\n{updated_body}\n---\n\n{remainder}" if remainder else f"---\n{updated_body}\n---\n"
+    """Add or update the transcription model and dollar cost in note frontmatter, keeping them first."""
+    return set_frontmatter_fields(markdown, {"model": model, "cost": f"{cost_usd:.6f}"}, prepend=True)
 
 
 def extract_system_prompt(markdown: str) -> str:
@@ -299,25 +296,28 @@ def looks_like_transcript(transcript: str, min_matching_lines: int = 5) -> bool:
     return count_matching_transcript_lines(transcript) >= min_matching_lines
 
 
-def iter_audio_files(input_dir: Path, pattern: str, *, newest_first: bool = False) -> Iterable[Path]:
-    """Yield supported audio files matching the glob pattern in filename order."""
-    for path in sorted(input_dir.glob(pattern), key=lambda path: path.name, reverse=newest_first):
-        if path.is_file() and path.suffix.lower() in AUDIO_SUFFIXES:
-            yield path
+def resolve_audio_path(audio_arg: str, input_dir: Path) -> Path:
+    """Resolve an audio argument to a file path.
 
-
-def find_colliding_stems(audio_files: list[Path]) -> list[str]:
-    """Return sorted audio stems that would map to the same Markdown filename."""
-    counts = Counter(path.stem for path in audio_files)
-    return sorted(stem for stem, count in counts.items() if count > 1)
-
-
-def find_base_transcript_path(output_dir: Path, audio_stem: str) -> Path | None:
-    """Return the alternate base transcript path for stems ending in ` space + digit`."""
-    match = TRAILING_SINGLE_DIGIT_RE.fullmatch(audio_stem)
-    if not match:
-        return None
-    return output_dir / f"{match.group('base')}.md"
+    A path that exists (absolute, or relative to the cwd) is used directly. Otherwise the
+    argument is matched case-insensitively against audio filenames in `input_dir`: an exact
+    stem match wins outright, else it's matched as a substring of the stem. Since filenames
+    start with `YYYY-MM-DD`, ties are broken by taking the most recent (highest-sorting) name.
+    """
+    given = Path(audio_arg)
+    if given.exists():
+        return given
+    if given.is_absolute() or len(given.parts) > 1:
+        raise typer.BadParameter(f"Audio file does not exist: {given}")
+    query = (given.stem if given.suffix.lower() in AUDIO_SUFFIXES else str(given)).lower()
+    audio_files = [
+        path for path in input_dir.glob("*") if path.is_file() and path.suffix.lower() in AUDIO_SUFFIXES
+    ]
+    exact = [path for path in audio_files if path.stem.lower() == query]
+    matches = exact or [path for path in audio_files if query in path.stem.lower()]
+    if not matches:
+        raise typer.BadParameter(f"No audio file matching {audio_arg!r} found in {input_dir}")
+    return max(matches, key=lambda path: path.name)
 
 
 def read_existing_note(note_path: Path) -> tuple[bool, str, int]:
@@ -334,10 +334,11 @@ def read_existing_note(note_path: Path) -> tuple[bool, str, int]:
     return True, markdown, transcript_sections
 
 
-def has_prompted_pending_note(audio_path: Path, output_dir: Path) -> bool:
-    """Return True when the matching note has prompt metadata but no transcript."""
-    had_output, markdown, _ = read_existing_note(output_dir / f"{audio_path.stem}.md")
-    return had_output and extract_prompt_metadata(markdown) is not None and not has_transcript_content(markdown)
+def list_audio_files(input_dir: Path) -> list[Path]:
+    """Return all supported audio files directly inside `input_dir`, sorted by name."""
+    return sorted(
+        path for path in input_dir.glob("*") if path.is_file() and path.suffix.lower() in AUDIO_SUFFIXES
+    )
 
 
 def find_notes_with_transcript_content(output_dir: Path) -> set[Path]:
@@ -345,17 +346,7 @@ def find_notes_with_transcript_content(output_dir: Path) -> set[Path]:
     if not output_dir.exists():
         return set()
     result = subprocess.run(
-        [
-            "rg",
-            "-l",
-            "-U",
-            "-P",
-            TRANSCRIPT_CONTENT_RG_PATTERN,
-            "--glob",
-            "*.md",
-            "--",
-            str(output_dir),
-        ],
+        ["rg", "-l", "-U", "-P", TRANSCRIPT_CONTENT_RG_PATTERN, "--glob", "*.md", "--", str(output_dir)],
         capture_output=True,
         text=True,
         check=False,
@@ -366,35 +357,20 @@ def find_notes_with_transcript_content(output_dir: Path) -> set[Path]:
     return {Path(line) for line in result.stdout.splitlines()}
 
 
-def emit_change_list(audio_files: list[Path], output_dir: Path, user_prompt: str | None) -> None:
-    """Emit broad create/update actions as TSV without probing audio."""
+def emit_change_list(audio_files: list[Path], output_dir: Path) -> None:
+    """Emit create/update actions as TSV for audio files without a transcript, without probing audio."""
     completed_notes = find_notes_with_transcript_content(output_dir)
     changes = 0
-    failures: list[str] = []
     for audio_path in audio_files:
         output_path = output_dir / f"{audio_path.stem}.md"
-        base_output_path = find_base_transcript_path(output_dir, audio_path.stem)
-        if base_output_path in completed_notes:
+        if output_path in completed_notes:
             continue
-        if output_path in completed_notes and user_prompt is None:
-            continue
-        try:
-            had_output, markdown, _ = read_existing_note(output_path)
-        except RuntimeError as exc:
-            failures.append(str(exc))
-            typer.echo(f"ERROR {exc}", err=True)
-            continue
+        had_output, markdown, _ = read_existing_note(output_path)
         if has_transcript_content(markdown):
-            if user_prompt is None or extract_prompt_metadata(markdown) == user_prompt:
-                continue
-            action = "update-metadata"
-        else:
-            action = "update" if had_output else "create"
-        typer.echo(f"{action}\t{audio_path}\t{output_path}")
+            continue
+        typer.echo(f"{'update' if had_output else 'create'}\t{audio_path}\t{output_path}")
         changes += 1
-    typer.echo(f"changes={changes} errors={len(failures)}", err=True)
-    if failures:
-        raise typer.Exit(1)
+    typer.echo(f"changes={changes}", err=True)
 
 
 def normalize_model_id(model_id: str) -> str:
@@ -402,18 +378,11 @@ def normalize_model_id(model_id: str) -> str:
     return re.sub(r"-+", "-", model_id.strip().lower().replace(".", "-"))
 
 
-@lru_cache(maxsize=1)
-def load_google_pricing() -> dict[str, dict[str, object]]:
-    """Load Google pricing data from llm-prices."""
-    url = os.environ.get("TRANSCRIBE_CALLS_PRICES_URL", PRICES_URL)
-    try:
-        with urlopen(url, timeout=30) as response:
-            payload = json.load(response)
-    except (OSError, URLError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Failed to load Google pricing data from {url}: {exc}") from exc
-    models = payload.get("models")
+def parse_google_pricing(payload: object, source: str) -> dict[str, dict[str, object]]:
+    """Parse an llm-prices JSON payload into a normalized model-id -> price-entry map."""
+    models = payload.get("models") if isinstance(payload, dict) else None
     if not isinstance(models, list):
-        raise RuntimeError(f"Google pricing data from {url} is missing models.")
+        raise RuntimeError(f"Google pricing data from {source} is missing models.")
     pricing: dict[str, dict[str, object]] = {}
     for model_entry in models:
         if not isinstance(model_entry, dict):
@@ -426,7 +395,30 @@ def load_google_pricing() -> dict[str, dict[str, object]]:
         if isinstance(latest, dict):
             pricing[normalize_model_id(model_id)] = latest
     if not pricing:
-        raise RuntimeError(f"Google pricing data from {url} did not contain usable models.")
+        raise RuntimeError(f"Google pricing data from {source} did not contain usable models.")
+    return pricing
+
+
+@lru_cache(maxsize=1)
+def load_google_pricing() -> dict[str, dict[str, object]]:
+    """Load Google pricing data from llm-prices, falling back to the last cached copy on
+    a network failure so a flaky connection doesn't block transcription outright."""
+    url = os.environ.get("TRANSCRIBE_CALLS_PRICES_URL", PRICES_URL)
+    cache_path = Path(os.environ.get("TRANSCRIBE_CALLS_PRICES_CACHE", DEFAULT_PRICES_CACHE_PATH))
+    try:
+        with urlopen(url, timeout=30) as response:
+            payload = json.load(response)
+        pricing = parse_google_pricing(payload, url)
+    except (OSError, URLError, json.JSONDecodeError, RuntimeError) as exc:
+        if not cache_path.is_file():
+            raise RuntimeError(f"Failed to load Google pricing data from {url}: {exc}") from exc
+        typer.echo(
+            f"WARNING failed to fetch Google pricing data from {url} ({exc}); using cached copy.",
+            err=True,
+        )
+        return parse_google_pricing(json.loads(cache_path.read_text(encoding="utf-8")), str(cache_path))
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(payload), encoding="utf-8")
     return pricing
 
 
@@ -533,7 +525,7 @@ def chunk_cache_path(
         },
         sort_keys=True,
     ).encode()
-    return cache_dir / f"{hashlib.sha256(cache_key).hexdigest()}.json"
+    return cache_dir / f"chunk-{hashlib.sha256(cache_key).hexdigest()}.json"
 
 
 def cleanup_chunk_cache(
@@ -542,11 +534,15 @@ def cleanup_chunk_cache(
     now: float | None = None,
     ttl_seconds: int = CHUNK_CACHE_TTL_SECONDS,
 ) -> int:
-    """Remove expired chunk transcript cache files and return the count."""
+    """Remove expired chunk transcript cache files and return the count.
+
+    Only touches `chunk-*.json` files: `cache_dir` is shared with the pricing cache
+    (one folder per script, per repo convention), and that file has its own lifecycle.
+    """
     if not cache_dir.is_dir():
         return 0
     cutoff = (now if now is not None else time.time()) - ttl_seconds
-    expired = [path for path in cache_dir.glob("*.json") if path.stat().st_mtime < cutoff]
+    expired = [path for path in cache_dir.glob("chunk-*.json") if path.stat().st_mtime < cutoff]
     for path in expired:
         path.unlink()
     return len(expired)
@@ -780,86 +776,17 @@ def build_chunk_user_prompt(
     return "\n\n".join(prompt_parts)
 
 
-def build_patch_command(
-    *,
-    input_dir: Path,
-    output_dir: Path,
-    prompt_file: Path,
-    audio_path: Path,
-    model: str,
-    user_prompt: str | None,
-    chunk_minutes: float,
-    patch_section: int,
-) -> str:
-    """Build a repair command that retranscribes one chunk and patches its transcript section."""
-    relative_audio_path = audio_path.relative_to(input_dir).as_posix()
-    args = [
-        "uv",
-        "run",
-        str(Path(__file__).resolve()),
-        str(input_dir),
-        str(output_dir),
-        str(prompt_file),
-        "--glob",
-        relative_audio_path,
-        "--patch-section",
-        str(patch_section),
-        "--chunk",
-        str(chunk_minutes),
-        "--model",
-        model,
-    ]
-    if user_prompt:
-        args.extend(["--prompt", user_prompt])
-    return " ".join(shlex.quote(arg) for arg in args)
-
-
-def emit_invalid_transcript_warnings(
-    *,
-    audio_path: Path,
-    output_path: Path,
-    warnings: tuple[InvalidTranscriptWarning, ...],
-    input_dir: Path,
-    output_dir: Path,
-    prompt_file: Path,
-    model: str,
-    user_prompt: str | None,
-    chunk_minutes: float,
+def emit_remaining_warnings(
+    audio_path: Path, warnings: tuple[InvalidTranscriptWarning, ...]
 ) -> None:
-    """Log invalid transcript warnings together with a repair command."""
+    """Log transcript sections that still look invalid after an automatic retry."""
     for warning in warnings:
         typer.echo(
             f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count} "
-            f"matched only {warning.matching_lines} transcript-format lines; response may be invalid.",
+            f"still does not look like a transcript after retry ({warning.matching_lines} matching "
+            "lines). Run with --patch to try again.",
             err=True,
         )
-        typer.echo(
-            f"Patch command for {output_path.name} section {warning.section_index}: "
-            f"{build_patch_command(
-                input_dir=input_dir,
-                output_dir=output_dir,
-                prompt_file=prompt_file,
-                audio_path=audio_path,
-                model=model,
-                user_prompt=user_prompt,
-                chunk_minutes=chunk_minutes,
-                patch_section=warning.section_index,
-            )}",
-            err=True,
-        )
-
-
-def emit_transcription_progress(
-    *,
-    current: int,
-    total: int,
-    action: str,
-    audio_path: Path,
-    output_path: Path,
-    note: str = "",
-) -> None:
-    """Log progress for a transcription step."""
-    typer.echo(f"[{current}/{total}] {action} {audio_path.name} -> {output_path.name}{note}")
 
 
 def transcribe_single_audio(
@@ -1005,33 +932,26 @@ def transcribe_audio(
 
 @app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
 def main(
-    input_dir: Path = typer.Argument(DEFAULT_INPUT_DIR, help="Folder containing audio files."),
-    output_dir: Path = typer.Argument(DEFAULT_OUTPUT_DIR, help="Folder for transcript Markdown files."),
-    prompt_file: Path = typer.Argument(
-        DEFAULT_PROMPT_FILE,
-        help="Markdown file containing the system prompt or first fenced prompt.",
-    ),
-    model: str = typer.Option(
-        DEFAULT_MODEL,
-        "--model",
-        envvar="TRANSCRIBE_CALLS_MODEL",
-        help="Gemini model to use for transcription.",
+    audio: str | None = typer.Argument(
+        None,
+        help=(
+            f"Audio file path, or a case-insensitive substring of a filename in "
+            f"{DEFAULT_INPUT_DIR} (most recent match wins). Omit with --list-changes."
+        ),
     ),
     user_prompt: str | None = typer.Option(
-        None,
-        "--prompt",
-        help="Additional user prompt sent alongside the audio attachment.",
+        None, "--prompt", help="Additional user prompt sent alongside the audio attachment."
     ),
-    patch_invalid_sections: bool = typer.Option(
+    force: bool = typer.Option(
+        False, "--force", help="Re-transcribe even if the note already has a transcript."
+    ),
+    patch: bool = typer.Option(
         False,
-        "--patch-invalid-sections",
-        help="Detect invalid transcript sections in the existing note and patch all of them.",
+        "--patch",
+        help="Detect invalid transcript sections in the existing note and re-transcribe just those.",
     ),
-    patch_section: int | None = typer.Option(
-        None,
-        "--patch-section",
-        min=1,
-        help="Re-transcribe one chunk and replace that transcript section in the existing note.",
+    model: str = typer.Option(
+        DEFAULT_MODEL, "--model", envvar="TRANSCRIBE_CALLS_MODEL", help="Gemini model to use for transcription."
     ),
     chunk_minutes: float = typer.Option(
         DEFAULT_CHUNK_MINUTES,
@@ -1039,347 +959,194 @@ def main(
         min=0.01,
         help="Chunk size in minutes for splitting long audio before transcription.",
     ),
-    glob_pattern: str = typer.Option(
-        DEFAULT_GLOB_PATTERN,
-        "--glob",
-        help="Glob pattern, relative to the input folder, for filtering audio files.",
+    out_dir: Path = typer.Option(
+        DEFAULT_OUTPUT_DIR, "--out", help="Folder for the transcript Markdown file."
+    ),
+    system_prompt_file: Path = typer.Option(
+        DEFAULT_PROMPT_FILE,
+        "--system-prompt",
+        help="Markdown file containing the system prompt or first fenced prompt.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="List work, duration, and chunk count without calling Gemini or ffmpeg, and without writing files.",
+        help="Show what would happen and the chunk plan, without calling Gemini or writing files.",
     ),
     list_changes: bool = typer.Option(
         False,
         "--list-changes",
-        help="Quickly list all create/update actions as TSV without probing audio, calling Gemini, or writing files.",
+        help=(
+            f"List create/update actions as TSV for every audio file in {DEFAULT_INPUT_DIR} "
+            "without a transcript yet, without probing audio or writing files. Takes no AUDIO argument."
+        ),
     ),
 ) -> None:
-    """Transcribe every missing call recording in the input folder."""
-    if not input_dir.is_dir():
-        raise typer.BadParameter(f"Input folder does not exist: {input_dir}")
-    if prompt_file.suffix.lower() != ".md":
-        raise typer.BadParameter(f"Prompt file must be Markdown: {prompt_file}")
-    if output_dir.exists() and not output_dir.is_dir():
-        raise typer.BadParameter(f"Output path is not a directory: {output_dir}")
-    if patch_invalid_sections and patch_section is not None:
-        raise typer.BadParameter("--patch-invalid-sections cannot be used with --patch-section.")
-    if (patch_section is not None or patch_invalid_sections) and dry_run:
-        raise typer.BadParameter("Patch options cannot be used with --dry-run.")
-    if (patch_section is not None or patch_invalid_sections) and list_changes:
-        raise typer.BadParameter("Patch options cannot be used with --list-changes.")
-    if dry_run and list_changes:
-        raise typer.BadParameter("--dry-run cannot be used with --list-changes.")
-
-    chunk_cache_dir = Path(os.environ.get("TRANSCRIBE_CALLS_CACHE_DIR", DEFAULT_CACHE_DIR))
-    if not dry_run and not list_changes:
-        cleanup_chunk_cache(chunk_cache_dir)
-
-    default_pending_mode = (
-        input_dir == DEFAULT_INPUT_DIR
-        and output_dir == DEFAULT_OUTPUT_DIR
-        and prompt_file == DEFAULT_PROMPT_FILE
-        and glob_pattern == DEFAULT_GLOB_PATTERN
-        and user_prompt is None
-        and patch_section is None
-        and not patch_invalid_sections
-        and not list_changes
-    )
-    effective_glob_pattern = DEFAULT_PENDING_GLOB_PATTERN if default_pending_mode else glob_pattern
-    newest_first = default_pending_mode
-    system_prompt_cache: str | None = None
-
-    def get_system_prompt() -> str:
-        nonlocal system_prompt_cache
-        if system_prompt_cache is None:
-            system_prompt_cache = load_system_prompt(prompt_file)
-        return system_prompt_cache
-
-    cleaned_user_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
-    audio_files = list(iter_audio_files(input_dir, pattern=effective_glob_pattern, newest_first=newest_first))
-    if default_pending_mode:
-        audio_files = [
-            audio_path for audio_path in audio_files if has_prompted_pending_note(audio_path, output_dir)
-        ]
-    if not audio_files:
-        if default_pending_mode:
-            typer.echo(
-                f"No prompted pending .opus files found in {input_dir} with matching notes in {output_dir}"
-            )
-            raise typer.Exit(0)
-        typer.echo(f"No audio files found in {input_dir} matching {effective_glob_pattern!r}")
-        raise typer.Exit(0)
-    if (patch_section is not None or patch_invalid_sections) and len(audio_files) != 1:
-        raise typer.BadParameter("Patch options require exactly one matching audio file.")
-    if collisions := find_colliding_stems(audio_files):
-        joined = ", ".join(collisions)
-        raise typer.BadParameter(
-            f"Duplicate audio basenames would collide in output: {joined}"
-        )
-
+    """Transcribe one call recording into a Markdown note."""
+    if out_dir.exists() and not out_dir.is_dir():
+        raise typer.BadParameter(f"Output path is not a directory: {out_dir}")
     if list_changes:
-        emit_change_list(audio_files, output_dir, cleaned_user_prompt)
+        if audio is not None:
+            raise typer.BadParameter("--list-changes takes no AUDIO argument.")
+        emit_change_list(list_audio_files(DEFAULT_INPUT_DIR), out_dir)
+        return
+    if audio is None:
+        raise typer.BadParameter("Missing argument 'AUDIO'.")
+    if system_prompt_file.suffix.lower() != ".md":
+        raise typer.BadParameter(f"Prompt file must be Markdown: {system_prompt_file}")
+    if patch and force:
+        raise typer.BadParameter("--patch cannot be used with --force.")
+    if patch and dry_run:
+        raise typer.BadParameter("--patch cannot be used with --dry-run.")
+
+    audio_path = resolve_audio_path(audio, DEFAULT_INPUT_DIR)
+    cleaned_user_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
+    output_path = out_dir / f"{audio_path.stem}.md"
+
+    try:
+        had_output, existing_markdown, _ = read_existing_note(output_path)
+    except RuntimeError as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    stored_prompt = extract_prompt_metadata(existing_markdown) if had_output else None
+    has_transcript = has_transcript_content(existing_markdown)
+
+    if patch:
+        if not had_output or not has_transcript:
+            typer.echo(f"ERROR {output_path.name}: no transcript section to patch", err=True)
+            raise typer.Exit(1)
+        target_sections = find_invalid_transcript_sections(existing_markdown)
+        if not target_sections:
+            typer.echo(f"No invalid transcript sections found in {output_path.name}")
+            return
+    elif has_transcript and not force:
+        if cleaned_user_prompt is None or stored_prompt == cleaned_user_prompt:
+            typer.echo(f"Already transcribed: {output_path.name} (use --force to re-transcribe)")
+            return
+        output_path.write_text(set_prompt_metadata(existing_markdown, cleaned_user_prompt), encoding="utf-8")
+        typer.echo(f"updated prompt metadata: {output_path.name}")
         return
 
-    if not dry_run:
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    created = 0
-    updated = 0
-    skipped = 0
-    failures: list[str] = []
-    total = len(audio_files)
-    client: Any | None = None
-    pricing: dict[str, dict[str, object]] | None = None
-    total_cost_usd = 0.0
-    patch_mode = patch_section is not None or patch_invalid_sections
-
-    for index, audio_path in enumerate(audio_files, start=1):
-        output_path = output_dir / f"{audio_path.stem}.md"
+    if dry_run:
         try:
-            had_output, existing_markdown, transcript_sections = read_existing_note(output_path)
+            duration_seconds, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
         except RuntimeError as exc:
-            failures.append(str(exc))
-            typer.echo(f"ERROR {exc}", err=True)
-            continue
-
-        base_output_path = find_base_transcript_path(output_dir, audio_path.stem)
-        if not patch_mode and base_output_path is not None:
-            try:
-                has_base_output, base_markdown, _ = read_existing_note(base_output_path)
-            except RuntimeError as exc:
-                failures.append(str(exc))
-                typer.echo(f"ERROR {exc}", err=True)
-                continue
-            if has_base_output and has_transcript_content(base_markdown):
-                skipped += 1
-                continue
-
-        target_sections: list[int] = []
-        stored_prompt = extract_prompt_metadata(existing_markdown) if had_output else None
-        if default_pending_mode:
-            if not had_output or not stored_prompt or has_transcript_content(existing_markdown):
-                skipped += 1
-                continue
-            desired_prompt = stored_prompt
-        else:
-            desired_prompt = build_note_prompt(get_system_prompt(), cleaned_user_prompt)
-        if not patch_mode and has_transcript_content(existing_markdown):
-            if cleaned_user_prompt is None or stored_prompt == desired_prompt:
-                skipped += 1
-                continue
-            if dry_run:
-                typer.echo(f"[{index}/{total}] dry-run update metadata {audio_path.name} -> {output_path.name}")
-                continue
-            typer.echo(f"[{index}/{total}] update metadata {audio_path.name} -> {output_path.name}")
-            try:
-                output_path.write_text(set_prompt_metadata(existing_markdown, desired_prompt), encoding="utf-8")
-            except OSError as exc:
-                failures.append(f"{output_path.name}: {exc}")
-                typer.echo(f"ERROR {output_path.name}: {exc}", err=True)
-                continue
-            updated += 1
-            continue
-        if patch_mode:
-            if not had_output:
-                failures.append(f"{output_path.name}: transcript file does not exist for patching")
-                typer.echo(f"ERROR {output_path.name}: transcript file does not exist for patching", err=True)
-                continue
-            if not has_transcript_content(existing_markdown):
-                failures.append(f"{output_path.name}: document has no transcript section to patch")
-                typer.echo(f"ERROR {output_path.name}: document has no transcript section to patch", err=True)
-                continue
-            target_sections = [patch_section] if patch_section is not None else find_invalid_transcript_sections(
-                existing_markdown
-            )
-            if patch_invalid_sections and not target_sections:
-                skipped += 1
-                typer.echo(f"No invalid transcript sections found in {output_path.name}")
-                continue
-        action = (
-            f"patch section {patch_section}"
-            if patch_section is not None
-            else (
-                f"patch invalid sections {','.join(str(section) for section in target_sections)}"
-                if patch_invalid_sections
-                else ("update" if had_output else "create")
-            )
-        )
-        note = " (existing file missing transcript section)" if had_output and transcript_sections == 0 else ""
-        if dry_run:
-            try:
-                duration_seconds, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
-            except RuntimeError as exc:
-                failures.append(f"{audio_path.name}: {exc}")
-                typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
-                continue
-            stats = f" duration={duration_seconds:.1f}s chunks={len(windows)}"
-            typer.echo(
-                f"[{index}/{total}] dry-run {action} {audio_path.name} -> {output_path.name}{note}{stats}"
-            )
-            continue
-
-        note_prompt = desired_prompt if cleaned_user_prompt is not None or not stored_prompt else stored_prompt
-        transcription_system_prompt, effective_user_prompt = resolve_transcription_prompts(
-            get_system_prompt(), stored_prompt, cleaned_user_prompt
-        )
-
-        if client is None:
-            try:
-                client = build_client()
-                pricing = load_google_pricing()
-            except RuntimeError as exc:
-                typer.echo(f"ERROR {exc}", err=True)
-                raise typer.Exit(1) from exc
-
-        try:
-            _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
-        except RuntimeError as exc:
-            failures.append(f"{audio_path.name}: {exc}")
             typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
-            continue
-
-        def log_progress(current_chunk: int, total_chunks: int) -> None:
-            if total_chunks == 1:
-                emit_transcription_progress(
-                    current=index,
-                    total=total,
-                    action=action,
-                    audio_path=audio_path,
-                    output_path=output_path,
-                    note=note,
-                )
-                return
-            emit_transcription_progress(
-                current=current_chunk,
-                total=total_chunks,
-                action=action,
-                audio_path=audio_path,
-                output_path=output_path,
-                note=note,
-            )
-
-        try:
-            result = transcribe_audio(
-                audio_path,
-                system_prompt=transcription_system_prompt,
-                user_prompt=effective_user_prompt,
-                model=model,
-                client=client,
-                pricing=pricing or {},
-                chunk_minutes=chunk_minutes,
-                patch_section=(target_sections[0] if patch_invalid_sections else patch_section),
-                windows=windows,
-                progress_callback=log_progress,
-                cache_dir=chunk_cache_dir,
-            )
-        except RuntimeError as exc:
-            failures.append(f"{audio_path.name}: {exc}")
-            typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
-            continue
-
-        emit_invalid_transcript_warnings(
-            audio_path=audio_path,
-            output_path=output_path,
-            warnings=result.warnings,
-            input_dir=input_dir,
-            output_dir=output_dir,
-            prompt_file=prompt_file,
-            model=model,
-            user_prompt=effective_user_prompt,
-            chunk_minutes=chunk_minutes,
-        )
-
-        total_cost_usd += result.usage.cost_usd
+            raise typer.Exit(1) from exc
+        action = "force re-transcribe" if force and has_transcript else ("update" if had_output else "create")
         typer.echo(
-            f"tokens={result.usage.total_tokens} cost=${result.usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}"
+            f"dry-run {action} {audio_path.name} -> {output_path.name} "
+            f"duration={duration_seconds:.1f}s chunks={len(windows)}"
         )
-        try:
-            if patch_invalid_sections:
-                updated_markdown = existing_markdown
-                combined_usage = [result.usage]
-                for section in target_sections:
-                    section_result = (
-                        result
-                        if section == target_sections[0]
-                        else transcribe_audio(
-                            audio_path,
-                            system_prompt=transcription_system_prompt,
-                            user_prompt=effective_user_prompt,
-                            model=model,
-                                client=client,
-                                pricing=pricing or {},
-                                chunk_minutes=chunk_minutes,
-                                patch_section=section,
-                                windows=windows,
-                                progress_callback=log_progress,
-                            )
-                    )
-                    if section != target_sections[0]:
-                        total_cost_usd += section_result.usage.cost_usd
-                        combined_usage.append(section_result.usage)
-                        typer.echo(
-                            f"tokens={section_result.usage.total_tokens} cost=${section_result.usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}"
-                        )
-                        emit_invalid_transcript_warnings(
-                            audio_path=audio_path,
-                            output_path=output_path,
-                            warnings=section_result.warnings,
-                            input_dir=input_dir,
-                            output_dir=output_dir,
-                            prompt_file=prompt_file,
-                            model=model,
-                            user_prompt=effective_user_prompt,
-                            chunk_minutes=chunk_minutes,
-                        )
-                    updated_markdown = patch_transcript_section(
-                        updated_markdown,
-                        section,
-                        section_result.transcript,
-                        prompt=note_prompt,
-                    )
-                output_path.write_text(
-                    set_model_cost_metadata(
-                        updated_markdown,
-                        model,
-                        combine_usage_costs(combined_usage).cost_usd,
-                    ),
-                    encoding="utf-8",
-                )
-            else:
-                updated_markdown = (
-                    patch_transcript_section(
-                        existing_markdown,
-                        patch_section,
-                        result.transcript,
-                        prompt=note_prompt,
-                    )
-                    if patch_section is not None
-                    else upsert_transcript_section(
-                        existing_markdown,
-                        audio_path.stem,
-                        result.transcript,
-                        prompt=note_prompt,
-                    )
-                )
-                output_path.write_text(
-                    set_model_cost_metadata(
-                        updated_markdown, model, result.usage.cost_usd
-                    ),
-                    encoding="utf-8",
-                )
-        except (OSError, ValueError) as exc:
-            failures.append(f"{output_path.name}: {exc}")
-            typer.echo(f"ERROR {output_path.name}: {exc}", err=True)
-            continue
-        if had_output:
-            updated += 1
-        else:
-            created += 1
+        return
 
-    typer.echo(f"created={created} updated={updated} skipped={skipped} errors={len(failures)}")
-    if failures:
-        raise typer.Exit(1)
+    chunk_cache_dir = Path(os.environ.get("TRANSCRIBE_CALLS_CACHE_DIR", DEFAULT_CACHE_DIR))
+    cleanup_chunk_cache(chunk_cache_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    prompts = resolve_prompts(load_system_prompt(system_prompt_file), stored_prompt, cleaned_user_prompt)
+
+    try:
+        client = build_client()
+        pricing = load_google_pricing()
+    except RuntimeError as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        _, windows = plan_audio_chunks(audio_path, chunk_minutes=chunk_minutes)
+    except RuntimeError as exc:
+        typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    def log_progress(current_chunk: int, total_chunks: int) -> None:
+        if total_chunks > 1:
+            typer.echo(f"[{current_chunk}/{total_chunks}] transcribing {audio_path.name}")
+
+    total_cost_usd = 0.0
+
+    def log_cost(usage: UsageCost) -> None:
+        nonlocal total_cost_usd
+        total_cost_usd += usage.cost_usd
+        typer.echo(f"tokens={usage.total_tokens} cost=${usage.cost_usd:.6f} total_cost=${total_cost_usd:.6f}")
+
+    def retry_section(index: int) -> TranscriptionResult:
+        """Re-transcribe one chunk, bypassing the cache so a failed attempt isn't replayed."""
+        retry_result = transcribe_audio(
+            audio_path,
+            system_prompt=prompts.system_prompt,
+            user_prompt=prompts.user_prompt,
+            model=model,
+            client=client,
+            pricing=pricing,
+            chunk_minutes=chunk_minutes,
+            patch_section=index,
+            windows=windows,
+            progress_callback=log_progress,
+        )
+        log_cost(retry_result.usage)
+        return retry_result
+
+    try:
+        if patch:
+            updated_markdown = existing_markdown
+            for section in target_sections:
+                section_result = retry_section(section)
+                emit_remaining_warnings(audio_path, section_result.warnings)
+                updated_markdown = patch_transcript_section(
+                    updated_markdown, section, section_result.transcript, prompt=prompts.note_prompt
+                )
+            output_path.write_text(
+                set_model_cost_metadata(updated_markdown, model, total_cost_usd), encoding="utf-8"
+            )
+            typer.echo(f"patched section(s) {','.join(str(s) for s in target_sections)}: {output_path.name}")
+            return
+
+        result = transcribe_audio(
+            audio_path,
+            system_prompt=prompts.system_prompt,
+            user_prompt=prompts.user_prompt,
+            model=model,
+            client=client,
+            pricing=pricing,
+            chunk_minutes=chunk_minutes,
+            windows=windows,
+            progress_callback=log_progress,
+            cache_dir=chunk_cache_dir,
+        )
+        log_cost(result.usage)
+
+        if result.warnings:
+            parts = split_transcript_parts(result.transcript)
+            remaining_warnings: list[InvalidTranscriptWarning] = []
+            for warning in result.warnings:
+                retry_result = retry_section(warning.section_index)
+                if retry_result.warnings:
+                    remaining_warnings.extend(retry_result.warnings)
+                else:
+                    parts[warning.section_index - 1] = retry_result.transcript
+            result = TranscriptionResult(
+                transcript=TRANSCRIPT_PART_SEPARATOR.join(parts),
+                usage=result.usage,
+                warnings=tuple(remaining_warnings),
+            )
+            emit_remaining_warnings(audio_path, result.warnings)
+    except RuntimeError as exc:
+        typer.echo(f"ERROR {audio_path.name}: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    try:
+        updated_markdown = upsert_transcript_section(
+            existing_markdown, audio_path.stem, result.transcript, prompt=prompts.note_prompt
+        )
+        output_path.write_text(
+            set_model_cost_metadata(updated_markdown, model, total_cost_usd), encoding="utf-8"
+        )
+    except (OSError, ValueError) as exc:
+        typer.echo(f"ERROR {output_path.name}: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"{'updated' if had_output else 'created'} {output_path.name}")
 
 
 if __name__ == "__main__":
