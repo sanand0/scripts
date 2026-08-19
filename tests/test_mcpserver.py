@@ -52,6 +52,18 @@ def test_limit_total_output_preserves_utf8_head_and_tail() -> None:
     assert omitted == len(text.encode()) - len(encoded)
 
 
+def test_finalize_output_persists_full_output_when_trimmed(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver.tempfile, "tempdir", str(tmp_path))
+    original = (("x" * 1024) + "\n") * 600
+
+    output, result = mcpserver.finalize_output(original, {})
+
+    assert result["total_truncation_omitted_bytes"] > 0
+    assert result["output_path"]
+    assert Path(result["output_path"]).read_text() == original
+    assert len(output.encode()) <= mcpserver.MAX_TOTAL_OUTPUT_BYTES
+
+
 def test_log_event_writes_compact_jsonl(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
     monkeypatch.setattr(mcpserver, "SERVER_START_ID", "start-test")
@@ -99,18 +111,26 @@ def test_run_bash_command_records_nonzero_timeout_and_cwd(tmp_path) -> None:
     assert timeout_result["error"]
 
 
-def test_bash_returns_structured_nonzero_result_without_tool_error(tmp_path, monkeypatch) -> None:
+def test_bash_returns_structured_nonzero_result_as_tool_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
 
     async def exercise_tool():
         async with Client(mcpserver.mcp) as client:
-            return await client.call_tool("bash", {"commands": "printf no >&2; exit 7", "cwd": str(tmp_path)})
+            return await client.call_tool(
+                "bash",
+                {"commands": "printf no >&2; exit 7", "cwd": str(tmp_path)},
+                raise_on_error=False,
+            )
 
     result = asyncio.run(exercise_tool())
 
-    assert result.is_error is False
+    assert result.is_error is True
     assert "Return code: 7" in result.content[0].text
     assert result.structured_content["exit_code"] == 7
+    assert result.structured_content["status"] == "failed"
+    assert result.structured_content["ok"] is False
+    assert result.structured_content["output"] == result.content[0].text
+    assert result.structured_content["output_path"] is None
     assert result.structured_content["timed_out"] is False
     assert result.structured_content["cwd"] == str(tmp_path.resolve())
     assert result.structured_content["stderr_bytes"] == 2
@@ -130,6 +150,8 @@ def test_bash_timeout_is_tool_error(tmp_path, monkeypatch) -> None:
     result = asyncio.run(exercise_tool())
 
     assert result.is_error is True
+    assert result.structured_content["status"] == "timeout"
+    assert result.structured_content["ok"] is False
     assert result.structured_content["timed_out"] is True
 
 
@@ -143,6 +165,8 @@ def test_bash_invalid_input_is_structured_tool_error(tmp_path, monkeypatch) -> N
     result = asyncio.run(exercise_tool())
 
     assert result.is_error is True
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["ok"] is False
     assert result.structured_content["exit_code"] is None
     assert "commands must not be empty" in result.structured_content["error"]
 
@@ -610,8 +634,15 @@ def test_bash_tool_exposes_and_uses_cwd_and_dynamic_mount_description(tmp_path, 
     assert "cwd" in bash_tool.inputSchema["properties"]
     assert f"cwd: {mcpserver.display_path(Path.cwd())} (" in bash_tool.description
     assert "mounted paths (rw = read-write, ro = read-only):" in bash_tool.description
+    assert "unfamiliar/version-sensitive CLI" in bash_tool.description
+    assert "JSON vs JSONL" in bash_tool.description
+    assert "project-native verification" in bash_tool.description
     assert "download_file" in bash_tool.description
     assert result.content[0].text.strip() == str(tmp_path)
+    assert result.structured_content["output"].strip() == str(tmp_path)
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["ok"] is True
+    assert result.structured_content["output_path"] is None
 
 
 def test_tools_warn_and_ignore_unknown_parameters(tmp_path, monkeypatch) -> None:

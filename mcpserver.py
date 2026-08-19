@@ -78,9 +78,13 @@ BASH_OUTPUT_SCHEMA = output_schema(
         "finished_at": {"type": "string"},
         "duration_ms": {"type": "number", "minimum": 0},
         "exit_code": {"type": ["integer", "null"]},
+        "status": {"type": "string", "enum": ["success", "failed", "timeout", "error"]},
+        "ok": {"type": "boolean"},
         "timed_out": {"type": "boolean"},
         "error": {"type": ["string", "null"]},
         "cwd": {"type": "string"},
+        "output": {"type": "string"},
+        "output_path": {"type": ["string", "null"]},
         "stdout_bytes": {"type": "integer", "minimum": 0},
         "stderr_bytes": {"type": "integer", "minimum": 0},
         "output_bytes_before_limits": {"type": "integer", "minimum": 0},
@@ -449,8 +453,16 @@ def finalize_output(
     before_limits = len(output.encode())
     line_limited, line_trim_count, line_omitted = trim_long_lines_with_stats(output)
     total_limited, total_omitted = limit_total_output(line_limited)
+    output_path = None
+    if line_omitted or total_omitted:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix="mcpserver-output-", suffix=".txt", delete=False
+        ) as handle:
+            handle.write(output)
+            output_path = handle.name
     result.update(
         {
+            "output_path": output_path,
             "output_bytes_before_limits": before_limits,
             "output_bytes_after_limits": len(total_limited.encode()),
             "line_trim_count": line_trim_count,
@@ -517,6 +529,15 @@ def run_bash_command(commands: str, timeout_ms: int, cwd: str | None = None) -> 
     except Exception as e:
         result["error"] = repr(e)
         output = str(e)
+    if result["timed_out"]:
+        result["status"] = "timeout"
+    elif result["error"] is not None:
+        result["status"] = "error"
+    elif result["exit_code"] == 0:
+        result["status"] = "success"
+    else:
+        result["status"] = "failed"
+    result["ok"] = result["status"] == "success"
     result["finished_at"] = iso_timestamp()
     result["duration_ms"] = round((time.monotonic() - start) * 1000, 3)
     return finalize_output(output, result)
@@ -580,6 +601,9 @@ Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
 This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
 
 CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
+Before using an unfamiliar/version-sensitive CLI, inspect `--help` / `--version`; do not infer flags.
+Before querying structured data, inspect its type/schema/sample first (JSON vs JSONL, keys, columns).
+Before lint/test/build, inspect project-native verification (`just --list`, package scripts, pyproject, Makefile, AGENTS.md); run focused checks before full suites.
 For ad-hoc Python, prefer `uv run --no-project --with pkg1 --with pkg2 -- python - <<'PY'`.
 Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
 Commands run transactionally; do not start persistent background servers.
@@ -599,6 +623,7 @@ Batch related probes into one script with section headers.
 Batch multiple commands into fewer tool calls to avoid call overhead.
 
 stdout longer than {MAX_LINE_BYTES} bytes / line and over {MAX_TOTAL_OUTPUT_BYTES} bytes is trimmed.
+When output is trimmed, the complete output is saved to `output_path`; use `download_file` if needed.
 Save larger text or binaries to /tmp and use `download_file` tool to transfer.
 
 Do not print secrets, tokens, or credentials, unless explicitly requested.
@@ -617,10 +642,11 @@ async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) 
     await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
     request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
     log_event("bash", commands=commands, request=request, output=output, result=result)
+    result["output"] = output
     return ToolResult(
         content=[TextContent(type="text", text=output)],
         structured_content=result,
-        is_error=result["timed_out"] or result["error"] is not None,
+        is_error=not result["ok"],
     )
 
 

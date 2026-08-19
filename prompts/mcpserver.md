@@ -4,6 +4,18 @@ TODO
 
 - Allow up to 4 concurrent bash processes.
 
+## Improve based on usage, 18 Aug 2026
+
+<!--
+Research and fixes: https://chatgpt.com/c/6a839a14-d124-83ee-af96-cca81b3f8ddc
+Test: https://chatgpt.com/c/6a83a225-113c-83ee-9372-7b256b849d15
+
+Tool result directly contains the text plus status, ok, and output, e.g. status=failed, ok=false, exit_code=7.
+Bash tool mentions unfamiliar/version-sensitive CLIs, inspecting structured-data shape, and project-native verification.
+When output is trimmed, the untrimmed output is saved as a temporary mcpserver-output-*.txt and returned as output_path.
+
+-->
+
 ## Refactor, 06 Aug 2026
 
 <!--
