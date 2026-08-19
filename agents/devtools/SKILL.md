@@ -4,7 +4,7 @@ description: Use CDP at localhost:9222 to test/debug websites, automate browser 
 ---
 
 Use CDP at localhost:9222.
-Use `agent-browser` (simpler than `playwright`) where helpful.
+Use `agent-browser` (simpler than `playwright`) where helpful. For human-visible UI interaction, start with `agent-browser snapshot -i`; prefer returned `@e*` references, then role + accessible name. Re-snapshot after meaningful UI state changes. Fall back to DOM/CSS selectors only when AX lacks the target.
 Playwright is installed globally via `export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"; uv install playwright; playwright install --with-deps chromium firefox webkit`.
 
 Capabilities:
@@ -38,8 +38,7 @@ Uses:
 Tips:
 
 - When scraping, collect 8-10 diverse variants of the target structure to cover edge cases before implementing selectors.
-- Generate a selector bundle per element. Include role+name, text substring, stable attributes, and a fallback position. Try them in order and remember which one works.
-- Combine screenshots with DOM snapshots and accessibility tree (since CSS can be brittle) for better context.
+- Match representation to problem: AX for semantic targeting; DOM/JS for exact extraction; Network/CDP for APIs/protocol state; screenshots/geometry for visual, canvas, SVG, drag/brush issues.
 - Annotate with colored borders, labels, or numbers before full-page screenshot and use that for visual context.
 - On failure, use screenshot, console logs, recent network requests, localStorage/cookies, DOM for diagnosis.
 - Record golden HAR/screenshots/state. Helps spot regression errors, missing headers, caching quirks, and third-party blockers quickly.
