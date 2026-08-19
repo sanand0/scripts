@@ -4,41 +4,10 @@ description: Use CDP at localhost:9222 to test/debug websites, automate browser 
 ---
 
 Use CDP at localhost:9222.
-Use `agent-browser` (simpler than `playwright`) where helpful. For human-visible UI interaction, start with `agent-browser snapshot -i`; prefer returned `@e*` references, then role + accessible name. Re-snapshot after meaningful UI state changes. Fall back to DOM/CSS selectors only when AX lacks the target.
-Playwright is installed globally via `export PLAYWRIGHT_BROWSERS_PATH="${HOME}/.local/share/playwright-browsers"; uv install playwright; playwright install --with-deps chromium firefox webkit`.
+Use `agent-browser` (simpler than Playwright) where helpful. For human-visible UI interaction, start with `agent-browser snapshot -i`; prefer returned `@e*` references, then role + accessible name. Re-snapshot after meaningful UI state changes. Fall back to DOM/CSS only when AX lacks the target.
+Playwright browsers are under `${HOME}/.local/share/playwright-browsers`; set `PLAYWRIGHT_BROWSERS_PATH` accordingly.
 
-Capabilities:
-
-- For DOM HTML to Markdown: turndown, markdownify, or `uvx markitdown file.html`
-- Log progress via console: `page.on("console", msg => console.log("LOG:", msg.type(), msg.text()))`. Use CDP's `Console.enable` for replay
-- Log screenshots via `(page||locator).screenshot({ path, fullPage, type, quality, ... })`
-- For repeated structured reads, inspect fetch/XHR before building browser automation.
-  Replay a stable request when it returns the required data; otherwise use the rendered DOM.
-- Capture via CDP `Network.enable` / `Network.getResponseBody` or Playwright request/response listeners.
-  `context.tracing` is not HAR; `recordHar` / `record_har_path` requires a new context.
-- Verify replayed results against representative browser results.
-  Keep browser authentication and fallback; do not persist credentials or session headers.
-- Inject JS into existing tabs via a `blob:` URL created in the page context. CSP may block inline scripts.
-  - `url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))`
-  - Append `<script src="blob:...">`
-  - Avoid `page.addScriptTag({content: ...})` on CSP-heavy sites (e.g. WhatsApp, Google apps).
-
-Uses:
-
-- Debug/test using inspection (DOM, cookies, storage), screenshots, console logs, breakpoints, JS execution, network intercepts (modify headers, mock responses)
-- Automate (research, scrape, ...) using navigation, form-filling, print to PDF
-- Refactor: remove dead/unused JS, CSS, HTML
-- Replay test/automation scripts: capture flow as scripts
-- Monitor performance, audit using Lighthouse, axe-core
-- Emulate devices, screen size, dark mode, network speed, geo, time zone, color blindness, touch devices
-- Harden via cookie audits, pen-testing
-- Parallelize using multiple tabs
-- Browse safely using separate profiles / incognito mode
-
-Tips:
-
-- When scraping, collect 8-10 diverse variants of the target structure to cover edge cases before implementing selectors.
+- For repeated structured reads, inspect fetch/XHR before building browser automation. Replay a stable request when it returns the required data; verify representative results against the browser.
 - Match representation to problem: AX for semantic targeting; DOM/JS for exact extraction; Network/CDP for APIs/protocol state; screenshots/geometry for visual, canvas, SVG, drag/brush issues.
-- Annotate with colored borders, labels, or numbers before full-page screenshot and use that for visual context.
-- On failure, use screenshot, console logs, recent network requests, localStorage/cookies, DOM for diagnosis.
-- Record golden HAR/screenshots/state. Helps spot regression errors, missing headers, caching quirks, and third-party blockers quickly.
+- On CSP-heavy sites such as WhatsApp or Google apps, inline script injection may fail. A `blob:` script URL created in page context is a useful fallback.
+- Do not persist credentials or session headers.
