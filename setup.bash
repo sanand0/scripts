@@ -130,10 +130,7 @@ if [ -f /c/Dropbox/scripts/.git-completion.sh ]; then
 fi
 
 # Add specific virtualenv paths
-export PATH="$HOME/apps/datasette/.venv/bin:$PATH"
-export PATH="$HOME/apps/llm/.venv/bin:$PATH"
-export PATH="$HOME/apps/openwebui/.venv/bin:$PATH"
-export PATH="$HOME/apps/gramex/.venv/bin:$PATH"
+export PATH="$PATH:$HOME/apps/global/.venv/bin:$HOME/apps/openwebui/.venv/bin:$HOME/apps/marimo/.venv/bin:$HOME/apps/puddletag/.venv/bin:$HOME/apps/gramex/.venv/bin:$HOME/apps/whisper-ctranslate2/.venv/bin:$HOME/apps/datasette/.venv/bin:$HOME/apps/offpunk/.venv/bin"
 
 # On WSL Linux, run /usr/bin/ before rest of path. Use system Python
 if [ `uname` == "Linux" ]; then

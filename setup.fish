@@ -16,11 +16,14 @@ set -gx PATH $PATH $HOME/code/scripts
 set -gx PATH $PATH $HOME/Dropbox/scripts
 
 # For each .venv/bin in $HOME/apps/*, add to PATH
-for app in $HOME/apps/*
-    if test -d "$app/.venv/bin"
-        set -gx PATH $PATH "$app/.venv/bin"
-    end
-end
+set -gx PATH $PATH "$HOME/apps/global/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/openwebui/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/marimo/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/puddletag/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/gramex/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/whisper-ctranslate2/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/datasette/.venv/bin"
+set -gx PATH $PATH "$HOME/apps/offpunk/.venv/bin"
 
 # Source global uv environment
 source $HOME/apps/global/.venv/bin/activate.fish
