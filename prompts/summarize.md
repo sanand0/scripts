@@ -1,5 +1,86 @@
 # Summarize
 
+## Improve blog summarization, 21 Aug 2026
+
+<!-- https://chatgpt.com/c/6a87fc22-51d0-83ee-8381-200ce9144a72 -->
+
+On @LocalMCP in ~/code/blog/ I'd like to upgrade `just update` which uses gemini-2.5-flash to summarize posts to use gpt-5.6-luna instead, and upgrade the prompt to produce better results, i.e. rewrite the prompt so that it produces better results with gpt-5.6-luna and ideally these should be even better than the results we got so far.
+
+In order to do this, only modify the `~/code/blog/justfile` and `~/code/scripts/summarize.py` and required related files (e.g. tests, maybe docs).
+Only modify the portions related to the `blog` sub-command, not the `transcript` sub-command.
+If `~/code/blog/.env` needs an OPENAI_API_KEY copy the key from `~/code/scripts/.env`.
+
+Pick a few reasonably diverse blog posts. Test with variations of the prompt until you are happy that the results are as good as it gets.
+Use relevant skills. Plan thoughtfully. Execute efficiently (i.e. don't take up too much cost, cache what you need, etc.)
+
+---
+
+Look, I'd like YOU to be the judge, not some judge model you run code to evaluate with. Meaning, take a bunch of posts, whatever you've taken could be fine, have different prompts come up with the results, and YOU evaluate them along the criteria that you think are important. Maybe you're already doing that (did you?), but if not, do so now.
+
+Also, keep in mind that the descriptions and tags serve two purposes: one, for people to read the description and instantly understand whether they should read the content, what they will get from it, etc.; and second, for machines, that could be from a search engine optimization perspective or from an LLM agent perspective, to understand what that content contains in a way that will be good both for search as well as for understanding whether to read the rest of the post. Tags similarly serve two purposes: for humans to be able to click on one of those and see related topics. So obviously we want it to be both evocative, that is they will understand what the topic is about, and at the same time, for machines to be able to get a reasonably well-clustered list of topics against which they can tag posts. Keeping these in mind, what should the criteria be? And what would be good blog posts to evaluate these against? No need to pick more than five, but if you need to pick different ones, that's perfectly fine, and if you can rerun the analysis and optimize against that, it would be great.
+
+---
+
+Give me a summary of the different prompts that you tried, specifically highlighting the changes across each of those, and tell me how they performed and what you decided to change and why. It will be interesting and useful for me to also understand whether these changes had any side effects, like regressions, that you had to correct in a different way. Also tell me the cost of each experiment using the OpenAI API pricing and the time taken (~/.local/share/sanand-scripts/mcpserver/ might help with this). My aim is to get an intuitive understanding of the implications and non-obvious mechanics of prompt changes. So use relevant skills and share what might be useful, even if I haven't asked for it here.
+
+What would the cost of re-running with a `--force` be, approximately, if I ran it for 2026? 2025? 2024? All of 2020? Until 2010? All my posts? With a budget of about $5, what can I run?
+
+---
+
+OK, correct the Luna pricing. Change the default workers to something reasonable. Give me the command I should run to refresh all 2026 posts.
+
+Also give me actual prompts used and responses for each stage. I don't need all - just one or two representative ones. Use THIS to tell me how the prompts evolved and the most useful mechanics. The actual inputs and outputs explain a lot more than concepts.
+
+---
+
+For wikipedia-citation-impact, we originally had "I analyzed Wikipedia citation data to identify the most critical domains. While the Internet Archive is cited most often, niche sites like Statistics Poland or sports-reference.com are the sole references for tens of thousands of unique pages." looks pretty good to me.
+
+Currently, it reads: "An interactive analysis of Wikipedia citations models the impact of deleting an entire source domain, distinguishing total citation volume from pages that rely solely on one site and identifying the domains whose disappearance would undermine the most content."
+
+Here's my problem with that:
+
+- First person is SO MUCH more friendly - and in line with the spiring of my blog.
+- Simple language, short sentences, active voice - these are helpful. Phrases like "distinguishing total citation volume" is too dense!
+- Mentioning Statisics Poland is specific, and specifics are good! In fact, even in this conversation, when you didn't give me examples, I had to ask for them, and once you gave me spceifics, I was able to make much more sense of it. Maybe the example isn't exhaustive, but indicative is evocative - I mean, I get to form a clear mental picture from that.
+
+So, a few questions:
+
+1. Assuming we go with a version that addresses my problems above, and that's what I want humans to read, is it worth having a different version for humans vs for agents? Or would the same work for both? Feel free to expiment if you need to and try it out. Ask me questions as you need with full comparable outputs.
+2. If we decide to go for separate versions (and answer this part only if it's clear that we should have two different versions)
+   - Should search engines see the human version or the agent version? I mean, do we need separate metadata tags for agents vs Google snippets?
+   - Given the structure of the blog, what's the CLEANEST, MINIMAL CHANGE way to organize and build these tags?
+
+---
+
+Run this on 3 more blog posts and show me the current vs new version. I'll give you feedback.
+Pick posts that will help you get maximum information - e.g. on COMMON patterns where I might DISAGREE with the output.
+
+---
+
+things-i-learned-29-mar-2026.md: I prefer the current one too - it feels less dense. Fewer examples is good.
+
+using-browser-history-as-memory.md: Completely agree with you.
+
+misconceptions-spread-by-textbooks.md - I prefer "I found a page that collects common scientific misconceptions in textbooks: the ocean is blue because water itself is blue, the sky because air is blue, etc." I'd rather we said "I found a page". And again, fewer examples is good.
+
+Now think about what that means, how we need to revise the prompts, run as many rounds as it takes for you to be convinced (with these and/or any other posts), come back to me with what you have, and present the current vs new ones. Let me know what I can help clarify for you.
+
+---
+
+1. things-i-learned-29-mar-2026.md - I like the new one. Agree with your choice - choose distinctive/personal x surprising more than important
+2. using-browser-history-as-memory.md - I like the new one too. Concrete is good.
+3. misconceptions-spread-by-textbooks.md - OK with the new. If we give too many examples tailored to the posts we're evaluating, that'd be overfitting, maybe? But your call...
+4. wikipedia-citation-impact.md - I like the new one.
+5. using-codex-as-my-os.md - I like the new one.
+
+agent-experience-is-the-new-user-experience.md - I like the new one. "I think..." is a nice touch. A single example, shorter comma separated items - these are nice.
+
+yahoo-buzz-game.md - I like the new one, and I'm OK with two examples.
+
+what-can-ai-not-do.md - I like neither particularly since both are a bit tough to read - the new one has too many numbers and complex facts but the first uses bigger words and complex concepts. So yeah, I agree with your distinction.
+
+So let's do this. Try out the variations you'd like to try out further, any other holdouts, etc. take it as far as you think it can go, and put it into summarize.py and the tests and anywhere else.
+
 ## Fix what-i-missed, 22 Jul 2026
 
 <!--

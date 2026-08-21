@@ -70,7 +70,7 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash":       (0.075, 0.30),
     "gemini-2.5-pro":         (1.25,  5.00),
     "gemini-2.0-flash":       (0.075, 0.30),
-    "gpt-5.6-luna":           (1.00,  6.00),
+    "gpt-5.6-luna":           (0.20,  1.20),
 }
 # Default price if user specifies a model not in PRICING dict
 DEFAULT_PRICING = (1.50,  7.50)
@@ -113,6 +113,7 @@ class ContentSet:
     meta_position: str = "before"  # "before": meta keys first; "after": meta keys last
     skip_if: Callable[[str], str | None] | None = None
     prompt_builder: Callable[[str, list[FieldDef] | None], str] | None = None
+    default_workers: int = 4
 
     @property
     def meta_keys(self) -> list[str]:
@@ -374,38 +375,60 @@ def blog_tag_candidates(text: str, limit: int = MAX_BLOG_TAG_CANDIDATES) -> list
 
 
 def blog_prompt(text: str, fields: list[FieldDef] | None = None) -> str:
-    field_names = {field.name for field in (fields or [])}
-    tags, _ = blog_tag_vocabulary()
-    candidates = blog_tag_candidates(text)
-    tag_lines = "\n".join(
-        f"- {tag}: {tags[tag].get('description', '').removeprefix('Posts about ').rstrip('.')}"
-        for tag in candidates
-    )
-    if field_names == {"tags"}:
-        return (
-            "Generate only canonical tags for this blog post's metadata.\n\n"
-            "Choose 3-8 slugs from this compact candidate list. Strongly prefer these existing tags. "
-            "If nothing fits an important topic, include it as proposed:new-tag; the script will flag it for review "
-            "and will not save it as a canonical tag.\n\n"
-            f"Candidate canonical tags:\n{tag_lines}\n\n"
-        )
+    field_names = {field.name for field in (fields or [])} or {"description", "tags"}
+    parts: list[str] = []
     if field_names == {"description"}:
-        return (
-            "Generate only a description for this blog post's metadata.\n\n"
-            "Use first person (\"I\", never \"the author\") for personal posts. "
-            "Use imperative or neutral voice only for instructional or concept posts. "
-            "Be direct and conversational, not formal.\n\n"
+        parts.append("Generate only a description for this blog post's metadata.")
+    elif field_names == {"tags"}:
+        parts.append("Generate only canonical tags for this blog post's metadata.")
+    else:
+        parts.append("Generate a description and canonical tags for this blog post's metadata.")
+
+    if "description" in field_names:
+        parts.append(
+            "Description: write for a human scanning Anand's blog. The same text should identify the page well for "
+            "search or an LLM agent, but optimize the prose for the human. Aim for 25-35 words; 20-40 is fine. Use "
+            "1-2 short sentences; shorter is better once the reader has a clear mental picture. Use first person when "
+            "the post records something I did, found, tried, learned, measured, or think. A link post can simply start "
+            "'I found a page...'. Use simple words, active voice, and wording close to the source. Avoid dense "
+            "abstractions, formal metadata language, and invented synthesis. Concrete is good, density is bad: use names, "
+            "numbers, results, tools, or examples only when they make the idea easier to picture or distinguish the post, "
+            "not to prove coverage. Classify the post by what Anand wrote, not by how many examples appear in a linked "
+            "source. Roundup: at most 4 short highlights, prioritizing distinctive/personal x surprising over comprehensive "
+            "or merely important coverage. Concept/opinion: state the idea simply; if the source contains a list of "
+            "examples or applications, do not compress that list - pick at most one representative example. Workflow: "
+            "say what I do; if there are several methods, keep at most 3 central ones, otherwise use one example or "
+            "payoff. Link/discovery: say what I found, then at most 2 illustrative findings even if the linked page has a "
+            "long list. Contrast/ranking: preserve the baseline and the standout result when that comparison is the insight, rather than two secondary examples. Story/puzzle: preserve both "
+            "the concrete action and the inference connecting it to the outcome - what the action lets someone conclude or prove; do not replace the inference with the "
+            "moral. Survey/data result: state the simple pattern first; use at most one number or example unless a contrast "
+            "requires two. Forecast: state the premise and one or two consequences, not a long implication list. Never "
+            "list more than 3 parallel capabilities/actions. Before answering, count independent examples/subtopics and "
+            "cut extras to these limits. For any example, state what happened or was found, not merely its setup. Omission "
+            "is a feature. Silently verify every remaining concrete fact against the source. Use ASCII punctuation."
         )
-    return (
-        "Generate a description and canonical tags for this blog post's metadata.\n\n"
-        "Use first person (\"I\", never \"the author\") for personal posts. "
-        "Use imperative or neutral voice only for instructional or concept posts. "
-        "Be direct and conversational, not formal.\n\n"
-        "For tags, choose 3-8 slugs from this compact candidate list. Strongly prefer these existing tags. "
-        "If nothing fits an important topic, include it as proposed:new-tag; the script will flag it for review "
-        "and will not save it as a canonical tag.\n\n"
-        f"Candidate canonical tags:\n{tag_lines}\n\n"
-    )
+
+    if "tags" in field_names:
+        tags, _ = blog_tag_vocabulary()
+        tag_lines = "\n".join(
+            f"- {tag} ({int(tags[tag].get('count') or 0)} posts): "
+            f"{tags[tag].get('description', '').removeprefix('Posts about ').rstrip('.')}"
+            for tag in blog_tag_candidates(text)
+        )
+        parts.append(
+            "Tags: choose 2-4 canonical tags for both human related-post navigation and machine clustering. Infer "
+            "concepts semantically, not just from repeated words. First capture the organizing question or lens, then "
+            "only substantial facets such as domain or named tool. Examples of lens mapping: extrapolating "
+            "a trend into future outcomes -> forecasting; examining a dataset -> data-analysis; checking claims against "
+            "sources -> fact-checking/verification; solving a constrained puzzle -> problem-solving. Do not tag a "
+            "setting, downstream example, or memorable detail unless it is a major independent subject. Avoid a generic "
+            "parent when a specific tag already identifies the subject, and avoid synonyms or near-duplicates. Prefer "
+            "established accurate clusters; counts show size, but relevance wins. The shortlist is "
+            "not exhaustive: emit an obvious conventional slug if missing; known tags canonicalize, unknown ones "
+            f"are flagged for review.\n\nCandidate canonical tag shortlist:\n{tag_lines}"
+        )
+
+    return "\n\n".join(parts) + "\n\n"
 
 
 def split_blog_tags(values: Any) -> tuple[list[str], list[str]]:
@@ -644,9 +667,10 @@ CONTENT_SETS: list[ContentSet] = [
             FieldDef(
                 name="description",
                 description=(
-                    "20-40 word main point, preferably the most USEFUL takeaway or action item(s). "
-                    "Prefer concrete ideas over framing. A focused subset and examples beat vague completeness. "
-                    "Include distinctive methods, domains, tools, or concepts when central."
+                    "20-40 word human-first description. Use first person when natural. Normal posts: at most 2 "
+                    "supporting specifics; roundups: at most 4. Concept/opinion: thesis plus at most one example, never "
+                    "compress a source list. Contrast/ranking: preserve the baseline and standout result. Story/puzzle: include both "
+                    "the concrete action and what it lets someone conclude or prove, not merely the moral."
                 ),
                 pydantic_type=str,
                 to_yaml=str,
@@ -654,8 +678,9 @@ CONTENT_SETS: list[ContentSet] = [
             FieldDef(
                 name="tags",
                 description=(
-                    "3-8 canonical tag slugs from the supplied candidate list. "
-                    "Use proposed:new-tag only when no canonical tag fits an important topic."
+                    "2-4 canonical tags for useful human navigation and machine clustering. Capture the organizing "
+                    "question/lens first, then only substantial independent facets; avoid settings, examples, generic "
+                    "parents, synonyms, and near-duplicates."
                 ),
                 pydantic_type=list[str],
                 to_yaml=flow_list,
@@ -665,6 +690,7 @@ CONTENT_SETS: list[ContentSet] = [
         default_globs=["posts/**/*.md", "pages/**/*.md"],
         exclude_names=["SKILL.md"],
         meta_position="after",
+        default_workers=8,
     ),
 ]
 
@@ -818,18 +844,24 @@ def process_file(
     if missing:
         try:
             missing_fields = [fdef for fdef in content_set.fields if fdef.name in missing]
-            ai, usage = call_ai(provider, client, model, content_set, text, missing_fields)
-            for fdef in content_set.fields:
-                if fdef.name not in missing:
-                    continue
-                val = getattr(ai, fdef.name)
-                if content_set.name == "blog" and fdef.name == "tags":
-                    val, result["proposals"] = split_blog_tags(val)
-                elif fdef.clean is not None:
-                    val = fdef.clean(val)
-                # Always write, even [] — marks field as processed so we don't re-run
-                updates[fdef.name] = fdef.to_yaml(val)
-                result["added_fields"].append(fdef.name)
+            # Blog descriptions are human-facing prose while tags need taxonomy-heavy context.
+            # Generate them separately so tag candidates do not leak into the visible description.
+            field_groups = [[fdef] for fdef in missing_fields] if content_set.name == "blog" else [missing_fields]
+            usage = Usage()
+            for field_group in field_groups:
+                ai, field_usage = call_ai(provider, client, model, content_set, text, field_group)
+                usage.prompt += field_usage.prompt
+                usage.output += field_usage.output
+                usage.calls += field_usage.calls
+                for fdef in field_group:
+                    val = getattr(ai, fdef.name)
+                    if content_set.name == "blog" and fdef.name == "tags":
+                        val, result["proposals"] = split_blog_tags(val)
+                    elif fdef.clean is not None:
+                        val = fdef.clean(val)
+                    # Always write, even [] — marks field as processed so we don't re-run
+                    updates[fdef.name] = fdef.to_yaml(val)
+                    result["added_fields"].append(fdef.name)
             result["tokens"] = usage.as_dict()
             result["cost_usd"] = round(usage.cost(model), 6)
         except Exception as e:
@@ -855,7 +887,7 @@ def main(
     patterns:  list[str] | None    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
     model:     str | None             = typer.Option(None, help="Model ID; defaults by provider"),
     provider:  str                    = typer.Option("openai", help="Provider: gemini|openai"),
-    workers:   int                    = typer.Option(4, "--workers", help="Parallel API workers"),
+    workers:   int | None             = typer.Option(None, "--workers", help="Parallel API workers; defaults by content set"),
     dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
     fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
@@ -869,6 +901,7 @@ def main(
         raise typer.Exit(1)
 
     content_set = CONTENT_SET_MAP[content_set_name]
+    workers = workers or content_set.default_workers
     selected_fields = None
     if fields:
         requested = {name.strip() for name in fields.split(",") if name.strip()}

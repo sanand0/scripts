@@ -49,6 +49,11 @@ def write_tags(path: Path) -> None:
     )
 
 
+def test_blog_defaults_to_more_workers_without_changing_transcript_default():
+    assert summarize.CONTENT_SET_MAP["blog"].default_workers == 8
+    assert summarize.CONTENT_SET_MAP["transcript"].default_workers == 4
+
+
 def test_blog_prompt_uses_compact_candidate_tags(tmp_path, monkeypatch):
     tags_path = tmp_path / "metadata-tags.yml"
     write_tags(tags_path)
@@ -57,10 +62,35 @@ def test_blog_prompt_uses_compact_candidate_tags(tmp_path, monkeypatch):
 
     prompt = summarize.blog_prompt("I used an LLM to improve a dataviz workflow.")
 
-    assert "Candidate canonical tags:" in prompt
-    assert "- llms:" in prompt
-    assert "- data-visualization:" in prompt
-    assert len(prompt) < 1500
+    assert "Candidate canonical tag shortlist:" in prompt
+    assert "- llms (66 posts):" in prompt
+    assert "- data-visualization (90 posts):" in prompt
+    assert len(prompt) < 4000
+
+
+def test_blog_prompt_uses_human_first_low_density_descriptions_and_precise_tags(tmp_path, monkeypatch):
+    tags_path = tmp_path / "metadata-tags.yml"
+    write_tags(tags_path)
+    monkeypatch.setattr(summarize, "BLOG_TAGS_PATH", tags_path)
+    summarize.blog_tag_vocabulary.cache_clear()
+
+    prompt = summarize.blog_prompt("I used an LLM to improve a dataviz workflow.")
+
+    assert "human scanning Anand's blog" in prompt
+    assert "search or an LLM agent" in prompt
+    assert "Use first person when" in prompt
+    assert "I found a page" in prompt
+    assert "distinctive/personal x surprising" in prompt
+    assert "at most 2 illustrative findings" in prompt
+    assert "baseline and the standout result" in prompt
+    assert "what the action lets someone conclude or prove" in prompt
+    assert "Omission is a feature" in prompt
+    assert "Silently verify every remaining concrete fact" in prompt
+    assert "choose 2-4 canonical tags" in prompt
+    assert "organizing question or lens" in prompt
+    assert "future outcomes -> forecasting" in prompt
+    assert "shortlist is not exhaustive" in prompt
+    assert "(66 posts)" in prompt
 
 
 def test_blog_prompt_can_request_only_tags(tmp_path, monkeypatch):
@@ -74,8 +104,8 @@ def test_blog_prompt_can_request_only_tags(tmp_path, monkeypatch):
 
     assert "Generate only canonical tags" in prompt
     assert "Generate a description" not in prompt
-    assert "- llms:" in prompt
-    assert "- data-visualization:" in prompt
+    assert "- llms (66 posts):" in prompt
+    assert "- data-visualization (90 posts):" in prompt
 
 
 def test_clean_blog_tags_keeps_canonical_and_flags_proposals(tmp_path, monkeypatch):
@@ -175,6 +205,28 @@ def test_summarize_merges_proposals_once_after_workers(tmp_path, monkeypatch):
     for post in posts:
         metadata = summarize.parse_frontmatter(post.read_text(encoding="utf-8"))[0]
         assert metadata["tags"] == ["llms"]
+
+
+def test_blog_generates_description_and_tags_in_separate_ai_calls(tmp_path, monkeypatch):
+    post = tmp_path / "post.md"
+    post.write_text("# Title\n\nOne\nTwo\nThree\nFour\nFive\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setattr(summarize, "resolve_files", lambda *_: [post])
+    monkeypatch.setitem(summarize.CONTENT_SET_MAP, "blog-test", summarize.CONTENT_SET_MAP["blog"])
+    monkeypatch.setattr("openai.OpenAI", lambda **_: object())
+    calls = []
+
+    def fake_call_ai(provider, client, model, content_set, text, fields):
+        calls.append([field.name for field in fields])
+        return _FakeMeta(), summarize.Usage(prompt=10, output=2, calls=1)
+
+    monkeypatch.setattr(summarize, "call_ai", fake_call_ai)
+    result = CliRunner().invoke(summarize.app, ["blog-test", "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 0
+    assert calls == [["description"], ["tags"]]
+    assert '"calls": 2' in result.stdout
+
 
 
 class _FakeMeta:
