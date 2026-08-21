@@ -1,6 +1,6 @@
 ---
 name: code
-description: ALWAYS follow this style when writing Python / JavaScript code
+description: ALWAYS follow this style when writing Python / JavaScript / HTML / CSS code
 ---
 
 - Minimize new code and changes. Prefer the first working option:
@@ -65,24 +65,33 @@ Prefer:
 - duckdb / pandas not csv
 - tenacity for retries
 
-## HTML
+## Web
 
-Prefer modern HTML:
+Prefer modern HTML/CSS/platform features over custom JavaScript or libraries.
 
-- Loading: loading="lazy", fetchpriority="low", <link rel="preload" as="image">
-- Forms: inputmode=, enterkeyhint=, autocomplete=, list=, autocapitalize=, spellcheck=, form=
-- UI: popover, popovertarget=, formmethod="dialog", inert, <details name=""> for accordions, <dialog>, <meter>, <progress>, <track>, <data>
-- Media: picture srcset=, video preload=, crossorigin=, playsinline=, muted=, autoplay=, loop=, controls=, poster=
+- Images: responsive `srcset`/`sizes`; lazy-load offscreen images, but never likely LCP images; use `fetchpriority="high"` for important/LCP images
+- Forms: semantic input types, `autocomplete=`, `inputmode=`, `enterkeyhint=`, `list=`, `autocapitalize=`, `spellcheck=`, `form=`
+- UI: `<dialog>`, `popover`, `popovertarget=`, `commandfor=`/`command=`, `inert`, `<details name="">`, `closedby=`
+- Semantics: prefer native elements such as `<search>`, `<meter>`, `<progress>`, `<output>`, `<data>`, `<time>` over custom equivalents
+- Media: `<picture>`, `srcset=`, `preload=`, `poster=`, `playsinline`, `<track>`
+- CSS: prefer container queries for component responsiveness; logical properties, `clamp()`, `text-wrap: balance|pretty`, `color-scheme`, `light-dark()`, `color-mix()`, `oklch()` where useful
+- Motion: prefer CSS transitions/animations over JavaScript; respect `prefers-reduced-motion`
+- Accessibility: preserve native keyboard/focus behavior; use `:focus-visible`; prefer native HTML semantics over ARIA/custom JavaScript
+- Validation: prefer native constraint validation and `:user-valid`/`:user-invalid`
+- Prefer Baseline Widely Available features. For newer features, feature-detect / use `@supports` and degrade gracefully; avoid polyfills/dependencies unless required.
+- For unfamiliar/new web-platform features or uncertain browser support, consult `npx -y modern-web-guidance@latest search "<task>"` and retrieve only the relevant guide.
 
 ## JavaScript
 
 Preferred JS style:
 
-- Hyphenated HTML class/ID names (id="user-id" not id="userId")
-- Modern browser APIs and ESM2022+: Use `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
+- Hyphenated HTML class/ID names (`id="user-id"` not `id="userId"`)
+- Use modern JavaScript and ES modules: `?.`, `??`, destructuring, spread, implicit returns (`=>` over `=> { return }`)
 - No TypeScript, but `// @ts-check`. `.d.ts` is OK for packages
-- Loading indicator while awaiting fetch()
-- Error handling only at top level. Render errors for user
+- With `fetch()`, check `response.ok` before consuming the response unless non-2xx responses are intentionally handled
+- Show loading/pending state for user-visible async operations
+- Handle expected/recoverable errors where they occur; let unexpected errors propagate to a top-level handler
+- Prefer `textContent`/DOM APIs for untrusted content; never interpolate untrusted data into `innerHTML`
 
 Debug front-end apps with agent-browser, rodney, Playwright via CDP on localhost:9222.
 For single-page HTML files try `file://` if a server may not be needed.
