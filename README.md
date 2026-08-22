@@ -101,7 +101,6 @@ Here are the setup details for my laptops.
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote.
 - [githubscore.py](githubscore.py) evaluates GitHub developer quality.
 - [googleconnections.py](googleconnections.py) lists apps connected to the Google Account in a CDP browser on port 9222, including URL, app name, access time, permissions, and connection ID. Defaults to TSV sorted by URL; use `googleconnections.py --format csv` for CSV or `googleconnections.py --format jsonl --limit 5` for a small structured sample.
-- [gmail](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py).
 - [gwslog.py](gwslog.py) shows recent Google Drive changes through `gws`, with cached folder paths and shared-drive names.
   - Recent Docs: `gwslog.py --since 7d --type doc`
   - Path/user feed: `gwslog.py --path Innovation --user s.anand@gramener.com --since 30d --format jsonl`
@@ -123,7 +122,7 @@ Here are the setup details for my laptops.
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
 - [skilluse.py](skilluse.py) scans Codex, Claude, and Copilot logs for agent skill usage. Examples: `skilluse.py --agent codex --skill "github:*"`, `skilluse.py --format json | jaq .`, `skilluse.py --describe | jaq .`.
-- [slide.py](slide.py) creates slides from Markdown files. Usage: `uvx slide presentation.md`
+- [slide.py](slide.py) creates slides from Markdown files. Usage: `slide.py presentation.md`
 - [summarize.py](summarize.py) adds AI-generated metadata (summary, keywords, people, actions for transcripts; description and keywords for blog posts) to Markdown files. Already-processed files are skipped.
   - New transcripts: `summarize.py transcript "/home/sanand/Dropbox/notes/transcripts/2026-04-*.md"` (edit `2026-04` to the target month)
   - New blog posts: `ug -rl '^date: "?2026-04' /home/sanand/code/blog/posts/ | xargs summarize.py blog` (edit `2026-04` to the target month)
@@ -164,6 +163,7 @@ Here are the setup details for my laptops.
 
 - [asu](asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
 - [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [gmail.py](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py). Archived in favor of `gws`.
 - [livetranscribe](livetranscribe) watches a growing `.opus` recording and streams timestamped transcription via the Gemini Live API. Examples: `livetranscribe ~/Documents/calls/meeting.opus`, `livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"`, `livetranscribe meeting.opus --dry-run`.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.

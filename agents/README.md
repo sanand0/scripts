@@ -59,4 +59,4 @@ But some coding agent skills are also relevant online and are uploaded to Claude
 - expert-lens
 - interactive-storytelling
 
-`archive/` has outdated or under-used skills.
+`../agents-archive/` has outdated or under-used skills.
