@@ -69,7 +69,7 @@ Prefer:
 
 Prefer modern HTML/CSS/platform features over custom JavaScript or libraries.
 
-- Images: responsive `srcset`/`sizes`; lazy-load offscreen images, but never likely LCP images; use `fetchpriority="high"` for important/LCP images
+- Images: responsive `srcset`/`sizes`; `loading="lazy"` for offscreen images, but never likely LCP images; use `fetchpriority="high"` for important/LCP images
 - Forms: semantic input types, `autocomplete=`, `inputmode=`, `enterkeyhint=`, `list=`, `autocapitalize=`, `spellcheck=`, `form=`
 - UI: `<dialog>`, `popover`, `popovertarget=`, `commandfor=`/`command=`, `inert`, `<details name="">`, `closedby=`
 - Semantics: prefer native elements such as `<search>`, `<meter>`, `<progress>`, `<output>`, `<data>`, `<time>` over custom equivalents
