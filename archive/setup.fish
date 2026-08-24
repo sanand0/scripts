@@ -1,5 +1,25 @@
 # Archived fish functions from setup.fish
 
+# Archived: 24 Aug 2026. I no longer use these tools and the .venv directories are large.
+mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
+mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
+mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
+  uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12  # for faster-whisper
+  UV_TORCH_BACKEND=auto uv pip install torch torchaudio   # for whisper_streaming
+
+cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/latest/download/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription. Ctrl+Shift+D to dictate.
+sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
+
+set -gx PATH $PATH "$HOME/apps/whisper-ctranslate2/.venv/bin"
+
+# whisper --output_format txt $inputfile
+function whisper --description "transcribe audio file using Whisper Ctranslate2"
+    source $HOME/apps/whisper-ctranslate2/.venv/bin/activate.fish
+    export LD_LIBRARY_PATH="/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cublas/lib/:/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cudnn/lib/"
+    whisper-ctranslate2 --device cuda --language en $argv[1..]
+    deactivate
+end
+
 # Archived: 15 Aug 2026. Migrated to ~/code/scripts/pages since pressing Ctrl+C leaves cloudflared running in the background.
 # https://chatgpt.com/c/6a807fda-7f00-83ee-8a6e-77bdfaa6bcf5
 function pages --description "pages XXX serves pwd at https://pages.s-anand.net/XXX/"

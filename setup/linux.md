@@ -106,7 +106,6 @@ sudo apt install -y moreutils           # moreutils - Collection of useful Unix 
 sudo apt install -y python3 python3-pip # System Python - Required by some system tools despite using uv for projects
 sudo apt install -y vlc                 # VLC - Multimedia player
 sudo apt install -y ubuntu-restricted-extras libavcodec-extra   # Multimedia codecs and extras for VLC
-sudo apt install -y libportaudio2 portaudio19-dev   # for python -m sounddevice used by whisper-ctranslate2 live transcription
 sudo apt install -y poppler-utils       # PDF tools (pdftoppm, pdftotext, pdfimages, etc.)
 sudo apt install -y melt                # melt - Command-line video editing
 sudo apt install -y sox libsox-fmt-all  # sox - audio processing
@@ -295,11 +294,6 @@ cargo install unidown
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.14; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
 playwright install --with-deps chromium firefox msedge
 mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
-mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
-mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish;
-  uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12  # for faster-whisper
-  UV_TORCH_BACKEND=auto uv pip install torch torchaudio   # for whisper_streaming
-mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
 mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
 mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag   # MP3 music metadata tag editor
 mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
@@ -310,7 +304,6 @@ cd ~/.local/bin; curl -L https://imagemagick.org/archive/binaries/magick -o magi
 cd ~/.local/bin; curl -L https://github.com/ThomasHabets/cmdg/releases/latest/download/cmdg-ubuntu -o cmdg && chmod +x cmdg   # cmdg - Gmail CLI client
 cd ~/.local/bin; curl -L https://github.com/AOMediaCodec/libavif/releases/latest/download/linux-artifacts.zip -o avif.zip && unzip -jo avif.zip && rm avif.zip  # avifence - AVIF image encoder
 cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar -xj pngquant  # pngquant - PNG image compressor
-cd ~/.local/bin; curl -L https://github.com/OpenWhispr/openwhispr/releases/latest/download/OpenWhispr-1.6.10-linux-x86_64.AppImage -o openwhispr && chmod +x openwhispr   # OpenWhispr - GUI for whisper-ctranslate2 live transcription. Ctrl+Shift+D to dictate.
 cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o ttyd && chmod +x ttyd   # ttyd - Terminal sharing on web
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager

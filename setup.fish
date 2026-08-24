@@ -17,11 +17,9 @@ set -gx PATH $PATH $HOME/Dropbox/scripts
 
 # For each .venv/bin in $HOME/apps/*, add to PATH
 set -gx PATH $PATH "$HOME/apps/global/.venv/bin"
-set -gx PATH $PATH "$HOME/apps/openwebui/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/marimo/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/puddletag/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/gramex/.venv/bin"
-set -gx PATH $PATH "$HOME/apps/whisper-ctranslate2/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/datasette/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/offpunk/.venv/bin"
 
@@ -777,14 +775,6 @@ function ffsplit --description "ffsplit 00:12:00 00:34:00 input.mp4"
         -ss $prev -i "$in" \
         -map 0 -c copy -avoid_negative_ts make_zero \
         (string replace -r -- '(\.[^.]+)$' "-$i\$1" "$in")
-end
-
-# whisper --output_format txt $inputfile
-function whisper --description "transcribe audio file using Whisper Ctranslate2"
-    source $HOME/apps/whisper-ctranslate2/.venv/bin/activate.fish
-    export LD_LIBRARY_PATH="/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cublas/lib/:/home/sanand/apps/whisper-ctranslate2/.venv/lib64/python3.11/site-packages/nvidia/cudnn/lib/"
-    whisper-ctranslate2 --device cuda --language en $argv[1..]
-    deactivate
 end
 
 # webm-compress $input $width $frame_samples $output
