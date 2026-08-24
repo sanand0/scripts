@@ -154,7 +154,7 @@ abbr --add jupyter-lab 'uvx --offline --from jupyterlab jupyter-lab'
 abbr --add cxml 'uvx files-to-prompt --cxml'
 
 # Convert PDF to text
-abbr --add pdftotext 'PYTHONUTF8=1 uvx --with markitdown[pdf] markitdown'
+abbr --add pdftotext 'npx -y @firecrawl/anydoc'
 
 # MP3tag alternative
 abbr --add mp3tag puddletag

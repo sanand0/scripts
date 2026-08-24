@@ -16,9 +16,10 @@ git, gh (check repo first; `git log --follow` only one path)
 curl, w3m, lynx, websocat, wscat
 jaq (faster jq; quote filters; use `? // empty` for nullable fields; validate JSONL line-by-line), qsv, csvq
 uv, uv run, uv pip, uvx (avoid python/pip)
-uvx ruff, uvx yt-dlp, uvx markitdown
+uvx ruff, uvx yt-dlp
 agent-browser (use stable tab IDs like t45; inspect visible DOM before clicking), uvx browser-use, uvx --from playwright python -c 'import playwright' (no npm playwright)
 npx, just
+npx -y @firecrawl/anydoc (pdf, word, ppt to Markdown)
 duckdb, sqlite3
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)

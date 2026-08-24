@@ -470,7 +470,7 @@ check_command_runs "hugo version" hugo version
 check_command_runs "cargo --version" cargo --version
 check_command_runs "dprint --version" dprint --version
 check_command_runs "yt-dlp --version" yt-dlp --version
-check_command_runs "markitdown --help" markitdown --help
+check_command_runs "anydoc --help" anydoc --help
 check_command_runs "playwright --version" playwright --version
 run_check "Playwright version matches dev.dockerfile" playwright_version_matches_dockerfile "${SCRIPT_DIR}/dev.dockerfile"
 check_command_runs "copilot version" copilot version

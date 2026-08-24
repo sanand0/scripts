@@ -93,7 +93,7 @@ csvq --version
 uv --version
 uvx ruff --version
 uvx yt-dlp --version
-uvx markitdown --version
+anydoc --version
 sg --version
 duckdb --version
 sqlite3 --version

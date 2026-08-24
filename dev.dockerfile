@@ -139,7 +139,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp markitdown httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai "playwright==${PLAYWRIGHT_VERSION}"; \
+  uv pip install cairosvg csvkit dprint yt-dlp httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai "playwright==${PLAYWRIGHT_VERSION}"; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
@@ -162,14 +162,15 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   npm install -g npm@latest; \
   npm install -g wscat@latest; \
   npm install -g @googleworkspace/cli@latest; \
-  npm install -g pixelmatch pngjs; \
+  npm install -g pixelmatch@latest pngjs@latest; \
+  npm install -g @firecrawl/anydoc@latest; \
   mise reshim node \
   '
 
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "09 Aug 2026: Updating agents and fast-moving agent tools"; \
+  echo "23 Aug 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \
