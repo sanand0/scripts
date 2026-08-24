@@ -1,5 +1,7 @@
 # Usage
 
+Note: fish_usage.py supercedes this.
+
 ## Initial analysis, 05 Jun 2026
 
 <!--
