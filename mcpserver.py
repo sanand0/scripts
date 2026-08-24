@@ -11,6 +11,7 @@
 # Test with
 #   just test-mcpserver
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,6 +52,7 @@ MAX_TOTAL_OUTPUT_BYTES = 512 * 1024
 TOTAL_OUTPUT_HEAD_BYTES = 384 * 1024
 TOTAL_TRIM_MARKER = "\n... [omitted {bytes} bytes to keep total output under 512 KiB] ...\n"
 MAX_UPLOAD_BYTES = int(os.environ.get("MCPSERVER_MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+BASH_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="mcpserver-bash")
 
 
 def output_schema(properties: dict[str, Any]) -> dict[str, Any]:
@@ -634,7 +637,9 @@ Summarize and cite paths/lines instead.
 async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> ToolResult:
     ctx: Context = get_context()
     await ctx.info(f"bash: {commands} (cwd={cwd or os.getcwd()})")
-    output, result = run_bash_command(commands, timeout_ms, cwd)
+    output, result = await asyncio.get_running_loop().run_in_executor(
+        BASH_EXECUTOR, run_bash_command, commands, timeout_ms, cwd
+    )
     request_id = getattr(ctx, "request_id", None)
     result["request_id"] = str(request_id) if request_id is not None else None
     if result["stderr_bytes"]:

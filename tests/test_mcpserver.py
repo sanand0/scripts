@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,20 @@ import mcpserver
 @pytest.fixture(autouse=True)
 def isolate_log_dir(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
+
+
+class BashContext:
+    request_id = "test-request"
+
+    async def info(self, message: str) -> None:
+        pass
+
+    async def warning(self, message: str) -> None:
+        pass
+
+
+def successful_bash_result() -> tuple[str, dict]:
+    return "ok", {"stderr_bytes": 0, "exit_code": 0, "ok": True}
 
 
 def test_trim_long_lines_keeps_each_line_under_50kb() -> None:
@@ -153,6 +168,72 @@ def test_bash_timeout_is_tool_error(tmp_path, monkeypatch) -> None:
     assert result.structured_content["status"] == "timeout"
     assert result.structured_content["ok"] is False
     assert result.structured_content["timed_out"] is True
+
+
+def test_bash_runs_four_calls_concurrently(monkeypatch) -> None:
+    barrier = threading.Barrier(4)
+    threads = set()
+    lock = threading.Lock()
+
+    def run_bash_command(*args):
+        with lock:
+            threads.add(threading.get_ident())
+        barrier.wait(timeout=5)
+        return successful_bash_result()
+
+    monkeypatch.setattr(mcpserver, "get_context", BashContext)
+    monkeypatch.setattr(mcpserver, "log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mcpserver, "run_bash_command", run_bash_command)
+
+    async def exercise_tool():
+        await asyncio.gather(*(mcpserver.bash(f"command {index}") for index in range(4)))
+
+    asyncio.run(exercise_tool())
+
+    assert len(threads) == 4
+
+
+def test_bash_queues_fifth_call_and_never_exceeds_four(monkeypatch) -> None:
+    four_started = threading.Event()
+    release = threading.Event()
+    lock = threading.Lock()
+    started = active = peak = 0
+
+    def run_bash_command(*args):
+        nonlocal started, active, peak
+        with lock:
+            started += 1
+            active += 1
+            peak = max(peak, active)
+            if started == 4:
+                four_started.set()
+        try:
+            assert release.wait(timeout=5)
+            return successful_bash_result()
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(mcpserver, "get_context", BashContext)
+    monkeypatch.setattr(mcpserver, "log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mcpserver, "run_bash_command", run_bash_command)
+
+    async def exercise_tool():
+        tasks = [asyncio.create_task(mcpserver.bash(f"command {index}")) for index in range(5)]
+        await asyncio.sleep(0)
+        try:
+            assert await asyncio.to_thread(four_started.wait, 5)
+            with lock:
+                assert started == active == peak == 4
+            assert not any(task.done() for task in tasks)
+        finally:
+            release.set()
+        await asyncio.gather(*tasks)
+
+    asyncio.run(exercise_tool())
+
+    assert started == 5
+    assert peak == 4
 
 
 def test_bash_invalid_input_is_structured_tool_error(tmp_path, monkeypatch) -> None:

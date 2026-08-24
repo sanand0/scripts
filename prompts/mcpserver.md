@@ -1,8 +1,44 @@
 # MCP Server
 
-TODO
+## Allow up to 4 concurrent processes, 24 Aug 2026
 
-- Allow up to 4 concurrent bash processes.
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+<!-- Source: https://chatgpt.com/c/6a8b927d-2764-83ee-93bc-b11ec8193094 -->
+
+Modify `~/code/scripts/mcpserver.py` so the `bash` MCP tool can execute **up to 4 independent Bash calls concurrently**.
+
+Plan briefly, then implement the smallest robust change. Read relevant skills.
+
+Context:
+
+- `bash()` is `async`, but calls synchronous `run_bash_command()`, which uses `subprocess.run()`. This blocks the FastMCP event loop.
+- Each invocation already launches its own `/bin/bash` process. We need bounded concurrent dispatch, **not a `ProcessPoolExecutor`**.
+- Recent logs show ~3,450 Bash calls/30d; p95 duration ~26s, 156 >30s, max ~10 min. Bash calls on one server instance never overlap today, while MCP has received up to 4 overlapping tool-call requests.
+- Four concurrent `sleep 0.2` Bash tool calls currently take ~0.96s wall-clock.
+
+Prefer the simplest stdlib solution, likely a shared `ThreadPoolExecutor(max_workers=4)` (or an equally small, clearly better approach), with Bash subprocesses doing the actual work. A fifth call should queue until a slot is free.
+
+Requirements:
+
+1. Maximum 4 Bash calls executing simultaneously per server process.
+2. Do not change behavior within one Bash call: multiline commands remain one shell script and execute normally/sequentially.
+3. Preserve existing timeout, stdout/stderr, error/status, `cwd`, output trimming/file handling, logging, `ToolResult`, and output schema behavior.
+4. Avoid new dependencies and unnecessary abstractions.
+5. Add focused tests in `tests/test_mcpserver.py` proving:
+   - four calls can run concurrently;
+   - a fifth waits and observed concurrency never exceeds four;
+   - existing Bash tests still pass.
+     Prefer deterministic synchronization/counters over brittle wall-clock assertions where practical.
+6. Run `just test-mcpserver`.
+
+Also consider cancellation/shutdown semantics introduced by moving `subprocess.run()` off the event loop. Do not expand scope unless needed, but avoid an obvious subprocess leak/regression.
+
+Finish with a compact summary of the change and test results.
+
+<!-- codex resume 01a0313e-182b-70c2-9c30-97f546b3ae77 --yolo -->
 
 ## Improve based on usage, 18 Aug 2026
 
@@ -24,6 +60,7 @@ dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=mediu
 -->
 
 Refactor `mcpserver.py` to:
+
 - Reduce code: cleaner, elegant, with a linear flow, and easier to read and maintain.
 - Reduce technical debt.
 
