@@ -7,7 +7,8 @@ description: Use to investigate data for surprising, actionable insights
 
 Hunt for stories that make smart readers lean forward and say _"wait, really?"_ - findings that are high-impact, surprising, actionable, and defensible.
 
-This is a DETAILED process. Create a PLAN and execute step by step.
+This is a DETAILED process. PLAN and execute step by step.
+
 
 ## 1. Define What Matters
 
@@ -52,6 +53,8 @@ Find leverage points:
 
 ## 4. Verify & Stress-Test
 
+**Verify without rewarding surprise**, restating it neutrally. Interestingness is not evidence.
+
 **Cross-check externally**: Is there outside evidence (benchmarks, research, industry data) that supports, refines, or contradicts the finding?
 
 **Test robustness**: Does the finding hold under cross model checks, alternative model specs, thresholds, sub-samples, or time windows? Does a placebo test (shuffled labels, random baseline) reproduce it? If so, it's noise.
@@ -69,6 +72,8 @@ Find leverage points:
 - **Survivorship/selection bias**: what's missing from the data entirely?
 - **Second-order effects**: what happens downstream beyond the immediate impact?
 - **Inversion**: try to _disprove_ the finding. If you can't, it's more credible.
+
+**Check alternative explanations** using multiple-testing/selection effects where relevant, and whether the conclusion survives reasonable specifications.
 
 **Consider limitations**: What _cannot_ be concluded? What caveats must accompany the finding to avoid misuse?
 
