@@ -139,7 +139,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install cairosvg csvkit dprint yt-dlp httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai "playwright==${PLAYWRIGHT_VERSION}"; \
+  uv pip install cairosvg csvkit dprint yt-dlp docling httpx pandas pillow ruff llm typer rich orjson lxml tenacity pytest google_genai "playwright==${PLAYWRIGHT_VERSION}"; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 
