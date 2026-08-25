@@ -115,7 +115,6 @@ Here are the setup details for my laptops.
 - [musictag.py](musictag.py) manages MP3 ID3 tags from `~/Music/musicdump.csv`, with dry-run cleanup diffs, CSV dump/apply parity, managed tag columns, and preserved personal `POPM`/clean long `USLT` frames. Examples: `musictag.py dump`, `musictag.py fix "Album.Title.mp3"`, `musictag.py fix --write --genre Tamil --year 2014 *.mp3`, `musictag.py check | moor`.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
-- [rename_receipts.py](rename_receipts.py) renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text.
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
 - [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
@@ -168,3 +167,4 @@ Here are the setup details for my laptops.
 - [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
 - [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
 - [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
+- `rename_receipts.py` renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text. Moved to receipts folder.
