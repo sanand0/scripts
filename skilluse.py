@@ -45,7 +45,7 @@ SHELL_WRAPPERS = {
     "time",
     "timeout",
 }
-AGENTS = ("claude", "codex", "copilot")
+AGENTS = ("codex", "claude", "copilot")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -492,6 +492,13 @@ def iter_skill_use(
     skill_globs: tuple[str, ...],
 ) -> Iterator[SkillUse]:
     seen: set[tuple[str, str, str]] = set()
+    if "codex" in agents:
+        yield from _scan_codex(
+            codex_root.expanduser(),
+            agents_root,
+            seen=seen,
+            skill_globs=skill_globs,
+        )
     if "claude" in agents:
         yield from _scan_claude(
             claude_root.expanduser(),
@@ -502,13 +509,6 @@ def iter_skill_use(
     if "copilot" in agents:
         yield from _scan_copilot(
             copilot_root.expanduser(),
-            agents_root,
-            seen=seen,
-            skill_globs=skill_globs,
-        )
-    if "codex" in agents:
-        yield from _scan_codex(
-            codex_root.expanduser(),
             agents_root,
             seen=seen,
             skill_globs=skill_globs,
@@ -541,12 +541,6 @@ def collect_skill_use(
     )
 
 
-def _default_format(selected: str | None) -> str:
-    if selected:
-        return selected
-    return "text" if typer.get_text_stream("stdout").isatty() else "json"
-
-
 def build_app() -> typer.Typer:
     app = typer.Typer(add_completion=False)
 
@@ -554,7 +548,7 @@ def build_app() -> typer.Typer:
     def main(
         agent: list[str] = typer.Option([], "--agent", help="Only scan these agents."),
         skill: list[str] = typer.Option([], "--skill", help="Only include skills matching these glob patterns."),
-        format: str | None = typer.Option(None, "--format", help="Output format: text or json."),
+        format: str = typer.Option("text", "--format", help="Output format: text or json."),
         describe: bool = typer.Option(False, "--describe", help="Print machine-readable command metadata."),
         codex_root: Path = typer.Option(Path("~/.codex"), help="Codex log root."),
         claude_root: Path = typer.Option(Path("~/.claude/projects"), help="Claude log root."),
@@ -586,12 +580,11 @@ def build_app() -> typer.Typer:
         if invalid_agents:
             raise typer.BadParameter(f"Unknown agents: {', '.join(invalid_agents)}")
 
-        output_format = _default_format(format)
-        if output_format not in {"text", "json"}:
+        if format not in {"text", "json"}:
             raise typer.BadParameter("format must be 'text' or 'json'")
 
         skill_globs = tuple(pattern for pattern in skill if pattern)
-        if output_format == "text":
+        if format == "text":
             typer.echo("agent\tdate\tskill\tsession_id")
             for row in iter_skill_use(
                 codex_root=codex_root,
@@ -613,7 +606,7 @@ def build_app() -> typer.Typer:
             skill_globs=skill_globs,
         )
 
-        if output_format == "json":
+        if format == "json":
             typer.echo(json.dumps([row.to_dict() for row in rows], ensure_ascii=False, indent=2))
             return
 
