@@ -804,11 +804,11 @@ def transcribe_single_audio(
         contents: list[object] = [uploaded_file]
         if user_prompt:
             contents = [user_prompt, uploaded_file]
-        response = client.models.generate_content(
+        chat = client.chats.create(
             model=model,
-            contents=contents,
             config=genai.types.GenerateContentConfig(system_instruction=system_prompt),
         )
+        response = chat.send_message(contents)
     except genai.errors.APIError as exc:
         raise RuntimeError(str(exc)) from exc
     usage = calculate_usage_cost(response, requested_model=model, pricing=pricing)

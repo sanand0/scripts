@@ -1,5 +1,18 @@
 # Transcribe Calls
 
+## Remove warning, 26 Aug 2026
+
+<!--
+cd ~/code/scripts
+claude --model sonnet --effort medium
+-->
+
+When I run `transcribe_calls.py`, I get the following warning: Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+
+Minimally edit to avoid this.
+
+<!-- claude --resume 1eb083ac-59ed-4441-a48e-91d56eb10255 -->
+
 ## Refactor, 19 Aug 2026
 
 <!--

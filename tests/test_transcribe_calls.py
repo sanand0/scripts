@@ -172,6 +172,28 @@ def write_fake_google_genai(package_root: Path) -> Path:
                     )()
 
 
+            class _Chat:
+                def __init__(self, models, *, model, config=None):
+                    self._models = models
+                    self._model = model
+                    self._config = config
+
+                def send_message(self, contents):
+                    if not isinstance(contents, list):
+                        contents = [contents]
+                    return self._models.generate_content(
+                        model=self._model, contents=contents, config=self._config
+                    )
+
+
+            class _ChatsAPI:
+                def __init__(self, models):
+                    self._models = models
+
+                def create(self, *, model, config=None):
+                    return _Chat(self._models, model=model, config=config)
+
+
             class Client:
                 def __init__(self, *, api_key=None, **kwargs):
                     if not api_key:
@@ -182,6 +204,7 @@ def write_fake_google_genai(package_root: Path) -> Path:
                             handle.write(f"APIKEY\\t{api_key}\\n")
                     self.files = _FilesAPI()
                     self.models = _ModelsAPI()
+                    self.chats = _ChatsAPI(self.models)
             """
         ),
         encoding="utf-8",
