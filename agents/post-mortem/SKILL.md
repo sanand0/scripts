@@ -35,7 +35,7 @@ session: session ID
   This was fast, but let to repeated custom scripts, inconsistent metrics across runs, extra time spent distinguishing true parser issues from script-quality issues.
   Instead, instruct me to create dedicated verification scripts up-front and prefer it over inline shell heredocs for future CDP validation.
 - I added inline JS tests for media before I updated the shared HTML fixture.
-  This conflicts with the user’s explicit “HTML test set first” request and was less representative than the parser/test surface.
+  This conflicts with the user's explicit "HTML test set first" request and was less representative than the parser/test surface.
   Instead, create a pre-check SKILL.md that enforces a checklist before executing user actions.
  - ...
 ```

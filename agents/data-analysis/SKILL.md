@@ -86,6 +86,6 @@ Select insights that are
 - **surprising** (challenges assumptions, reveals hidden patterns), and
 - **defensible** (robust under scrutiny, bias-checked).
 
-Lead with the most compelling finding → evidence → caveats → what to _do_ with it.
+Lead with the most compelling finding -> evidence -> caveats -> what to _do_ with it.
 
 **Tone**: Write like a journalist, not a statistician. Say "Sales reps in the Northeast close 2x faster, but only for deals under $10K", not "Closure varies by region." Findings should make a smart reader lean forward.

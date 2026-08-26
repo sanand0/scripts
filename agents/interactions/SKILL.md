@@ -9,7 +9,7 @@ description: Use to create tooltips, popups, interactions, and animations as inf
 - Additional context about references (where possible)
 - Metadata and context about data points, table cells, chart elements, etc. (always)
 - Guidelines:
-  - On mobile, use tap-to-reveal with clear dismiss affordance (tap elsewhere or an × icon); auto-reposition to stay within the viewport.
+  - On mobile, use tap-to-reveal with clear dismiss affordance (tap elsewhere or an 'x' icon); auto-reposition to stay within the viewport.
   - Debounce on hover. Only 1 tooltip at a time.
   - Do not show tooltips where the tooltips add no meaningful value or additional information beyond the text.
 

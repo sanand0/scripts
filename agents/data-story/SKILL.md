@@ -11,7 +11,7 @@ The goal: a story so well-constructed that readers *feel* the insight before the
 
 Before you write, decide what kind of piece this is. The mode sets the order of everything below.
 
-- **Long-form** - a reader you must pull along. The discovery arc applies: setup → complication → revelation.
+- **Long-form** - a reader you must pull along. The discovery arc applies: setup -> complication -> revelation.
 - **Executive** - a decision-maker who wants the answer. Lead with the finding; put the evidence right under it; skip the slow build. (Pairs with the meeting-response-style skill.)
 - **Exploratory** - you don't have one finding yet. Don't manufacture a story. Show the patterns and the uncertainty until a finding survives scrutiny.
 - **Teaching** - a learner building a mental model. Sequence the beats so each one sets up the next.
@@ -35,14 +35,14 @@ A strong move is **self-reference**: "Imagine *you're* the customer who just chu
 
 ## 2 - Story Arc
 
-Build through *discovery*, not declaration (long-form mode). Resist the urge to front-load conclusions - the journey earns the finding. Keep your main beats to **≤4** - the brain chunks before it comprehends, and working memory holds roughly four things.
+Build through *discovery*, not declaration (long-form mode). Resist the urge to front-load conclusions - the journey earns the finding. Keep your main beats to **<=4** - the brain chunks before it comprehends, and working memory holds roughly four things.
 
 1. **Setup** - Establish the world as everyone assumes it to be.
 2. **Complication** - Introduce the anomaly, the crack in conventional wisdom.
 3. **Revelation** - The central insight, landed with precision and room to breathe.
 4. **Implications** - What this means and what should change.
 
-⚠️ **The tale trap**: a well-structured story *feels* like understanding even when the causal model is wrong. Sequential narrative implies causation automatically. Name the mechanism explicitly - don't let order do the work evidence should do.
+**The tale trap**: a well-structured story *feels* like understanding even when the causal model is wrong. Sequential narrative implies causation automatically. Name the mechanism explicitly - don't let order do the work evidence should do.
 
 ## 3 - Integrated Visualizations
 
@@ -64,7 +64,7 @@ Abstract patterns become real through specific cases. For every major finding, f
 
 Statistics should flow *within* the prose, not interrupt it:
 - **Lead with the narrative beat**, follow with the number that proves it.
-- **Round and contextualize**: "nearly 3 in 4" lands better than "73.2%"; "twice the national average" beats "2.07×".
+- **Round and contextualize**: "nearly 3 in 4" lands better than "73.2%"; "twice the national average" beats "2.07x".
 - **Cite comparisons, not absolutes** - the delta is almost always more meaningful than the level.
 - **One number per beat** - don't cluster statistics. Let each one breathe.
 
