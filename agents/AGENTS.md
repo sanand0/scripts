@@ -10,7 +10,8 @@ Paths may contain spaces / special characters.
 
 Available tools:
 
-fd . PATH --max-depth 3 --type f (not `fd PATH`), ug -n PATTERN PATH --glob '!node_modules/**', rga, sd
+fd . PATH --max-depth 3 --type f (not `fd PATH`), rga, sd
+ug -il -Z1 --bool --files '"phrase" (x|y|z) -deprecated' "$DIR"
 sg (ast-grep: code search), dprint
 git, gh (check repo first; `git log --follow` only one path)
 curl, w3m, lynx, websocat, wscat

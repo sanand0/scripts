@@ -593,17 +593,18 @@ cwd: {display_path(cwd)} ({path_access_mode(cwd)})
 {mounted_paths_text(mounted_paths)}
 
 Avoid broad scans over large file lists - `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives - unless necessary.
-  Scope to known subdirs. Prefer `fd`/`rg` to respect `.gitignore` and shrink long listings.
+  Scope to known subdirs. Prefer `fd`/`ug` to respect `.gitignore` and shrink long listings.
   Check shape (dir count, file size, match count, ...) first.
-Avoid wasting tool calls on wrong files by
-  Verifying paths with `pwd`, `ls`, or `test -e`.
-  Locating best candidates with `fd`, `rg -l`, `rga -l`, READMEs/configs/indexes.
-  Searching best matches with `path:line` evidence.
+Avoid wasting tool calls on wrong files, e.g.
+  Verify paths with `pwd`, `ls`, or `test -e`.
+  Locate best candidates with `fd`, `ug -l`, `rga -l`, READMEs/configs/indexes.
+  Fuzzy match names, noisy sources like `ug -Z1`.
+  Search best matches with `path:line` evidence.
 Paths contain spaces. Prefer null-delimited loops (`fd -0`, `xargs -0`).
 
 This is not Code Interpreter. There's no `/mnt/data`. Use /tmp or user/repo paths.
 
-CLI tools: fd --max-depth 3 --type f, rg, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
+CLI tools: fd --max-depth 3 --type f, ug, rga for binary docs, jaq (faster jq), duckdb/sqlite3, sg (at search), git/gh, agent-browser, ...
 Before using an unfamiliar/version-sensitive CLI, inspect `--help` / `--version`; do not infer flags.
 Before querying structured data, inspect its type/schema/sample first (JSON vs JSONL, keys, columns).
 Before lint/test/build, inspect project-native verification (`just --list`, package scripts, pyproject, Makefile, AGENTS.md); run focused checks before full suites.
@@ -618,8 +619,8 @@ For personal email (root.node@gmail.com) use:
   GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
 
 Prefer `set -euo pipefail` for deterministic scripts. If so, then:
-  Handle expected misses (`rg ... || true`, `test -e`, optional files) printing concise diagnostics.
-  Capped pipelines like `rg ... | head` can exit 141 from SIGPIPE.
+  Handle expected misses (`ug ... || true`, `test -e`, optional files) printing concise diagnostics.
+  Capped pipelines like `ug ... | head` can exit 141 from SIGPIPE.
   Wrap expected capped/no-match pipelines in `( ... | head -N || true )`.
 Batch related probes into one script with section headers.
   Avoid re-running identical discovery commands unless new evidence changed the scope.
