@@ -1,5 +1,7 @@
 # Transcribe Calls
 
+<!-- 26 Aug 2026: Renamed from transcribe_calls.py to call, given how often I use it. -->
+
 ## Remove warning, 26 Aug 2026
 
 <!--

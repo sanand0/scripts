@@ -29,6 +29,7 @@ scripts = {
     for path in scripts_dir.iterdir()
     if path.is_file() and path.read_bytes().startswith(b"#!")
 }
+renames = {"transcribe_calls.py": "call"}
 if "--all" in sys.argv[1:]:
     fish = "functions -n; for f in $fish_function_path/*.fish; test -f $f; and basename $f .fish; end"
     try:
@@ -85,12 +86,11 @@ def command_groups(command: str) -> Iterator[list[str]]:
 
 def script_name(token: str) -> str | None:
     """Return the ~/code/scripts script named by a command token."""
-    if token in scripts:
-        return token
-    if token.startswith("./") and token[2:] in scripts:
-        return token[2:]
+    name = token.removeprefix("./")
     match = re.search(r"(?:^|/)code/scripts/([^/]+)$", token)
-    return match.group(1) if match and match.group(1) in scripts else None
+    name = match.group(1) if match else name
+    name = renames.get(name, name)
+    return name if name in scripts else None
 
 
 def invoked_names(words: list[str]) -> Iterator[str]:

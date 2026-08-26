@@ -1,5 +1,16 @@
 # fish_usage.py
 
+## Support renames, 26 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify `fish_usage.py` MINIMALLY to allow renames. For example, I renamed `transcribe_call.py` to `call` today. I might do similar things in the future. Add tests.
+
+<!-- codex resume 01a03d4b-1f83-7a81-8f45-b106bc4dd6b6 --yolo -->
+
 ## Include scripts, 22 Aug 2026
 
 <!-- https://chatgpt.com/c/6a6c4173-9404-83ec-9fea-af4478777bd0 -->

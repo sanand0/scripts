@@ -10,6 +10,7 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "fish_usage.py"
 SCRIPTS = (
     "browsing_history.py",
+    "call",
     "dev.sh",
     "edge",
     "git-size",
@@ -148,3 +149,23 @@ def test_respects_days_and_reports_last_use_and_kind(fish_home: Path) -> None:
         time.strftime("%Y-%m-%d %H:%M", time.localtime(recent)),
         "function",
     )
+
+
+def test_counts_renamed_scripts_under_their_current_name(fish_home: Path) -> None:
+    now = int(time.time())
+
+    rows = run_usage(
+        fish_home,
+        [
+            ("uv run transcribe_calls.py --dry-run", now - 2),
+            ("/home/sanand/code/scripts/transcribe_calls.py --glob '*.opus'", now - 1),
+            ("call --dry-run", now),
+        ],
+    )
+
+    assert rows["call"] == (
+        3,
+        time.strftime("%Y-%m-%d %H:%M", time.localtime(now)),
+        "script",
+    )
+    assert "transcribe_calls.py" not in rows
