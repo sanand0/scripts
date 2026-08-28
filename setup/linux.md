@@ -113,6 +113,7 @@ sudo apt install -y git-restore-mtime   # git-restore-mtime - Restore file modif
 sudo apt install -y gromit-mpx          # gromit-mpx - On-screen annotation tool (F9 to toggle, F8/Shift F8 to undo/redo)
 sudo apt install -y unicode-data        # unicode-data - Unicode character database (for tv unicode)
 sudo apt install -y toilet toilet-fonts # toilet - CLI banner with color and Unicode support (figlet alternative)
+sudo apt install -y smartmontools nvme-cli  # smartmontools - Disk health monitoring tools (smartctl, smartd) | nvme-cli - NVMe device management
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 
@@ -812,6 +813,14 @@ Desktop
 - Version: fastfetch 2.54.0 (x86_64)
 
 ## Notes
+
+### 28 Aug 2026
+
+<!-- https://chatgpt.com/c/6a9098a0-a878-83ec-87c2-9b0d884110ca -->
+
+My disk is failing. Perhaps because of repeated crashes (NVIDIA bugs and other issues.)
+Regularly run `sudo nvme smart-log /dev/nvme0 | ug -E 'media_errors|num_err_log_entries'`.
+Right now, it's 85. If it increases, the failure is progressing!
 
 ### 29 May 2026
 
