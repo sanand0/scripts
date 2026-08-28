@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -144,3 +145,52 @@ def test_describe_is_json(prompt_home: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["name"] == "prompt"
+
+
+def test_use_counts_last_30_days_descending_by_default(prompt_home: Path) -> None:
+    now = datetime.now().astimezone()
+    log = prompt_home / ".local/share/sanand-scripts/rofi-prompts-log.tsv"
+    log.parent.mkdir(parents=True)
+    log.write_text(
+        "".join(
+            f"{(now - timedelta(days=days)).isoformat()}\t{label}\n"
+            for days, label in [
+                (1, "Review"),
+                (2, "Explain"),
+                (3, "Review"),
+                (31, "Old"),
+            ]
+        )
+    )
+
+    result = run_prompts(prompt_home, "use")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "2\tReview\n1\tExplain\n"
+
+
+def test_use_supports_days_reverse_and_jsonl(prompt_home: Path) -> None:
+    now = datetime.now().astimezone()
+    log = prompt_home / ".local/share/sanand-scripts/rofi-prompts-log.tsv"
+    log.parent.mkdir(parents=True)
+    log.write_text(
+        "".join(
+            f"{(now - timedelta(days=days)).isoformat()}\t{label}\n"
+            for days, label in [
+                (1, "Review"),
+                (2, "Explain"),
+                (3, "Review"),
+                (8, "Old"),
+            ]
+        )
+    )
+
+    result = run_prompts(
+        prompt_home, "use", "--days", "7", "--reverse", "--format", "jsonl"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert [json.loads(line) for line in result.stdout.splitlines()] == [
+        {"prompt": "Explain", "frequency": 1},
+        {"prompt": "Review", "frequency": 2},
+    ]

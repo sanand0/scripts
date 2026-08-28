@@ -8,6 +8,7 @@
 Examples:
   prompt                               # pick with rofi, then paste
   prompt git-commit                    # print the closest prompt
+  prompt use --days 30                 # show recently used prompts and counts
   prompt review --format json | jaq .
   prompt --list --format jsonl | moor
 """
@@ -20,8 +21,9 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from html import escape
 from pathlib import Path
@@ -212,10 +214,43 @@ def describe() -> dict[str, object]:
             "--format": ["text", "json", "jsonl"],
             "--describe": "Print this contract.",
         },
+        "commands": {
+            "use": {
+                "description": "Show prompt frequencies in a recent window.",
+                "options": {"--days": 30, "--reverse": "Sort ascending."},
+            }
+        },
     }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["use"]:
+        parser = argparse.ArgumentParser(
+            prog="prompt use",
+            description="Show recently used prompts and frequencies. Text is frequency<TAB>prompt.",
+        )
+        parser.add_argument(
+            "--days",
+            type=int,
+            default=30,
+            metavar="N",
+            help="Look back N days (default: 30).",
+        )
+        parser.add_argument(
+            "--reverse", action="store_true", help="Sort by frequency ascending."
+        )
+        parser.add_argument(
+            "--format",
+            choices=("text", "json", "jsonl"),
+            default="text",
+            help="Output format.",
+        )
+        args = parser.parse_args(argv[1:])
+        if args.days < 1:
+            parser.error("--days must be at least 1")
+        args.command = "use"
+        return args
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -238,11 +273,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print the machine-readable CLI contract.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.command = "select"
+    return args
+
+
+def recent_use(days: int, reverse: bool) -> list[dict[str, str | int]]:
+    now = datetime.now().astimezone()
+    cutoff = now - timedelta(days=days)
+    log = Path.home() / ".local/share/sanand-scripts/rofi-prompts-log.tsv"
+    counts = Counter()
+    if log.exists():
+        for line in log.read_text().splitlines():
+            timestamp, label = line.split("\t", 1)
+            if cutoff <= datetime.fromisoformat(timestamp) <= now:
+                counts[label] += 1
+    return [
+        {"prompt": prompt, "frequency": frequency}
+        for prompt, frequency in sorted(
+            counts.items(), key=lambda item: (item[1], item[0]), reverse=not reverse
+        )
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.command == "use":
+        rows = recent_use(args.days, args.reverse)
+        if args.format == "json":
+            print(json.dumps(rows, ensure_ascii=False))
+        elif args.format == "jsonl":
+            for row in rows:
+                print(json.dumps(row, ensure_ascii=False))
+        else:
+            for row in rows:
+                print(f"{row['frequency']}\t{row['prompt']}")
+        return 0
     if args.describe:
         print(json.dumps(describe(), ensure_ascii=False))
         return 0

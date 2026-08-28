@@ -1,5 +1,16 @@
 # Prompt
 
+## Add use subcommand, 28 Aug 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/code/:ro,~/.cache/sanand-scripts,~/.local/share/sanand-scripts -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+Modify `prompt` so that `prompt use --days 30` shows the prompts (and frequency) used in the last 30 days, sorted descending, with an option to reverse the sort order. --days defaults to 30. Make it agent friendly - but keep the code change concise.
+
+<!-- codex resume 01a046ec-99f9-7840-b6af-2710dde8c260 --yolo -->
+
 ## Rewrite in Python, rename to `prompt`, 15 Jul 2026
 
 <!--
