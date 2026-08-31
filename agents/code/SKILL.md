@@ -3,6 +3,7 @@ name: code
 description: ALWAYS follow this style when writing Python / JavaScript / HTML / CSS code
 ---
 
+- Inspect relevant code, tests, config, sample input/output before editing. Don't assume structure or behavior you can check directly
 - Minimize new code and changes. Prefer the first working option:
   1. Skip if unnecessary
   2. Reuse existing code
@@ -17,7 +18,8 @@ description: ALWAYS follow this style when writing Python / JavaScript / HTML / 
 - DRY: Use helpers for logic repeated 3+ times, precompute shared intermediates
 - Keep happy path linear and obvious. Write flow first, then fill in code
 - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
-- Change existing code minimally. Retain existing comments. Follow existing style
+- Change existing code minimally. Retain existing comments. Follow existing style.
+  Preserve behavior outside requested changes. Ask before materially expanding scope or touching unrelated files/config
 - Make scripts re-startable if interrupted. Inspect state first for unexpected changes
 
 Docs:
@@ -27,12 +29,16 @@ Docs:
 
 Tests:
 
-- When tests exist, or writing new code, add and run tests first (including edge cases). Keep tests fast
+- When tests exist, or writing new code, add and run tests first
+- Use existing commands and environment - don't reconstruct dependencies ad hoc
+- Run minimal existing tests for changed behavior. Extend relevant existing tests before creating new test/file
+- Lint/format only files you changed. Don't auto-format legacy code unless asked
 - Test final outputs, not just the source / intermediates
-- Test visual artifacts (web pages, docs, slides, PDFs, ...) before finalizing with:
-  - Code that checks the source/DOM (for interactions, navigation, overlaps, cut-off elements, readability, colour/font size count, ...)
-  - Screenshots (for responsive layout, overlaps, contrast & visibility, visual impact, ...)
-  - Lighthouse audit (for accessibility) via Chrome DevTools MCP else `npx -y lighthouse@latest`
+- Test user-visible front-end changes with:
+  - DOM/source checks for behavior: interactions, navigation, overlaps, cut-off elements, readability, colour/font size count, ...
+  - Screenshots for appearance changes: responsive layout, overlaps, contrast & visibility, visual impact, ...
+  - Lighthouse audit via Chrome DevTools MCP else `npx -y lighthouse@latest`: when semantics, controls, colors, performance changes
+- Keep tests fast
 - Never say "verified" without evidence. List changes, validations with results, and remaining risks/unknowns
 
 Ops:
@@ -45,7 +51,8 @@ Bug fixes:
 
 ## Python
 
-Prefer `uv run --with pkg1 --with pkg2 script.py`, `uvx --from pkg cmd` over `python` or `python3`
+Avoid `python` or `python3`. Prefer `uv run script.py` for PEP 723 scripts and `uv run --with pkg ...` for ad-hoc code/tests.
+Tests importing a PEP 723 script must use the repo test environment or explicitly include its dependencies.
 
 Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies as PEP 723 metadata:
 
@@ -57,12 +64,12 @@ Avoid `requirements.txt`. Unless `pyproject.toml` is present, add dependencies a
 # ///
 ```
 
-Prefer:
+Prefer when really needed:
 
-- typer / click not argparse
-- httpx not requests
-- lxml not xml
-- duckdb / pandas not csv
+- typer|click > argparse
+- httpx2 > httpx > requests
+- lxml > xml
+- duckdb > pandas > csv
 - tenacity for retries
 
 ## Web
@@ -93,5 +100,5 @@ Preferred JS style:
 - Handle expected/recoverable errors where they occur; let unexpected errors propagate to a top-level handler
 - Prefer `textContent`/DOM APIs for untrusted content; never interpolate untrusted data into `innerHTML`
 
-Debug front-end apps with agent-browser, rodney, Playwright via CDP on localhost:9222.
-For single-page HTML files try `file://` if a server may not be needed.
+Debug front-end apps with agent-browser, Playwright via CDP on localhost:9222.
+For single-page HTML, prefer `file://` when a server isn't required.
