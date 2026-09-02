@@ -236,6 +236,7 @@ def normalize_mail(message: dict[str, Any], account: str) -> dict[str, Any]:
         "to": hdr.get("to", ""),
         "size": message.get("sizeEstimate"),
         "id": message.get("id"),
+        "thread_id": message.get("threadId"),
     }
     return add_present(row, cc=hdr.get("cc", ""), bcc=hdr.get("bcc", ""), attachments=attachments(message))
 
@@ -279,11 +280,20 @@ def normalize_calendar(event: dict[str, Any], account: str) -> dict[str, Any]:
         "end_time": event_time(event.get("end") or {}),
         "id": event.get("id"),
     }
+    attendee_status = {
+        item["email"]: item["responseStatus"]
+        for item in attendees
+        if item.get("email") and item.get("responseStatus")
+    }
     return add_present(
         row,
         location=clean_text(event.get("location")),
         organizer=(event.get("organizer") or {}).get("email", ""),
         hangout_link=event.get("hangoutLink", ""),
+        recurring_event_id=event.get("recurringEventId", ""),
+        original_start_time=event_time(event.get("originalStartTime") or {}),
+        status=event.get("status", ""),
+        attendee_status=attendee_status,
     )
 
 
@@ -412,6 +422,9 @@ def normalize_chat(message: dict[str, Any], space: dict[str, Any], users: dict[s
     }
     return add_present(
         row,
+        sender_id=sender.get("name", ""),
+        space_id=space.get("name", ""),
+        thread_id=(message.get("thread") or {}).get("name", ""),
         reactions=normalize_reactions(message.get("emojiReactionSummaries") or []),
         attachments=attachments_meta,
         cards=len(cards),
@@ -453,6 +466,11 @@ def describe() -> dict[str, Any]:
             "chat_users": "~/Documents/data/{email}/chat-users.jsonl",
         },
         "common_fields": ["time", "id"],
+        "native_relationship_fields": {
+            "mail": ["thread_id"],
+            "calendar": ["recurring_event_id", "original_start_time", "status", "attendee_status"],
+            "chat": ["sender_id", "space_id", "thread_id"],
+        },
         "filters": ["--days", "--since", "--until", "--sources"],
         "examples": ["backupgoogle.py --days 3", "backupgoogle.py --since 2026-05-11 --sources chat,mail"],
     }

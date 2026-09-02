@@ -1,5 +1,9 @@
 # Backup Google
 
+## Add useful fields, 02 Sep 2026
+
+<!-- Preserve Gmail thread IDs, Calendar recurrence/RSVP metadata, and Google Chat sender/space/thread IDs. https://chatgpt.com/c/6a97cdc6-1dc8-83ec-89e9-a523cafe7258 -->
+
 ## Migrate emails, 03 Jun 2026
 
 <!--
