@@ -247,20 +247,62 @@ def reorder_metadata(old: dict, updates: dict, meta_keys: list[str], meta_positi
 
 # ── Speaker extraction helpers (transcript-specific) ──────────────────────────
 
-_PLACEHOLDER = re.compile(
-    r"(unknown|unsure|multiple|inaudible|speaker|participant|member|moderator"
-    r"|researcher|voiceover|female|male|audience|narrator|host|interviewer)",
-    re.IGNORECASE,
-)
+# Keep these semantic (roles / analysis structure), never entity-specific names or phrases.
+_GENERIC_SPEAKER_LABELS = {
+    "all", "cashier", "doctor", "everyone", "facilitator", "faculty", "group", "host",
+    "human", "client", "professor", "server", "sme", "someone", "source", "student", "students", "teacher", "unknown",
+    "unsure", "waiter", "waitress", "woman", "you",
+}
+_ROLE_ENDINGS = {
+    "assistant", "attendee", "attendees", "audience", "audio", "interviewer", "lead", "member",
+    "members", "moderator", "narration", "narrator", "panelist", "panelists", "participant",
+    "participants", "partner", "presenter", "presenters", "rep", "researcher", "researchers", "speaker",
+    "speakers", "staff", "team", "tech", "video", "voice", "voiceover",
+}
+_META_STARTS = {"better", "how", "invalid", "key", "next", "notes", "possible", "possibly-invalid", "potentially", "references", "step", "then", "try", "what", "why"}
+_META_WORDS = {
+    "action", "actions", "answer", "assumption", "assumptions", "behavior", "belief", "beliefs", "change", "correction",
+    "corrections", "engagement", "error", "impact", "insight", "insights", "intent", "iteration",
+    "measurable", "meta-insight", "miss", "move", "outcome", "persona", "phrasing", "prompt",
+    "question", "quote", "reason", "recap", "response", "strategy", "summary", "takeaways",
+}
+
+
+def _is_analysis_label(words: list[str]) -> bool:
+    if not words:
+        return False
+    if len(words) == 1:
+        return words[0] in _META_WORDS
+    if words[0] in _META_STARTS or words[0] in _META_WORDS:
+        return True
+    if words[0] in {"the", "their", "your", "his", "her", "my", "our"} and words[-1] in _META_WORDS:
+        return True
+    if (words[0].endswith("'s") or words[0].endswith("’s")) and words[-1] in _META_WORDS:
+        return True
+    return words[:2] == ["to", "recap"]
+
+
+def _is_real_name_part(name: str) -> bool:
+    """Reject generic role / analysis labels without substring-matching real names."""
+    normalized = name.casefold().strip()
+    words = re.findall(r"[\w’'.-]+", normalized)
+    return (
+        bool(words)
+        and not name.startswith("[")
+        and "implied" not in words
+        and not re.search(r"\s\d+$", name)
+        and normalized not in _GENERIC_SPEAKER_LABELS
+        and words[0] not in _ROLE_ENDINGS
+        and words[-1] not in _ROLE_ENDINGS
+        and not _is_analysis_label(words)
+        and not (len(words) > 1 and words[-1] in {"ai", "bot"})
+        and not any(marker in name for marker in (" + ", " ↔ ", " -> ", " → ", " & "))
+    )
 
 
 def _is_real_name(name: str) -> bool:
-    return (
-        bool(name)
-        and not _PLACEHOLDER.search(name)
-        and not re.search(r"\s\d+$", name)
-        and len(name.split()) <= 3
-    )
+    parts = [part.strip() for part in re.split(r"\s*/\s*", name)]
+    return len(parts) <= 3 and all(_is_real_name_part(part) for part in parts)
 
 
 def _clean_name(raw: str) -> str:
@@ -268,8 +310,13 @@ def _clean_name(raw: str) -> str:
 
 
 def extract_speakers(body: str) -> list[str]:
-    """Extract bold speaker names (e.g. **Anand**: ...) from transcript body."""
-    names = (_clean_name(raw) for raw in re.findall(r"\*\*([^*]+)\*\*\s*:", body))
+    """Extract bold speaker labels from the transcript section, ignoring analysis before it."""
+    match = re.search(r"^#{1,4}\s+Transcript\b.*$", body, re.MULTILINE | re.IGNORECASE)
+    transcript = body[match.end():] if match else body
+    names = (
+        _clean_name(raw)
+        for raw in re.findall(r"^[ \t]{0,3}\*\*([^*:\n]+?)(?:\*\*\s*:|:\*\*)", transcript, re.MULTILINE)
+    )
     return list(dict.fromkeys(n for n in names if _is_real_name(n)))
 
 
@@ -584,7 +631,7 @@ CONTENT_SETS: list[ContentSet] = [
             ),
             FieldDef(
                 name="people",
-                description="First names of clearly identified speakers only. Empty list if none.",
+                description="Clearly identified speaker names only. Empty list if none.",
                 pydantic_type=list[str],
                 to_yaml=flow_list,
                 extract=extract_speakers,  # try regex first; falls back to AI if empty

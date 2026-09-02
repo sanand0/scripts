@@ -139,6 +139,43 @@ def test_missing_selected_field_is_added_without_regenerating_existing_fields(
     assert metadata['what-i-missed'] == []
 
 
+def test_extract_speakers_ignores_bulleted_analysis_labels_and_generic_roles() -> None:
+    body = """**Fact-checks cited**: not a speaker
+- **Persona**: profile
+- **Insights**: observation
+## Transcript
+**Anand**: [00:01] Hello.
+**Arvind:** [00:02] Hi.
+**Question**: Not a named speaker.
+**Team:** Also not a named speaker.
+"""
+    assert summarize.extract_speakers(body) == ['Anand', 'Arvind']
+
+
+@pytest.mark.parametrize("name", [
+    "Kamalesh", "Maleeha Khan", "Alice Hostetter", "Mark Staffieri", "Bhalchandra Doctor",
+    "Dr. Harsh Vardhan", "A. P. J. Abdul Kalam", "Syed Abdullah M J Shah",
+    "Nguyễn Thị Minh", "José Ángel", "Ai Tanaka", "Howe", "Whyte", "James Reason", "Pavan/Varun",
+])
+def test_real_name_filter_accepts_likely_future_names(name: str) -> None:
+    assert summarize.clean_people([name]) == [name]
+
+
+@pytest.mark.parametrize("label", [
+    "Speaker 1", "Female Speaker", "Multiple Speakers", "Team Member", "Participants", "Audience Question",
+    "Client Lead", "Straive Tech", "ACS Staff", "EU Holidays Rep", "Background Voice",
+    "Video Narration", "Debjani's assistant", "Perplexity AI", "NotebookLM Video",
+    "Krishna's Insight", "Key Takeaways", "What you meant", "Why it matters",
+    "How they responded", "Next steps", "Better move", "Possibly-invalid assumptions",
+    "Question", "Answer", "All", "Someone", "Cashier", "Doctor", "Student", "Group",
+    "To recap", "Then, last iteration", "Engagement Strategy", "Measurable outcome",
+    "Behavior change", "My response", "Our strategy", "Potentially invalid assumptions",
+    "Action item", "Step one", "Client", "Research Partner", "Source",
+])
+def test_real_name_filter_rejects_generic_roles_and_analysis_labels(label: str) -> None:
+    assert summarize.clean_people([label]) == []
+
+
 def test_clean_what_i_missed_normalizes_reason_taxonomy() -> None:
     cleaned = summarize.clean_what_i_missed(
         ['Mayank — Bid: x. Better move: y. Possible reason: topic.']

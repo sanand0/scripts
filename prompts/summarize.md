@@ -1,5 +1,9 @@
 # Summarize
 
+## Improve speaker identification, 02 Sep 2026
+
+<!-- Skip names like All, Unsure, Attendee, etc. in people: https://chatgpt.com/c/6a97cdc6-1dc8-83ec-89e9-a523cafe7258 -->
+
 ## Improve blog summarization, 21 Aug 2026
 
 <!-- https://chatgpt.com/c/6a87fc22-51d0-83ee-8381-200ce9144a72 -->
