@@ -91,6 +91,8 @@ Here are the setup details for my laptops.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
 - [consolidate_transcripts.py](consolidate_transcripts.py) aggregates lessons from my call transcript into a unified transcripts.md.
+- [context.py](context.py) builds a deterministic SQLite FTS5 index across transcripts, profiles, messages, conversations, and project assets, preserving source IDs and locators for follow-up reads.
+  - Rebuild the index with `context.py rebuild`; query it with `context.py search "QUERY"`, `context.py entity PERSON`, or `context.py open-loops`.
 - [discourse.py](discourse.py) extracts recent posts from a Discourse category or topic.
 - [dock.sh](dock.sh) restarts GNOME user extensions and the Ubuntu AppIndicators extension after screen blanking breaks the dock/tray state.
 - [fish_usage.py](fish_usage.py) shows the most common fish commands used in the last 90 days.

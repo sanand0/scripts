@@ -715,6 +715,8 @@ def test_bash_tool_exposes_and_uses_cwd_and_dynamic_mount_description(tmp_path, 
     assert "cwd" in bash_tool.inputSchema["properties"]
     assert f"cwd: {mcpserver.display_path(Path.cwd())} (" in bash_tool.description
     assert "mounted paths (rw = read-write, ro = read-only):" in bash_tool.description
+    assert "uv run context.py search QUERY" in bash_tool.description
+    assert "Deep-read returned locators" in bash_tool.description
     assert "unfamiliar/version-sensitive CLI" in bash_tool.description
     assert "JSON vs JSONL" in bash_tool.description
     assert "project-native verification" in bash_tool.description

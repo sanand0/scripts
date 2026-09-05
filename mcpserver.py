@@ -130,6 +130,10 @@ MOUNTED_PATHS = [
         "WhatsApp exports. Use `jaq` fields `.time`, `.author`, `.text`",
     ),
     (
+        "~/Documents/data/context/context.sqlite",
+        "cross-source context index; query via `uv run context.py ...`, then deep-read returned locators",
+    ),
+    (
         "~/Documents/data/browsing-history.db",
         "SELECT url, timestamp, visit_count, ... FROM activity",
     ),
@@ -591,6 +595,11 @@ def build_bash_description(
 cwd: {display_path(cwd)} ({path_access_mode(cwd)})
 
 {mounted_paths_text(mounted_paths)}
+
+Use `uv run context.py search QUERY` for cross-source personal context
+(or `entity`, `recent`, `open-loops`, `thread`, `style`, `assets`) to find candidates.
+Deep-read returned locators before using important claims as evidence;
+fall back to direct source scans when needed.
 
 Avoid broad scans over large file lists - `$HOME`, `~/.*`, `~/code`, `~/Documents`, or archives - unless necessary.
   Scope to known subdirs. Prefer `fd`/`ug` to respect `.gitignore` and shrink long listings.

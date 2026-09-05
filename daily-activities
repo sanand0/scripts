@@ -197,6 +197,7 @@ else
   run_job "summary" "$UV" run /home/sanand/code/summary.py || failures=$((failures + 1))
   run_job "summarize-blog" "$UV" run /home/sanand/code/scripts/summarize.py blog || failures=$((failures + 1))
   run_job "summarize-transcript" "$UV" run /home/sanand/code/scripts/summarize.py transcript || failures=$((failures + 1))
+  run_job "context-rebuild" "$UV" run /home/sanand/code/scripts/context.py rebuild || failures=$((failures + 1))
   run_unmetered_job "rclone-files" "$RCLONE" bisync "$HOME/r2/files" r2:files "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
   run_unmetered_job "rclone-private" "$RCLONE" bisync "$HOME/r2/private" r2:private "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
   run_unmetered_job "rclone-redirect" "$RCLONE" bisync "$HOME/r2/redirect" r2:redirect "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))

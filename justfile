@@ -5,7 +5,7 @@ playwright_revision := "1234"
 fastmcp := "3.4.7"
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-transcribe-calls
+test: test-agentlog test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-transcribe-calls
 
 # Run the agentlog tests.
 test-agentlog:
@@ -46,6 +46,14 @@ test-chatgpt: playwright-install
 # Run the Codex tag-index tests.
 test-codextags:
     {{ pytest }} --with bashlex --with orjson --with typer pytest -q tests/test_codextags.py
+
+# Run the deterministic cross-source context index tests.
+test-context:
+    {{ pytest }} --with pyyaml --with typer pytest -q tests/test_context.py
+
+# Rebuild the local cross-source context index.
+context-rebuild:
+    uv run context.py rebuild
 
 # Run the Edge CLI tests.
 test-edge:
