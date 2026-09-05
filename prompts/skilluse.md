@@ -1,5 +1,26 @@
 # skilluse
 
+## Fix tests, 05 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-5.6-luna --config model_reasoning_effort=xhigh
+-->
+
+`just test-skilluse` fails. Identify the problem. Think about the right solution and fix.
+
+<!--
+
+• The root cause is a regression in commit 4535489: it changed the default scan sequence to Codex → Claude → Copilot, even though the existing contract/test expects
+  the fast sources first (Claude → Copilot → Codex). That sequence matters for streaming text output; JSON intentionally sorts after collection. I’ll restore the
+  fast-first sequence and keep the regression test as the guard.
+
+-->
+
+<!-- codex resume 01a07086-6cb9-7971-b87b-44c840de8d3a --yolo -->
+
+## Fix detection, 16 Jul 2026
+
 <!--
 cd ~/code/scripts
 dev.sh -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium

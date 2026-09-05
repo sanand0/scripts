@@ -5,8 +5,8 @@
 # ///
 """Back up WhatsApp Web conversations through Chrome DevTools Protocol.
 
-Daily run logs are in ``~/.cache/sanand-scripts/backupwhatsapp/``: monthly
-``YYYY-MM-runs.jsonl`` event logs, ``latest.json``, and diagnostic ZIPs.
+Daily run logs are in ~/.cache/sanand-scripts/backupwhatsapp/:
+  monthly YYYY-MM-runs.jsonl event logs, latest.json, and diagnostic ZIPs.
 
 Examples:
   backupwhatsapp.py --limit 5

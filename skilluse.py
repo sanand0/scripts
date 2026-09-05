@@ -45,7 +45,7 @@ SHELL_WRAPPERS = {
     "time",
     "timeout",
 }
-AGENTS = ("codex", "claude", "copilot")
+AGENTS = ("claude", "copilot", "codex")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -492,13 +492,6 @@ def iter_skill_use(
     skill_globs: tuple[str, ...],
 ) -> Iterator[SkillUse]:
     seen: set[tuple[str, str, str]] = set()
-    if "codex" in agents:
-        yield from _scan_codex(
-            codex_root.expanduser(),
-            agents_root,
-            seen=seen,
-            skill_globs=skill_globs,
-        )
     if "claude" in agents:
         yield from _scan_claude(
             claude_root.expanduser(),
@@ -509,6 +502,13 @@ def iter_skill_use(
     if "copilot" in agents:
         yield from _scan_copilot(
             copilot_root.expanduser(),
+            agents_root,
+            seen=seen,
+            skill_globs=skill_globs,
+        )
+    if "codex" in agents:
+        yield from _scan_codex(
+            codex_root.expanduser(),
             agents_root,
             seen=seen,
             skill_globs=skill_globs,
