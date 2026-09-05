@@ -5,6 +5,9 @@
 # ///
 """Back up WhatsApp Web conversations through Chrome DevTools Protocol.
 
+Daily run logs are in ``~/.cache/sanand-scripts/backupwhatsapp/``: monthly
+``YYYY-MM-runs.jsonl`` event logs, ``latest.json``, and diagnostic ZIPs.
+
 Examples:
   backupwhatsapp.py --limit 5
   backupwhatsapp.py --conversation "Family" --conversation "Notes" --format jsonl
@@ -44,7 +47,7 @@ MAIN_SELECTOR = "div#main"
 INCREMENTAL_SORT_SAFETY = 4
 INCREMENTAL_LOOKBACK_DAYS = 3
 INCREMENTAL_PAST_CUTOFF_PAGES = 2
-CHAT_LIST_SCROLL_PAGE_FACTOR = 1.5
+CHAT_LIST_SCROLL_PAGE_FACTOR = 0.8
 RUN_FIELDS = {"scrapedAt"}
 METADATA_FIELDS = {"conversationTitle", "conversationId", "userId"}
 
@@ -270,8 +273,12 @@ CHAT_LIST_JS = r"""
     const count = label.match(/(\d+)\s+unread/i);
     return { unread, unreadCount: count ? Number(count[1]) : (unread ? 1 : 0), unreadText: label.trim() };
   };
+  const paneRect = pane.getBoundingClientRect();
   const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')]
-    .filter((row) => row.offsetParent && row.innerText.trim());
+    .filter((row) => {
+      const rect = row.getBoundingClientRect();
+      return row.offsetParent && row.innerText.trim() && rect.bottom > paneRect.top && rect.top < paneRect.bottom;
+    });
   const timePattern = new RegExp(`^(?:\\d{1,2}:\\d{2}(?:\\s?[ap]m)?|today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{2,4})?|(?:${monthNames})\\s+\\d{1,2})$`, "i");
   return {
     scrollTop: pane.scrollTop,
@@ -308,7 +315,11 @@ CLICK_CHAT_JS = r"""
 ({ title, conversationId }) => {
   const pane = document.querySelector("#pane-side");
   const chatIdFor = %CHAT_ID_JS%;
-  const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')];
+  const paneRect = pane.getBoundingClientRect();
+  const rows = [...pane.querySelectorAll('[role="listitem"], [role="row"]')].filter((row) => {
+    const rect = row.getBoundingClientRect();
+    return row.offsetParent && rect.bottom > paneRect.top && rect.top < paneRect.bottom;
+  });
   const row = rows.find((candidate) => conversationId && chatIdFor(candidate) === conversationId)
     || rows.find((candidate) => [...candidate.querySelectorAll("[title]")].some((node) => node.getAttribute("title") === title));
   const titleNode = row?.querySelector(`[title="${CSS.escape(title)}"]`) || row?.querySelector("[title]") || row;
@@ -323,7 +334,7 @@ CLICK_CHAT_JS = r"""
 }
 """.replace("%CHAT_ID_JS%", CHAT_ID_JS)
 SCROLL_HISTORY_JS = r"""
-({ cutoff, maxMessages, maxRounds, settleMs }) => new Promise(async (resolve) => {
+({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs }) => new Promise(async (resolve) => {
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   const seen = Object.create(null);
   const richness = (value) => {
@@ -391,11 +402,13 @@ SCROLL_HISTORY_JS = r"""
   };
   const additionalFields = (row) => {
     const video = row.querySelector('[data-testid~="video-content"], [aria-label="Open video player" i]');
+    const image = row.querySelector('[aria-label="Open picture" i]');
     const videoCaption = row.querySelector('[data-testid~="video-caption"]')?.innerText?.trim();
     return {
       ...(row.querySelector('[data-testid="forwarded-header"]') ? { isForwarded: true } : {}),
       ...([...row.querySelectorAll("span")].some((node) => node.innerText?.trim().toLowerCase() === "edited") ? { isEdited: true } : {}),
       ...(video ? { mediaType: "video" } : {}),
+      ...(!video && image ? { mediaType: "image" } : {}),
       ...(videoCaption ? { mediaCaption: videoCaption } : {}),
     };
   };
@@ -403,7 +416,7 @@ SCROLL_HISTORY_JS = r"""
     const times = Object.create(null);
     const rows = Object.create(null);
     const main = document.querySelector("div#main");
-    let currentDate = null;
+    let currentDate = fallbackTime ? new Date(fallbackTime) : null;
     for (const node of main?.querySelectorAll("div, span") || []) {
       const row = node.matches?.('[role="row"]') ? node : null;
       if (row) {
@@ -445,7 +458,7 @@ SCROLL_HISTORY_JS = r"""
     }
     const messageIds = new Set(messages.map((msg) => msg.messageId));
     for (const row of Object.values(corrected.rows)) {
-      if (!messageIds.has(row.messageId) && (row.text || row.author)) messages.push(row);
+      if (!messageIds.has(row.messageId) && (row.text || row.author || row.mediaType)) messages.push(row);
     }
     for (const msg of messages) seen[msg.messageId] = merge(seen[msg.messageId], msg);
     return Object.values(seen);
@@ -923,6 +936,7 @@ def describe() -> dict[str, Any]:
         "primary_key": "messageId",
         "conversation_key": "conversationId",
         "history": "~/Documents/data/whatsapp/.history/{conversation file stem}.history.jsonl",
+        "logs": "~/.cache/sanand-scripts/backupwhatsapp/{YYYY-MM-runs.jsonl,latest.json}",
         "cdp": CDP_URL,
         "filters": ["--conversation", "--name", "--updated-since", "--updated-until", "--since", "--until", "--max-messages", "--limit"],
         "examples": [
@@ -975,12 +989,10 @@ async def iter_chats(page: CDPPage, max_scan: int, stop_at: dt.datetime | None =
     await page.eval_on_selector(CHAT_LIST_SELECTOR, "(pane) => pane.scrollTop = 0")
     await page.wait_for_timeout(400)
     seen: dict[str, dict[str, Any]] = {}
-    stale = 0
     warned_unsorted = False
     past_cutoff_pages = 0
     for _ in range(max_scan):
         data = await list_chats(page)
-        before = len(seen)
         new_chats = []
         for chat in data["chats"]:
             key = chat.get("conversationId") or chat["title"]
@@ -988,10 +1000,6 @@ async def iter_chats(page: CDPPage, max_scan: int, stop_at: dt.datetime | None =
                 continue
             seen[key] = chat
             new_chats.append(chat)
-        if len(seen) == before:
-            stale += 1
-        else:
-            stale = 0
         ordered = list(seen.values())
         if checked_state is not None:
             violations = sorted_time_violations(ordered)
@@ -1023,7 +1031,7 @@ async def iter_chats(page: CDPPage, max_scan: int, stop_at: dt.datetime | None =
                 covered_tail = covered_tail + 1 if known_no_new_content(chat, checked_state) else 0
             if covered_tail >= INCREMENTAL_SORT_SAFETY:
                 break
-        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4 or stale >= 10:
+        if data["scrollTop"] + data["clientHeight"] >= data["scrollHeight"] - 4:
             break
         await page.eval_on_selector(CHAT_LIST_SELECTOR, f"(pane) => pane.scrollTop += pane.clientHeight * {CHAT_LIST_SCROLL_PAGE_FACTOR}")
         await page.wait_for_timeout(500)
@@ -1077,10 +1085,26 @@ async def open_chat(page: CDPPage, title: str, conversation_id: str, max_scan: i
     return False, "not-found"
 
 
-async def scrape_open_chat(page: CDPPage, cutoff: dt.datetime | None, max_messages: int, max_rounds: int, settle_ms: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+async def scrape_open_chat(
+    page: CDPPage,
+    cutoff: dt.datetime | None,
+    fallback_time: dt.datetime | None,
+    max_messages: int,
+    max_rounds: int,
+    settle_ms: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     await inject_scraper(page, SCRAPER)
     cutoff_text = cutoff.isoformat() if cutoff else ""
-    scroll = await page.evaluate(SCROLL_HISTORY_JS, {"cutoff": cutoff_text, "maxMessages": max_messages, "maxRounds": max_rounds, "settleMs": settle_ms})
+    scroll = await page.evaluate(
+        SCROLL_HISTORY_JS,
+        {
+            "cutoff": cutoff_text,
+            "fallbackTime": fallback_time.isoformat() if fallback_time else "",
+            "maxMessages": max_messages,
+            "maxRounds": max_rounds,
+            "settleMs": settle_ms,
+        },
+    )
     messages = scroll.pop("messages", [])
     unique = {row_key(row): row for row in messages if row.get("messageId")}
     conversation_id = await current_chat_id(page)
@@ -1211,7 +1235,7 @@ async def run_backup(
                     continue
                 run_stats["opened_chats"] += 1
                 with trace.span("scrolling", {"conversation_hash": obs.short_hash(chat_key(title, expected_id))}):
-                    messages, scroll = await scrape_open_chat(page, chat["since"], max_messages, max_scroll_rounds, settle_ms)
+                    messages, scroll = await scrape_open_chat(page, chat["since"], chat["list_time"], max_messages, max_scroll_rounds, settle_ms)
                 opened_conversation_id = scroll.get("conversation_id") or ""
                 conversation_id = opened_conversation_id or ("" if expected_id else chat.get("conversationId") or "")
                 chat_stats = {

@@ -1,5 +1,17 @@
 # backupwhatsapp.py
 
+## Fix errors and log, 05 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data/whatsapp -- codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+backupwhatsapp.py generated the "skipped" messages in ~/Documents/data/whatsapp/temp-errors-2026-09-05.log. Find out why and fix it. Re-run and make sure it's fixed.
+Also, save logs of daily runs in a similar way to how most other scripts in this repo save logs. (Let me know where to find logs. Document this in the script docstring.)
+
+<!-- codex resume 01a06f3f-1872-7f63-8524-6a1e0795b350 --yolo -->
+
 ## Run, fix errors, 15 Jun 2026
 
 <!--

@@ -84,6 +84,53 @@ def test_open_chat_fails_closed_when_identity_does_not_change() -> None:
     assert not opened
 
 
+def test_chat_list_scans_overlap_virtualized_rows() -> None:
+    assert 0 < backup.CHAT_LIST_SCROLL_PAGE_FACTOR <= 1
+
+
+def test_chat_scan_does_not_stop_on_repeated_virtualized_rows(monkeypatch) -> None:
+    class FakePage:
+        index = 0
+
+        async def wait_for_selector(self, selector, timeout):
+            return None
+
+        async def eval_on_selector(self, selector, expression):
+            self.index = 0 if "= 0" in expression else self.index + 1
+
+        async def wait_for_timeout(self, timeout):
+            return None
+
+    async def fake_list_chats(page):
+        title = "Target" if page.index == 12 else "Cached row"
+        return {"scrollTop": page.index, "clientHeight": 1, "scrollHeight": 100, "chats": [{"title": title, "conversationId": title}]}
+
+    monkeypatch.setattr(backup, "list_chats", fake_list_chats)
+
+    chats = asyncio.run(backup.iter_chats(FakePage(), 15))
+
+    assert [chat["title"] for chat in chats] == ["Cached row", "Target"]
+
+
+def test_scrape_open_chat_passes_chat_list_time_as_dom_fallback(monkeypatch) -> None:
+    class FakePage:
+        async def evaluate(self, expression, arg=...):
+            if expression == backup.SCROLL_HISTORY_JS:
+                assert arg["fallbackTime"] == "2026-09-05T01:24:00+00:00"
+                return {"messages": []}
+            if "parser_dom_count" in expression:
+                return {"parser_dom_count": 0, "history_scroller_found": False}
+            return "123@g.us"
+
+    async def no_inject(page, scraper):
+        return None
+
+    monkeypatch.setattr(backup, "inject_scraper", no_inject)
+    fallback_time = dt.datetime(2026, 9, 5, 1, 24, tzinfo=dt.UTC)
+
+    asyncio.run(backup.scrape_open_chat(FakePage(), None, fallback_time, 0, 0, 0))
+
+
 def test_richer_replacement_preserves_previous_value_in_history(tmp_path: Path) -> None:
     path = tmp_path / "Chat [123@g.us].jsonl"
     path.write_text('{"messageId":"m1","text":"old"}\n')
