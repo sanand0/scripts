@@ -230,7 +230,7 @@ Assistant-only cobalt answer.
 
     config = context.SourceConfig.for_home(home)
     db = home / "Documents/data/context/context.sqlite"
-    log = home / ".cache/sanand-scripts/context/queries.jsonl"
+    log = home / ".cache/sanand-scripts/context/test-queries.jsonl"
     context.rebuild_database(db, config)
     return home, config, db, log
 

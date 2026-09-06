@@ -34,7 +34,7 @@ import yaml
 
 app = typer.Typer(add_completion=False, help=__doc__)
 DEFAULT_DB = Path("~/Documents/data/context/context.sqlite").expanduser()
-DEFAULT_LOG = Path("~/Documents/data/context/query-log.jsonl").expanduser()
+DEFAULT_LOG = Path("~/.cache/sanand-scripts/context/queries.jsonl").expanduser()
 DATE_FILE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:[ -]|$)")
 WORD = re.compile(r"[^\W_]+(?:[._+@/-][^\W_]+)*", re.UNICODE)
 # Keep action routing explicit: recognize concrete requests without treating bare "action" or "what happened" as action queries.

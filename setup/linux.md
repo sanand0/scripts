@@ -822,6 +822,9 @@ My disk is failing. Perhaps because of repeated crashes (NVIDIA bugs and other i
 Regularly run `sudo nvme smart-log /dev/nvme0 | ug -E 'media_errors|num_err_log_entries'`.
 Right now, it's 85. If it increases, the failure is progressing!
 
+- 28 Aug 2026. 85. Baseline.
+- 06 Sep 2026. 86. After a crash on 04 Sep 2026.
+
 ### 29 May 2026
 
 Undo change made on 13 Feb 2026 and set `GRUB_DEFAULT=0` based on advice from [`/home/sanand/code/infra/docker-nvidia-issue`](https://github.com/sanand0/infra/tree/main/docker-nvidia-issue)
