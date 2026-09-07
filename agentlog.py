@@ -316,6 +316,8 @@ def _event_kind(raw: dict[str, Any]) -> str:
             role = payload.get("role")
             if isinstance(role, str) and role:
                 return _normalize_kind(role)
+        if payload_type == "agent_message":
+            return "assistant"
         if payload_type in {
             "function_call",
             "custom_tool_call",
@@ -1567,6 +1569,17 @@ class CodexBackend:
                 return raw_args
         return raw_args
 
+    def _response_message_text(self, payload: dict[str, Any], role: str) -> str:
+        if payload.get("type") != "message" or payload.get("role") != role:
+            return ""
+        meta = payload.get("internal_chat_message_metadata_passthrough")
+        kinds = meta.get("content_item_kinds") if isinstance(meta, dict) else None
+        if role == "user" and kinds and not any(
+            isinstance(kind, str) and kind.startswith("user.") for kind in kinds
+        ):
+            return ""
+        return self._content_text(payload.get("content")).strip()
+
     def _tool_command(self, args: Any) -> str:
         if isinstance(args, dict):
             if "cmd" in args and isinstance(args["cmd"], str):
@@ -1804,6 +1817,11 @@ class CodexBackend:
                     cwd = raw_cwd
                     break
         parts.append(_session_header(events, session_id, cwd))
+        legacy_chat = {
+            _event_kind(event.raw)
+            for event in events
+            if event.raw.get("type") == "event_msg"
+        }
         for event in events:
             raw = event.raw
             if not _matches_kind(event, kind_filter):
@@ -1868,7 +1886,19 @@ class CodexBackend:
                 continue
             if kind == "response_item" and isinstance(payload, dict):
                 payload_type = payload.get("type")
-                if payload_type == "reasoning":
+                role = payload.get("role")
+                if payload_type == "message" and role in {"user", "assistant"} and role not in legacy_chat:
+                    text = self._response_message_text(payload, role)
+                    if text:
+                        parts.append(md_heading(2, role))
+                        parts.append(text + "\n")
+                elif payload_type == "agent_message":
+                    text = self._content_text(payload.get("content")).strip()
+                    if text:
+                        author = payload.get("author")
+                        parts.append(md_heading(2, f"subagent {author}" if author else "subagent"))
+                        parts.append(text + "\n")
+                elif payload_type == "reasoning":
                     summary = payload.get("summary")
                     if isinstance(summary, list):
                         text = "\n\n".join(
@@ -1882,7 +1912,7 @@ class CodexBackend:
                     if text:
                         parts.append(md_details("reasoning", text, open_details=True))
                 elif payload_type in {"function_call", "custom_tool_call"}:
-                    args = self._tool_args(payload.get("arguments"))
+                    args = self._tool_args(payload.get("arguments", payload.get("input")))
                     command = self._tool_command(args)
                     call_id = payload.get("call_id")
                     if isinstance(call_id, str):
@@ -1896,8 +1926,11 @@ class CodexBackend:
                         or (isinstance(args, dict) and not args)
                         or (isinstance(args, list) and not args)
                     )
-                    body = (md_code("bash", command) if command else "") + (
-                        md_code("json", json_pretty(args)) if has_args else ""
+                    body = (
+                        md_code("txt", args)
+                        if isinstance(args, str)
+                        else (md_code("bash", command) if command else "")
+                        + (md_code("json", json_pretty(args)) if has_args else "")
                     )
                     parts.append(
                         md_details(

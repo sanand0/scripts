@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentlog import (
     ClaudeBackend,
     CopilotBackend,
+    CodexBackend,
     SearchPattern,
     SessionEvent,
     SessionSummary,
@@ -274,6 +275,54 @@ def test_claude_md_preserves_semantic_roles_thinking_and_artifacts() -> None:
         events[2].raw, allow_warmup=False, allow_local_commands=False
     )
 
+
+
+
+def test_codex_md_supports_current_schema_without_duplicating_legacy_chat() -> None:
+    backend = CodexBackend()
+
+    def event(type_: str, payload: dict[str, object]) -> SessionEvent:
+        return SessionEvent("s", "", SourcePos("log", 1), {"type": type_, "payload": payload})
+
+    def message(role: str, text: str, kinds: list[str] | None = None) -> SessionEvent:
+        payload: dict[str, object] = {
+            "type": "message",
+            "role": role,
+            "content": [{"type": "input_text" if role == "user" else "output_text", "text": text}],
+        }
+        if kinds:
+            payload["internal_chat_message_metadata_passthrough"] = {"content_item_kinds": kinds}
+        return event("response_item", payload)
+
+    current = [
+        message("user", "Injected instructions", ["agents_md.instructions"]),
+        message("user", "Human prompt", ["user.text"]),
+        message("assistant", "Progress update"),
+        event("response_item", {"type": "custom_tool_call", "name": "exec", "call_id": "c", "input": "await tools.exec_command({cmd: 'pwd'})"}),
+        event("response_item", {"type": "custom_tool_call_output", "call_id": "c", "output": "done"}),
+        event("response_item", {"type": "agent_message", "author": "/root/research", "content": [{"type": "input_text", "text": "Subagent finding"}]}),
+    ]
+    markdown = backend.render_markdown(
+        session_id="s", events=current, include_meta=False, open_details=False, kind_filter=frozenset()
+    )
+    assert "Injected instructions" not in markdown
+    assert "## user\n\nHuman prompt" in markdown
+    assert "## assistant\n\nProgress update" in markdown
+    assert "await tools.exec_command({cmd: 'pwd'})" in markdown
+    assert "tool output: exec" in markdown
+    assert "## subagent /root/research\n\nSubagent finding" in markdown
+
+    legacy = [
+        event("event_msg", {"type": "user_message", "message": "Legacy user"}),
+        message("user", "Duplicate user"),
+        event("event_msg", {"type": "agent_message", "message": "Legacy assistant"}),
+        message("assistant", "Duplicate assistant"),
+    ]
+    markdown = backend.render_markdown(
+        session_id="s", events=legacy, include_meta=False, open_details=False, kind_filter=frozenset()
+    )
+    assert "Legacy user" in markdown and "Duplicate user" not in markdown
+    assert "Legacy assistant" in markdown and "Duplicate assistant" not in markdown
 
 def test_ls_search_streams_search_results() -> None:
     backend = FakeBackend()
