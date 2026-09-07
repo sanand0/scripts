@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentlog import (
+    ClaudeBackend,
     CopilotBackend,
     SearchPattern,
     SessionEvent,
@@ -219,6 +220,59 @@ def test_md_accepts_multiple_session_ids() -> None:
     assert result.exit_code == 0, result.stdout
     assert "# session-1" in result.stdout
     assert "# session-2" in result.stdout
+
+
+def test_claude_md_preserves_semantic_roles_thinking_and_artifacts() -> None:
+    backend = ClaudeBackend()
+
+    def event(type_: str, content: object = None, **raw: object) -> SessionEvent:
+        if content is not None:
+            raw["message"] = {"content": content}
+        return SessionEvent(
+            "session-1", "", SourcePos("main.jsonl", 1), {"type": type_, **raw}
+        )
+
+    events = [
+        event("user", "Human prompt"),
+        event("user", "Skill context", isMeta=True),
+        event("user", "Delegated task", isSidechain=True, agentId="abcd"),
+        event(
+            "assistant",
+            [
+                {"type": "thinking", "thinking": "Inspect first"},
+                {"type": "text", "text": "Subagent answer"},
+            ],
+            isSidechain=True,
+            agentId="abcd",
+        ),
+        event("user", [{"type": "tool_result", "content": "Tool output"}]),
+        event("custom-title", customTitle="Useful session"),
+        event(
+            "frame-link",
+            title="Dashboard",
+            frameUrl="https://example.com/artifact",
+        ),
+    ]
+    markdown = backend.render_markdown(
+        session_id="session-1",
+        events=events,
+        include_meta=False,
+        open_details=False,
+        kind_filter=frozenset(),
+    )
+
+    assert "**title:** Useful session" in markdown
+    assert "**artifact:** [Dashboard](https://example.com/artifact)" in markdown
+    assert "## user\n\nHuman prompt" in markdown
+    assert "## meta\n\nSkill context" in markdown
+    assert "## subagent abcd: user\n\nDelegated task" in markdown
+    assert "## subagent abcd: assistant\n\nSubagent answer" in markdown
+    assert "<summary><strong>subagent abcd: assistant: thinking</strong></summary>" in markdown
+    assert "<summary><strong>tool result</strong></summary>" in markdown
+    assert "user: tool result" not in markdown
+    assert not backend._first_prompt(
+        events[2].raw, allow_warmup=False, allow_local_commands=False
+    )
 
 
 def test_ls_search_streams_search_results() -> None:

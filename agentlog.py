@@ -496,7 +496,11 @@ class ClaudeBackend:
         allow_warmup: bool,
         allow_local_commands: bool,
     ) -> str:
-        if event.get("type") != "user" or event.get("isMeta") is True:
+        if (
+            event.get("type") != "user"
+            or event.get("isMeta") is True
+            or event.get("isSidechain") is True
+        ):
             return ""
         message = event.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -712,6 +716,22 @@ class ClaudeBackend:
                 cwd = raw_cwd
                 break
         parts = [_session_header(events, session_id, cwd)]
+        titles: dict[str, str] = {}
+        artifacts: dict[str, str] = {}
+        for event in events:
+            raw = event.raw
+            event_type = raw.get("type")
+            key = "customTitle" if event_type == "custom-title" else "aiTitle"
+            if event_type in ("custom-title", "ai-title") and isinstance(raw.get(key), str):
+                titles[event_type] = raw[key]
+            url = raw.get("frameUrl")
+            if event_type == "frame-link" and isinstance(url, str) and url:
+                artifacts.setdefault(url, raw.get("title") or raw.get("path") or "artifact")
+        title = titles.get("custom-title") or titles.get("ai-title")
+        if title:
+            parts.append(f"\n**title:** {title}\n")
+        for url, label in artifacts.items():
+            parts.append(f"\n**artifact:** [{label}]({url})\n")
         for event in events:
             raw = event.raw
             owner = _event_kind(raw)
@@ -719,6 +739,18 @@ class ClaudeBackend:
                 continue
             if owner not in {"user", "assistant", "system"}:
                 continue
+            sidechain = raw.get("isSidechain") is True
+            agent_id = raw.get("agentId")
+            actor = (
+                f"subagent {agent_id}"
+                if sidechain and isinstance(agent_id, str) and agent_id
+                else "subagent" if sidechain else ""
+            )
+            label = (
+                f"{actor}: {owner}"
+                if actor
+                else "meta" if owner == "user" and raw.get("isMeta") is True else owner
+            )
             message = raw.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             text = self._normalize_text(content).strip()
@@ -731,7 +763,7 @@ class ClaudeBackend:
                     if item_type == "tool_use":
                         extras.append(
                             md_details(
-                                f"{owner}: tool: {item.get('name', '')}".strip(),
+                                f"{label}: tool: {item.get('name', '')}".strip(),
                                 md_code("json", json_pretty(item.get("input"))),
                                 open_details=open_details,
                             )
@@ -744,15 +776,25 @@ class ClaudeBackend:
                             body = md_code("json", json_pretty(result_body))
                         extras.append(
                             md_details(
-                                f"{owner}: tool result".strip(),
+                                f"{actor}: tool result" if actor else "tool result",
                                 body,
                                 open_details=open_details,
                             )
                         )
+                    elif item_type == "thinking":
+                        thinking = item.get("thinking")
+                        if isinstance(thinking, str) and thinking.strip():
+                            extras.append(
+                                md_details(
+                                    f"{label}: thinking",
+                                    thinking,
+                                    open_details=open_details,
+                                )
+                            )
             if text:
                 if owner == "user" and looks_like_local_command(text):
                     text = strip_ansi(text)
-                parts.append(md_heading(2, owner))
+                parts.append(md_heading(2, label))
                 parts.append(text + "\n")
             parts.extend(extras)
             if include_meta:

@@ -1,5 +1,17 @@
 # Prompts
 
+## Improve Claude log, 07 Sep 2026
+
+<!-- https://chatgpt.com/c/6a9e51ee-a824-83ec-9bbe-651e1cff1fb4 -->
+
+On @LocalMCP `~/code/talks/2026-09-06-how-to-build-ai-products/football-analysis-claude-session.md` has the output of `~/code/scripts/agentlog.py claude md 4fd11be8-2846-47be-b5a7-0de29fac6972` -- you can see the Claude sessions in \~/.claude/
+
+One thing that's confusing is that sub-agents are also marked `## user`. That apart, there may be some other useful / important information in the session logs that's missing in the Markdown export.
+
+Take a look. Review multiple session logs to get a sense of what to do. Then, based on the top changes you identify, update agentlog.py (and tests) appropriately. Minimize the code you add. Keep it future proof. Use relevant skills.
+
+## Refactor
+
 <!--
 
 cd ~/code/scripts/
@@ -7,8 +19,6 @@ dev.sh
 codex --yolo --model gpt-5.4 --config model_reasoning_effort=medium
 
 -->
-
-## Refactor
 
 Currently, ./claudelog helps list an read Claude logs.
 
