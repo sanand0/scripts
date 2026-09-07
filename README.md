@@ -129,6 +129,7 @@ Here are the setup details for my laptops.
   - New blog posts: `ug -rl '^date: "?2026-04' /home/sanand/code/blog/posts/ | xargs summarize.py blog` (edit `2026-04` to the target month)
 - [timers](timers) picks a systemd user timer with `fzf`, sorted by its most recent run, then follows the activated service's journal.
 - [transcribe_calls.py](transcribe_calls.py) transcribes missing audio call recordings from `~/Documents/calls` into Markdown notes under `~/Dropbox/notes/transcripts`, with chunking and patching for invalid transcript sections. Examples: `transcribe_calls.py --dry-run`, `transcribe_calls.py --glob "*.opus"`, `transcribe_calls.py --patch-invalid-sections`.
+- [timestamp.py](timestamp.py) idempotently makes timestamps cumulative across `call` transcript chunks. Bare names resolve to the latest descending filename match under `~/Dropbox/notes/transcripts`; use `--chunk-starts 0,25,50` for ambiguous chunk boundaries. Examples: `timestamp.py Naveen`, `timestamp.py Naveen Ankor --dry-run`, `timestamp.py "2026-09-01 GIPCL" --chunk-starts 0,30,60,90,120`, `timestamp.py --describe | jaq .`.
 - [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
 
 ## AI coding agent scripts
