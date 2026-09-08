@@ -1,5 +1,17 @@
 # Prompts
 
+## Find missing Codex sessions, 08 Sep 2026
+
+<!--
+cd ~/code/scripts/
+dev.sh -- codex --yolo --model gpt-5.6-luna --config model_reasoning_effort=medium
+-->
+
+`agentlog.py codex ls` doesn't list session 01a05c7a-3806-7b22-be3e-74de0971b68e but `agentlog.py codex md ...` processes it fine.
+What's the minimal fix? Update tests as required.
+
+<!-- codex resume 01a08099-54ef-7012-a0eb-cdd89ddf1301 --yolo -->
+
 ## Improve Claude log, 07 Sep 2026
 
 <!-- https://chatgpt.com/c/6a9e51ee-a824-83ec-9bbe-651e1cff1fb4 -->

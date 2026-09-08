@@ -1650,6 +1650,10 @@ class CodexBackend:
                     payload.get("message"), str
                 ):
                     summary.first_prompt = payload["message"].strip()
+            if not summary.first_prompt and event.get("type") == "response_item":
+                summary.first_prompt = self._response_message_text(
+                    payload if isinstance(payload, dict) else {}, "user"
+                )
             if not matched_search and _search_event_matches(event, search_re):
                 matched_search = True
             _append_search_preview(summary, _extract_matching_lines(event, search_re, width))

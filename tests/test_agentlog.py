@@ -324,6 +324,49 @@ def test_codex_md_supports_current_schema_without_duplicating_legacy_chat() -> N
     assert "Legacy user" in markdown and "Duplicate user" not in markdown
     assert "Legacy assistant" in markdown and "Duplicate assistant" not in markdown
 
+
+def test_codex_ls_finds_current_schema_user_prompt(tmp_path: Path) -> None:
+    session_id = "01a05c7a-3806-7b22-be3e-74de0971b68e"
+    path = tmp_path / "sessions" / "2026" / "09" / "01" / "session.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-09-01T10:18:28Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": session_id,
+                    "cwd": "/tmp/project",
+                },
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "timestamp": "2026-09-01T10:22:23Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "Human prompt"}],
+                    "internal_chat_message_metadata_passthrough": {
+                        "content_item_kinds": ["user.text"]
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = RUNNER.invoke(
+        build_app(CodexBackend()), ["ls", "--root", str(tmp_path)]
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert session_id in result.stdout
+    assert "Human prompt" in result.stdout
+
 def test_ls_search_streams_search_results() -> None:
     backend = FakeBackend()
 
