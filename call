@@ -43,7 +43,7 @@ AUDIO_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wa
 CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 TRANSCRIPT_PART_SEPARATOR = "\n\n---\n\n"
 TRANSCRIPT_LINE_RE = re.compile(
-    r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[\d{2}:\d{2}(?::\d{2})?\])? .+"
+    r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[(?P<timestamp>\d{2}:\d{2}(?::\d{2})?)\])? .+"
 )
 SPEAKER_LINE_RE = re.compile(r"^\*\*(?P<speaker>[^*\n]+?)(?:\*\*:?|:\*\*)")
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?\n?)---\n?", re.DOTALL)
@@ -294,6 +294,21 @@ def count_matching_transcript_lines(transcript: str) -> int:
 def looks_like_transcript(transcript: str, min_matching_lines: int = 5) -> bool:
     """Return True when the transcript resembles the expected speaker-line format."""
     return count_matching_transcript_lines(transcript) >= min_matching_lines
+
+
+def trim_transcript_to_duration(transcript: str, duration_seconds: float) -> str:
+    """Remove a model-generated continuation timestamped beyond the audio chunk."""
+    lines = transcript.splitlines()
+    for index, line in enumerate(lines):
+        match = TRANSCRIPT_LINE_RE.match(line.strip())
+        if match and match["timestamp"]:
+            parts = [int(part) for part in match["timestamp"].split(":")]
+            timestamp_seconds = sum(
+                value * 60**power for power, value in enumerate(reversed(parts))
+            )
+            if timestamp_seconds > duration_seconds + CHUNK_OVERLAP_SECONDS:
+                return "\n".join(lines[:index]).strip()
+    return transcript.strip()
 
 
 def resolve_audio_path(audio_arg: str, input_dir: Path) -> Path:
@@ -903,6 +918,7 @@ def transcribe_audio(
                 else None
             )
             result = read_cached_chunk(cache_path) if cache_path is not None else None
+            was_cached = result is not None
             if result is None:
                 result = transcribe_single_audio(
                     chunk_path,
@@ -912,8 +928,12 @@ def transcribe_audio(
                     client=client,
                     pricing=pricing,
                 )
-                if cache_path is not None:
-                    write_cached_chunk(cache_path, result.transcript)
+            result = TranscriptionResult(
+                transcript=trim_transcript_to_duration(result.transcript, windows[index - 1][1]),
+                usage=result.usage,
+            )
+            if cache_path is not None and not was_cached:
+                write_cached_chunk(cache_path, result.transcript)
             if not looks_like_transcript(result.transcript):
                 warnings.append(
                     InvalidTranscriptWarning(

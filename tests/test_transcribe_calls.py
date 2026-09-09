@@ -3,16 +3,19 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import textwrap
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
 
 
 def load_module():
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
-    spec = importlib.util.spec_from_file_location("transcribe_calls", script_path)
+    script_path = Path(__file__).resolve().parents[1] / "call"
+    spec = importlib.util.spec_from_loader(
+        "transcribe_calls", SourceFileLoader("transcribe_calls", str(script_path))
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -449,6 +452,19 @@ def test_build_chunk_windows_rejects_overlap_not_smaller_than_chunk() -> None:
         raise AssertionError("Expected tiny chunks to be rejected")
 
 
+def test_trim_transcript_to_chunk_duration_removes_model_continuation() -> None:
+    module = load_module()
+    transcript = (
+        "**Anand**: [24:13] This is the real end of the chunk.\n\n"
+        "**Shuku**: [25:12] Should I also do that peer feedback exercise?\n\n"
+        "**Anand**: [25:15] Yes, absolutely."
+    )
+
+    assert module.trim_transcript_to_duration(transcript, 25 * 60) == (
+        "**Anand**: [24:13] This is the real end of the chunk."
+    )
+
+
 def test_resolve_audio_path_returns_existing_path_as_is(tmp_path: Path) -> None:
     module = load_module()
     input_dir = tmp_path / "calls"
@@ -581,7 +597,7 @@ def test_resolve_prompts_omits_user_prompt_when_stored_prompt_matches_system_pro
 
 
 def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -661,8 +677,8 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
 
 
 def test_script_looks_up_audio_by_stem_in_default_input_dir(tmp_path: Path) -> None:
-    source_script = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
-    script_path = tmp_path / "transcribe_calls.py"
+    source_script = Path(__file__).resolve().parents[1] / "call"
+    script_path = tmp_path / "call.py"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     missing_prompt_file = tmp_path / "missing-default-prompt.md"
@@ -712,8 +728,8 @@ def test_script_looks_up_audio_by_stem_in_default_input_dir(tmp_path: Path) -> N
 
 
 def test_script_list_changes_reports_actions_without_probing_or_writing(tmp_path: Path) -> None:
-    source_script = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
-    script_path = tmp_path / "transcribe_calls.py"
+    source_script = Path(__file__).resolve().parents[1] / "call"
+    script_path = tmp_path / "call.py"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     bin_dir = tmp_path / "bin"
@@ -758,7 +774,7 @@ def test_script_list_changes_reports_actions_without_probing_or_writing(tmp_path
 
 
 def test_script_list_changes_rejects_audio_argument(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     input_dir.mkdir()
@@ -773,7 +789,7 @@ def test_script_list_changes_rejects_audio_argument(tmp_path: Path) -> None:
 
 
 def test_script_requires_audio_argument_without_list_changes(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
 
     result = run_script(script_path, cwd=tmp_path)
 
@@ -782,7 +798,7 @@ def test_script_requires_audio_argument_without_list_changes(tmp_path: Path) -> 
 
 
 def test_script_reports_invalid_existing_markdown(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
 
@@ -800,7 +816,7 @@ def test_script_reports_invalid_existing_markdown(tmp_path: Path) -> None:
 
 
 def test_script_reports_duplicate_transcript_sections(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
 
@@ -821,11 +837,11 @@ def test_script_reports_duplicate_transcript_sections(tmp_path: Path) -> None:
 
 
 def test_script_requires_gemini_api_key_when_transcription_needed(tmp_path: Path) -> None:
-    script_path = tmp_path / "transcribe_calls.py"
+    script_path = tmp_path / "call.py"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
 
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "transcribe_calls.py", script_path)
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "call", script_path)
     input_dir.mkdir()
     output_dir.mkdir()
     audio_path = input_dir / "call.opus"
@@ -841,7 +857,7 @@ def test_script_requires_gemini_api_key_when_transcription_needed(tmp_path: Path
 
 
 def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -898,7 +914,7 @@ def test_script_sends_user_prompt_with_small_audio_file(tmp_path: Path) -> None:
 
 
 def test_script_uses_existing_frontmatter_prompt_for_pending_transcript(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -953,7 +969,7 @@ def test_script_uses_existing_frontmatter_prompt_for_pending_transcript(tmp_path
 
 
 def test_script_skips_existing_prompt_metadata_without_transcribing(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -998,7 +1014,7 @@ def test_script_skips_existing_prompt_metadata_without_transcribing(tmp_path: Pa
 
 
 def test_script_updates_prompt_metadata_when_prompt_is_explicit(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1048,7 +1064,7 @@ def test_script_updates_prompt_metadata_when_prompt_is_explicit(tmp_path: Path) 
 
 
 def test_script_force_retranscribes_existing_note(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1100,7 +1116,7 @@ def test_script_force_retranscribes_existing_note(tmp_path: Path) -> None:
 
 
 def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1127,6 +1143,19 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     env["FAKE_GENAI_LOG"] = str(log_path)
     env["FAKE_FFMPEG_LOG"] = str(ffmpeg_log_path)
     env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["FAKE_GENAI_RESPONSE_BY_FILE"] = json.dumps(
+        {
+            "long.part001.opus": "\n".join(
+                [
+                    *(
+                        f"**Speaker**: [00:0{i}] Transcript for long.part001.opus line {i}"
+                        for i in range(1, 6)
+                    ),
+                    "**Speaker**: [25:12] Spurious continuation beyond the chunk",
+                ]
+            )
+        }
+    )
     env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
     env["TRANSCRIBE_CALLS_CACHE_DIR"] = str(tmp_path / "cache")
     env.pop("GEMINI_API_KEY", None)
@@ -1154,6 +1183,7 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "\n\n---\n\n" in transcript
     assert "Transcript for long.part002.opus line 1" in transcript
     assert "Transcript for long.part003.opus line 1" in transcript
+    assert "Spurious continuation" not in transcript
 
     ffmpeg_log = ffmpeg_log_path.read_text(encoding="utf-8").splitlines()
     assert len(ffmpeg_log) == 3
@@ -1169,10 +1199,11 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "USER_PROMPT\tThis audio is part 1/3 of a longer recording." in genai_log
     assert "This audio is part 2/3 of a longer recording." in genai_log
     assert "This audio is part 3/3 of a longer recording." in genai_log
+    assert "Spurious continuation" not in genai_log
 
 
 def test_script_resumes_chunked_transcription_from_one_day_cache(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1266,7 +1297,7 @@ def test_cleanup_chunk_cache_removes_only_expired_chunk_json(tmp_path: Path) -> 
 
 
 def test_script_auto_retries_and_resolves_invalid_chunk(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1326,7 +1357,7 @@ def test_script_auto_retries_and_resolves_invalid_chunk(tmp_path: Path) -> None:
 
 
 def test_script_patch_retranscribes_invalid_sections(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1407,7 +1438,7 @@ def test_script_patch_retranscribes_invalid_sections(tmp_path: Path) -> None:
 
 
 def test_script_patch_reports_when_no_invalid_sections(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
 
@@ -1435,7 +1466,7 @@ def test_script_patch_reports_when_no_invalid_sections(tmp_path: Path) -> None:
 
 
 def test_script_dry_run_reports_duration_and_chunks_without_side_effects(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"
@@ -1532,7 +1563,7 @@ def test_load_google_pricing_raises_when_fetch_fails_without_cache(
 
 
 def test_script_rejects_chunk_size_at_or_below_overlap(tmp_path: Path) -> None:
-    script_path = Path(__file__).resolve().parents[1] / "transcribe_calls.py"
+    script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
     package_root = tmp_path / "pydeps"

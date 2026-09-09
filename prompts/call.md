@@ -1,5 +1,25 @@
 # Transcribe Calls
 
+## Fix stitching, 09 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --yolo --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+I think the calls aren't getting stitched properly by `call`. When I ran `call '2026-09-09 SUTD AI Products'` it created `~/Dropbox/notes/transcripts/2026-09-09 SUTD AI Products.md` and here's what I saw.
+
+- Up to `**Anand**: [24:13] ...` the transcript is fine on the first segment
+- After that, it patched in the last part of the third segment at the end - and removing some part of the actual end of the first segment
+- This seems to have happened at the end of the second segment as well
+
+I've made a backup at '2026-09-09 SUTD AI Products.md.bak' - so you can use that. Reproduce the problem and fix it. Update tests as required.
+Prefer minimal changes, and prefer code reduction to bloat.
+
+<!-- codex resume 01a08443-bccd-79e2-94f7-200d4894a25b -->
+
+## Rename, 26 Aug 2026
+
 <!-- 26 Aug 2026: Renamed from transcribe_calls.py to call, given how often I use it. -->
 
 ## Remove warning, 26 Aug 2026
