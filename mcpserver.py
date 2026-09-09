@@ -631,9 +631,6 @@ Prefer `set -euo pipefail` for deterministic scripts. If so, then:
   Handle expected misses (`ug ... || true`, `test -e`, optional files) printing concise diagnostics.
   Capped pipelines like `ug ... | head` can exit 141 from SIGPIPE.
   Wrap expected capped/no-match pipelines in `( ... | head -N || true )`.
-Batch related probes into one script with section headers.
-  Avoid re-running identical discovery commands unless new evidence changed the scope.
-Batch multiple commands into fewer tool calls to avoid call overhead.
 
 stdout longer than {MAX_LINE_BYTES} bytes / line and over {MAX_TOTAL_OUTPUT_BYTES} bytes is trimmed.
 When output is trimmed, the complete output is saved to `output_path`; use `download_file` if needed.
