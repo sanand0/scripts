@@ -55,7 +55,7 @@ The summarizer recipes route OpenAI to a closed localhost endpoint as a fail-clo
 | 13 | `tests/test_htmlemail.py` | Runner dependency error; code and tests right | `frontmatter==3.0.8` is a different PyPI project and has no `load`. The intended `python-frontmatter==1.3.0` does. | Trivial |
 | 5 | `tests/test_mcpserver.py` Bash-tool tests | Cascading resolver error; code and tests right | Wrong `frontmatter` pins PyYAML 5.1. FastMCP 3.4.7 requires PyYAML 6.x, so uv backtracks to FastMCP 2.14.7, whose `ToolResult` lacks `is_error`. | Easy |
 | 4 | `tests/test_chatgpt_cli.py` browser tests | Environment provisioning; code and tests likely right | Playwright 1.62 expects Chromium headless-shell revision 1234, which is not installed. Only older revisions are cached. | Easy–medium |
-| 2 | `tests/test_transcribe_calls.py` chunk tests | Test isolation plus restricted environment; code right | Tests write the default cache under `~/.cache/sanand-scripts/...`; that path is read-only here and is shared state on a normal host. | Trivial |
+| 2 | `tests/test_call.py` chunk tests | Test isolation plus restricted environment; code right | Tests write the default cache under `~/.cache/sanand-scripts/...`; that path is read-only here and is shared state on a normal host. | Trivial |
 | 2 | `tests/test_podcast.py` default-output tests | Stale tests; code right | Tests still require an always-timestamped name, contradicting the later explicit prompt to use `INPUT.mp3` unless it already exists. | Trivial |
 | 3 | `tests/test_summarize_transcript.py` `process_file` tests | Stale tests; code right | Calls use the old positional signature. Added `provider` and `client` parameters shift a `set` into the `content_set` position, hence `set.meta_keys`. | Easy |
 | 1 | `tests/test_summarize_transcript.py` prompt wording test | Brittle/stale test; current prompt intentional | It asserts fragments from an older prompt (`usually 0`, later-turn wording) that was deliberately replaced and subsequently benchmarked. | Trivial |
@@ -84,7 +84,7 @@ This is an environment failure, not an assertion or product-code failure. The du
 
 ### 3. Home-cache leakage: two failures
 
-`transcribe_calls.py:38` defaults chunk cache state to the user's home directory. The failing tests at `tests/test_transcribe_calls.py:1112` and `:1248` construct otherwise-hermetic fake Gemini, ffmpeg, and pricing dependencies but do not set `TRANSCRIBE_CALLS_CACHE_DIR`. They fail when `write_cached_chunk` reaches the read-only real cache.
+`call:34` defaults chunk cache state to the user's home directory. The chunked transcription tests in `tests/test_call.py` construct otherwise-hermetic fake Gemini, ffmpeg, and pricing dependencies but do not set `TRANSCRIBE_CALLS_CACHE_DIR`. They fail when `write_cached_chunk` reaches the read-only real cache.
 
 Setting the cache to a temporary directory made both tests pass (**2/2 in 0.58s**). The test fix is to set `TRANSCRIBE_CALLS_CACHE_DIR=tmp_path / "cache"`, as the neighboring resume-cache test already does. This also prevents cross-run cache hits and pollution on unrestricted machines.
 

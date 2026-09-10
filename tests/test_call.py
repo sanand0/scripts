@@ -596,7 +596,7 @@ def test_resolve_prompts_omits_user_prompt_when_stored_prompt_matches_system_pro
     assert prompts.note_prompt == "Same prompt"
 
 
-def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
+def test_script_creates_transcripts_for_multiple_audio_files(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
@@ -610,6 +610,8 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
     output_dir.mkdir()
     audio_path = input_dir / "call-a.opus"
     audio_path.write_bytes(b"fake audio")
+    second_audio_path = input_dir / "call-b.opus"
+    second_audio_path.write_bytes(b"fake audio")
     prompt_file.write_text(
         textwrap.dedent(
             """
@@ -639,6 +641,7 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
     result = run_script(
         script_path,
         audio_path,
+        second_audio_path,
         "--out",
         output_dir,
         "--system-prompt",
@@ -648,11 +651,13 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "created call-a.md" in result.stdout
+    assert "created call-b.md" in result.stdout
     assert "tokens=150 cost=$0.000800 total_cost=$0.000800" in result.stdout
 
     log_text = log_path.read_text(encoding="utf-8")
     assert "APIKEY\ttest-key-from-dotenv" in log_text
     assert f"AUDIO\t{audio_path}" in log_text
+    assert f"AUDIO\t{second_audio_path}" in log_text
     assert "SYSTEM_PROMPT\tUse this exact prompt" in log_text
     assert "USER_PROMPT\t" not in log_text
 
@@ -667,6 +672,8 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
         "# call-a\n"
     )
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-a.opus line 1" in call_a
+    call_b = (output_dir / "call-b.md").read_text(encoding="utf-8")
+    assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-b.opus line 1" in call_b
 
     second = run_script(
         script_path, audio_path, "--out", output_dir, "--system-prompt", prompt_file, env=env, cwd=tmp_path
@@ -674,6 +681,60 @@ def test_script_creates_transcript_for_new_audio_file(tmp_path: Path) -> None:
     assert second.returncode == 0, second.stderr
     assert log_path.read_text(encoding="utf-8") == log_text
     assert "Already transcribed: call-a.md" in second.stdout
+
+
+def test_script_stops_after_first_failed_audio(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "call"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    audio_paths = [input_dir / f"call-{suffix}.opus" for suffix in ("a", "b", "c")]
+    for audio_path in audio_paths:
+        audio_path.write_bytes(b"fake audio")
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["GEMINI_API_KEY"] = "test-key"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_GENAI_ERROR_FILES"] = "call-b.opus"
+    env["FAKE_FFPROBE_DURATION"] = "60"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+
+    result = run_script(
+        script_path,
+        *audio_paths,
+        "--out",
+        output_dir,
+        "--system-prompt",
+        prompt_file,
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 1
+    assert "forced error for call-b.opus" in result.stderr
+    assert (output_dir / "call-a.md").exists()
+    assert not (output_dir / "call-b.md").exists()
+    assert not (output_dir / "call-c.md").exists()
+    audio_requests = [
+        Path(line.split("\t", 1)[1]).name
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("AUDIO\t")
+    ]
+    assert audio_requests == ["call-a.opus", "call-b.opus"]
 
 
 def test_script_looks_up_audio_by_stem_in_default_input_dir(tmp_path: Path) -> None:

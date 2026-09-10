@@ -950,74 +950,18 @@ def transcribe_audio(
     )
 
 
-@app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
-def main(
-    audio: str | None = typer.Argument(
-        None,
-        help=(
-            f"Audio file path, or a case-insensitive substring of a filename in "
-            f"{DEFAULT_INPUT_DIR} (most recent match wins). Omit with --list-changes."
-        ),
-    ),
-    user_prompt: str | None = typer.Option(
-        None, "--prompt", help="Additional user prompt sent alongside the audio attachment."
-    ),
-    force: bool = typer.Option(
-        False, "--force", help="Re-transcribe even if the note already has a transcript."
-    ),
-    patch: bool = typer.Option(
-        False,
-        "--patch",
-        help="Detect invalid transcript sections in the existing note and re-transcribe just those.",
-    ),
-    model: str = typer.Option(
-        DEFAULT_MODEL, "--model", envvar="TRANSCRIBE_CALLS_MODEL", help="Gemini model to use for transcription."
-    ),
-    chunk_minutes: float = typer.Option(
-        DEFAULT_CHUNK_MINUTES,
-        "--chunk",
-        min=0.01,
-        help="Chunk size in minutes for splitting long audio before transcription.",
-    ),
-    out_dir: Path = typer.Option(
-        DEFAULT_OUTPUT_DIR, "--out", help="Folder for the transcript Markdown file."
-    ),
-    system_prompt_file: Path = typer.Option(
-        DEFAULT_PROMPT_FILE,
-        "--system-prompt",
-        help="Markdown file containing the system prompt or first fenced prompt.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would happen and the chunk plan, without calling Gemini or writing files.",
-    ),
-    list_changes: bool = typer.Option(
-        False,
-        "--list-changes",
-        help=(
-            f"List create/update actions as TSV for every audio file in {DEFAULT_INPUT_DIR} "
-            "without a transcript yet, without probing audio or writing files. Takes no AUDIO argument."
-        ),
-    ),
+def process_audio(
+    audio: str,
+    user_prompt: str | None,
+    force: bool,
+    patch: bool,
+    model: str,
+    chunk_minutes: float,
+    out_dir: Path,
+    system_prompt_file: Path,
+    dry_run: bool,
 ) -> None:
     """Transcribe one call recording into a Markdown note."""
-    if out_dir.exists() and not out_dir.is_dir():
-        raise typer.BadParameter(f"Output path is not a directory: {out_dir}")
-    if list_changes:
-        if audio is not None:
-            raise typer.BadParameter("--list-changes takes no AUDIO argument.")
-        emit_change_list(list_audio_files(DEFAULT_INPUT_DIR), out_dir)
-        return
-    if audio is None:
-        raise typer.BadParameter("Missing argument 'AUDIO'.")
-    if system_prompt_file.suffix.lower() != ".md":
-        raise typer.BadParameter(f"Prompt file must be Markdown: {system_prompt_file}")
-    if patch and force:
-        raise typer.BadParameter("--patch cannot be used with --force.")
-    if patch and dry_run:
-        raise typer.BadParameter("--patch cannot be used with --dry-run.")
-
     audio_path = resolve_audio_path(audio, DEFAULT_INPUT_DIR)
     cleaned_user_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
     output_path = out_dir / f"{audio_path.stem}.md"
@@ -1167,6 +1111,88 @@ def main(
         raise typer.Exit(1) from exc
 
     typer.echo(f"{'updated' if had_output else 'created'} {output_path.name}")
+
+
+@app.command(context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
+def main(
+    audio: list[str] | None = typer.Argument(
+        None,
+        help=(
+            f"Audio file path(s), or case-insensitive substring(s) of filenames in "
+            f"{DEFAULT_INPUT_DIR} (most recent match wins). Omit with --list-changes."
+        ),
+    ),
+    user_prompt: str | None = typer.Option(
+        None, "--prompt", help="Additional user prompt sent alongside the audio attachment."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-transcribe even if the note already has a transcript."
+    ),
+    patch: bool = typer.Option(
+        False,
+        "--patch",
+        help="Detect invalid transcript sections in the existing note and re-transcribe just those.",
+    ),
+    model: str = typer.Option(
+        DEFAULT_MODEL, "--model", envvar="TRANSCRIBE_CALLS_MODEL", help="Gemini model to use for transcription."
+    ),
+    chunk_minutes: float = typer.Option(
+        DEFAULT_CHUNK_MINUTES,
+        "--chunk",
+        min=0.01,
+        help="Chunk size in minutes for splitting long audio before transcription.",
+    ),
+    out_dir: Path = typer.Option(
+        DEFAULT_OUTPUT_DIR, "--out", help="Folder for the transcript Markdown file."
+    ),
+    system_prompt_file: Path = typer.Option(
+        DEFAULT_PROMPT_FILE,
+        "--system-prompt",
+        help="Markdown file containing the system prompt or first fenced prompt.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would happen and the chunk plan, without calling Gemini or writing files.",
+    ),
+    list_changes: bool = typer.Option(
+        False,
+        "--list-changes",
+        help=(
+            f"List create/update actions as TSV for every audio file in {DEFAULT_INPUT_DIR} "
+            "without a transcript yet, without probing audio or writing files. Takes no AUDIO argument."
+        ),
+    ),
+) -> None:
+    """Transcribe one or more call recordings into Markdown notes."""
+    if out_dir.exists() and not out_dir.is_dir():
+        raise typer.BadParameter(f"Output path is not a directory: {out_dir}")
+    if list_changes:
+        if audio is not None:
+            raise typer.BadParameter("--list-changes takes no AUDIO argument.")
+        emit_change_list(list_audio_files(DEFAULT_INPUT_DIR), out_dir)
+        return
+    if audio is None:
+        raise typer.BadParameter("Missing argument 'AUDIO'.")
+    if system_prompt_file.suffix.lower() != ".md":
+        raise typer.BadParameter(f"Prompt file must be Markdown: {system_prompt_file}")
+    if patch and force:
+        raise typer.BadParameter("--patch cannot be used with --force.")
+    if patch and dry_run:
+        raise typer.BadParameter("--patch cannot be used with --dry-run.")
+
+    for audio_arg in audio:
+        process_audio(
+            audio_arg,
+            user_prompt=user_prompt,
+            force=force,
+            patch=patch,
+            model=model,
+            chunk_minutes=chunk_minutes,
+            out_dir=out_dir,
+            system_prompt_file=system_prompt_file,
+            dry_run=dry_run,
+        )
 
 
 if __name__ == "__main__":

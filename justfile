@@ -5,7 +5,7 @@ playwright_revision := "1234"
 fastmcp := "3.4.7"
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-transcribe-calls test-timestamp
+test: test-agentlog test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-timestamp
 
 # Run the agentlog tests.
 test-agentlog:
@@ -104,8 +104,8 @@ test-summarize-transcript:
     OPENAI_BASE_URL=http://127.0.0.1:9/v1 OPENAI_API_KEY=test {{ pytest }} --with typer --with google-genai --with openai --with python-dotenv --with ruamel.yaml --with rich --with pydantic --with tenacity pytest -q tests/test_summarize_transcript.py
 
 # Run the call transcription tests.
-test-transcribe-calls:
-    {{ pytest }} --with google-genai --with python-dotenv --with pyyaml --with typer pytest -q tests/test_transcribe_calls.py
+test-call:
+    {{ pytest }} --with google-genai --with python-dotenv --with pyyaml --with typer pytest -q tests/test_call.py
 
 # Run transcript timestamp normalization tests.
 test-timestamp:

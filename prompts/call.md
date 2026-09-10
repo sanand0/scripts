@@ -1,5 +1,24 @@
 # Transcribe Calls
 
+## Allow multiple audios, 09 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --yolo --model gpt-5.6-luna --config model_reasoning_effort=high
+-->
+
+Minimally modify `call` to allow multiple positional arguments (audio transcripts). Update tests as required.
+
+--- <!-- /model gpt-5.6-sol effort=medium -->
+
+Maybe do this without recursion? Also, if transcription fails in the middle, do we stop or continue - what's the better option, realistically?
+
+--- <!-- /model gpt-5.6-luna effort=high -->
+
+Rename test_transcribe_calls.py to test_call.py. Update justfile, etc. as required.
+
+<!-- codex resume 01a089f3-52bd-7cd0-bd40-f826c5d7ced8 -->
+
 ## Fix stitching, 09 Sep 2026
 
 <!--
