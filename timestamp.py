@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -61,13 +62,22 @@ def format_time(seconds: int, fields: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def timestamp_values(chunk: str) -> list[int]:
-    """Return timestamp seconds, including both ends of ranges."""
+def timestamp_occurrences(chunk: str, first_line: int) -> list[tuple[int, int, str]]:
+    """Return timestamp seconds, source line, and source token."""
     return [
-        parse_time(token.group())
+        (
+            parse_time(token.group()),
+            first_line + chunk.count("\n", 0, bracket.start("body") + token.start()),
+            token.group(),
+        )
         for bracket in TIMESTAMP_BRACKET_RE.finditer(chunk)
         for token in TIME_TOKEN_RE.finditer(bracket.group("body"))
     ]
+
+
+def timestamp_values(chunk: str) -> list[int]:
+    """Return timestamp seconds, including both ends of ranges."""
+    return [value for value, _, _ in timestamp_occurrences(chunk, 1)]
 
 
 def shift_chunk(chunk: str, offset: int) -> tuple[str, int]:
@@ -106,10 +116,25 @@ def update_markdown(markdown: str, chunk_starts: list[int] | None = None) -> Upd
         raise ValueError(f"--chunk-starts has {len(chunk_starts)} values but transcript has {len(chunks)} chunks")
 
     warnings: list[str] = []
-    line_separators = len(re.findall(r"(?m)^---[ \t]*$", body))
+    body_start = match.start("body")
+    body_line = markdown[:body_start].count("\n") + 1
+    separator_matches = list(re.finditer(r"(?m)^---[ \t]*$", body))
+    delimiter_matches = list(re.finditer(re.escape(TRANSCRIPT_PART_SEPARATOR), body))
+    delimiter_lines = {
+        match.start() + match.group().find("---") for match in delimiter_matches
+    }
+    extra_separator_lines = [
+        body_line + body.count("\n", 0, separator.start())
+        for separator in separator_matches
+        if separator.start() not in delimiter_lines
+    ]
+    line_separators = len(separator_matches)
     if line_separators > len(chunks) - 1:
+        locations = ", ".join(str(line) for line in extra_separator_lines)
+        location_label = "line" if len(extra_separator_lines) == 1 else "lines"
         warnings.append(
-            f"found {line_separators - (len(chunks) - 1)} extra '---' line(s) inside Transcript; ignored as non-call separators"
+            f"{location_label} {locations}: found {line_separators - (len(chunks) - 1)} extra '---' line(s) "
+            "inside Transcript; ignored as non-call separators"
         )
 
     adjusted_chunks = 0
@@ -118,21 +143,39 @@ def update_markdown(markdown: str, chunk_starts: list[int] | None = None) -> Upd
     previous_origin: int | None = 0
     auto_ambiguity: str | None = None
     updated_chunks: list[str] = []
+    body_offset = 0
 
     for index, chunk in enumerate(chunks, start=1):
-        values = timestamp_values(chunk)
+        chunk_first_line = body_line + body.count("\n", 0, body_offset)
+        content_offset = next((offset for offset, char in enumerate(chunk) if not char.isspace()), 0)
+        chunk_line = chunk_first_line + chunk.count("\n", 0, content_offset)
+        occurrences = timestamp_occurrences(chunk, chunk_first_line)
+        values = [value for value, _, _ in occurrences]
         if not values:
-            warnings.append(f"chunk {index}: no timestamps")
+            warnings.append(f"chunk {index} (line {chunk_line}): no timestamps")
             updated_chunks.append(chunk)
             previous_last = None
             previous_origin = None
             if chunk_starts is None and index < len(chunks):
-                auto_ambiguity = f"timestamp-free chunk {index}"
+                auto_ambiguity = f"timestamp-free chunk {index} (line {chunk_line})"
+            body_offset += len(chunk) + (len(TRANSCRIPT_PART_SEPARATOR) if index < len(chunks) else 0)
             continue
 
-        non_monotonic = any(current < previous for previous, current in zip(values, values[1:]))
-        if non_monotonic:
-            warnings.append(f"chunk {index}: non-monotonic timestamps; review manually")
+        first_non_monotonic = next(
+            (
+                (previous, current)
+                for previous, current in pairwise(occurrences)
+                if current[0] < previous[0]
+            ),
+            None,
+        )
+        if first_non_monotonic:
+            previous, current = first_non_monotonic
+            warnings.append(
+                f"chunk {index} (line {chunk_line}): non-monotonic timestamps; first example: "
+                f"line {previous[1]} [{previous[2]}] -> line {current[1]} [{current[2]}]; review manually"
+            )
+        non_monotonic = first_non_monotonic is not None
 
         offset = 0
         if chunk_starts is not None:
@@ -143,23 +186,27 @@ def update_markdown(markdown: str, chunk_starts: list[int] | None = None) -> Upd
                 offset = desired
             elif desired and values[0] < desired:
                 warnings.append(
-                    f"chunk {index}: first timestamp is <5m before requested start; left unchanged for idempotence"
+                    f"chunk {index} (line {chunk_line}): first timestamp is <5m before requested start; "
+                    "left unchanged for idempotence"
                 )
         elif index > 1:
             if auto_ambiguity:
-                warnings.append(f"chunk {index}: cannot infer offset after {auto_ambiguity}; use --chunk-starts")
+                warnings.append(
+                    f"chunk {index} (line {chunk_line}): cannot infer offset after {auto_ambiguity}; "
+                    "use --chunk-starts"
+                )
             elif previous_last is not None and values[0] + FIVE_MINUTES <= previous_last:
                 offset = ceil_five_minutes(previous_last)
                 if previous_origin is not None:
                     inferred_minutes = (offset - previous_origin) / 60
                     if inferred_minutes < 15 or inferred_minutes > 30:
                         warnings.append(
-                            f"chunk {index}: inferred previous chunk length {inferred_minutes:g}m is unusual; "
+                            f"chunk {index} (line {chunk_line}): inferred previous chunk length {inferred_minutes:g}m is unusual; "
                             "use --chunk-starts if this is wrong"
                         )
             elif previous_last is not None and values[0] < previous_last:
                 warnings.append(
-                    f"chunk {index}: backward jump is <5m; left unchanged for idempotence"
+                    f"chunk {index} (line {chunk_line}): backward jump is <5m; left unchanged for idempotence"
                 )
 
         if offset:
@@ -179,7 +226,8 @@ def update_markdown(markdown: str, chunk_starts: list[int] | None = None) -> Upd
         else:
             previous_origin = None
         if non_monotonic and chunk_starts is None and index < len(chunks):
-            auto_ambiguity = f"non-monotonic chunk {index}"
+            auto_ambiguity = f"non-monotonic chunk {index} (line {chunk_line})"
+        body_offset += len(chunk) + (len(TRANSCRIPT_PART_SEPARATOR) if index < len(chunks) else 0)
 
     updated_body = TRANSCRIPT_PART_SEPARATOR.join(updated_chunks)
     text = markdown[: match.start("body")] + updated_body + markdown[match.end("body") :]

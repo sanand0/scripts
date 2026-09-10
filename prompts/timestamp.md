@@ -1,5 +1,23 @@
 # Timestamp
 
+## Provide line numbers for warnings, 10 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Dropbox/notes/transcripts -- codex --yolo --model gpt-5.6-luna --config model_reasoning_effort=high
+-->
+
+Modify timestamp.py minimally to provide line numbers for warnings wherever possible.
+Also, mention the location of the first example of any non-monotonic timestamps (along with line numbers and timestamps).
+Do not modify any files.
+Update tests and run, as required.
+
+---
+
+You may modify timestamp.py and update tests. Don't modify transcripts.
+
+<!-- codex resume 01a0899f-b332-74b1-8dfe-7e4d15e07468 --yolo -->
+
 ## Initial version, 07 Aug 2026
 
 <!-- https://chatgpt.com/c/6a9df2fd-3254-83ec-92cf-6e243bbf52f9 -->

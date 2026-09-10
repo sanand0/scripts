@@ -70,6 +70,7 @@ def test_separator_inside_chunk_is_not_treated_as_call_boundary() -> None:
     assert result.chunk_count == 2
     assert "---\n**End of Part 1**" in result.text
     assert "**B**: [25:00] Three" in result.text
+    assert any("line 12: found 1 extra" in warning for warning in result.warnings)
 
 
 def test_missing_timestamp_chunk_stops_auto_inference_and_warns() -> None:
@@ -85,8 +86,8 @@ def test_missing_timestamp_chunk_stops_auto_inference_and_warns() -> None:
     result = module.update_markdown(source)
 
     assert "**B**: [00:00] Three" in result.text
-    assert any("no timestamps" in warning for warning in result.warnings)
-    assert any("cannot infer" in warning for warning in result.warnings)
+    assert any("chunk 2 (line 14): no timestamps" in warning for warning in result.warnings)
+    assert any("chunk 3 (line 18): cannot infer" in warning for warning in result.warnings)
 
 
 def test_explicit_chunk_starts_can_recover_after_timestamp_gap() -> None:
@@ -116,7 +117,11 @@ def test_non_monotonic_chunk_is_flagged() -> None:
     result = module.update_markdown(source)
 
     assert result.adjusted_chunks == 0
-    assert any("non-monotonic" in warning for warning in result.warnings)
+    assert any(
+        "chunk 2 (line 14): non-monotonic timestamps; first example: "
+        "line 14 [29:52] -> line 15 [00:13]" in warning
+        for warning in result.warnings
+    )
 
 
 def test_non_monotonic_chunk_blocks_later_auto_inference() -> None:
@@ -132,7 +137,7 @@ def test_non_monotonic_chunk_blocks_later_auto_inference() -> None:
     result = module.update_markdown(source)
 
     assert "**A**: [00:02] Next chunk" in result.text
-    assert any("cannot infer offset after non-monotonic chunk 2" in warning for warning in result.warnings)
+    assert any("cannot infer offset after non-monotonic chunk 2 (line 14)" in warning for warning in result.warnings)
 
 
 def test_resolve_latest_substring_match(tmp_path: Path) -> None:
@@ -204,6 +209,7 @@ def test_small_backward_overlap_is_not_retreated_as_reset() -> None:
 
     assert result.text == source
     assert result.adjusted_chunks == 0
+    assert any("chunk 2 (line 14): backward jump is <5m" in warning for warning in result.warnings)
 
 
 def test_explicit_chunk_starts_are_idempotent_even_when_previous_chunk_overruns() -> None:
