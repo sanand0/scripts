@@ -824,6 +824,7 @@ Right now, it's 85. If it increases, the failure is progressing!
 
 - 28 Aug 2026. 85. Baseline.
 - 06 Sep 2026. 86. After a crash on 04 Sep 2026.
+- 09 Sep 2026. 87. After a crash on 09 Sep 2026 when I removed the monitor HDMI + mouse.
 
 ### 29 May 2026
 
