@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Play the selected MP3 now, followed by 10 random MP3s from ~/Music.
+
+set -euo pipefail
+
+selected="$1"
+
+mapfile -d '' queue < <(
+  find "$HOME/Music" \
+    -type f -iname '*.mp3' \
+    ! -path "$selected" \
+    -print0 |
+    shuf -z -n 10
+)
+
+if playerctl --player=vlc status >/dev/null 2>&1; then
+  vlc --one-instance "$selected"
+else
+  vlc --one-instance "$selected" >/dev/null 2>&1 &
+  until playerctl --player=vlc status >/dev/null 2>&1; do
+    sleep 0.05
+  done
+fi
+
+exec vlc --one-instance --playlist-enqueue "${queue[@]}"

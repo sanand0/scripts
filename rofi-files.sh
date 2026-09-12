@@ -41,7 +41,13 @@ esac
 
 case "${ROFI_RETV}" in
   # Return: Open the file
-  1) setsid open "$fullpath" >/dev/null 2>&1 & ;;
+  1)
+    if [[ "$fullpath" == "$HOME/Music/"*.mp3 ]]; then
+      setsid "$HOME/code/scripts/play-music" "$fullpath" >/dev/null 2>&1 &
+    else
+      setsid open "$fullpath" >/dev/null 2>&1 &
+    fi
+    ;;
   # Shift+Return copies the file path to clipboard
   10) setsid --fork sh -c 'printf %s "$1" | xclip -selection clipboard -in' _ "$fullpath" >/dev/null 2>&1 ;;
   # Ctrl+Return: Open the file location in Nautilus

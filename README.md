@@ -115,6 +115,7 @@ Here are the setup details for my laptops.
 - [mailindex.py](mailindex.py) builds a compact, resumable SQLite FTS index for `~/Documents/Mail/*.mbox` at `~/Documents/Mail/mail-index.sqlite`.
 - [mcpserver.py](mcpserver.py) exposes an MCP server on localhost:8000 that lets LLMs run bash commands. Useful for ChatGPT to control your machine. Run in sandbox to reduce risk.
 - [musictag.py](musictag.py) manages MP3 ID3 tags from `~/Music/musicdump.csv`, with dry-run cleanup diffs, CSV dump/apply parity, managed tag columns, and preserved personal `POPM`/clean long `USLT` frames. Examples: `musictag.py dump`, `musictag.py fix "Album.Title.mp3"`, `musictag.py fix --write --genre Tamil --year 2014 *.mp3`, `musictag.py check | moor`.
+- [play-music](play-music) plays a selected MP3 in VLC followed by 10 random MP3s from `~/Music`; `rofi-files.sh` uses it for MP3s opened from the file picker.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [rgb](rgb) converts RGB to hex and vice versa.
