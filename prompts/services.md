@@ -1,5 +1,56 @@
 # services
 
+## VLC History, 12 Sep 2026
+
+<!-- https://chatgpt.com/c/6aa56019-6438-83ec-a973-5ae1bc5c9fac -->
+
+Is there a way by which I can configure VLC media player on my Linux machine to log all the files that it plays along with a timestamp in some location? What's the canonical way to do it? What's the easiest way to do this?
+
+---
+
+Isn't running a systemd service permanently an overhead? Or... how light is it?
+
+---
+
+OK, create the systemd script like you originally suggested. I have a set of systemd files in ~/code/scripts/services - keep this script there and adopt conventions that are relevant. Update the relevant docs, setup scripts, etc. Finally, let me know how to set it up / run it.
+
+---
+
+I'm keeping logs at ~/.local/share/sanand-scripts/ - is there a reason to avoid that in favor of ~/.local/state/...? And even if so, would I be OK using ~/.local/state/sanand-scripts/vlc-history.tsv?
+
+If ~/.local/share/sanand-scripts/vlc-history.tsv is fine, let's go with that.
+Else ~/.local/state/sanand-scripts/vlc-history.tsv
+
+---
+
+I ran setup.sh.
+I clicked on a song in VLC and it logged it in ~/.local/share/sanand-scripts/vlc-history.tsv
+After that, it's not logging anything.
+
+I'm running it in the host machine - @LocalMCP has access only to the container, so the service isn't running there.
+
+What might be the problem? How can I debug it?
+
+----
+
+```
+$ systemctl --user stop vlc-history.service
+
+bash -x ~/code/scripts/services/vlc-history.sh
++ set -euo pipefail
++ data_dir=/home/sanand/.local/share/sanand-scripts
++ log=/home/sanand/.local/share/sanand-scripts/vlc-history.tsv
++ mkdir -p /home/sanand/.local/share/sanand-scripts
++ last_key=
++ format='{{status}} {{mpris:trackid}} {{xesam:url}}'
++ playerctl --player=vlc --follow metadata --format '{{status}} {{mpris:trackid}} {{xesam:url}}'
++ IFS=' '
++ read -r status track url
+^C
+```
+
+Note: No output produced above when songs were played.
+
 ## Check logs, 15 Aug 2026
 
 <!--

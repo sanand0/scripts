@@ -1,8 +1,8 @@
 # User Systemd Services
 
 These units are installed by `./setup.sh` into the user systemd manager. The
-setup script links units from this directory, reloads systemd, enables timers,
-and can run a health check.
+setup script links units from this directory, reloads systemd, enables timers and
+standalone services, and can run a health check.
 
 ## Services
 
@@ -26,6 +26,9 @@ and can run a health check.
 - `update-files-daily.*`: refreshes the local file index every day around
   12:30am.
 - `trending-repo-weekly.*`: updates trending GitHub repos on Sunday mornings.
+- `vlc-history.service`: follows VLC over MPRIS using `playerctl` and appends one
+  row per played track to `~/.local/share/sanand-scripts/vlc-history.tsv` as
+  `ISO-8601 timestamp<TAB>URL`. It stays idle while VLC is not running.
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
 - `*.{service,timer}.disabled`: reference units that are intentionally not
@@ -60,6 +63,21 @@ Run from this directory:
 `setup.sh` refuses to overwrite non-symlink unit files under
 `~/.config/systemd/user/`. If systemd is running an old copied unit, move that
 file aside and re-run setup so the repo version is linked.
+
+## VLC Playback History
+
+`vlc-history.service` requires `playerctl` (Ubuntu: `sudo apt install -y playerctl`).
+Install and start all repo-managed user units with `./setup.sh`, or just this one
+after it has been linked:
+
+```bash
+systemctl --user enable --now vlc-history.service
+systemctl --user status vlc-history.service
+tail -f ~/.local/share/sanand-scripts/vlc-history.tsv
+```
+
+Pausing and resuming a track does not add another row. Stopping VLC (or a track)
+resets the de-duplication state, so playing the same file again is logged again.
 
 ## Run manually
 

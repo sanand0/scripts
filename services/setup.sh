@@ -5,7 +5,7 @@
 #
 #  1. Loop through all .service/.timer files next to this script
 #  2. Link them to $HOME/.config/systemd/user if not already linked
-#  3. Enable & start all .timer files (safe to re-run)
+#  3. Enable & start timers and stand-alone services (safe to re-run)
 #  4. Print status of all .service/.timer files
 
 set -euo pipefail
@@ -57,6 +57,10 @@ check_units() {
   else
     echo "ssh agent: not imported; daily-activities will try common user-session sockets"
   fi
+
+  echo
+  echo "== vlc-history prerequisites =="
+  command -v playerctl >/dev/null && echo "playerctl: ok" || echo "playerctl: missing; install with sudo apt install -y playerctl"
 }
 
 if [[ "${1-}" == "check" ]]; then

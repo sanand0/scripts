@@ -114,6 +114,7 @@ sudo apt install -y gromit-mpx          # gromit-mpx - On-screen annotation tool
 sudo apt install -y unicode-data        # unicode-data - Unicode character database (for tv unicode)
 sudo apt install -y toilet toilet-fonts # toilet - CLI banner with color and Unicode support (figlet alternative)
 sudo apt install -y smartmontools nvme-cli  # smartmontools - Disk health monitoring tools (smartctl, smartd) | nvme-cli - NVMe device management
+sudo apt install -y playerctl           # playerctl - Control media players via MPRIS (e.g., VLC, Spotify)
 # Temporary: Installed to check slint compilation
 sudo apt-get install -y libfontconfig1-dev libxkbcommon-dev
 

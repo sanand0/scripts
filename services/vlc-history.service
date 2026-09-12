@@ -1,0 +1,15 @@
+[Unit]
+Description=Log VLC playback history
+After=graphical-session.target
+OnFailure=timer-failure-notify@%n.service
+
+[Service]
+Type=simple
+ExecStart=/home/sanand/code/scripts/services/vlc-history.sh
+Restart=on-failure
+RestartSec=5s
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin
+Environment=HOME=/home/sanand
+
+[Install]
+WantedBy=default.target
