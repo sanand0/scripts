@@ -1176,6 +1176,80 @@ def test_script_force_retranscribes_existing_note(tmp_path: Path) -> None:
     assert "Transcript for call.opus line 1" in transcript
 
 
+def test_script_force_ignores_cached_chunk_transcripts(tmp_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "call"
+    input_dir = tmp_path / "calls"
+    output_dir = tmp_path / "transcripts"
+    package_root = tmp_path / "pydeps"
+    bin_dir = tmp_path / "bin"
+    prompt_file = tmp_path / "prompt.md"
+    log_path = tmp_path / "genai.log"
+    prices_path = tmp_path / "google-prices.json"
+    cache_dir = tmp_path / "cache"
+
+    input_dir.mkdir()
+    output_dir.mkdir()
+    audio_path = input_dir / "long.opus"
+    audio_path.write_bytes(b"audio")
+    prompt_file.write_text("Prompt text", encoding="utf-8")
+
+    write_fake_google_genai(package_root)
+    write_fake_ffmpeg_tools(bin_dir)
+    write_fake_google_prices(prices_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GENAI_LOG"] = str(log_path)
+    env["FAKE_FFPROBE_DURATION"] = "3900"
+    env["TRANSCRIBE_CALLS_PRICES_URL"] = prices_path.as_uri()
+    env["TRANSCRIBE_CALLS_CACHE_DIR"] = str(cache_dir)
+    env.pop("GEMINI_API_KEY", None)
+
+    initial = run_script(
+        script_path,
+        audio_path,
+        "--out",
+        output_dir,
+        "--system-prompt",
+        prompt_file,
+        "--chunk",
+        "30",
+        env=env,
+        cwd=tmp_path,
+    )
+    assert initial.returncode == 0, initial.stderr
+    assert len(list(cache_dir.glob("chunk-*.json"))) == 3
+
+    (output_dir / "long.md").write_text(
+        "# long\n\n## Transcript\n\nOld transcript text\n", encoding="utf-8"
+    )
+    env["FAKE_GENAI_TRANSCRIPT_TEXT"] = "\n".join(
+        f"**Speaker**: [00:0{index}] Forced transcript line {index}" for index in range(1, 6)
+    )
+    forced = run_script(
+        script_path,
+        audio_path,
+        "--out",
+        output_dir,
+        "--system-prompt",
+        prompt_file,
+        "--chunk",
+        "30",
+        "--force",
+        env=env,
+        cwd=tmp_path,
+    )
+
+    assert forced.returncode == 0, forced.stderr
+    audio_requests = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.startswith("AUDIO\t")]
+    assert len(audio_requests) == 6
+    transcript = (output_dir / "long.md").read_text(encoding="utf-8")
+    assert "Old transcript text" not in transcript
+    assert "Forced transcript line 1" in transcript
+
+
 def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"

@@ -1,5 +1,16 @@
 # Transcribe Calls
 
+## Force should not use cache, 09 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --yolo --model gpt-5.6-luna --config model_reasoning_effort=high
+--->
+
+Minimally modify `call` so that when `--force` is specified, it does not use any cached transcripts. Update tests as required.
+
+<!-- codex resume 01a095f3-3d0e-7933-921c-b90bb3047396 --yolo -->
+
 ## Allow multiple audios, 09 Sep 2026
 
 <!--

@@ -1076,7 +1076,7 @@ def process_audio(
             chunk_minutes=chunk_minutes,
             windows=windows,
             progress_callback=log_progress,
-            cache_dir=chunk_cache_dir,
+            cache_dir=None if force else chunk_cache_dir,
         )
         log_cost(result.usage)
 
