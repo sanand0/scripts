@@ -32,3 +32,17 @@ I have playerctl installed. Does that help?
 ---
 
 Implement this change.
+
+---
+
+Instead of playerctl could we use something like
+
+dbus-send --type=method_call --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.PlayPause 2>/dev/null
+
+---
+
+Would this also be apt as a playerctl replacement for services/vlc-history.sh?
+
+---
+
+OK. Replace playerctl in play-music

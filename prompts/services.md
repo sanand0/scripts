@@ -1,5 +1,62 @@
 # services
 
+## Fix VLC history tracking, 12 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+I'm running services/vlc-history.service which is supposed to track songs I play on VLC and log them to ~/.local/share/sanand-scripts/vlc-history.tsv.
+It doesn't work consistently. Right now, it's not working when I open an MP3 file - which opens VLC (via play-music), nor when I click on a song in VLC.
+Debug and fix.
+
+---
+
+I opened a song via rofi Ctrl+Alt+F which calls play-music. Nothing was logged. I double-clicked a song in VLC. Nothing was logged.
+
+--- <!-- steering -->
+
+FYI - I have a VLC instance playing. You're welcome to close it.
+
+---
+
+I did. It still didn't update the TSV.
+
+---
+
+I did. It still didn't update the TSV. But when I opened VLC directly and opened a file, it updates every time I open a file or double-click a file. It just doesn't update when I open a file via the rofi script triggered by Ctrl+Alt+F
+
+---
+
+No, the same issue persists.
+
+--- <!-- steering -->
+
+BTW, maybe it's working for you because VLC is running inside a sandbox or something? Could you try opening VLC in MY environment? That way, I'll be able to see it and confirm that it's the same instance?
+
+--- <!-- steering -->
+
+Yeah, I can hear the song.
+
+--- <!-- steering -->
+
+I opened another song in VLC. Then I clicked on another song.
+
+--- <!-- steering -->
+
+The songs I opened don't appear yet in ~/.local/share/sanand-scripts/vlc-history.tsv
+
+---
+
+I did
+
+---
+
+We made a number of changes. Which of these were really required? Is there an opportunity to refactor the scripts into smaller code?
+
+<!-- codex resume 01a09653-bbf0-7d51-b0a5-91d037a3a833 -->
+
 ## VLC History, 12 Sep 2026
 
 <!-- https://chatgpt.com/c/6aa56019-6438-83ec-a973-5ae1bc5c9fac -->

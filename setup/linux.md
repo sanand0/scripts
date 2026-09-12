@@ -184,7 +184,7 @@ mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, e
 mise use -g github:rtk-ai/rtk         # rtk - CLI tool proxy that reduces token consumption
 mise use -g github:sinelaw/fresh      # fresh - Text editor
 mise use -g github:walles/moor        # moor - pager with syntax highlighting
-mise use -g github:pranshuparmar/witr # witr - Why is this running? Trace any process, port, container, or file to what started it
+mise use -g github:pranshuparmar/witr # witr - Why is this running? Trace any process, port, container, or file to what started it. htop alternative
 mise use -g github:yshavit/mdq        # mdq - Query markdown, e.g. mdq '- text | # text' < file.md
 mise use -g glab                      # GitLab CLI - Official GitLab command-line tool 🔴 Rarely used
 mise use -g glow                      # glow - Render markdown in the terminal 🔴 Rarely used

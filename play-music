@@ -13,13 +13,37 @@ mapfile -d '' queue < <(
     shuf -z -n 10
 )
 
-if playerctl --player=vlc status >/dev/null 2>&1; then
-  vlc --one-instance "$selected"
+vlc_ready() {
+  dbus-send --session --print-reply \
+    --dest=org.mpris.MediaPlayer2.vlc \
+    /org/mpris/MediaPlayer2 \
+    org.freedesktop.DBus.Peer.Ping \
+    >/dev/null 2>&1
+}
+
+file_uri() {
+  LC_ALL=C gio info -a standard::name "$1" | sed -n 's/^uri: //p'
+}
+
+selected_uri=$(file_uri "$selected")
+if vlc_ready; then
+  gdbus call --session \
+    --dest=org.mpris.MediaPlayer2.vlc \
+    --object-path=/org/mpris/MediaPlayer2 \
+    --method=org.mpris.MediaPlayer2.Player.OpenUri \
+    "$selected_uri" >/dev/null
 else
-  vlc --one-instance "$selected" >/dev/null 2>&1 &
-  until playerctl --player=vlc status >/dev/null 2>&1; do
+  vlc --dbus --one-instance "$selected" >/dev/null 2>&1 &
+  until vlc_ready; do
     sleep 0.05
   done
 fi
 
+until metadata=$(gdbus call --session \
+  --dest=org.mpris.MediaPlayer2.vlc \
+  --object-path=/org/mpris/MediaPlayer2 \
+  --method=org.freedesktop.DBus.Properties.Get \
+  org.mpris.MediaPlayer2.Player Metadata) && [[ "$metadata" == *"$selected_uri"* ]]; do
+  sleep 0.05
+done
 exec vlc --one-instance --playlist-enqueue "${queue[@]}"
