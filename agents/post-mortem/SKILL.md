@@ -1,6 +1,6 @@
 ---
 name: post-mortem
-description: If the task had failures or was inefficient or complex, ALWAYS run this post-mortem.
+description: Run when the task reveals a costly, recurring, or likely-generalizable failure, inefficiency, or misalignment. Skip one-offs and complexity alone.
 ---
 
 Run a blameless post-mortem on this conversation so far (post any previous post-mortems) to improve future performance.
