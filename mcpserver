@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# Start the LocalMCP2 OpenAI tunnel, then run mcpserver.py through dev.sh.
+# All arguments are passed to dev.sh before its `--` separator.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+TUNNEL_ALIAS="localmcp2"
+TUNNEL_ID="tunnel_6ab0b44c148c8191ab70479ddbf9baca"
+MCP_URL="http://127.0.0.1:2428/mcp2428"
+
+usage() {
+  cat <<'EOF'
+Usage: mcpserver [DEV.SH OPTIONS]
+
+Start the LocalMCP2 OpenAI tunnel and run mcpserver.py in dev.sh. All options
+are passed to dev.sh, so custom mounts work exactly as before.
+
+Examples:
+  mcpserver
+  mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro
+  mcpserver -p ~/Downloads,~/Documents/data:ro
+EOF
+}
+
+if [[ ${1-} == "-h" || ${1-} == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    printf 'ERROR: pass only dev.sh options; mcpserver adds `-- mcpserver.py` itself\n' >&2
+    exit 2
+  fi
+done
+
+if ! command -v tunnel-client >/dev/null 2>&1; then
+  printf 'ERROR: tunnel-client is not on PATH\n' >&2
+  exit 1
+fi
+
+if ! command -v jaq >/dev/null 2>&1; then
+  printf 'ERROR: jaq is required to inspect the tunnel runtime\n' >&2
+  exit 1
+fi
+
+if ! tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
+  | jaq -e '.process_running == true and .stale == false' >/dev/null; then
+  if [[ ! -r "$ENV_FILE" ]]; then
+    printf 'ERROR: cannot read %s\n' "$ENV_FILE" >&2
+    exit 1
+  fi
+
+  printf 'Starting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    if [[ -z ${OPENAI_API_KEY_LOCALMCP2:-} ]]; then
+      printf 'ERROR: OPENAI_API_KEY_LOCALMCP2 is missing from %s\n' "$ENV_FILE" >&2
+      exit 1
+    fi
+    tunnel-client runtimes connect \
+      --alias "$TUNNEL_ALIAS" \
+      --tunnel-id "$TUNNEL_ID" \
+      --runtime-api-key env:OPENAI_API_KEY_LOCALMCP2 \
+      --mcp-server-url "$MCP_URL" \
+      --json >/dev/null
+  )
+fi
+
+printf 'LocalMCP2 tunnel is running; starting MCP server at %s\n' "$MCP_URL" >&2
+exec "$SCRIPT_DIR/dev.sh" "$@" -- mcpserver.py

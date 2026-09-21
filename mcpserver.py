@@ -7,7 +7,7 @@
 
 # Usage: uv run mcpserver.py
 #   Exposes an MCP server on localhost:2428 that lets LLMs run bash commands.
-#   curl localhost:2428/mcp to test
+#   curl localhost:2428/mcp2428 to test
 # Test with
 #   just test-mcpserver
 
@@ -44,6 +44,7 @@ from mcp.types import (
 
 # Initialize the server
 mcp = FastMCP("Remote shell commands")
+MCP_PATH = "/mcp2428"
 LOG_DIR = Path.home() / ".local/share/sanand-scripts/mcpserver"
 MAX_LINE_BYTES = 50 * 1024
 TRIM_PREFIX_BYTES = 49 * 1024
@@ -387,58 +388,6 @@ class IgnoreUnknownParametersMiddleware(Middleware):
 
 mcp.add_middleware(RequestLogMiddleware())
 mcp.add_middleware(IgnoreUnknownParametersMiddleware())
-
-
-def load_env_token(name: str) -> str:
-    env_path = Path(__file__).with_name(".env")
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            if key.strip() == name:
-                return value.strip().strip("'\"")
-    return os.environ.get(name, "")
-
-
-def matching_cloudflared_running(token: str) -> bool:
-    for cmdline_path in Path("/proc").glob("[0-9]*/cmdline"):
-        try:
-            parts = cmdline_path.read_bytes().split(b"\0")
-        except OSError:
-            continue
-        if not parts or Path(parts[0].decode(errors="ignore")).name != "cloudflared":
-            continue
-        if token in " ".join(part.decode(errors="ignore") for part in parts):
-            return True
-    return False
-
-
-def start_cloudflare_tunnel() -> subprocess.Popen[str] | None:
-    token = load_env_token("CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN")
-    if not token:
-        raise RuntimeError("CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN not found in .env")
-    if matching_cloudflared_running(token):
-        return None
-    log_dir = Path.home() / ".local/share/sanand-scripts/mcpserver-cloudflared"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{datetime.now():%Y-%m-%d-%H-%M-%S}.jsonl"
-    return subprocess.Popen(
-        ["cloudflared", "tunnel", "--logfile", str(log_path), "run", "--token", token],
-        text=True,
-    )
-
-
-def stop_cloudflare_tunnel(process: subprocess.Popen[str] | None) -> None:
-    if process is None or process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
 
 
 def log_startup_record() -> dict[str, Any]:
@@ -877,13 +826,13 @@ def mcp_rate(args: list[str]) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def main() -> None:
     if Path(sys.argv[0]).name == "mcp-rate" or (len(sys.argv) > 1 and sys.argv[1] == "mcp-rate"):
         offset = 1 if Path(sys.argv[0]).name == "mcp-rate" else 2
         raise SystemExit(mcp_rate(sys.argv[offset:]))
     log_startup_record()
-    tunnel = start_cloudflare_tunnel()
-    try:
-        mcp.run(transport="http", port=2428)
-    finally:
-        stop_cloudflare_tunnel(tunnel)
+    mcp.run(transport="http", port=2428, path=MCP_PATH)
+
+
+if __name__ == "__main__":
+    main()

@@ -41,6 +41,24 @@ def successful_bash_result() -> tuple[str, dict]:
     return "ok", {"stderr_bytes": 0, "exit_code": 0, "ok": True}
 
 
+def test_http_app_uses_mcp2428_endpoint() -> None:
+    app = mcpserver.mcp.http_app(path=mcpserver.MCP_PATH)
+
+    assert [route.path for route in app.routes] == ["/mcp2428"]
+
+
+def test_main_starts_http_server_without_cloudflare_token(monkeypatch) -> None:
+    calls = []
+    monkeypatch.delenv("CLOUDFLARE_TUNNEL_LOCALHOST_TOKEN", raising=False)
+    monkeypatch.setattr(sys, "argv", ["mcpserver.py"])
+    monkeypatch.setattr(mcpserver, "log_startup_record", lambda: {})
+    monkeypatch.setattr(mcpserver.mcp, "run", lambda **kwargs: calls.append(kwargs))
+
+    mcpserver.main()
+
+    assert calls == [{"transport": "http", "port": 2428, "path": "/mcp2428"}]
+
+
 def test_trim_long_lines_keeps_each_line_under_50kb() -> None:
     line = "a" * (60 * 1024)
 
@@ -265,54 +283,6 @@ def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch
     assert logged["pid"] > 0
     assert logged["cwd"]
     assert capsys.readouterr().out.startswith("mounted paths (rw = read-write, ro = read-only):\n")
-
-
-def test_cloudflare_tunnel_reuses_matching_process_or_starts_owned_one(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(mcpserver, "load_env_token", lambda name: "secret-token")
-    monkeypatch.setattr(mcpserver.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(mcpserver, "matching_cloudflared_running", lambda token: True)
-
-    assert mcpserver.start_cloudflare_tunnel() is None
-
-    started = object()
-    calls = []
-    monkeypatch.setattr(mcpserver, "matching_cloudflared_running", lambda token: False)
-    monkeypatch.setattr(
-        mcpserver.subprocess,
-        "Popen",
-        lambda command, text: calls.append((command, text)) or started,
-    )
-
-    assert mcpserver.start_cloudflare_tunnel() is started
-    command, text = calls[0]
-    assert command[:3] == ["cloudflared", "tunnel", "--logfile"]
-    assert command[-3:] == ["run", "--token", "secret-token"]
-    assert text is True
-
-
-def test_cloudflare_tunnel_cleanup_kills_after_timeout() -> None:
-    class Process:
-        killed = False
-        terminated = False
-
-        def poll(self):
-            return None
-
-        def terminate(self):
-            self.terminated = True
-
-        def wait(self, timeout=None):
-            if not self.killed:
-                raise mcpserver.subprocess.TimeoutExpired("cloudflared", timeout)
-
-        def kill(self):
-            self.killed = True
-
-    process = Process()
-    mcpserver.stop_cloudflare_tunnel(process)
-
-    assert process.terminated is True
-    assert process.killed is True
 
 
 def test_log_event_records_safe_http_context_and_session(tmp_path, monkeypatch) -> None:

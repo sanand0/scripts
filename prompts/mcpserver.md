@@ -1,5 +1,49 @@
 # MCP Server
 
+## Debug connectivity, 21 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+When I run `dev.sh -- mcpserver.py` it sets up https://mcp.s-anand.net/mcp but Claude and ChatGPT are unable to connect to it. (They were able to until a few hours ago.)
+Are you, Codex, able to (after running it) connect to it and is it working fine? If so, what might be the issue - something at the Cloudflare end? My laptop? Both ChatGPT _and_ Claude changing something? An MCP version issue or something? Diagnose.
+
+---
+
+I ran `dev.sh -- mcpserver.py independently`. Can you test now?
+
+---
+
+Modify the endpoint to use /mcp2428 rather than /mcp
+
+---
+Help me set this up as a new plugin, LocalMCP2, on ChatGPT, using an OpenAI tunnel. Feel free to use CDP on localhost:9222 - I already have a tab open for this. https://chatgpt.com/plugins?view=personal#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins - and I also have a tunnel page open: https://platform.openai.com/settings/organization/tunnels. Test what you need (especially risky / uncertain things) first. Let me know if you need me to restart / run something.
+
+---
+
+I've saved it instead in ~/code/scripts/.env as OPENAI_API_KEY_LOCALMCP2 - use that.
+
+---
+
+I prefer a single script that I need to run to get the MCP server up and running.
+I want to be able to pass arguments to dev.sh. You can check my fish history but typically I call `dev.sh -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro -- mcpserver.py` or that sort of thing, and I change the paths and other options I pass to dev.sh. I'd like to be able to do that easily.
+If this can be accomplished with existing scripts, let me know how. If we need a new script, create a simple `mcpserver` to which I can pass arguments.
+
+---
+
+Update README.md.
+Document the process you followed to set this up, step-by-step (and easy to follow for someone later), linked to relevant docs, in setup/localmcp.md.
+Include anything to watch out for, permissions, paths, ... whatever's required for completeness.
+Commit files related to this conversation - including prompts/mcpserver.md.
+
+--- <!-- steering -->
+
+Modify mcpserver.py so that it doesn't start the older Cloudflare tunnel.
+
+<!-- codex resume 01a0c220-5927-7542-aee0-debf542a9e75 -->
+
 ## Allow up to 4 concurrent processes, 24 Aug 2026
 
 <!--
