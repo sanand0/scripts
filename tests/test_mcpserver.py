@@ -144,6 +144,24 @@ def test_run_bash_command_records_nonzero_timeout_and_cwd(tmp_path) -> None:
     assert timeout_result["error"]
 
 
+def test_run_bash_command_does_not_leak_mcpserver_uv_environment(monkeypatch) -> None:
+    server_bin = str(Path(sys.executable).parent)
+    monkeypatch.setenv("VIRTUAL_ENV", str(Path(sys.executable).parent.parent))
+    monkeypatch.setenv("UV_RUN_RECURSION_DEPTH", "1")
+    monkeypatch.setenv("PATH", f"{server_bin}:/usr/bin")
+
+    output, result = mcpserver.run_bash_command(
+        "env | grep -E '^(VIRTUAL_ENV|UV_RUN_RECURSION_DEPTH|PATH)=' || true",
+        timeout_ms=1000,
+    )
+
+    assert result["exit_code"] == 0
+    assert "VIRTUAL_ENV=" not in output
+    assert "UV_RUN_RECURSION_DEPTH=" not in output
+    assert server_bin not in output
+    assert "PATH=/usr/bin" in output
+
+
 def test_bash_returns_structured_nonzero_result_as_tool_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path / "logs")
 

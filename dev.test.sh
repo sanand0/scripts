@@ -493,7 +493,12 @@ if has_command uv; then
   global_python="${HOME}/apps/global/.venv/bin/python"
   if run_check "test -x $global_python" path_is_executable "$global_python"; then
     check_command_runs "$global_python --version" "$global_python" --version
-    run_check "python packages cairosvg pillow playwright" python_packages_present "$global_python" cairosvg pillow playwright
+    run_check \
+      "common Python packages" \
+      python_packages_present \
+      "$global_python" \
+      beautifulsoup4 cairosvg numpy openpyxl pillow playwright pyyaml \
+      python-docx python-pptx requests ruamel.yaml scikit-learn scipy websocket-client
   fi
   tmp_uv="$(make_tmpdir)"
   if [ -n "$tmp_uv" ]; then

@@ -430,6 +430,18 @@ def finalize_output(
     return total_limited, result
 
 
+def bash_environment() -> dict[str, str]:
+    """Return the container environment without mcpserver's private uv runtime."""
+    env = os.environ.copy()
+    env.pop("VIRTUAL_ENV", None)
+    env.pop("UV_RUN_RECURSION_DEPTH", None)
+    server_bin = str(Path(sys.executable).parent)
+    env["PATH"] = os.pathsep.join(
+        entry for entry in env.get("PATH", "").split(os.pathsep) if entry != server_bin
+    )
+    return env
+
+
 def run_bash_command(commands: str, timeout_ms: int, cwd: str | None = None) -> tuple[str, dict[str, Any]]:
     started_at = iso_timestamp()
     start = time.monotonic()
@@ -458,6 +470,7 @@ def run_bash_command(commands: str, timeout_ms: int, cwd: str | None = None) -> 
             text=True,
             timeout=timeout_ms / 1000,
             cwd=Path(cwd).expanduser() if cwd else None,
+            env=bash_environment(),
         )
         result["exit_code"] = completed.returncode
         result["stdout_bytes"] = len(completed.stdout.encode())
