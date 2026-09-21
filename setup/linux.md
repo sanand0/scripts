@@ -490,6 +490,19 @@ systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
 # See status via systemctl --user status org.gnome.SettingsDaemon.MediaKeys.service
 # See live logs via journalctl --user -f -u org.gnome.SettingsDaemon.MediaKeys.service
 
+# Disable the TrackPoint middle button to avoid accidentally closing tabs in browsers. 14 Sep 2026.
+# We change button mapping from "1 2 3" (left, middle, right) to "1 0 3" (left, none, right).
+# Requires logging out and back in to take effect. https://chatgpt.com/c/6aa80ee7-a6dc-83ec-9c60-30c99f87585b
+sudo mkdir -p /etc/X11/xorg.conf.d
+sudo tee /etc/X11/xorg.conf.d/90-disable-trackpoint-middle.conf >/dev/null <<'EOF'
+Section "InputClass"
+    Identifier "Disable TrackPoint middle button"
+    MatchProduct "TPPS/2 Elan TrackPoint"
+    MatchIsPointer "on"
+    Option "ButtonMapping" "1 0 3"
+EndSection
+EOF
+
 # Customize Foliate line height
 mkdir -p ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/
 cat > ~/.var/app/com.github.johnfactotum.Foliate/config/com.github.johnfactotum.Foliate/user-stylesheet.css << 'EOF'
@@ -601,15 +614,26 @@ systemctl --user daemon-reload
 systemctl --user restart espanso
 ```
 
-- Update DNS via `sudo /etc/systemd/resolved.conf` to ensure these lines:
+- To use Cloudflare DNS, run `sudo nano /etc/systemd/resolved.conf` to include these lines:
+
   ```ini
-  # Use Cloudflare DNS with TLS. The #domain.com is required for DNSOverTLS.
+  # Use Cloudflare DNS with TLS. The #{DOMAIN}.com is required for DNSOverTLS.
   DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com
   DNSOverTLS=yes
   # Ensure specific interfaces don't override Cloudflare DNS.
   FallbackDNS=1.1.1.1 1.0.0.1
   Domains=~.
   ```
+
+  Then run:
+
+  ```bash
+  sudo systemctl restart systemd-resolved
+  sudo resolvectl flush-caches
+  ```
+
+  Remove if WiFi hotspots fail to connect.
+
 - Install Gnome extensions via Extension Manager:
   - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V

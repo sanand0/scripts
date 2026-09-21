@@ -742,7 +742,7 @@ end
 
 # #TODO - unused so far
 function youtube-subtitles --description "downloads subtitles from YouTube video URL"
-    curl -s "$(yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
+    curl -s "$(uvx --with mutagen yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
 # Convert file to Opus. (libopus has no GPU encoder.)
