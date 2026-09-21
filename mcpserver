@@ -47,31 +47,45 @@ if ! command -v jaq >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
-  | jaq -e '.process_running == true and .stale == false' >/dev/null; then
-  if [[ ! -r "$ENV_FILE" ]]; then
-    printf 'ERROR: cannot read %s\n' "$ENV_FILE" >&2
-    exit 1
-  fi
-
-  printf 'Starting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
-  (
-    set -a
-    # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
-    if [[ -z ${OPENAI_API_KEY_LOCALMCP2:-} ]]; then
-      printf 'ERROR: OPENAI_API_KEY_LOCALMCP2 is missing from %s\n' "$ENV_FILE" >&2
-      exit 1
-    fi
-    tunnel-client runtimes connect \
-      --alias "$TUNNEL_ALIAS" \
-      --tunnel-id "$TUNNEL_ID" \
-      --runtime-api-key env:OPENAI_API_KEY_LOCALMCP2 \
-      --mcp-server-url "$MCP_URL" \
-      --json >/dev/null
-  )
+if [[ ! -r "$ENV_FILE" ]]; then
+  printf 'ERROR: cannot read %s\n' "$ENV_FILE" >&2
+  exit 1
 fi
+
+if ! (
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+  [[ -n ${OPENAI_API_KEY_LOCALMCP2:-} ]]
+); then
+  printf 'ERROR: OPENAI_API_KEY_LOCALMCP2 is missing from %s\n' "$ENV_FILE" >&2
+  exit 1
+fi
+
+# A managed runtime can be locally ready while its control-plane poller is
+# wedged. Recreate it on every invocation so Ctrl-C/restart cycles always get
+# a fresh poller; the remote tunnel ID and local profile remain unchanged.
+if tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
+  | jaq -e '.process_running == true' >/dev/null; then
+  printf 'Restarting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
+  tunnel-client runtimes stop "$TUNNEL_ALIAS" --json >/dev/null
+else
+  printf 'Starting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
+fi
+
+(
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+  tunnel-client runtimes connect \
+    --alias "$TUNNEL_ALIAS" \
+    --tunnel-id "$TUNNEL_ID" \
+    --runtime-api-key env:OPENAI_API_KEY_LOCALMCP2 \
+    --mcp-server-url "$MCP_URL" \
+    --json >/dev/null
+)
 
 printf 'LocalMCP2 tunnel is running; starting MCP server at %s\n' "$MCP_URL" >&2
 exec "$SCRIPT_DIR/dev.sh" "$@" -- mcpserver.py

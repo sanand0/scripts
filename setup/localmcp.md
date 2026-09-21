@@ -39,14 +39,17 @@ mcpserver -p ~/code/scripts,~/code/talks,~/Downloads,~/code:ro,~/r2:ro
 
 The [mcpserver wrapper](../mcpserver):
 
-1. Checks whether the managed `localmcp2` tunnel runtime is already running.
-2. If needed, reads `OPENAI_API_KEY_LOCALMCP2` from `~/code/scripts/.env` and
-   starts the runtime.
-3. Executes `dev.sh <options> -- mcpserver.py` in the foreground.
+1. Validates `OPENAI_API_KEY_LOCALMCP2` in `~/code/scripts/.env`.
+2. Stops any existing managed `localmcp2` runtime.
+3. Reconnects the existing tunnel ID with `tunnel-client runtimes connect`,
+   creating a fresh control-plane poller.
+4. Executes `dev.sh <options> -- mcpserver.py` in the foreground.
 
 Ctrl-C stops the foreground MCP server container. The managed tunnel runtime
-stays up and is reused on the next invocation. After a reboot, running
-`mcpserver` starts both pieces again.
+may remain in the background, but the next `mcpserver` invocation always
+restarts it. This is intentional: local `/healthz` and `/readyz` can remain
+green even when the control-plane poller has wedged, so reusing a process-only
+healthy runtime is not sufficient for reliable restart cycles.
 
 ## One-time setup
 
@@ -179,8 +182,9 @@ tunnel-client runtimes connect \
 ```
 
 `runtimes connect` writes a reusable profile and starts a managed background
-runtime. The wrapper runs the same command only when that runtime is missing or
-stale.
+runtime. The wrapper runs `runtimes stop` followed by `runtimes connect` on each
+invocation; this is the canonical native lifecycle and avoids stale pollers
+after repeated Ctrl-C/restart cycles. The remote tunnel itself is not deleted.
 
 Current local state lives at:
 
@@ -277,8 +281,11 @@ tunnel-client runtimes status localmcp2 --json \
   | jaq '{ready, process_running, stale, target: .process.target_value}'
 ```
 
-A working runtime reports `ready: true`, `process_running: true`,
-`stale: false`, and the `/mcp2428` target.
+A working local runtime reports `ready: true`, `process_running: true`,
+`stale: false`, and the `/mcp2428` target. These are local liveness/readiness
+signals; they do not prove that the control-plane poller is still responsive.
+That is why the `mcpserver` wrapper recreates the managed runtime on every
+invocation instead of trusting process status alone.
 
 Check its loopback health endpoints:
 

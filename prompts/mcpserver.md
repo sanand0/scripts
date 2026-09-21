@@ -1,6 +1,24 @@
 # MCP Server
 
-## Debug connectivity, 21 Sep 2026
+## Retest LocalMCP2, 21 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-sol --config model_reasoning_effort=medium
+-->
+
+After codex session 01a0c220-5927-7542-aee0-debf542a9e75 created `mcpserver`, it worked fine. But now, it's not working via ChatGPT (which is still open on my browser - CDP localhost:9222). When I click "Refresh" in https://chatgpt.com/plugins/plugin_asdk_app_6ab0b6c561508191882e58b23665db3e#settings/Plugins/plugin_asdk_app_6ab0b6c561508191882e58b23665db3e it reports "Error refreshing actions. Something went wrong. If this issue persists please contact us through our help center at help.openai.com."
+
+I have `mcpserver` running. Let me know if I need to restart it or something. Diagnose and fix.
+
+--- <!-- model=gpt-5.6-luna effort=high -->
+
+How do we ensure that `mcpserver` automatically restarts the tunnel when required? What's the canonical way?
+Keep in mind that I'll be stopping the process via Ctrl+C and restarting it regularly, so I'd like the approach to be robust.
+
+<!-- codex resume 01a0c281-e00e-7e51-9bdb-5e71c193a9d2 -->
+
+## Debug connectivity and create LocalMCP2 via tunnel, 21 Sep 2026
 
 <!--
 cd ~/code/scripts
