@@ -1,5 +1,41 @@
 # MCP Server
 
+## Handle different networks, 21 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-luna --config model_reasoning_effort=medium
+-->
+
+When running `mcpserver` on my mobile hotspot, the tunnel seems to connect fine. But in the network I'm currently on, it doesn't seem to work. Is there a way around it?
+(Feel free to use gpt-5.6-sol sub-agents for complex reasoning).
+
+--- <!-- model=gpt-5.6-sol -->
+
+I can't use a VPN and there's no HTTP proxy. The admin won't change the network config. Any other options?
+
+---
+
+Patch mcpserver minimally. I stopped the current running mcpserver. When you're done, I'll test it.
+
+--- <!-- model=gpt-5.6-luna effort=high -->
+
+I keep getting this error:
+
+Starting MCP server at http://127.0.0.1:2428/mcp2428...
+cannot attach stdin to a TTY-enabled container because stdin is not a terminal
+ERROR: MCP server exited before becoming reachable at http://127.0.0.1:2428/mcp2428
+
+---
+
+A very minor thing. After the lines "Restarting OpenAI tunnel localmcp2..." and "LocalMCP2 tunnel is running at ..." there's a new line but no CR, I think. Please fix.
+
+---
+
+Make sure `mcpserver` runs when run from any directory. Right now, I get "[FATAL tini (50)] exec mcpserver.py failed: No such file or directory"
+
+<!-- codex resume 01a0c390-f0b8-7953-a5d4-e341b6b45f11 -->
+
 ## Retest LocalMCP2, 21 Sep 2026
 
 <!--

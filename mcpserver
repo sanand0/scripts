@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Start the LocalMCP2 OpenAI tunnel, then run mcpserver.py through dev.sh.
+# Run mcpserver.py through dev.sh, then start the LocalMCP2 OpenAI tunnel.
 # All arguments are passed to dev.sh before its `--` separator.
 
 set -euo pipefail
@@ -11,12 +11,20 @@ TUNNEL_ALIAS="localmcp2"
 TUNNEL_ID="tunnel_6ab0b44c148c8191ab70479ddbf9baca"
 MCP_URL="http://127.0.0.1:2428/mcp2428"
 
+status_line() {
+  if [[ -t 2 ]]; then
+    printf '%s\r\n' "$1" >&2
+  else
+    printf '%s\n' "$1" >&2
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage: mcpserver [DEV.SH OPTIONS]
 
-Start the LocalMCP2 OpenAI tunnel and run mcpserver.py in dev.sh. All options
-are passed to dev.sh, so custom mounts work exactly as before.
+Run mcpserver.py in dev.sh, wait for it to become reachable, then start the
+LocalMCP2 OpenAI tunnel. All options are passed to dev.sh as before.
 
 Examples:
   mcpserver
@@ -47,6 +55,11 @@ if ! command -v jaq >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+  printf 'ERROR: curl is required to wait for the MCP server\n' >&2
+  exit 1
+fi
+
 if [[ ! -r "$ENV_FILE" ]]; then
   printf 'ERROR: cannot read %s\n' "$ENV_FILE" >&2
   exit 1
@@ -63,15 +76,41 @@ if ! (
   exit 1
 fi
 
+if [[ ! -t 0 ]]; then
+  printf 'ERROR: mcpserver must be started from an interactive terminal\n' >&2
+  exit 1
+fi
+
+# Start the MCP server first so the tunnel's startup probe can reach it.
+status_line "Starting MCP server at $MCP_URL..."
+dev_args=(-v "$SCRIPT_DIR:$SCRIPT_DIR:ro" "$@")
+"$SCRIPT_DIR/dev.sh" "${dev_args[@]}" -- "$SCRIPT_DIR/mcpserver.py" </dev/tty &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+deadline=$((SECONDS + 10))
+until curl --silent --output /dev/null --max-time 1 "$MCP_URL"; do
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    printf 'ERROR: MCP server exited before becoming reachable at %s\n' "$MCP_URL" >&2
+    wait "$server_pid" || exit $?
+    exit 1
+  fi
+  if ((SECONDS >= deadline)); then
+    printf 'ERROR: MCP server did not start at %s within 10 seconds\n' "$MCP_URL" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
 # A managed runtime can be locally ready while its control-plane poller is
 # wedged. Recreate it on every invocation so Ctrl-C/restart cycles always get
 # a fresh poller; the remote tunnel ID and local profile remain unchanged.
 if tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
   | jaq -e '.process_running == true' >/dev/null; then
-  printf 'Restarting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
+  status_line "Restarting OpenAI tunnel $TUNNEL_ALIAS..."
   tunnel-client runtimes stop "$TUNNEL_ALIAS" --json >/dev/null
 else
-  printf 'Starting OpenAI tunnel %s...\n' "$TUNNEL_ALIAS" >&2
+  status_line "Starting OpenAI tunnel $TUNNEL_ALIAS..."
 fi
 
 (
@@ -87,5 +126,5 @@ fi
     --json >/dev/null
 )
 
-printf 'LocalMCP2 tunnel is running; starting MCP server at %s\n' "$MCP_URL" >&2
-exec "$SCRIPT_DIR/dev.sh" "$@" -- mcpserver.py
+status_line "LocalMCP2 tunnel is running at $MCP_URL"
+wait "$server_pid"
