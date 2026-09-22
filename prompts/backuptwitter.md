@@ -1,5 +1,26 @@
 # Prompts
 
+## Fix error, 22 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-5.6-luna --config model_reasoning_effort=medium
+-->
+
+`backuptwitter.py` produces this output:
+
+```
+fetching 500 tweets in /home/sanand/Documents/twitter via twitter-cli Python API
+Failed to init ClientTransaction: 'NoneType' object has no attribute 'group'
+wrote 354 tweets (354 added, 0 changed, complete) from 500 fetched for 2026-09-13T00:00:00Z..2026-09-20T00:00:00Z
+/home/sanand/Documents/twitter/list-genai/2026-09-20.json
+/home/sanand/Documents/twitter/list-genai/2026-09-20.md
+```
+
+The "Failed to init..." occurs every time. Fix it minimally and test.
+
+<!-- codex resume 01a0c6a9-6eb5-7942-9ece-518d5af0d02b -->
+
 ## Initial script, 29 Jun 2026
 
 <!--

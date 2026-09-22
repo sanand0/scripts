@@ -238,7 +238,13 @@ def fetch(source: dict[str, Any], limit: int, cwd: Path) -> dict[str, Any]:
         client_module._ABSOLUTE_MAX_COUNT = max(client_module._ABSOLUTE_MAX_COUNT, limit)
         config = load_config()
         cookies = get_cookies()
-        client = TwitterClient(cookies["auth_token"], cookies["ct0"], config.get("rateLimit"), cookie_string=cookies.get("cookie_string"))
+        # xclienttransaction's homepage parser currently expects an obsolete X
+        # markup pattern. Transaction IDs are optional for these read requests.
+        class BackupTwitterClient(TwitterClient):
+            def _ensure_client_transaction(self) -> None:
+                return None
+
+        client = BackupTwitterClient(cookies["auth_token"], cookies["ct0"], config.get("rateLimit"), cookie_string=cookies.get("cookie_string"))
         if source["kind"] == "list":
             tweets = client.fetch_list_timeline(source["id"], limit)
         elif source["kind"] == "user":
