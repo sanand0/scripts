@@ -139,7 +139,7 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   cd ~/apps/global; \
   uv venv; \
   source .venv/bin/activate; \
-  uv pip install beautifulsoup4 cairosvg csvkit dprint yt-dlp docling httpx lxml numpy openpyxl pandas pillow pyyaml python-docx python-pptx requests rich ruff ruamel.yaml scikit-learn scipy tenacity pytest typer orjson google_genai websocket-client "playwright==${PLAYWRIGHT_VERSION}"; \
+  uv pip install beautifulsoup4 cairosvg csvkit dprint yt-dlp docling httpx llm lxml numpy openpyxl pandas pillow pyyaml python-docx python-pptx requests rich ruff ruamel.yaml scikit-learn scipy tenacity pytest typer orjson google_genai websocket-client "playwright==${PLAYWRIGHT_VERSION}"; \
   llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper; \
   '
 

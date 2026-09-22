@@ -354,7 +354,7 @@ sudo usermod -aG docker $USER
 # Install Zed
 # curl -f https://zed.dev/install.sh | sh
 
-# Install Antigravity CLI
+# Install Antigravity CLI (agy)
 curl -fsSL https://antigravity.google/cli/install.sh | bash
 # Then, I manually deleted the ~/.local/bin additions to $PATH in ~/.profile and ~/.config/fish/setup.fish
 
