@@ -91,6 +91,19 @@ matches:
       dev.sh -- copilot --yolo --model claude-sonnet-4.6
       -->
 
+  # Special characters
+  # 4 hyphens trigger an em-dash. Avoid 3 hyphens - I use that for YAML frontmatter.
+  - trigger: '----'
+    replace: —
+  # 4 periods trigger an ellipsis. Avoid 3 dots - it conflicts with JS rest parameters, Python singleton, etc.
+  - trigger: '....'
+    replace: …
+  # 3 single quotes and 3 double quotes create a “smart quote”
+  - trigger: "'''"
+    replace: “
+  - trigger: '"""'
+    replace: ”
+
   # Print the output of a shell command
   - trigger: ":shell"
     replace: "{{output}}"
