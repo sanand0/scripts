@@ -231,6 +231,7 @@ args=(
   # Caches
   -v "$HOME/.cache/huggingface:/home/vscode/.cache/huggingface"
   -v "$HOME/.cache/pip:/home/vscode/.cache/pip"
+  -v "$HOME/.cache/cctop:/home/vscode/.cache/cctop"
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
   -v "$HOME/.cache/sanand-scripts:/home/vscode/.cache/sanand-scripts"
   # Configs. Enable what's required.
@@ -252,6 +253,7 @@ args=(
   # The host `~/.local/bin` is useful for sharing personal CLIs, but it must
   # stay behind the image-owned PATH entries defined in `dev.dockerfile`.
   -v "$HOME/.local/bin:/home/vscode/.local/bin:ro"
+  -v "$HOME/.cargo/bin:/home/vscode/.cargo/bin:ro"
   -v "$HOME/.local/share/claude:/home/vscode/.local/share/claude"
   # Deliberately do not mount host `~/.local/share/mise`: doing so replaces the
   # image-managed installs/shims and makes the container toolchain depend on the

@@ -291,6 +291,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Rust - Systems programming language | Update: rustup update
 curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
+cargo install --locked cctop  # Real-time agent monitor
 
 # Set up uv environments
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.14; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
