@@ -648,8 +648,9 @@ function meeting --description "Create a new meeting transcript file"
 
 # $title
 
-- 🟣 Speak less, observe and learn more.
-- 🟣 Scan for politics (who wins/loses) and emotion and **test** your hypotheses.
+- 🟣 Speak less, learn actively.
+- 🟣 Diagnose before solutioning.
+- 🟣 Scan emotions, politics. Test hypotheses.
 - 🟣 Close with owner, date, proof
 
 ## Transcript
@@ -671,7 +672,7 @@ function blog --description "Create a new blog post"
 title: $title
 date: $date
 categories:
-    - links
+- links
 ---
 " > $file
     end
