@@ -10,6 +10,7 @@ ENV_FILE="$SCRIPT_DIR/.env"
 TUNNEL_ALIAS="localmcp2"
 TUNNEL_ID="tunnel_6ab0b44c148c8191ab70479ddbf9baca"
 MCP_URL="http://127.0.0.1:2428/mcp2428"
+MAX_POLL_AGE_SECONDS=90
 
 status_line() {
   if [[ -t 2 ]]; then
@@ -30,6 +31,9 @@ Examples:
   mcpserver
   mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro
   mcpserver -p ~/Downloads,~/Documents/data:ro
+
+HTTP is stateless by default. For rollback/diagnosis:
+  MCPSERVER_STATEFUL_HTTP=1 mcpserver ...
 EOF
 }
 
@@ -81,12 +85,47 @@ if [[ ! -t 0 ]]; then
   exit 1
 fi
 
-# Start the MCP server first so the tunnel's startup probe can reach it.
+server_pid=""
+tunnel_managed=false
+cleanup() {
+  if [[ "$tunnel_managed" == true ]]; then
+    tunnel-client runtimes stop "$TUNNEL_ALIAS" --json >/dev/null 2>&1 || true
+  fi
+  [[ -z "$server_pid" ]] || kill "$server_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+tunnel_is_healthy() {
+  local status
+  status="$(tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null)" || return 1
+  jaq -e --arg url "$MCP_URL" '
+    .process_running == true
+    and .ready == true
+    and .process.target_kind == "server_url"
+    and .process.target_value == $url
+  ' <<<"$status" >/dev/null || return 1
+  local health last_poll now
+  health="$(tunnel-client health \
+    --url-file "$HOME/.local/state/tunnel-client/health/$TUNNEL_ALIAS.url" \
+    --require-control-plane-poll \
+    --json 2>/dev/null)" || return 1
+  jaq -e '.result == "ok"' <<<"$health" >/dev/null || return 1
+  last_poll="$(jaq -r '.control_plane_poll.value | floor' <<<"$health")"
+  now="$(date +%s)"
+  ((last_poll > 0 && now - last_poll <= MAX_POLL_AGE_SECONDS))
+}
+
+# Start the MCP server first so an existing or new tunnel can reach it.
 status_line "Starting MCP server at $MCP_URL..."
-dev_args=(-v "$SCRIPT_DIR:$SCRIPT_DIR:ro" "$@")
+dev_args=(-v "$SCRIPT_DIR:$SCRIPT_DIR:ro")
+if [[ -n "${MCPSERVER_STATEFUL_HTTP:-}" ]]; then
+  dev_args+=(-e "MCPSERVER_STATEFUL_HTTP=$MCPSERVER_STATEFUL_HTTP")
+fi
+dev_args+=("$@")
 "$SCRIPT_DIR/dev.sh" "${dev_args[@]}" -- "$SCRIPT_DIR/mcpserver.py" </dev/tty &
 server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
 deadline=$((SECONDS + 10))
 until curl --silent --output /dev/null --max-time 1 "$MCP_URL"; do
@@ -101,30 +140,52 @@ until curl --silent --output /dev/null --max-time 1 "$MCP_URL"; do
   fi
   sleep 0.1
 done
-
-# A managed runtime can be locally ready while its control-plane poller is
-# wedged. Recreate it on every invocation so Ctrl-C/restart cycles always get
-# a fresh poller; the remote tunnel ID and local profile remain unchanged.
-if tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
-  | jaq -e '.process_running == true' >/dev/null; then
-  status_line "Restarting OpenAI tunnel $TUNNEL_ALIAS..."
-  tunnel-client runtimes stop "$TUNNEL_ALIAS" --json >/dev/null
-else
-  status_line "Starting OpenAI tunnel $TUNNEL_ALIAS..."
+if ! kill -0 "$server_pid" 2>/dev/null; then
+  printf 'ERROR: MCP server exited while another process is answering at %s\n' "$MCP_URL" >&2
+  wait "$server_pid" || exit $?
+  exit 1
 fi
 
-(
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-  tunnel-client runtimes connect \
-    --alias "$TUNNEL_ALIAS" \
-    --tunnel-id "$TUNNEL_ID" \
-    --runtime-api-key env:OPENAI_API_KEY_LOCALMCP2 \
-    --mcp-server-url "$MCP_URL" \
-    --json >/dev/null
-)
+if tunnel_is_healthy; then
+  status_line "Reusing healthy OpenAI tunnel $TUNNEL_ALIAS..."
+else
+  if tunnel-client runtimes status "$TUNNEL_ALIAS" --json 2>/dev/null \
+    | jaq -e '.process_running == true' >/dev/null; then
+    status_line "Repairing OpenAI tunnel $TUNNEL_ALIAS..."
+    tunnel-client runtimes stop "$TUNNEL_ALIAS" --json >/dev/null
+  else
+    status_line "Starting OpenAI tunnel $TUNNEL_ALIAS..."
+  fi
+  tunnel_managed=true
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    MCP_STARTUP_WAIT_TIMEOUT=10s tunnel-client runtimes connect \
+      --alias "$TUNNEL_ALIAS" \
+      --tunnel-id "$TUNNEL_ID" \
+      --runtime-api-key env:OPENAI_API_KEY_LOCALMCP2 \
+      --mcp-server-url "$MCP_URL" \
+      --json >/dev/null
+  )
+fi
+tunnel_managed=true
 
-status_line "LocalMCP2 tunnel is running at $MCP_URL"
+deadline=$((SECONDS + 45))
+until tunnel_is_healthy; do
+  if ! kill -0 "$server_pid" 2>/dev/null; then
+    printf 'ERROR: MCP server exited while waiting for tunnel readiness\n' >&2
+    wait "$server_pid" || exit $?
+    exit 1
+  fi
+  if ((SECONDS >= deadline)); then
+    printf 'ERROR: OpenAI tunnel did not become healthy within 45 seconds\n' >&2
+    tunnel-client runtimes status "$TUNNEL_ALIAS" >&2 || true
+    exit 1
+  fi
+  sleep 0.25
+done
+
+status_line "LocalMCP2 is ready at $MCP_URL"
 wait "$server_pid"

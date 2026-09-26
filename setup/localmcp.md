@@ -40,16 +40,16 @@ mcpserver -p ~/code/scripts,~/code/talks,~/Downloads,~/code:ro,~/r2:ro
 The [mcpserver wrapper](../mcpserver):
 
 1. Validates `OPENAI_API_KEY_LOCALMCP2` in `~/code/scripts/.env`.
-2. Stops any existing managed `localmcp2` runtime.
-3. Reconnects the existing tunnel ID with `tunnel-client runtimes connect`,
-   creating a fresh control-plane poller.
-4. Executes `dev.sh <options> -- mcpserver.py` in the foreground.
+2. Starts `dev.sh <options> -- mcpserver.py` and proves the MCP listener is reachable.
+3. Reuses the managed `localmcp2` runtime only when it points at the expected
+   MCP URL, is ready, and has completed a successful control-plane poll.
+4. Otherwise stops the stale runtime and reconnects the same tunnel ID with a
+   10-second MCP startup wait.
+5. Waits for strict tunnel health before reporting LocalMCP2 ready.
 
-Ctrl-C stops the foreground MCP server container. The managed tunnel runtime
-may remain in the background, but the next `mcpserver` invocation always
-restarts it. This is intentional: local `/healthz` and `/readyz` can remain
-green even when the control-plane poller has wedged, so reusing a process-only
-healthy runtime is not sufficient for reliable restart cycles.
+Ctrl-C or an MCP server exit also stops the managed tunnel runtime, so ChatGPT
+does not keep routing calls to a dead local endpoint. Tunnel health uses
+`tunnel-client health --require-control-plane-poll`, not process liveness alone.
 
 ## One-time setup
 
@@ -182,9 +182,9 @@ tunnel-client runtimes connect \
 ```
 
 `runtimes connect` writes a reusable profile and starts a managed background
-runtime. The wrapper runs `runtimes stop` followed by `runtimes connect` on each
-invocation; this is the canonical native lifecycle and avoids stale pollers
-after repeated Ctrl-C/restart cycles. The remote tunnel itself is not deleted.
+runtime. The wrapper reuses that runtime when strict health passes; otherwise it
+repairs it with `runtimes stop` + `runtimes connect`. The remote tunnel itself
+is not deleted.
 
 Current local state lives at:
 
@@ -198,6 +198,13 @@ Current local state lives at:
 The health listener uses an ephemeral loopback port, so read the URL pointer or
 structured status instead of assuming a fixed port.
 
+The MCP server also prints one compact operator log per tool call to its terminal:
+the complete request, then a green success or red failure line with duration and a
+middle-truncated response preview. Set `MCPSERVER_CONSOLE_RESPONSE_CHARS` to
+change the default 1600-character response preview. Full tool-call arguments and
+structured results are still written to `events.jsonl`, with a readable per-call
+copy under `tool-calls/YYYY-MM/*.md`.
+
 ### 7. Create the ChatGPT plugin
 
 Enable developer mode if necessary, then open
@@ -206,14 +213,15 @@ Enable developer mode if necessary, then open
 1. Select **Create app**.
 2. Set the name to `LocalMCP2`.
 3. Set the description to
-   `Run bash commands on Anand's machine via Secure MCP Tunnel.`
+   `Inspect and edit local files or run bash commands on Anand's machine via Secure MCP Tunnel.`
 4. Under **Connection**, choose **Tunnel**.
 5. Select the `LocalMCP2` tunnel.
 6. Select **No Auth**. The local MCP server does not implement user OAuth; the
    tunnel runtime separately authenticates to OpenAI with its runtime key.
 7. Acknowledge the tool-risk warning and create the app.
-8. Review the discovered `bash`, `download_file`, and `save_file` tools, then
-   select **Connect**.
+8. Review the discovered file tools (`read_file`, `read_files`, `list_directory`,
+   `file_info`, `search`, `edit_block`, `download_file`, `save_file`) plus `bash`,
+   then select **Connect**.
 
 This is a development plugin with local-machine capabilities. Do not broaden
 its workspace association or install it for people who should not have access.
@@ -237,11 +245,27 @@ The verified result during setup was `LOCALMCP2_OK`. This proves more than
 schema discovery: ChatGPT sent a real `tools/call` through OpenAI, the tunnel
 forwarded it to `/mcp2428`, and the local server returned the output.
 
+### 9. Stateless HTTP
+
+LocalMCP2 uses stateless Streamable HTTP by default. This lets an existing
+ChatGPT conversation continue making tool calls after `mcpserver` is restarted,
+without carrying a stale MCP session ID into the replacement process.
+
+For diagnosis or rollback, force FastMCP's stateful HTTP mode with:
+
+```bash
+MCPSERVER_STATEFUL_HTTP=1 mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro
+```
+
+The wrapper forwards this override into the container. Startup prints
+`MCP HTTP mode: stateless` or `stateful`.
+
 ## Mounts and permissions
 
-`mcpserver.py` can run shell commands, upload files, and download files. ChatGPT
-labels the Bash and upload tools as write/open-world/destructive actions. Treat
-every writable mount as data the model may modify or delete.
+`mcpserver.py` exposes read-only file inspection/search tools, controlled file edits,
+upload/download tools, and unrestricted shell execution. Read-only tools are marked as
+such in MCP; `edit_block`, uploads, and `bash` can modify mounted data. Treat every
+writable mount as data the model may modify or delete.
 
 `dev.sh -p` accepts a comma-separated list. A bare path is read-write; append
 `:ro` for read-only access:
@@ -282,10 +306,16 @@ tunnel-client runtimes status localmcp2 --json \
 ```
 
 A working local runtime reports `ready: true`, `process_running: true`,
-`stale: false`, and the `/mcp2428` target. These are local liveness/readiness
-signals; they do not prove that the control-plane poller is still responsive.
-That is why the `mcpserver` wrapper recreates the managed runtime on every
-invocation instead of trusting process status alone.
+`stale: false`, and the `/mcp2428` target. The wrapper additionally requires
+a successful control-plane poll whose recorded success timestamp is no more than
+90 seconds old before reusing the runtime:
+
+```bash
+tunnel-client health \
+  --url-file ~/.local/state/tunnel-client/health/localmcp2.url \
+  --require-control-plane-poll \
+  --json
+```
 
 Check its loopback health endpoints:
 
@@ -315,8 +345,8 @@ Common issues:
   Tunnels Read + Use permission. Organization membership alone is insufficient.
 - **Runtime is live but not ready:** confirm `mcpserver` is still running and
   that the target remains `http://127.0.0.1:2428/mcp2428`.
-- **After a reboot:** run `mcpserver ...`; the wrapper recreates the managed
-  runtime before launching the server.
+- **After a reboot:** run `mcpserver ...`; the wrapper starts the MCP server
+  and creates or repairs the managed runtime as required.
 - **Runtime metadata is stale:** run `tunnel-client runtimes stop localmcp2`,
   then run `mcpserver ...` again.
 - **ChatGPT shows old tool schemas:** open LocalMCP2 in ChatGPT Plugins, select

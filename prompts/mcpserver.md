@@ -1,5 +1,95 @@
 # MCP Server
 
+## Upgrade using learnings from Remote Desktop Commander, 26 Sep 2026
+
+<!-- Remote Desktop Commander vs LocalMCP2 Comparison: https://chatgpt.com/c/6ab73373-c868-83ec-9fc1-46e23328a4e3 (2026-09-26T14:16:12+08:00) -->
+
+Remote Desktop Commander plugin seems a good alternative to my LocalMCP2 - here's my guess on how it fares (🔴 = RDC is worse, 🟢 = RDC is better)
+
+- 🔴 Add custom tools and instructions and context
+- 🔴 Restrict to relevant directories
+- 🔴 Run inside a container - separate environment
+- 🔴 Log requests and responses
+- 🔴 Might go through Desktop Commander's services
+- 🟢 Anyone can use it
+- 🟢 Reliable and tested
+
+But I'd like you to check the source and docs for both, test where required (carefully - RDC might be able to do destructive operations anywhere on my system), and let me know where each wins. Prioritize by impact x frequency.
+
+---
+
+Let's say I do the following: wrap RDC inside a docker container giving it required access - like I'm doing in dev.sh - and therefore adding filesystem isolation and custom tools.
+
+Now, how does the comparison change? What would be the (prioritized) list of differences?
+
+Is there a way to add custom instructions, auditability to RDC?
+
+(BTW, the fact that the data flows through mcp.desktopcommander.app is what I consider the big privacy risk and the reason I might not use RDC as my default. So, later, I'll ask for inputs on how LocalMCP2 could learn from Remote Desktop Commander code and improve.)
+
+---
+
+Yes, what should LocalMCP2 steal from RDC? Feel free to inspect my actual usage based on logs as well as ~/Documents/chatgpt/ and prioritize based on impact x frequency x ease of implementation.
+
+---
+
+How do we structure the read_file(s), list_directory, file_info, edit_block operations in a way that best serves the typical usage - in an agent-intuitive way?
+
+How do we ensure search doesn't get overwhelmed when there are too many files, too many results, etc. and still shares a useful signal - based on the actual patterns of use?
+
+Think about these and implement them elegantly, readably, and minimally.
+
+---
+
+What else does RDC do to make it more robust - easier to connect to, easier to avoid disconnections, handle connection errors, easier to reconnect when restarted, handle tool failures, handle transient system conditions (like a permission is temporarily missing), etc.?
+
+Based on the current MCP protocol OpenAI supports, are there any clear improvements we could make to mcpserver.py or mcpserver?
+
+Prioritize and share.
+
+---
+
+Implement 1, 2, 4, 5, 6 (only for what's safe to retry).
+
+After this, I'll test it out. Then we can try out 3 and implement it.
+
+---
+
+I restarted mcpserver and refreshed the tools list inLocalMCP2 - are you able to see the changes?
+
+---
+
+I would like the CLI logs to clearly show what's happening. When any tool is called, I want to get a human-readable, easy to parse rapidly, intuitively color-coded log output. I want to see the request in full and a truncated-in-the-middle response (output, error) - enough to give me a sense of what was shared. This is, of course, apart from the logging to the file log - which should log all relevant details (input, output, parameters, etc.) as it always well - for all tools.
+
+Then proceed with testing stateless HTTP. Let me know what I need to do for that.
+
+---
+
+stateless restarted
+
+---
+
+restarted again
+
+---
+
+OK, proceed. Also, while logging on the console, I prefer tool-specific request and response logs tailored to make it easy. For example: file_info could simply mention the path requested in one line (along with other parameters). The output could also be more compact and not the generic JSON response. That'll make it more compact and scannable. Also, I prefer seeing dates in a human readable way, mime type and access and sha256 etc are less relevant than size, line_count, modified for example. Think about what I'd really like to see while the log is flashing past rapidly - in order to get a quick sense of what's happening - and implement accordingly.
+
+---
+
+Restarted. Test a variety of operations to give me a sense of the logs.
+
+---
+
+Looks good. A few improvements:
+
+For read_file(s) output, truncate in the middle and make the file name prominent in the output of read_files. Truncate in the middle for list_directory output as well.
+
+Then you can commit the mcpserver related files. If these files have other changes I've made, that's fine, commit along with those.
+
+---
+
+You've been using both Remote Desktop Commander and LocalMCP2 for a few turns now. Which is easier, objectively speaking, and why? What do you prefer for what kinds of actions?
+
 ## Handle different networks, 21 Sep 2026
 
 <!--
@@ -73,6 +163,7 @@ I ran `dev.sh -- mcpserver.py independently`. Can you test now?
 Modify the endpoint to use /mcp2428 rather than /mcp
 
 ---
+
 Help me set this up as a new plugin, LocalMCP2, on ChatGPT, using an OpenAI tunnel. Feel free to use CDP on localhost:9222 - I already have a tab open for this. https://chatgpt.com/plugins?view=personal#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins - and I also have a tunnel page open: https://platform.openai.com/settings/organization/tunnels. Test what you need (especially risky / uncertain things) first. Let me know if you need me to restart / run something.
 
 ---
