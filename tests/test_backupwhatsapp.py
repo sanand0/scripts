@@ -6,9 +6,30 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backupwhatsapp as backup
+
+
+def test_load_jsonl_reports_corrupt_file_without_changing_it(tmp_path: Path) -> None:
+    path = tmp_path / "Chat [123@g.us].jsonl"
+    content = '\n{"messageId":"valid","conversationId":"123@g.us"}\nOther.jsonl:{"messageId":"wrong-chat"}\n'
+    path.write_text(content)
+    with pytest.raises(ValueError) as error:
+        backup.load_jsonl(path)
+    assert f"{path}:3:" in str(error.value)
+    assert "no lines were skipped" in str(error.value)
+    assert "wrong-chat" not in str(error.value)
+    assert path.read_text() == content
+
+
+def test_load_jsonl_missing_and_blank_lines(tmp_path: Path) -> None:
+    path = tmp_path / "Chat.jsonl"
+    assert backup.load_jsonl(path) == []
+    path.write_text('\n{"messageId":"valid","conversationId":"123@g.us"}\n\n')
+    assert backup.load_jsonl(path) == [{"messageId": "valid", "conversationId": "123@g.us"}]
 
 
 def test_files_for_id_treats_brackets_literally(tmp_path: Path, monkeypatch) -> None:
@@ -38,7 +59,7 @@ def test_already_checked_requires_exact_list_evidence() -> None:
 def test_same_day_later_activity_is_not_known_unchanged(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(backup, "OUT_DIR", tmp_path)
     path = backup.filename_for("Chat", "123@g.us")
-    path.write_text('{"messageId":"old","time":"2026-08-15T03:30:00+00:00"}\n')
+    path.write_text('{"messageId":"old","conversationId":"123@g.us","time":"2026-08-15T03:30:00+00:00"}\n')
     chat = {
         "title": "Chat",
         "conversationId": "123@g.us",
@@ -133,7 +154,7 @@ def test_scrape_open_chat_passes_chat_list_time_as_dom_fallback(monkeypatch) -> 
 
 def test_richer_replacement_preserves_previous_value_in_history(tmp_path: Path) -> None:
     path = tmp_path / "Chat [123@g.us].jsonl"
-    path.write_text('{"messageId":"m1","text":"old"}\n')
+    path.write_text('{"messageId":"m1","conversationId":"123@g.us","text":"old"}\n')
 
     backup.update_conversation(path, "Chat", "123@g.us", [{"messageId": "m1", "text": "new expanded"}], None, None, 0)
 
@@ -151,3 +172,88 @@ def test_update_normalizes_legacy_full_jid_user_ids(tmp_path: Path) -> None:
 
     assert changed == 1
     assert json.loads(path.read_text())["userId"] == "123"
+
+
+@pytest.mark.parametrize('row', [[], None, {}, {'messageId': ''}, {'messageId': 'm'},
+    {'messageId': 'm', 'conversationId': 'other@g.us'}])
+def test_invalid_records_cannot_replace_backup(tmp_path: Path, row) -> None:
+    path = tmp_path / 'Chat [123@g.us].jsonl'
+    original = '{"messageId":"old","conversationId":"123@g.us"}\n'
+    path.write_text(original)
+    with pytest.raises(ValueError, match='Invalid backup'):
+        backup.write_jsonl(path, [{'messageId': 'valid', 'conversationId': '123@g.us'}, row])
+    assert path.read_text() == original
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_valid_write_and_read(tmp_path: Path) -> None:
+    path = tmp_path / 'Chat [123@g.us].jsonl'
+    rows = [{'messageId': 'm', 'conversationId': '123@g.us', 'text': 'hello'}]
+    backup.write_jsonl(path, rows)
+    assert backup.load_jsonl(path) == rows
+
+
+def test_preflight_reports_all_bad_files_before_connecting(tmp_path: Path, monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(backup, 'OUT_DIR', tmp_path)
+    monkeypatch.setattr(backup.obs, 'new_run', lambda *args, **kwargs: MagicMock())
+    async def unexpected_connection(*args):
+        pytest.fail('preflight must finish before CDP connects')
+    monkeypatch.setattr(backup, 'connect_whatsapp_page', unexpected_connection)
+    bad = tmp_path / 'Bad [123@g.us].jsonl'
+    wrong = tmp_path / 'Wrong [456@g.us].jsonl'
+    bad.write_text('search-output\n')
+    wrong.write_text('{"messageId":"m","conversationId":"123@g.us"}\n')
+    # Diagnostic/recovery artifacts are deliberately outside the top-level backup set.
+    (tmp_path / '.recovery').mkdir()
+    (tmp_path / '.recovery/bad.jsonl').write_text('preserved evidence')
+    with pytest.raises(ValueError) as error:
+        asyncio.run(backup.run_backup('http://unused', set(), '', None, None, None, None,
+                                      0, 1, 1, 1, 0, True, 'jsonl'))
+    assert f'{bad}:1:' in str(error.value)
+    assert f'{wrong}:1:' in str(error.value)
+    assert bad.read_text() == 'search-output\n'
+
+
+def test_update_rejects_wrong_identity_without_history_writes(tmp_path: Path) -> None:
+    path = tmp_path / 'Chat [123@g.us].jsonl'
+    original = '{"messageId":"m","conversationId":"other@g.us"}\n'
+    path.write_text(original)
+    with pytest.raises(ValueError):
+        backup.update_conversation(path, 'Chat', '123@g.us', [], None, None, 0)
+    assert path.read_text() == original
+    assert not backup.history_path(path).exists()
+
+
+@pytest.mark.parametrize('message', [{'text': 'missing ID'}, {'messageId': 'm', 'conversationId': 'other@g.us'}])
+def test_update_rejects_bad_incoming_records_before_writing(tmp_path: Path, message) -> None:
+    path = tmp_path / 'Chat [123@g.us].jsonl'
+    original = '{"messageId":"m","conversationId":"123@g.us","text":"old"}\n'
+    path.write_text(original)
+    with pytest.raises(ValueError):
+        backup.update_conversation(path, 'Chat', '123@g.us', [message], None, None, 0)
+    assert path.read_text() == original
+    assert not backup.history_path(path).exists()
+
+
+@pytest.mark.parametrize('row', [None, [], {}, {'messageId': 1, 'conversationId': '123@g.us'},
+                               {'messageId': 'm', 'conversationId': 'other@g.us'}])
+def test_load_rejects_invalid_records_with_line_number(tmp_path: Path, row) -> None:
+    path = tmp_path / 'Chat [123@g.us].jsonl'
+    path.write_text('\n' + json.dumps(row) + '\n')
+    with pytest.raises(ValueError) as error:
+        backup.load_jsonl(path)
+    assert f'{path}:2:' in str(error.value)
+
+
+def test_merge_rejects_cross_chat_records_without_deleting_sources(tmp_path: Path) -> None:
+    target = tmp_path / 'Target [123@g.us].jsonl'
+    source = tmp_path / 'Source [456@g.us].jsonl'
+    target.write_text('{"messageId":"a","conversationId":"123@g.us"}\n')
+    source.write_text('{"messageId":"b","conversationId":"456@g.us"}\n')
+    before = {p: p.read_bytes() for p in (target, source)}
+    with pytest.raises(ValueError):
+        backup.merge_jsonl_files(target, [source])
+    assert {p: p.read_bytes() for p in (target, source)} == before
+    assert not backup.history_path(target).exists()

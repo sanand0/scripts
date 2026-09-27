@@ -7,9 +7,13 @@
 
 Daily run logs are in ~/.cache/sanand-scripts/backupwhatsapp/:
   monthly YYYY-MM-runs.jsonl event logs, latest.json, and diagnostic ZIPs.
+Invalid backup JSONL stops the run with its file and line number; repair or
+restore the file before retrying. Malformed records are never silently skipped.
+All top-level backups are checked before connecting to CDP. Keep search results
+and investigation output in /tmp/, never in conversation backup files.
 
 Examples:
-  backupwhatsapp.py --limit 5
+  backupwhatsapp.py --limit 5 --format jsonl > /tmp/whatsapp-run.jsonl
   backupwhatsapp.py --conversation "Family" --conversation "Notes" --format jsonl
   backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor
   backupwhatsapp.py --describe | jaq .
@@ -624,16 +628,42 @@ def path_for(title: str, conversation_id: str = "") -> Path:
     return filename_for(title)
 
 
+def validate_backup_row(path: Path, row: Any, number: int) -> None:
+    """Reject malformed or misattributed records without exposing message text."""
+    problem = ""
+    if not isinstance(row, dict):
+        problem = "expected a JSON object"
+    elif any(not isinstance(row.get(key), str) or not row[key].strip() for key in ("messageId", "conversationId")):
+        problem = "messageId and conversationId must be non-empty strings"
+    elif (match := re.search(r"\[([^\[\]]+)\]$", path.stem)) and row["conversationId"] != match[1]:
+        problem = "conversationId does not match the destination filename"
+    if problem:
+        raise ValueError(f"Invalid backup JSONL at {path}:{number}: {problem}")
+
+
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    rows = []
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid backup JSONL at {path}:{number}: {exc.msg}. Repair or restore this file before retrying; no lines were skipped.") from exc
+        validate_backup_row(path, row, number)
+        rows.append(row)
+    return rows
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    for number, row in enumerate(rows, 1):
+        validate_backup_row(path, row, number)
+    content = "".join(compact_json(row) + "\n" for row in rows)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
-    tmp.write_text("".join(compact_json(row) + "\n" for row in rows))
+    tmp.write_text(content)
     tmp.replace(path)
     sync_mtime_to_latest_message(path, rows)
 
@@ -663,6 +693,18 @@ def sync_mtime_to_latest_message(path: Path, rows: list[dict[str, Any]] | None =
 
 def backup_paths() -> list[Path]:
     return sorted([*OUT_DIR.glob("*.jsonl"), *OUT_DIR.glob("*.json")])
+
+
+def preflight_backups() -> None:
+    """Report every damaged backup before browser work; never modify inputs."""
+    errors = []
+    for path in backup_paths():
+        try:
+            load_jsonl(path)
+        except (ValueError, OSError) as exc:
+            errors.append(str(exc))
+    if errors:
+        raise ValueError("Backup preflight failed; repair or restore these files before retrying:\n" + "\n".join(errors))
 
 
 def latest_backup_mtime() -> dt.datetime | None:
@@ -904,6 +946,7 @@ def update_conversation(path: Path, title: str, conversation_id: str, messages: 
                 existing[key] = {**row, **updates}
                 changed += 1
     for message in filtered_messages(messages, since, until, max_messages):
+        validate_backup_row(path, {"conversationId": conversation_id, **message}, 1)
         row = {**message, "conversationTitle": title, "conversationId": conversation_id, "scrapedAt": scraped_at}
         key = row_key(row)
         current = existing.get(key)
@@ -924,8 +967,11 @@ def update_conversation(path: Path, title: str, conversation_id: str, messages: 
         if current != merged:
             changed += 1
         existing[key] = merged
+    rows = sorted(existing.values(), key=sort_key)
+    for number, row in enumerate(rows, 1):
+        validate_backup_row(path, row, number)
     append_history(path, history)
-    write_jsonl(path, sorted(existing.values(), key=sort_key))
+    write_jsonl(path, rows)
     return changed
 
 
@@ -1163,6 +1209,8 @@ async def run_backup(
     page: CDPPage | None = None
     run_stats: dict[str, Any] = {"opened_chats": 0, "skipped_chats": 0, "messages_seen": 0, "messages_kept": 0, "rows_changed": 0}
     try:
+        with trace.span("backup_preflight"):
+            preflight_backups()
         with trace.span("cdp_connection", {"cdp_url": cdp_url}):
             page = await connect_whatsapp_page(cdp_url)
             trace.event("runtime", {"browser_version": page.browser_version, "cdp_client": "direct-page-websocket"})

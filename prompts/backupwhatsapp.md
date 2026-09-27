@@ -1,5 +1,31 @@
 # backupwhatsapp.py
 
+## Fix errors and log, 27 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data/whatsapp -- codex --yolo --model gpt-6-sol --config model_reasoning_effort=medium
+-->
+
+`backupwhatsapp.py` exited with: Expecting value: line 1 column 1 (char 0)
+Check if the assumptions made in `backupwhatsapp.py` are still valid on WhatsApp Web on CDP.
+Try it. Read relevant docs. Find the problem and fix it. Re-run and make sure it's fixed.
+Document changes as before - see prompts/backupwhatsapp.md and related files.
+
+<!-- Diagnosis: one local JSONL file contained filename-prefixed search results from
+another chat, rather than JSONL. All 34 records already existed in that source
+chat. -->
+
+---
+
+How do we prevent recurrance of such issues?
+
+---
+
+Implement 1 and 2 and 4 minimally, with tests. Run and test.
+
+<!-- codex resume 01a0e1aa-459a-7fe0-bc82-234676b84e42 --yolo -->
+
 ## Fix errors and log, 05 Sep 2026
 
 <!--
