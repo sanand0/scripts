@@ -1,49 +1,267 @@
-#!/usr/bin/env bash
-# Play the selected MP3 now, followed by 10 random MP3s from ~/Music.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Play a selected MP3 now, followed by 10 related songs from ~/Music.
 
-set -euo pipefail
+Recommendations use only musicdump.csv metadata. The score is intentionally simple:
+genre/language 2.5, composer 2.5, singer 2.5, year 1.5, album 1.0.
+Pick from the 30 nearest songs, with slight randomness and soft repetition penalties.
+Personal M3U playlists add at most 0.10: +0.05 if a candidate is in any non-Appa
+playlist, and +0.05 if it shares a non-Appa playlist with the selected song.
 
-selected="$1"
+Use --recommend to inspect the queue without starting VLC. Set MUSICDUMP_CSV to
+test against another catalog, e.g. the copy in ~/code/infra/music/.
+"""
 
-mapfile -d '' queue < <(
-  find "$HOME/Music" \
-    -type f -iname '*.mp3' \
-    ! -path "$selected" \
-    -print0 |
-    shuf -z -n 10
-)
+from __future__ import annotations
 
-vlc_ready() {
-  dbus-send --session --print-reply \
-    --dest=org.mpris.MediaPlayer2.vlc \
-    /org/mpris/MediaPlayer2 \
-    org.freedesktop.DBus.Peer.Ping \
-    >/dev/null 2>&1
+import argparse
+import csv
+import os
+import random
+import re
+import subprocess
+import sys
+import time
+from collections import Counter
+from pathlib import Path
+
+MUSIC = Path("~/Music").expanduser()
+CATALOG = Path(os.environ.get("MUSICDUMP_CSV", MUSIC / "musicdump.csv")).expanduser()
+QUEUE_SIZE = 10
+CANDIDATE_POOL = 30
+JITTER = 0.65
+WEIGHTS = {"genre": 2.5, "composer": 2.5, "singer": 2.5, "year": 1.5, "album": 1.0}
+REPEAT_PENALTY = {"album": 1.0, "composer": 0.45, "singer": 0.35}
+PLAYLIST_BONUS = {"liked": 0.05, "shared": 0.05}
+LANGUAGE_SIMILARITY = {
+    frozenset(("tamil", "telugu")): 0.8,
+    frozenset(("tamil", "malayalam")): 0.7,
+    frozenset(("telugu", "malayalam")): 0.6,
+    frozenset(("tamil", "hindi")): 0.3,
+    frozenset(("telugu", "hindi")): 0.25,
+    frozenset(("malayalam", "hindi")): 0.2,
 }
+INDIAN_LANGUAGES = {"tamil", "telugu", "malayalam", "hindi"}
+PERSON_SPLIT = re.compile(r"\s*[,;]\s*")
 
-file_uri() {
-  LC_ALL=C gio info -a standard::name "$1" | sed -n 's/^uri: //p'
-}
 
-selected_uri=$(file_uri "$selected")
-if vlc_ready; then
-  gdbus call --session \
-    --dest=org.mpris.MediaPlayer2.vlc \
-    --object-path=/org/mpris/MediaPlayer2 \
-    --method=org.mpris.MediaPlayer2.Player.OpenUri \
-    "$selected_uri" >/dev/null
-else
-  vlc --dbus --one-instance "$selected" >/dev/null 2>&1 &
-  until vlc_ready; do
-    sleep 0.05
-  done
-fi
+def people(value: str) -> set[str]:
+    return {part.casefold().strip() for part in PERSON_SPLIT.split(value or "") if part.strip()}
 
-until metadata=$(gdbus call --session \
-  --dest=org.mpris.MediaPlayer2.vlc \
-  --object-path=/org/mpris/MediaPlayer2 \
-  --method=org.freedesktop.DBus.Properties.Get \
-  org.mpris.MediaPlayer2.Player Metadata) && [[ "$metadata" == *"$selected_uri"* ]]; do
-  sleep 0.05
-done
-exec vlc --one-instance --playlist-enqueue "${queue[@]}"
+
+def dice(left: set[str], right: set[str]) -> float:
+    return 2 * len(left & right) / (len(left) + len(right)) if left and right else 0.0
+
+
+def genre_similarity(left: str, right: str) -> float:
+    left, right = left.casefold().strip(), right.casefold().strip()
+    if not left or not right:
+        return 0.0
+    if left == right:
+        return 1.0
+    pair = frozenset((left, right))
+    if pair in LANGUAGE_SIMILARITY:
+        return LANGUAGE_SIMILARITY[pair]
+    if left in INDIAN_LANGUAGES and right in INDIAN_LANGUAGES:
+        return 0.15
+    if "english" in pair and pair & INDIAN_LANGUAGES:
+        return 0.08
+    return 0.0
+
+
+def year_similarity(left: str, right: str) -> float:
+    if not (left.isdigit() and right.isdigit()):
+        return 0.0
+    return 0.5 ** (abs(int(left) - int(right)) / 10)
+
+
+def same_text(left: str, right: str) -> float:
+    return float(bool(left and right and left.casefold().strip() == right.casefold().strip()))
+
+
+def similarity(seed: dict[str, str], candidate: dict[str, str]) -> tuple[float, dict[str, float]]:
+    parts = {
+        "genre": genre_similarity(seed["TCON"], candidate["TCON"]),
+        "composer": dice(people(seed["TCOM"]), people(candidate["TCOM"])),
+        "singer": dice(people(seed["TPE1"]), people(candidate["TPE1"])),
+        "year": year_similarity(seed["TDRC"], candidate["TDRC"]),
+        "album": same_text(seed["TALB"], candidate["TALB"]),
+    }
+    weighted = {key: WEIGHTS[key] * value for key, value in parts.items()}
+    return sum(weighted.values()), weighted
+
+
+def is_duplicate(seed: dict[str, str], candidate: dict[str, str]) -> bool:
+    if seed["filename"] == candidate["filename"]:
+        return True
+    mbid = seed["UFID:http://musicbrainz.org"]
+    if mbid and mbid == candidate["UFID:http://musicbrainz.org"]:
+        return True
+    return (
+        seed["TIT2"].casefold().strip() == candidate["TIT2"].casefold().strip()
+        and seed["TCOM"].casefold().strip() == candidate["TCOM"].casefold().strip()
+    )
+
+
+def load_catalog() -> list[dict[str, str]]:
+    with CATALOG.open(encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def load_playlists() -> dict[str, set[str]]:
+    """Map filenames to personal M3Us; Appa*.m3u belongs to my father."""
+    memberships: dict[str, set[str]] = {}
+    for playlist in MUSIC.rglob("*.m3u"):
+        if playlist.name.casefold().startswith("appa"):
+            continue
+        for line in playlist.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            filename = Path(line.replace("\\", "/")).name
+            memberships.setdefault(filename, set()).add(str(playlist.relative_to(MUSIC)))
+    return memberships
+
+
+def pick_queue(
+    seed: dict[str, str],
+    rows: list[dict[str, str]],
+    memberships: dict[str, set[str]],
+    rng: random.Random,
+) -> list[tuple[dict[str, str], float, dict[str, float]]]:
+    ranked = []
+    seed_playlists = memberships.get(seed["filename"], set())
+    for candidate in rows:
+        if is_duplicate(seed, candidate):
+            continue
+        score, parts = similarity(seed, candidate)
+        candidate_playlists = memberships.get(candidate["filename"], set())
+        playlist_bonus = PLAYLIST_BONUS["liked"] if candidate_playlists else 0.0
+        if seed_playlists & candidate_playlists:
+            playlist_bonus += PLAYLIST_BONUS["shared"]
+        parts["playlist"] = playlist_bonus
+        ranked.append((score + playlist_bonus, rng.uniform(0, JITTER), candidate, parts))
+    pool = sorted(ranked, reverse=True, key=lambda item: item[0])[:CANDIDATE_POOL]
+
+    selected: list[tuple[dict[str, str], float, dict[str, float]]] = []
+    albums: Counter[str] = Counter()
+    composers: Counter[str] = Counter()
+    singers: Counter[str] = Counter()
+
+    def adjusted(item: tuple[float, float, dict[str, str], dict[str, float]]) -> float:
+        score, jitter, candidate, _ = item
+        album = candidate["TALB"].casefold().strip()
+        repetition = REPEAT_PENALTY["album"] * albums[album] if album else 0.0
+        repetition += REPEAT_PENALTY["composer"] * sum(composers[name] for name in people(candidate["TCOM"]))
+        repetition += REPEAT_PENALTY["singer"] * sum(singers[name] for name in people(candidate["TPE1"]))
+        return score + jitter - repetition
+
+    while len(selected) < min(QUEUE_SIZE, len(pool)):
+        available = [
+            item
+            for item in pool
+            if not any(is_duplicate(item[2], chosen[0]) for chosen in selected)
+        ]
+        if not available:
+            break
+        score, _, candidate, parts = max(available, key=adjusted)
+        selected.append((candidate, score, parts))
+        if album := candidate["TALB"].casefold().strip():
+            albums[album] += 1
+        for name in people(candidate["TCOM"]):
+            composers[name] += 1
+        for name in people(candidate["TPE1"]):
+            singers[name] += 1
+
+    return selected
+
+
+def random_queue(selected: Path, rng: random.Random) -> list[Path]:
+    candidates = [path for path in MUSIC.rglob("*.mp3") if path.resolve() != selected]
+    return rng.sample(candidates, min(QUEUE_SIZE, len(candidates)))
+
+
+def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], float, dict[str, float]]], rng: random.Random) -> list[Path]:
+    by_name = {path.name: path for path in MUSIC.rglob("*.mp3")}
+    queue = [by_name[row["filename"]] for row, _, _ in recommendations if row["filename"] in by_name]
+    if len(queue) < QUEUE_SIZE:
+        extras = [path for path in by_name.values() if path.resolve() != selected and path not in queue]
+        rng.shuffle(extras)
+        queue.extend(extras[: QUEUE_SIZE - len(queue)])
+    return queue
+
+
+def vlc_ready() -> bool:
+    return subprocess.run(
+        ["dbus-send", "--session", "--print-reply", "--dest=org.mpris.MediaPlayer2.vlc", "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Peer.Ping"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
+def play(selected: Path, queue: list[Path]) -> None:
+    selected_uri = selected.as_uri()
+    if vlc_ready():
+        subprocess.run(
+            ["gdbus", "call", "--session", "--dest=org.mpris.MediaPlayer2.vlc", "--object-path=/org/mpris/MediaPlayer2", "--method=org.mpris.MediaPlayer2.Player.OpenUri", selected_uri],
+            stdout=subprocess.DEVNULL,
+            check=True,
+        )
+    else:
+        subprocess.Popen(["vlc", "--dbus", "--one-instance", str(selected)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        while not vlc_ready():
+            time.sleep(0.05)
+
+    while True:
+        metadata = subprocess.run(
+            ["gdbus", "call", "--session", "--dest=org.mpris.MediaPlayer2.vlc", "--object-path=/org/mpris/MediaPlayer2", "--method=org.freedesktop.DBus.Properties.Get", "org.mpris.MediaPlayer2.Player", "Metadata"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if metadata.returncode == 0 and selected_uri in metadata.stdout:
+            break
+        time.sleep(0.05)
+
+    os.execvp("vlc", ["vlc", "--one-instance", "--playlist-enqueue", *(str(path) for path in queue)])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("song", help="selected MP3 path or filename")
+    parser.add_argument("--recommend", action="store_true", help="print the next 10 songs without playing")
+    parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
+    args = parser.parse_args()
+
+    rng = random.Random(args.seed)
+    selected = Path(args.song).expanduser()
+    try:
+        rows = load_catalog()
+        seed = next(row for row in rows if row["filename"] == selected.name)
+        recommendations = pick_queue(seed, rows, load_playlists(), rng)
+    except (FileNotFoundError, StopIteration) as exc:
+        if args.recommend:
+            raise SystemExit(f"Cannot recommend from metadata: {exc}") from exc
+        print(f"play-music: metadata unavailable for {selected.name}; using random queue", file=sys.stderr)
+        recommendations = []
+
+    if args.recommend:
+        for index, (row, score, parts) in enumerate(recommendations, 1):
+            strongest = sorted((key for key in parts if key != "playlist"), key=parts.get, reverse=True)[:3]
+            why = ", ".join(f"{key} {parts[key]:.1f}" for key in strongest if parts[key] >= 0.2)
+            if parts.get("playlist"):
+                why += f", playlist +{parts['playlist']:.2f}"
+            print(f"{index:2}. {row['filename']}  [{score:.2f}; {why}]")
+        return
+
+    selected = selected.resolve()
+    queue = queue_paths(selected, recommendations, rng) if recommendations else random_queue(selected, rng)
+    play(selected, queue)
+
+
+if __name__ == "__main__":
+    main()
