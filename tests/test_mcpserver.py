@@ -30,12 +30,6 @@ def isolate_log_dir(tmp_path, monkeypatch) -> None:
 class BashContext:
     request_id = "test-request"
 
-    async def info(self, message: str) -> None:
-        pass
-
-    async def warning(self, message: str) -> None:
-        pass
-
 
 def successful_bash_result() -> tuple[str, dict]:
     return "ok", {"stderr_bytes": 0, "exit_code": 0, "ok": True}
@@ -551,9 +545,7 @@ def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> No
     assert result.is_error is False
     assert result.structured_content["path"] == str(path.resolve())
     assert result.content[1].resource.text == "hello"
-    assert [log.data["msg"] for log in logs if log.level == "info"] == [
-        f"download_file: {path.resolve()} (5 bytes)"
-    ]
+    assert [log.data["msg"] for log in logs] == []
     [event] = [
         event
         for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
@@ -619,9 +611,7 @@ def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypa
         "sha256": hashlib.sha256(data).hexdigest(),
         "file_id": "file-123",
     }
-    assert [log.data["msg"] for log in logs if log.level == "info"] == [
-        f"save_file: {destination.resolve()} ({len(data)} bytes)"
-    ]
+    assert [log.data["msg"] for log in logs] == []
     [event] = [
         event
         for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
@@ -1382,3 +1372,39 @@ def test_console_list_directory_truncates_middle_by_entries() -> None:
     assert "item-14.txt" in preview
     assert "item-19.txt" in preview
     assert "item-06.txt" not in preview
+
+
+def test_syntax_highlight_is_colored_only_on_tty(monkeypatch) -> None:
+    class Tty:
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(mcpserver.sys, "stderr", Tty())
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    highlighted = mcpserver.syntax_highlight("def x():\n    return 1\n", filename="x.py")
+    assert "\x1b[" in highlighted
+    assert "def" in highlighted
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert (
+        mcpserver.syntax_highlight("def x():\n    return 1\n", filename="x.py")
+        == "def x():\n    return 1\n"
+    )
+
+
+def test_bash_does_not_emit_duplicate_client_logs(tmp_path) -> None:
+    logs = []
+
+    async def handle_log(log):
+        logs.append(log)
+
+    async def exercise():
+        async with Client(mcpserver.mcp, log_handler=handle_log) as client:
+            return await client.call_tool(
+                "bash", {"commands": "printf ok", "cwd": str(tmp_path)}
+            )
+
+    result = asyncio.run(exercise())
+
+    assert result.structured_content["output"] == "ok"
+    assert logs == []

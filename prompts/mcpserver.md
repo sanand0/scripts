@@ -1,5 +1,23 @@
 # MCP Server
 
+## Improve logs
+
+<!-- Remote Desktop Commander vs LocalMCP2 Comparison: https://chatgpt.com/c/6ab73373-c868-83ec-9fc1-46e23328a4e3 (2026-09-27T14:33:46+08:00) -->
+
+The logs display is a little inconsistent. The bash tool logs in the console are indented more and show syntax highlighting while others like read_file aren't syntax highlighted and indented less. (I'm probably referring to the debug logs here.)
+
+Make the ouput syntax-highlighted (or at least a bit more usefully color-coded) where possible. The aim is, once again, to be able to quickly understand things at a glance while the screen is scrolling rapidly.
+
+We could remove the debug log that the bash script prints - or, maybe the right / cleaner thing is to run at a higher logging level (e.g. INFO)? Or both?
+
+Look at the code, think about the right thing to do, and implement it.
+
+Try and use this as an opportunity to simplify the logging (and related) parts of the code.
+
+---
+
+I restarted mcpserver. Test out all tools and I'll inspect the logs.
+
 ## Upgrade using learnings from Remote Desktop Commander, 26 Sep 2026
 
 <!-- Remote Desktop Commander vs LocalMCP2 Comparison: https://chatgpt.com/c/6ab73373-c868-83ec-9fc1-46e23328a4e3 (2026-09-26T14:16:12+08:00) -->

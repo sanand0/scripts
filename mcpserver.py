@@ -2,7 +2,7 @@
 
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["fastmcp>=3.4,<4"]
+# dependencies = ["fastmcp>=3.4,<4", "pygments>=2.19,<3"]
 # ///
 
 # Usage: uv run mcpserver.py
@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 from urllib import parse, request
 
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context, get_http_request
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -45,6 +45,10 @@ from mcp.types import (
     TextContent,
     TextResourceContents,
 )
+from pygments import highlight as pygments_highlight
+from pygments.formatters import Terminal256Formatter
+from pygments.lexers import BashLexer, get_lexer_for_filename
+from pygments.util import ClassNotFound
 
 SERVER_INSTRUCTIONS = """Prefer read_file/read_files/search/list_directory/file_info for local inspection and edit_block for exact text edits; use bash only when those tools cannot express the operation cleanly. Never automatically retry bash or a write after timeout/connection loss because side effects may already have happened. Re-read before retrying edit_block conflicts. Permission/read-only errors usually require changing the path or mount, not repeated retries."""
 mcp = FastMCP("Local files and shell commands", instructions=SERVER_INSTRUCTIONS)
@@ -368,10 +372,30 @@ ANSI = {
 }
 
 
+def console_colors_enabled() -> bool:
+    return sys.stderr.isatty() and "NO_COLOR" not in os.environ
+
+
 def console_color(text: str, color: str) -> str:
-    if not sys.stderr.isatty() or "NO_COLOR" in os.environ:
+    if not console_colors_enabled():
         return text
     return f"{ANSI[color]}{text}{ANSI['reset']}"
+
+
+def syntax_highlight(
+    text: str,
+    *,
+    filename: str | None = None,
+    language: str | None = None,
+) -> str:
+    """Syntax-highlight code on a real terminal; keep captured/file output plain."""
+    if not text or not console_colors_enabled():
+        return text
+    try:
+        lexer = BashLexer() if language == "bash" else get_lexer_for_filename(filename or "")
+    except ClassNotFound:
+        return text
+    return pygments_highlight(text, lexer, Terminal256Formatter()).rstrip("\n")
 
 
 def truncate_middle(text: str, max_chars: int) -> str:
@@ -399,7 +423,12 @@ def middle_items(items: list[str], max_items: int) -> list[str]:
     return items[:head] + [f"… {omitted} entries omitted …"] + items[-tail:]
 
 
-def read_files_preview(files: list[dict[str, Any]], max_chars: int) -> str:
+def read_files_preview(
+    files: list[dict[str, Any]],
+    max_chars: int,
+    *,
+    color: bool = False,
+) -> str:
     headers = []
     bodies = []
     for item in files:
@@ -417,8 +446,14 @@ def read_files_preview(files: list[dict[str, Any]], max_chars: int) -> str:
     body_budget = max_chars - sum(len(header) + 1 for header in headers) - separators
     per_file = body_budget // len(files) if files else 0
     blocks = []
-    for header, body in zip(headers, bodies):
+    for item, header, body in zip(files, headers, bodies):
         excerpt = truncate_middle(body, per_file) if per_file >= 60 else ""
+        if color and console_colors_enabled():
+            header = console_color(header, "cyan")
+            if "content" in item:
+                excerpt = syntax_highlight(excerpt, filename=item["path"])
+            else:
+                excerpt = console_color(excerpt, "red")
         blocks.append(header + (f"\n{excerpt}" if excerpt else ""))
     return "\n\n".join(blocks)
 
@@ -673,13 +708,88 @@ def tool_result_record(result: ToolResult) -> dict[str, Any]:
     return record
 
 
+def style_request_detail(tool: str, text: str, arguments: dict[str, Any]) -> str:
+    if not console_colors_enabled():
+        return text
+    if tool == "bash":
+        return syntax_highlight(text, language="bash")
+    if tool == "edit_block":
+        old = arguments.get("old_string", "")
+        new = arguments.get("new_string", "")
+        return "\n".join(
+            [
+                console_color("old:", "red"),
+                console_color(old, "red"),
+                console_color("new:", "green"),
+                console_color(new, "green"),
+            ]
+        )
+    if tool == "read_files":
+        return "\n".join(console_color(line, "cyan") for line in text.splitlines())
+    return console_color(text, "dim")
+
+
+def style_response_preview(tool: str, text: str, response: dict[str, Any]) -> str:
+    if not console_colors_enabled():
+        return text
+    data = response.get("structured_content")
+    if not isinstance(data, dict):
+        return console_color(text, "dim")
+
+    if tool in {"read_file", "edit_block"}:
+        highlighted = syntax_highlight(text, filename=data.get("path"))
+        return highlighted if highlighted != text else console_color(text, "dim")
+
+    if tool == "read_files":
+        return read_files_preview(
+            data.get("files") or [],
+            CONSOLE_RESPONSE_CHARS,
+            color=True,
+        )
+
+    if tool == "list_directory":
+        return " · ".join(
+            console_color(item, "yellow")
+            if "omitted" in item
+            else console_color(item, "cyan")
+            if item.endswith("/")
+            else console_color(item, "dim")
+            for item in text.split(" · ")
+        )
+
+    if tool == "search":
+        styled = []
+        for line in text.splitlines():
+            prefix, separator, snippet = line.partition("  ")
+            path, colon, line_number = prefix.rpartition(":")
+            if separator and colon and line_number.isdigit():
+                prefix = (
+                    console_color(path, "cyan")
+                    + ":"
+                    + console_color(line_number, "yellow")
+                )
+                styled.append(prefix + "  " + snippet)
+            else:
+                styled.append(console_color(line, "dim"))
+        return "\n".join(styled)
+
+    if tool == "bash":
+        return "\n".join(
+            console_color(line, "red") if line.startswith("STDERR:") else line
+            for line in text.splitlines()
+        )
+
+    return console_color(text, "dim")
+
+
 def console_tool_request(tool: str, arguments: dict[str, Any]) -> None:
     timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
     lines = format_tool_request(tool, arguments)
     headline = f"{timestamp} ▶ {tool}" + (f" {lines[0]}" if lines else "")
     print(console_color(headline, "cyan"), file=sys.stderr)
     if len(lines) > 1:
-        print(console_color(indent_lines("\n".join(lines[1:])), "dim"), file=sys.stderr)
+        detail = style_request_detail(tool, "\n".join(lines[1:]), arguments)
+        print(indent_lines(detail), file=sys.stderr)
     sys.stderr.flush()
 
 
@@ -695,7 +805,8 @@ def console_tool_response(
     print(console_color(f"{timestamp} {symbol} {lines[0]}", color), file=sys.stderr)
     if len(lines) > 1 and lines[1]:
         preview = truncate_middle("\n".join(lines[1:]), CONSOLE_RESPONSE_CHARS)
-        print(console_color(indent_lines(preview), "dim"), file=sys.stderr)
+        preview = style_response_preview(tool, preview, response)
+        print(indent_lines(preview), file=sys.stderr)
     sys.stderr.flush()
 
 
@@ -1138,8 +1249,7 @@ Summarize and cite paths/lines instead.
 
 
 async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) -> ToolResult:
-    ctx: Context = get_context()
-    await ctx.info(f"bash: (cwd={cwd or os.getcwd()})\n{commands}")
+    ctx = get_context()
     cancel_event = threading.Event()
     future = asyncio.get_running_loop().run_in_executor(
         BASH_EXECUTOR, run_bash_command, commands, timeout_ms, cwd, cancel_event
@@ -1151,9 +1261,6 @@ async def bash(commands: str, timeout_ms: int = 30_000, cwd: str | None = None) 
         raise
     request_id = getattr(ctx, "request_id", None)
     result["request_id"] = str(request_id) if request_id is not None else None
-    if result["stderr_bytes"]:
-        await ctx.warning(f"ERROR: {result['stderr_bytes']} stderr bytes")
-    await ctx.info(f"DONE: {len(output.encode())} bytes, return code {result['exit_code']}")
     request = {"server_start_id": SERVER_START_ID, "timeout_ms": timeout_ms, "cwd": cwd}
     log_event("bash", commands=commands, request=request, output=output, result=result)
     result["output"] = output
@@ -1991,7 +2098,6 @@ async def download_file(path: str) -> ToolResult:
     """Download large/binary files as an MCP embedded resource. Use read_file for normal text."""
     result = await asyncio.to_thread(_download_file, path)
     metadata = result.structured_content
-    await get_context().info(f"download_file: {metadata['path']} ({metadata['size']} bytes)")
     log_event("download_file", result=metadata)
     return result
 
@@ -2111,7 +2217,6 @@ def _save_file(file: ChatGPTUpload, destination: str, overwrite: bool = False) -
 async def save_file(file: ChatGPTUpload, destination: str, overwrite: bool = False) -> dict[str, Any]:
     """Stream a ChatGPT-uploaded file to an allowed writable local path."""
     result = await asyncio.to_thread(_save_file, file, destination, overwrite)
-    await get_context().info(f"save_file: {result['path']} ({result['size']} bytes)")
     log_event("save_file", result=result)
     return result
 
