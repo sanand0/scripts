@@ -177,6 +177,8 @@ abbr --add tau 'uvx --from tau-ai tau'
 
 abbr --add skilllist "ug ^description ~/code/blog/pages/skills/*/SKILL.md ~/code/scripts/agents/*/SKILL.md | sed -E 's|.*/([^/]+)/SKILL.md:description: (.*)|\1: \2|' | sort"
 
+abbr --add qwen3.6 'llama serve -hf ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M --ctx-size 65536 --n-gpu-layers all --n-cpu-moe 35 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1'
+
 # File sync utilities
 # -----------------------------------------------
 

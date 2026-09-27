@@ -1,0 +1,7 @@
+[mgr]
+show_hidden = true
+linemode = "size"
+ratio = [1, 2, 4]
+
+[preview]
+wrap = "yes"

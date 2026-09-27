@@ -249,6 +249,10 @@ npm install -g --ignore-scripts @earendil-works/pi-coding-agent  # pi - customiz
 npm install -g opencode-ai                    # opencode - agent
 # claude copilot git-standup zx
 
+# Install pi extensions
+pi install npm:@ollama/pi-web-search
+pi install npm:pi-llama-cpp
+
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
 sudo apt install -y antigravity                   # Google agentic code editor
 sudo apt install -y csvkit                        # csvkit - Command-line tools for CSV files (in2csv, csvsql, csvcut, etc.)
@@ -292,6 +296,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
 cargo install --locked cctop  # Real-time agent monitor
+
+# llama.cpp
+curl -LsSf https://llama.app/install.sh | sh
 
 # Set up uv environments
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.14; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
@@ -401,6 +408,8 @@ ln -s $HOME /c
 # Create symlinks for versioned config files
 ln -s ~/code/scripts/.gitconfig ~/.gitconfig
 ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
+mkdir -p ~/.config/yazi/
+ln -s ~/code/scripts/yazi.toml ~/.config/yazi/yazi.toml
 mkdir -p ~/.config/git
 ln -s ~/code/scripts/git-ignore ~/.config/git/ignore
 ln -s ~/Dropbox/scripts/.ssh ~/.ssh
