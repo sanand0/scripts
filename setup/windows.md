@@ -2,6 +2,120 @@
 
 Here is the setup for my Windows laptops.
 
+# Configuration changes, 28 Sep 2026
+
+These supersede older setup notes below.
+
+## Paths
+
+Use `C:\github` as the physical GitHub root and expose it as `~/code` in Cygwin. Keep the same home-relative paths for Dropbox and the main user folders.
+
+```powershell
+C:\cygwin\bin\bash.exe -lc '[ -e /c ] || ln -s /cygdrive/c /c; [ -e /github ] || ln -s /cygdrive/c/github /github; [ -e ~/code ] || ln -s /github ~/code; [ -e ~/Documents ] || ln -s /c/Documents ~/Documents'
+
+$targets = @{ Dropbox='C:\Dropbox'; Downloads='C:\Downloads'; Music='C:\Music'; Pictures='C:\Pictures'; Videos='C:\Videos' }
+foreach ($root in @($env:USERPROFILE, 'C:\cygwin\home\Anand')) {
+  foreach ($name in $targets.Keys) {
+    $path = Join-Path $root $name
+    if (-not (Test-Path $path)) { New-Item -ItemType Junction -Path $path -Target $targets[$name] }
+  }
+}
+```
+
+## PATH
+
+Install mise first, then keep User PATH small. Keep `C:\Apps\nodejs` in Machine PATH until Remote Desktop Commander no longer depends on it; `node` therefore remains the legacy install until that path is removed, while mise shims expose the other installed CLIs.
+
+```powershell
+$user = @(
+  "$env:LOCALAPPDATA\Microsoft\WindowsApps",
+  "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+  "$env:LOCALAPPDATA\mise\shims",
+  "$env:USERPROFILE\.local\bin",
+  'C:\github\scripts', 'C:\Dropbox\scripts', 'C:\Apps\utils',
+  'C:\Program Files\Git\usr\bin',
+  "$env:LOCALAPPDATA\Programs\cursor\resources\app\bin"
+)
+[Environment]::SetEnvironmentVariable('Path', ($user -join ';'), 'User')
+```
+
+Run this once in **Admin PowerShell** to de-duplicate Machine PATH, remove dead entries, and keep Cygwin plus the broken built-in Windows OpenSSH out of native command resolution. `ssh` then comes from Git for Windows:
+
+```powershell
+$remove = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+@('C:\cygwin\bin','C:\Windows\System32\OpenSSH','C:\Dropbox\scripts','C:\Apps\utils','C:\Program Files\C',
+  "$env:LOCALAPPDATA\Programs\cursor\resources\app\bin") |
+  ForEach-Object { [void]$remove.Add($_.TrimEnd('\')) }
+$seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$clean = foreach ($entry in ([Environment]::GetEnvironmentVariable('Path','Machine') -split ';')) {
+  $entry = $entry.Trim(); $key = $entry.TrimEnd('\')
+  if ($entry -and -not $remove.Contains($key) -and $seen.Add($key) -and (Test-Path $entry)) { $entry }
+}
+[Environment]::SetEnvironmentVariable('Path', ($clean -join ';'), 'Machine')
+```
+
+Restart terminals after changing PATH.
+
+## Git and SSH
+
+The shared Git config is `C:\github\scripts\.gitconfig`. Both Windows and Cygwin home configs point to it.
+
+```powershell
+$gitconfig = 'C:\github\scripts\.gitconfig'
+foreach ($path in @("$env:USERPROFILE\.gitconfig", 'C:\cygwin\home\Anand\.gitconfig')) {
+  if (Test-Path $path) { Copy-Item $path "$path.backup-$(Get-Date -Format yyyyMMddHHmmss)" }
+  Remove-Item $path -Force -ErrorAction SilentlyContinue
+  cmd /c "mklink `"$path`" `"$gitconfig`""
+}
+```
+
+Keep SSH config and keys in Dropbox and link both homes to the same directory. Dropbox reinstalls may broaden ACLs, so tighten them afterward.
+
+```powershell
+$ssh = 'C:\Dropbox\scripts\.ssh'
+foreach ($path in @("$env:USERPROFILE\.ssh", 'C:\cygwin\home\Anand\.ssh')) {
+  if (Test-Path $path) { Rename-Item $path "$path.backup-$(Get-Date -Format yyyyMMddHHmmss)" }
+  cmd /c "mklink /J `"$path`" `"$ssh`""
+}
+C:\cygwin\bin\bash.exe -lc "find /c/Dropbox/scripts/.ssh -type d -exec chmod 700 '{}' +; find /c/Dropbox/scripts/.ssh -type f -exec chmod 600 '{}' +"
+C:\cygwin\bin\ssh.exe -T git@github.com
+gh auth login
+```
+
+## CLI tools
+
+```powershell
+winget install --id jdx.mise --exact
+$mise = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\mise.exe"
+$core = @('age','bun','deno','fd','jaq','jq','node','ripgrep','sops','starship','yazi','yq','zoxide')
+$github = @('github:direnv/direnv[bin=direnv]','github:cantino/mcfly','github:casey/just','github:dandavison/delta','github:iffse/pay-respects','github:junegunn/fzf','github:pnpm/pnpm')
+foreach ($tool in $core + $github) { & $mise use --global $tool }
+
+# mise 2026.9.5 has a Windows asset-name bug for difftastic
+winget install --id Wilfred.difftastic --exact
+
+& $mise exec -- npm install -g @googleworkspace/cli@latest @openai/codex@latest @anthropic-ai/claude-code@latest opencode-ai agent-browser@latest
+& $mise exec -- npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+& $mise reshim  # expose npm-installed CLIs via mise shims
+uv tool install llm --with llm-cmd --with llm-openrouter --with llm-gemini --with llm-anthropic --with llm-openai-plugin --with llm-whisper-api --with llm-groq-whisper
+```
+
+## Recent GitHub repos
+
+Clone repos pushed in the last 90 days; existing repos are only fetched, not reset.
+
+```powershell
+New-Item -ItemType Directory -Force C:\github | Out-Null
+$cutoff = (Get-Date).AddDays(-90)
+gh repo list sanand0 --limit 1000 --json name,pushedAt,sshUrl | ConvertFrom-Json |
+  Where-Object { [datetime]$_.pushedAt -ge $cutoff } |
+  ForEach-Object {
+    $dest = "C:\github\$($_.name)"
+    if (Test-Path "$dest\.git") { git -C $dest fetch --prune }
+    else { git clone $_.sshUrl $dest }
+  }
+```
+
 # Plutonium, 18 Jul 2023
 
 Sager NP7881E laptop - Windows 11.

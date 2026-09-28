@@ -152,9 +152,6 @@
     # Don't convert LF to CRLF or any such thing. Even on Windows, we'll stick to LF
     autocrlf = false
 
-    # Git for Windows does not read Cygwin file modes. So ignore them
-    filemode = false
-
     # Git 2.37 onwards makes git status more efficient
     fsmonitor = true
 
@@ -187,8 +184,6 @@
     autocorrect = 1
 [init]
     defaultBranch = main
-[credential "helperselector"]
-    selected = wincred
 [filter "lfs"]
     clean = git-lfs clean -- %f
     smudge = git-lfs smudge -- %f
@@ -204,7 +199,7 @@
     directory = ~/code/
 [credential "https://code.gramener.com"]
     helper =
-    helper = !/usr/bin/glab auth git-credential
+    helper = !glab auth git-credential
 [interactive]
     diffFilter = delta
 [delta]
@@ -217,8 +212,8 @@
     # Avoid side-by-side diffs: reduces readable width too much
     side-by-side = false
 [credential "https://github.com"]
-	helper = 
-	helper = !/home/sanand/.local/share/mise/installs/github-cli/2.83.1/gh_2.83.1_linux_amd64/bin/gh auth git-credential
+    helper =
+    helper = !gh auth git-credential
 [credential "https://gist.github.com"]
-	helper = 
-	helper = !/home/sanand/.local/share/mise/installs/github-cli/2.83.1/gh_2.83.1_linux_amd64/bin/gh auth git-credential
+    helper =
+    helper = !gh auth git-credential
