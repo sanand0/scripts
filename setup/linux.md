@@ -170,7 +170,6 @@ mise use -g github:cantino/mcfly      # mcfly - Intelligent shell history search
 mise use -g github:casey/just         # just - Project-specific command runner for all your "demo", "deploy", and "refresh" scripts
 mise use -g github:cli/cli            # GitHub CLI - Official GitHub command-line tool
 mise use -g github:dandavison/delta   # delta - Syntax-highlighting git diff | Add to .gitconfig: [core] pager = delta
-mise use -g github:iffse/pay-respects # pay-respects - thefuck alternative. Run `f` to correct previous command
 mise use -g github:imsnif/bandwhich   # bandwhich - Terminal network bandwidth utilization tool
 mise use -g github:ip7z/7zip          # 7zip - File archiver with high compression ratio
 mise use -g github:jqnatividad/qsv    # qsv - Blazing-fast CSV/TSV data-wrangling toolkit for CLI exploration and teaching
@@ -704,6 +703,7 @@ sudo mkdir -p /etc/opt/chrome/policies/managed && echo '{
 MISE deprecations:
 
 ```bash
+mise use -g github:iffse/pay-respects  # pay-respects - thefuck alternative. I rarely used it; Fish/Cygwin integration also caused command-not-found recursion.
 mise use -g clickhouse  # Prefer DuckDB
 mise use -g fastfetch   # Prefer one-time use: mise x fastfetch -- fastfetch
 mise use -g oxipng      # Prefer webp / squoosh

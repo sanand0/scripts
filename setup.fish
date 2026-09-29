@@ -2,7 +2,7 @@
 
 # https://mise.jdx.dev/getting-started.html
 # Install mise via `curl https://mise.run | sh`
-$HOME/.local/bin/mise activate fish | source
+mise activate fish --shims | source
 
 # Skip fish greeting
 set -g fish_greeting ""
@@ -24,7 +24,7 @@ set -gx PATH $PATH "$HOME/apps/datasette/.venv/bin"
 set -gx PATH $PATH "$HOME/apps/offpunk/.venv/bin"
 
 # Source global uv environment
-source $HOME/apps/global/.venv/bin/activate.fish
+test -f $HOME/apps/global/.venv/bin/activate.fish; and source $HOME/apps/global/.venv/bin/activate.fish
 
 # unset for fish
 abbr unset 'set --erase'
@@ -46,7 +46,7 @@ export FX_LINE_NUMBERS=true
 export FX_SHOW_SIZE=true
 
 # Via Google Cloud SDK.
-if [ -f '/home/sanand/google-cloud-sdk/path.fish.inc' ]; . '/home/sanand/google-cloud-sdk/path.fish.inc'; end
+if [ -f "$HOME/google-cloud-sdk/path.fish.inc" ]; . "$HOME/google-cloud-sdk/path.fish.inc"; end
 
 # less should color files
 export LESS='-R'
@@ -338,9 +338,9 @@ end
 
 # Notes utilities
 # -----------------------------------------------
-abbr actions 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
+abbr actions 'for file in (string match -r \'.*/202.*\.md$\' $HOME/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
 # ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
-abbr ideas 'for file in (string match -r \'.*/202.*\.md$\' /home/sanand/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.ideas\' $file; end'
+abbr ideas 'for file in (string match -r \'.*/202.*\.md$\' $HOME/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.ideas\' $file; end'
 # ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
 
 # Concatenate media files without re-encoding.
@@ -813,25 +813,34 @@ end
 # Completions
 # -----------------------------------------------
 
-# https://github.com/cantino/mcfly
-mcfly init fish | source
-
 # https://github.com/openai/codex/blob/main/docs/getting-started.md#shell-completions
 # codex completion fish | source
-
-# https://github.com/iffse/pay-respects
-pay-respects fish --alias | source
 
 # Prefer fzf to tv for completion - it shows more commands
 type -q fzf; and fzf --fish | source
 # type -q tv; and tv init fish | source
 
 type -q zoxide; and zoxide init fish | source
-type -q starship; and starship init fish | source
+
+if string match -q 'CYGWIN*' (uname -s)
+    function fish_prompt
+        set_color cyan
+        echo -n (prompt_pwd)
+        set_color normal
+        echo -n ' ❯ '
+    end
+else
+    type -q starship; and starship init fish | source
+end
+
+# McFly on Linux; fzf keeps Ctrl-R on Cygwin
+if not string match -q 'CYGWIN*' (uname -s)
+    mcfly init fish | source
+end
 
 # I store secrets in a .env file. But it's unsafe to source them in every shell. So use direnv
 # source "/c/Dropbox/scripts/.env"
-direnv hook fish | source
+string match -q 'CYGWIN*' (uname -s); or direnv hook fish | source
 
 # Archive
 # -----------------------------------------------

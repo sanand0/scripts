@@ -88,7 +88,7 @@ gh auth login
 winget install --id jdx.mise --exact
 $mise = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\mise.exe"
 $core = @('age','bun','deno','fd','jaq','jq','node','ripgrep','sops','starship','yazi','yq','zoxide')
-$github = @('github:direnv/direnv[bin=direnv]','github:cantino/mcfly','github:casey/just','github:dandavison/delta','github:iffse/pay-respects','github:junegunn/fzf','github:pnpm/pnpm')
+$github = @('github:direnv/direnv[bin=direnv]','github:cantino/mcfly','github:casey/just','github:dandavison/delta','github:junegunn/fzf','github:pnpm/pnpm')
 foreach ($tool in $core + $github) { & $mise use --global $tool }
 
 # mise 2026.9.5 has a Windows asset-name bug for difftastic
@@ -98,6 +98,9 @@ winget install --id Wilfred.difftastic --exact
 & $mise exec -- npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 & $mise reshim  # expose npm-installed CLIs via mise shims
 uv tool install llm --with llm-cmd --with llm-openrouter --with llm-gemini --with llm-anthropic --with llm-openai-plugin --with llm-whisper-api --with llm-groq-whisper
+
+mise use -g eza
+mise use -g github:walles/moor
 ```
 
 ## Recent GitHub repos
