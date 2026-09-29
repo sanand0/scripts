@@ -9,7 +9,7 @@
 Examples:
   musictag.py dump
   musictag.py fix "Velai Illa Pattadhaari.What A Karavaad.mp3"
-  musictag.py fix --write --genre Tamil --year 2014 *.mp3
+  musictag.py fix --write --genre Tamil --year 2014 --composer ARR --artist SPB *.mp3
   musictag.py check | moor
 """
 
