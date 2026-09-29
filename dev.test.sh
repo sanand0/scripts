@@ -478,6 +478,12 @@ check_command_runs "copilot version" copilot version
 # Check that GitHub CLI logins still work, otherwise repo automation fails.
 check_command_runs "gh auth status --active" gh auth status --active
 
+# Most existing repos use git@github.com: remotes. dev.sh rewrites those to
+# HTTPS inside the container, where gh + GH_TOKEN provide Git credentials.
+run_check \
+  "private GitHub access via SSH-style remote" \
+  env GIT_TERMINAL_PROMPT=0 git ls-remote git@github.com:sanand0/private-research.git HEAD
+
 # Confirm the coding CLIs are callable and authenticated where supported.
 check_command_runs "codex login status" codex login status
 check_command_runs "claude --version" claude --version

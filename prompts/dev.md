@@ -1,5 +1,19 @@
 # dev.{sh,dockerfile} Prompts
 
+## Fix git fetch, 29 Sep 2026
+
+<!-- Map Copilot Studio Capabilities: https://chatgpt.com/c/6abaf7b2-73e8-83ec-9679-3e167d4c9af6 (2026-09-29T13:29:35+08:00) -->
+
+Why did git fetch fail and how can we make it succeed smoothly when you try next? Explore ~/code/scripts/ for relevant content and let me know what will help and what you recommend - I'll guide if we need to change.
+
+---
+
+Agree with your recommendation. Make the changes and test. I'll restart mcpserver after that.
+
+---
+
+Hm... if an agent naively ran git fetch would it fail or work? If it fails, how would it discover what to do?
+
 ## Allow mcpserver.py, 05 Jun 2026
 
 <!--

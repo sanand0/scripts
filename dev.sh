@@ -218,6 +218,12 @@ args=(
   --security-opt no-new-privileges:true
   --security-opt "seccomp=${PLAYWRIGHT_SECCOMP_PROFILE}"
   -e GH_TOKEN                   # Copy GH_TOKEN from host env if present
+  # Most ~/code repos use GitHub SSH-style remotes, but this container
+  # deliberately has no SSH keys/agent. Rewrite that one URL form to HTTPS so
+  # Git uses the existing gh credential helper + GH_TOKEN instead.
+  -e GIT_CONFIG_COUNT=1
+  -e 'GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf'
+  -e 'GIT_CONFIG_VALUE_0=git@github.com:'
   -e HOME=/home/vscode
   -e USER=vscode
   -e LOGNAME=vscode
