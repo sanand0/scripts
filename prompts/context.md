@@ -1,5 +1,18 @@
 # context.py
 
+## Move logging path, 29 Sep 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6-luna --config model_reasoning_effort=medium
+-->
+
+Move the default logging path from `~/Documents/data/context/query-log.jsonl` to `~/.cache/sanand-scripts/context/`.
+The former is not always write-able but the latter is.
+Move existing log files as well.
+
+<!-- codex resume 01a0eae7-c056-7073-a9bb-7e056e141fea -->
+
 ## Even more fixes, 05 Sep 2026
 
 <!--

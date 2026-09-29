@@ -230,7 +230,7 @@ Assistant-only cobalt answer.
 
     config = context.SourceConfig.for_home(home)
     db = home / "Documents/data/context/context.sqlite"
-    log = home / ".cache/sanand-scripts/context/test-queries.jsonl"
+    log = home / ".cache/sanand-scripts/context/query-log.jsonl"
     context.rebuild_database(db, config)
     return home, config, db, log
 
@@ -507,7 +507,7 @@ def test_long_research_prompt_matches_shortened_name_quickly(corpus) -> None:
 
 def test_status_and_compact_query_log(corpus) -> None:
     home, config, db, log = corpus
-    assert config.log_path == home / "Documents/data/context/query-log.jsonl"
+    assert config.log_path == home / ".cache/sanand-scripts/context/query-log.jsonl"
     status = context.status_database(db, config)
     assert status["database_bytes"] > 0
     assert status["built_at"]
