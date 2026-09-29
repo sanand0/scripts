@@ -543,8 +543,8 @@ curl -sL https://github.com/pensnarik/consolas-font/raw/refs/heads/master/Consol
 fc-cache -fv ~/.local/share/fonts
 
 # Configure llm
-llm install llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin llm-whisper-api llm-groq-whisper
-llm models default gpt-5-mini
+llm install --upgrade llm-cmd llm-openrouter llm-gemini llm-anthropic llm-openai-plugin # llm-whisper-api llm-groq-whisper
+llm models default gpt-6-luna
 ln -s ~/Dropbox/scripts/llm.keys.json ~/.config/io.datasette.llm/keys.json
 
 # Copy Touchegg gestures config. You may need to run Touche before AND after the command. Changing this might require re-login or re-boot. #TODO Figure out how to reload.
