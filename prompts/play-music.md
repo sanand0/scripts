@@ -1,5 +1,24 @@
 # play-music
 
+## Accept partial matches, dry-run, 30 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-6-luna --config model_reasoning_effort=high
+-->
+
+Modify play-music minimally so that if the argument does not exactly match a file in ~/Music, accept partial case-insensitive exact matches.
+
+---
+
+Minimally add an agent-friendly CLI option to just print the 10 recommended songs, without playing them.
+
+---
+
+Rename it to --dry-run
+
+<!-- codex resume 01a0f0ef-935f-7b13-b552-1c43876aeba5 --yolo -->
+
 ## Improve recommendations, 27 Sep 2026
 
 <!-- Revise play-music recommendations: https://chatgpt.com/c/6ab8eceb-ae40-83ec-abbf-48807497cb31 (2026-09-27T19:14:32+08:00) -->
