@@ -168,10 +168,8 @@ abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > 
 
 abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
+abbr --add codexsession 'agentlog.py codex ls | head -20'
 abbr --add copilotlog 'agentlog.py copilot'
-
-# List latest Codex sessions in reverse chronological order.
-abbr --add codexsession 'ls -t ~/.codex/sessions/*/*/*/*.jsonl | head -n 5 | string match -r \'[0-9a-f-]{36}(?=\.jsonl$)\''
 
 # Count number of open tabs on Edge
 abbr --add counttabs "edge tabs --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"

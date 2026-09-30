@@ -5,14 +5,14 @@
 # ///
 """Play a selected MP3 now, followed by 10 related songs from ~/Music.
 
-Recommendations use only musicdump.csv metadata. The score is intentionally simple:
+Recommendations use only musicdump.csv metadata. The score is:
 genre/language 2.5, composer 2.5, singer 2.5, year 1.5, album 1.0.
 Pick from the 30 nearest songs, with slight randomness and soft repetition penalties.
 Personal M3U playlists add at most 0.10: +0.05 if a candidate is in any non-Appa
 playlist, and +0.05 if it shares a non-Appa playlist with the selected song.
 
-Use --recommend to inspect the queue without starting VLC. Set MUSICDUMP_CSV to
-test against another catalog, e.g. the copy in ~/code/infra/music/.
+Use --dry-run to print recommended filenames without starting VLC. Set
+MUSICDUMP_CSV to test against another catalog, e.g. the copy in ~/code/infra/music/.
 """
 
 from __future__ import annotations
@@ -194,6 +194,21 @@ def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], floa
     return queue
 
 
+def find_song(song: str) -> Path:
+    selected = Path(song).expanduser()
+    if selected.is_file():
+        return selected.resolve()
+
+    files = list(MUSIC.rglob("*.mp3"))
+    exact = [path for path in files if path.name == selected.name]
+    matches = exact or [path for path in files if selected.name.casefold() in path.name.casefold()]
+    if len(matches) == 1:
+        return matches[0].resolve()
+    if matches:
+        raise SystemExit(f"play-music: multiple songs match {song!r}: " + ", ".join(path.name for path in matches))
+    raise SystemExit(f"play-music: no song in {MUSIC} matches {song!r}")
+
+
 def vlc_ready() -> bool:
     return subprocess.run(
         ["dbus-send", "--session", "--print-reply", "--dest=org.mpris.MediaPlayer2.vlc", "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Peer.Ping"],
@@ -233,29 +248,25 @@ def play(selected: Path, queue: list[Path]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("song", help="selected MP3 path or filename")
-    parser.add_argument("--recommend", action="store_true", help="print the next 10 songs without playing")
+    parser.add_argument("--dry-run", action="store_true", help="print recommended filenames without playing")
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
-    selected = Path(args.song).expanduser()
+    selected = find_song(args.song)
     try:
         rows = load_catalog()
         seed = next(row for row in rows if row["filename"] == selected.name)
         recommendations = pick_queue(seed, rows, load_playlists(), rng)
     except (FileNotFoundError, StopIteration) as exc:
-        if args.recommend:
+        if args.dry_run:
             raise SystemExit(f"Cannot recommend from metadata: {exc}") from exc
         print(f"play-music: metadata unavailable for {selected.name}; using random queue", file=sys.stderr)
         recommendations = []
 
-    if args.recommend:
-        for index, (row, score, parts) in enumerate(recommendations, 1):
-            strongest = sorted((key for key in parts if key != "playlist"), key=parts.get, reverse=True)[:3]
-            why = ", ".join(f"{key} {parts[key]:.1f}" for key in strongest if parts[key] >= 0.2)
-            if parts.get("playlist"):
-                why += f", playlist +{parts['playlist']:.2f}"
-            print(f"{index:2}. {row['filename']}  [{score:.2f}; {why}]")
+    if args.dry_run:
+        for row, _, _ in recommendations:
+            print(row["filename"])
         return
 
     selected = selected.resolve()
