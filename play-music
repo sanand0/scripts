@@ -131,6 +131,8 @@ def pick_queue(
     rows: list[dict[str, str]],
     memberships: dict[str, set[str]],
     rng: random.Random,
+    max_songs: int,
+    pool_size: int,
 ) -> list[tuple[dict[str, str], float, dict[str, float]]]:
     ranked = []
     seed_playlists = memberships.get(seed["filename"], set())
@@ -144,7 +146,7 @@ def pick_queue(
             playlist_bonus += PLAYLIST_BONUS["shared"]
         parts["playlist"] = playlist_bonus
         ranked.append((score + playlist_bonus, rng.uniform(0, JITTER), candidate, parts))
-    pool = sorted(ranked, reverse=True, key=lambda item: item[0])[:CANDIDATE_POOL]
+    pool = sorted(ranked, reverse=True, key=lambda item: item[0])[:pool_size]
 
     selected: list[tuple[dict[str, str], float, dict[str, float]]] = []
     albums: Counter[str] = Counter()
@@ -159,7 +161,7 @@ def pick_queue(
         repetition += REPEAT_PENALTY["singer"] * sum(singers[name] for name in people(candidate["TPE1"]))
         return score + jitter - repetition
 
-    while len(selected) < min(QUEUE_SIZE, len(pool)):
+    while len(selected) < min(max_songs, len(pool)):
         available = [
             item
             for item in pool
@@ -179,18 +181,18 @@ def pick_queue(
     return selected
 
 
-def random_queue(selected: Path, rng: random.Random) -> list[Path]:
+def random_queue(selected: Path, rng: random.Random, max_songs: int) -> list[Path]:
     candidates = [path for path in MUSIC.rglob("*.mp3") if path.resolve() != selected]
-    return rng.sample(candidates, min(QUEUE_SIZE, len(candidates)))
+    return rng.sample(candidates, min(max_songs, len(candidates)))
 
 
-def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], float, dict[str, float]]], rng: random.Random) -> list[Path]:
+def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], float, dict[str, float]]], rng: random.Random, max_songs: int) -> list[Path]:
     by_name = {path.name: path for path in MUSIC.rglob("*.mp3")}
-    queue = [by_name[row["filename"]] for row, _, _ in recommendations if row["filename"] in by_name]
-    if len(queue) < QUEUE_SIZE:
+    queue = [by_name[row["filename"]] for row, _, _ in recommendations if row["filename"] in by_name][:max_songs]
+    if len(queue) < max_songs:
         extras = [path for path in by_name.values() if path.resolve() != selected and path not in queue]
         rng.shuffle(extras)
-        queue.extend(extras[: QUEUE_SIZE - len(queue)])
+        queue.extend(extras[: max_songs - len(queue)])
     return queue
 
 
@@ -205,7 +207,7 @@ def find_song(song: str) -> Path:
     if len(matches) == 1:
         return matches[0].resolve()
     if matches:
-        raise SystemExit(f"play-music: multiple songs match {song!r}: " + ", ".join(path.name for path in matches))
+        raise SystemExit("\n".join(path.name for path in matches))
     raise SystemExit(f"play-music: no song in {MUSIC} matches {song!r}")
 
 
@@ -250,6 +252,8 @@ def main() -> None:
     parser.add_argument("song", help="selected MP3 path or filename")
     parser.add_argument("--dry-run", action="store_true", help="print recommended filenames without playing")
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
+    parser.add_argument("--max", type=int, default=QUEUE_SIZE, help=f"maximum songs to pick (default: {QUEUE_SIZE})")
+    parser.add_argument("--pool", type=int, default=CANDIDATE_POOL, help=f"candidate pool size (default: {CANDIDATE_POOL})")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -257,7 +261,7 @@ def main() -> None:
     try:
         rows = load_catalog()
         seed = next(row for row in rows if row["filename"] == selected.name)
-        recommendations = pick_queue(seed, rows, load_playlists(), rng)
+        recommendations = pick_queue(seed, rows, load_playlists(), rng, args.max, args.pool)
     except (FileNotFoundError, StopIteration) as exc:
         if args.dry_run:
             raise SystemExit(f"Cannot recommend from metadata: {exc}") from exc
@@ -270,7 +274,7 @@ def main() -> None:
         return
 
     selected = selected.resolve()
-    queue = queue_paths(selected, recommendations, rng) if recommendations else random_queue(selected, rng)
+    queue = queue_paths(selected, recommendations, rng, args.max) if recommendations else random_queue(selected, rng, args.max)
     play(selected, queue)
 
 

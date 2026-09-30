@@ -1,5 +1,19 @@
 # play-music
 
+## Add more options, 30 Sep 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-6-luna --config model_reasoning_effort=medium
+-->
+
+Modify play-music minimally so that:
+When multiple songs match, print the songs one below the other. Each line would contain just the song.
+Add a --max option to limit the number of songs picked. Default is 10.
+Add a --pool option to change the candidate pool size. default is 30.
+
+<!-- codex resume 01a0f101-aa1f-7af3-8076-120b040b2f4e --yolo -->
+
 ## Accept partial matches, dry-run, 30 Sep 2026
 
 <!--
