@@ -9,10 +9,15 @@ import sys
 import textwrap
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def load_module():
     script_path = Path(__file__).resolve().parents[1] / "call"
+    if str(script_path.parent) not in sys.path:
+        sys.path.insert(0, str(script_path.parent))
     spec = importlib.util.spec_from_loader(
         "transcribe_calls", SourceFileLoader("transcribe_calls", str(script_path))
     )
@@ -30,6 +35,17 @@ def run_script(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    env = (env or os.environ).copy()
+    # Copies of call must ship with its existing sibling timestamp helper.
+    source = Path(__file__).resolve().parents[1]
+    if script_path.parent != source:
+        shutil.copyfile(source / "timestamp.py", script_path.parent / "timestamp.py")
+    # Integration tests must not write production caches.
+    if cwd is not None:
+        env["TRANSCRIBE_CALLS_PRICES_CACHE"] = str(cwd / "prices-cache.json")
+        env.setdefault("TRANSCRIBE_CALLS_CACHE_DIR", str(cwd / "chunk-cache"))
+    elif args and isinstance(args[0], Path):
+        env.setdefault("TRANSCRIBE_CALLS_CACHE_DIR", str(args[0].parent / "chunk-cache"))
     return subprocess.run(
         ["uv", "run", str(script_path), *(str(arg) for arg in args)],
         capture_output=True,
@@ -102,6 +118,7 @@ def write_fake_google_genai(package_root: Path) -> Path:
             class GenerateContentConfig:
                 def __init__(self, system_instruction=None, **kwargs):
                     self.system_instruction = system_instruction
+                    self.thinking_config = kwargs.get('thinking_config')
 
 
             class _Types:
@@ -131,6 +148,8 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         handle.write(f"MODEL\\t{model}\\n")
                         handle.write(f"AUDIO\\t{audio.file}\\n")
                         handle.write(f"SYSTEM_PROMPT\\t{getattr(config, 'system_instruction', '')}\\n")
+                        if config.thinking_config:
+                            handle.write(f"THINKING\\t{config.thinking_config['thinking_level']}\\n")
                         if user_prompts:
                             handle.write(f"USER_PROMPT\\t{user_prompts[0]}\\n")
                     error_files = os.environ.get("FAKE_GENAI_ERROR_FILES", "").split(",")
@@ -155,6 +174,8 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         (),
                         {
                             "prompt_token_count": prompt_tokens,
+                            "prompt_tokens_details": [type("Detail", (), {"modality": "AUDIO", "token_count": prompt_tokens})()],
+                            "cache_tokens_details": [],
                             "cached_content_token_count": 0,
                             "candidates_token_count": output_tokens,
                             "thoughts_token_count": thought_tokens,
@@ -257,14 +278,14 @@ def write_fake_google_prices(prices_path: Path) -> Path:
                         "id": "gemini-3-flash-preview",
                         "name": "Gemini 3 Flash Preview",
                         "price_history": [
-                            {"input": 2.0, "output": 12.0, "input_cached": None}
+                            {"input": 2.0, "input_audio": 2.0, "output": 12.0, "input_cached": None}
                         ],
                     },
                     {
                         "id": "gemini-3-1-pro-preview",
                         "name": "Gemini 3.1 Pro <=200k",
                         "price_history": [
-                            {"input": 2.0, "output": 12.0, "input_cached": None}
+                            {"input": 2.0, "input_audio": 2.0, "output": 12.0, "input_cached": None}
                         ],
                     },
                     {
@@ -359,7 +380,7 @@ def test_patch_transcript_section_replaces_requested_part() -> None:
     assert "first chunk\n\n---\n\nreplacement chunk\n\n---\n\nthird chunk" in patched
 
 
-def test_looks_like_transcript_requires_five_matching_lines() -> None:
+def test_looks_like_transcript_accepts_speaker_lines() -> None:
     module = load_module()
     valid = "\n".join(
         f"**Speaker**: [00:0{index}] line {index}"
@@ -452,6 +473,16 @@ def test_build_chunk_windows_rejects_overlap_not_smaller_than_chunk() -> None:
         raise AssertionError("Expected tiny chunks to be rejected")
 
 
+def test_build_chunk_windows_absorbs_encoder_padding_without_extra_request():
+    module = load_module()
+    windows = module.build_chunk_windows(240.0065, 120)
+    assert len(windows) == 2 and windows[0] == (0.0, 120.0)
+    assert windows[1] == pytest.approx((119.0, 121.0065))
+    windows = module.build_chunk_windows(2400.0065, 1800)
+    assert len(windows) == 2 and windows[1][0] == 1199
+    assert windows[-1][0] + windows[-1][1] == 2400.0065
+
+
 def test_trim_transcript_to_chunk_duration_removes_model_continuation() -> None:
     module = load_module()
     transcript = (
@@ -460,7 +491,7 @@ def test_trim_transcript_to_chunk_duration_removes_model_continuation() -> None:
         "**Anand**: [25:15] Yes, absolutely."
     )
 
-    assert module.trim_transcript_to_duration(transcript, 25 * 60) == (
+    assert module.normalize_chunk(transcript, (0, 25 * 60))[0] == (
         "**Anand**: [24:13] This is the real end of the chunk."
     )
 
@@ -668,8 +699,7 @@ def test_script_creates_transcripts_for_multiple_audio_files(tmp_path: Path) -> 
         "cost: 0.000800\n"
         "prompt: |-\n"
         "  Use this exact prompt\n"
-        "---\n\n"
-        "# call-a\n"
+        "transcription_status: complete\n"
     )
     assert "## Transcript\n\n**Speaker**: [00:01] Transcript for call-a.opus line 1" in call_a
     call_b = (output_dir / "call-b.md").read_text(encoding="utf-8")
@@ -727,7 +757,7 @@ def test_script_stops_after_first_failed_audio(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "forced error for call-b.opus" in result.stderr
     assert (output_dir / "call-a.md").exists()
-    assert not (output_dir / "call-b.md").exists()
+    assert "transcription_status: incomplete" in (output_dir / "call-b.md").read_text()
     assert not (output_dir / "call-c.md").exists()
     audio_requests = [
         Path(line.split("\t", 1)[1]).name
@@ -909,6 +939,9 @@ def test_script_requires_gemini_api_key_when_transcription_needed(tmp_path: Path
     audio_path.write_bytes(b"audio")
 
     env = os.environ.copy()
+    bins = tmp_path / "bin"
+    write_fake_ffmpeg_tools(bins)
+    env["PATH"] = f"{bins}:{env['PATH']}"
     env.pop("GEMINI_API_KEY", None)
 
     result = run_script(script_path, audio_path, "--out", output_dir, env=env, cwd=tmp_path)
@@ -1337,7 +1370,7 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "Spurious continuation" not in genai_log
 
 
-def test_script_resumes_chunked_transcription_from_one_day_cache(tmp_path: Path) -> None:
+def test_script_resumes_chunked_transcription_from_durable_cache(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
@@ -1382,7 +1415,7 @@ def test_script_resumes_chunked_transcription_from_one_day_cache(tmp_path: Path)
     )
     assert first.returncode == 1
     assert "forced error for long.part003.opus" in first.stderr
-    assert len(list(cache_dir.glob("*.json"))) == 2
+    assert len(list(cache_dir.glob("chunk-*.json"))) == 3
 
     env.pop("FAKE_GENAI_ERROR_FILES")
     second = run_script(
@@ -1411,24 +1444,14 @@ def test_script_resumes_chunked_transcription_from_one_day_cache(tmp_path: Path)
     assert "Transcript for long.part003.opus line 1" in transcript
 
 
-def test_cleanup_chunk_cache_removes_only_expired_chunk_json(tmp_path: Path) -> None:
+def test_legacy_cache_is_readable_with_unknown_historical_cost(tmp_path):
     module = load_module()
-    fresh = tmp_path / "chunk-fresh.json"
-    expired = tmp_path / "chunk-expired.json"
-    unrelated = tmp_path / "keep.txt"
-    prices_cache = tmp_path / "google-prices.json"
-    for path in (fresh, expired, unrelated, prices_cache):
-        path.write_text("x", encoding="utf-8")
-    os.utime(expired, (100, 100))
-    os.utime(prices_cache, (100, 100))
-
-    removed = module.cleanup_chunk_cache(tmp_path, now=module.CHUNK_CACHE_TTL_SECONDS + 101)
-
-    assert removed == 1
-    assert fresh.exists()
-    assert not expired.exists()
-    assert unrelated.exists()
-    assert prices_cache.exists()
+    cache = tmp_path / "chunk-legacy.json"
+    cache.write_text('{"transcript": "**A**: [00:00] Cached words"}')
+    result = module.read_cached_chunk(cache)
+    assert result.transcript == "**A**: [00:00] Cached words"
+    assert result.usage.total_tokens == 0
+    assert module.read_chunk_state(cache)["attempts"] == [{"usage": None, "legacy": True}]
 
 
 def test_script_auto_retries_and_resolves_invalid_chunk(tmp_path: Path) -> None:
@@ -1452,10 +1475,7 @@ def test_script_auto_retries_and_resolves_invalid_chunk(tmp_path: Path) -> None:
     write_fake_google_prices(prices_path)
     (tmp_path / ".env").write_text("GEMINI_API_KEY=test-key-from-dotenv\n", encoding="utf-8")
 
-    # First call for long.part002.opus returns garbage; the fake client always returns the
-    # same FAKE_GENAI_RESPONSE_BY_FILE entry, so simulate "the retry succeeds" by pointing
-    # at a valid transcript for the retry and asserting it is used (retry bypasses the cache
-    # so a fresh call is always made, which the fake honors identically either way here).
+    # A persistently invalid model response is retried once, then saved with a warning.
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{package_root}:{env.get('PYTHONPATH', '')}".rstrip(":")
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -1481,8 +1501,8 @@ def test_script_auto_retries_and_resolves_invalid_chunk(tmp_path: Path) -> None:
         cwd=tmp_path,
     )
 
-    assert result.returncode == 0, result.stderr
-    assert "WARNING long.opus: section 2/3 still does not look like a transcript after retry" in result.stderr
+    assert result.returncode == 1, result.stderr
+    assert "WARNING long.opus: section 2/3: Model response contains no speaker lines" in result.stderr
     transcript = (output_dir / "long.md").read_text(encoding="utf-8")
     assert "Transcript for long.part001.opus line 1" in transcript
     assert "It appears that you forgot to attach the audio file." in transcript
@@ -1673,6 +1693,7 @@ def test_load_google_pricing_falls_back_to_cache_on_fetch_failure(
     cache_path = tmp_path / "cache" / "google-prices.json"
     cache_path.parent.mkdir(parents=True)
     write_fake_google_prices(cache_path)
+    os.utime(cache_path, (0, 0))
     monkeypatch.setenv("TRANSCRIBE_CALLS_PRICES_URL", (tmp_path / "does-not-exist.json").as_uri())
     monkeypatch.setenv("TRANSCRIBE_CALLS_PRICES_CACHE", str(cache_path))
 
@@ -1739,3 +1760,620 @@ def test_script_rejects_chunk_size_at_or_below_overlap(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "greater than 1/60 minute" in result.stderr
+
+
+def test_split_transcript_preserves_empty_final_chunk() -> None:
+    module = load_module()
+    assert module.split_transcript_parts("first" + module.TRANSCRIPT_PART_SEPARATOR) == ["first", ""]
+
+
+def test_trim_global_chunk_timestamps_without_removing_real_audio() -> None:
+    module = load_module()
+    transcript = "\n".join([
+        "**Speaker**: [20:00] Current audio starts here",
+        "**Speaker**: [35:54] Current audio ends here",
+        "**Speaker**: [36:00] Spurious continuation",
+    ])
+    assert module.normalize_chunk(transcript, (1199, 956.748583))[0] == (
+        "**Speaker**: [00:01] Current audio starts here\n"
+        "**Speaker**: [15:55] Current audio ends here"
+    )
+    # Local timestamps and unrelated out-of-range continuations retain the existing rule.
+    assert module.normalize_chunk("**Speaker**: [00:03] Local", (1199, 956))[0] == "**Speaker**: [00:03] Local"
+    preserved, warning = module.normalize_chunk("**Speaker**: [25:00] Ambiguous", (1199, 956))
+    assert preserved == "**Speaker**: [25:00] Ambiguous" and "Ambiguous" in warning
+
+
+@pytest.mark.parametrize("bad", ["Not a transcript"])
+def test_retry_final_chunk_before_joining_and_cache_recovery(tmp_path, monkeypatch, capsys, bad) -> None:
+    module = load_module()
+    audio = tmp_path / "call.opus"
+    audio.write_bytes(b"audio")
+    valid = "\n".join(f"**Speaker**: [00:0{i}] line {i}" for i in range(5))
+    responses = iter([valid, bad, valid])
+    requests = []
+    def transcribe(path, **kwargs):
+        requests.append(kwargs["user_prompt"])
+        return module.TranscriptionResult(next(responses), module.UsageCost(1, 1, 2, 0.1))
+    monkeypatch.setattr(module, "transcribe_single_audio", transcribe)
+    monkeypatch.setattr(module, "split_audio_chunks", lambda *args, **kwargs: [audio, audio])
+    kwargs = dict(system_prompt="Transcribe", user_prompt=None, model="test", client=object(),
+                  pricing={}, chunk_minutes=20, windows=[(0, 1200), (1199, 956)], cache_dir=tmp_path / "cache")
+    result = module.transcribe_audio(audio, **kwargs)
+    assert module.split_transcript_parts(result.transcript) == [valid, module.render_chunk_timestamps(valid, 1199)]
+    assert not result.warnings
+    assert result.usage.total_tokens == 6
+    assert result.usage.cost_usd == pytest.approx(0.3)
+    assert requests[1] == requests[2]  # Retry keeps prior chunk context.
+    assert "retrying section 2/2" in capsys.readouterr().err
+    resumed = module.transcribe_audio(audio, **kwargs)
+    assert resumed.transcript == result.transcript
+    assert resumed.usage.total_tokens == 0
+    assert len(requests) == 3
+
+
+def test_empty_gemini_output_reports_finish_reason_and_action(monkeypatch) -> None:
+    module = load_module()
+    response = SimpleNamespace(text=None, candidates=[SimpleNamespace(finish_reason="MAX_TOKENS")], prompt_feedback=None)
+    client = SimpleNamespace(files=SimpleNamespace(upload=lambda **kw: "file"),
+        chats=SimpleNamespace(create=lambda **kw: SimpleNamespace(send_message=lambda contents: response)))
+    monkeypatch.setattr(module, "load_genai", lambda: SimpleNamespace(
+        types=SimpleNamespace(GenerateContentConfig=lambda **kw: None), errors=SimpleNamespace(APIError=RuntimeError)))
+    monkeypatch.setattr(module, "calculate_usage_cost", lambda *a, **kw: module.UsageCost(0, 0, 0, 0))
+    result = module.transcribe_single_audio(Path("audio.opus"), "Transcribe", None, "model", client, {})
+    assert "MAX_TOKENS" in result.error and "reduce --chunk" in result.error
+    assert result.usage.cost_usd == 0
+
+
+@pytest.mark.parametrize("failure, action", [
+    (PermissionError(13, "Permission denied", "/locked/note.md"), "Grant write/read access to /locked/note.md"),
+    (OSError(30, "Read-only file system", "/locked/cache.json"), "Check filesystem access/free space"),
+    (IndexError("list assignment index out of range"), "Save this traceback and the command and report the bug"),
+])
+def test_unhandled_failure_reports_cause_and_action(monkeypatch, failure, action) -> None:
+    from typer.testing import CliRunner
+
+    module = load_module()
+    def fail(*args, **kwargs):
+        raise failure
+    monkeypatch.setattr(module, "process_audio", fail)
+    result = CliRunner().invoke(module.app, ["example"])
+    assert result.exit_code == 1
+    assert str(failure) in result.output
+    assert action in result.output
+    if isinstance(failure, IndexError):
+        assert "Traceback" in result.output
+
+
+def test_corrupt_cache_reports_exact_file_to_repair(tmp_path) -> None:
+    module = load_module()
+    cache = tmp_path / "chunk-bad.json"
+    cache.write_text('{"transcript": []}')
+    with pytest.raises(RuntimeError, match="Invalid chunk cache.*chunk-bad.json.*Move this file aside"):
+        module.read_cached_chunk(cache)
+
+
+def test_persistently_empty_final_chunk_remains_patchable(tmp_path, monkeypatch) -> None:
+    module = load_module()
+    audio = tmp_path / "call.opus"
+    audio.write_bytes(b"audio")
+    valid = "\n".join(f"**Speaker**: [00:0{i}] line {i}" for i in range(5))
+    responses = iter([valid, "**Speaker**: [25:00] Bad", "**Speaker**: [25:00] Bad"])
+    monkeypatch.setattr(module, "transcribe_single_audio", lambda *a, **kw: module.TranscriptionResult(
+        next(responses), module.UsageCost(1, 1, 2, 0.1)))
+    monkeypatch.setattr(module, "split_audio_chunks", lambda *a, **kw: [audio, audio])
+    result = module.transcribe_audio(audio, "Transcribe", None, "test", object(), {}, 20,
+        windows=[(0, 1200), (1199, 956)], cache_dir=tmp_path / "cache")
+    note = module.render_new_document("Call", result.transcript, "Transcribe")
+    assert [warning.section_index for warning in result.warnings] == [2]
+    assert "**Speaker**: [25:00] Bad" in note
+    assert len(list((tmp_path / "cache").glob("*.json"))) == 2
+    repaired = module.patch_transcript_section(note, 2, valid)
+    assert module.find_invalid_transcript_sections(repaired) == []
+
+
+@pytest.fixture
+def revision_case(tmp_path):
+    """Run the real CLI against deterministic model responses and isolated state."""
+    audio = tmp_path / "meeting.opus"
+    audio.write_bytes(b"audio")
+    prompt = tmp_path / "prompt.md"
+    prompt.write_text("Transcribe every turn")
+    packages = tmp_path / "pydeps"
+    write_fake_google_genai(packages)
+    bins = tmp_path / "bin"
+    write_fake_ffmpeg_tools(bins)
+    prices = tmp_path / "prices.json"
+    write_fake_google_prices(prices)
+    env = os.environ.copy()
+    env.update(PYTHONPATH=str(packages), PATH=f"{bins}:{env['PATH']}", GEMINI_API_KEY="test",
+        FAKE_GENAI_LOG=str(tmp_path / "requests.log"), FAKE_FFPROBE_DURATION="2400",
+        TRANSCRIBE_CALLS_PRICES_URL=prices.as_uri(), TRANSCRIBE_CALLS_CACHE_DIR=str(tmp_path / "cache"))
+    output = tmp_path / "notes"
+    def run(*args):
+        return run_script(Path(__file__).resolve().parents[1] / "call", audio,
+            "--out", output, "--system-prompt", prompt, *args, env=env, cwd=tmp_path)
+    return SimpleNamespace(root=tmp_path, audio=audio, output=output, note=output / "meeting.md", env=env, run=run)
+
+
+def test_revision_dry_run_prompt_update_never_writes(revision_case):
+    c = revision_case
+    c.output.mkdir()
+    c.note.write_text('---\nprompt: old\n---\n\n## Transcript\n\n**A**: [00:00] Existing words\n')
+    before = {p: p.read_bytes() for p in c.root.rglob('*') if p.is_file()}
+    result = c.run('--dry-run', '--prompt', 'new')
+    assert result.returncode == 0, result.stderr
+    assert {p: p.read_bytes() for p in c.root.rglob('*') if p.is_file() and 'runs' not in p.parts} == before
+
+
+def test_revision_short_transcript_cumulative_and_cached(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '**A**: [00:03] Hello\n**B**: [00:08] Bye'
+    first = c.run()
+    assert first.returncode == 0, first.stderr
+    note = c.note.read_text()
+    assert '**A**: [20:02] Hello' in note
+    assert 'transcription_status: complete' in note
+    c.note.unlink()
+    second = c.run()
+    assert second.returncode == 0, second.stderr
+    requests = (c.root / 'requests.log').read_text().splitlines()
+    assert sum(line.startswith('AUDIO\t') for line in requests) == 2
+    assert 'tokens=0' in second.stdout
+    assert c.note.read_text() == note
+
+
+def test_revision_fenced_transcript_repaired_without_paid_retry(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '```markdown\n**A**: [00:00] One turn\n```'
+    result = c.run()
+    assert result.returncode == 0, result.stderr
+    assert '```' not in c.note.read_text()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 1
+    assert len(list((c.root / 'cache').glob('chunk-*.json'))) == 1
+
+
+def test_revision_failed_resume_keeps_paid_attempts_and_pending_note(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.part002.opus'
+    first = c.run()
+    assert first.returncode == 1
+    assert c.note.exists()
+    assert 'transcription_status: incomplete' in c.note.read_text()
+    records = [json.loads(line) for line in (c.root / 'cache' / 'run.jsonl').read_text().splitlines()]
+    assert any(row['event'] == 'attempt' and row.get('usage', {}).get('total_tokens') == 150 for row in records)
+    assert any(row['event'] == 'attempt_error' and row['usage'] is None for row in records)
+    for cache in (c.root / 'cache').glob('chunk-*.json'):
+        os.utime(cache, (100, 100))
+    c.env.pop('FAKE_GENAI_ERROR_FILES')
+    resumed = c.run()
+    assert resumed.returncode == 0, resumed.stderr
+    assert 'transcription_status: complete' in c.note.read_text()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 3
+    assert 'cost: unknown' in c.note.read_text()  # Failed request billing cannot be inferred.
+
+
+def test_revision_ambiguous_timestamps_preserve_text_without_retry(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus':
+        '**A**: [26:38] First utterance after a long silence\n**B**: [35:50] Last utterance'})
+    result = c.run()
+    assert result.returncode == 1
+    assert 'First utterance after a long silence' in c.note.read_text()
+    assert 'timestamp' in result.stderr.lower()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+    assert 'transcription_status: incomplete' in c.note.read_text()
+
+
+def test_revision_preflight_output_failure_makes_no_paid_request(revision_case, monkeypatch):
+    from typer.testing import CliRunner
+    c = revision_case
+    module = load_module()
+    monkeypatch.setattr(module, 'plan_audio_chunks', lambda *a, **kw: (20, [(0, 20)]))
+    monkeypatch.setenv('TRANSCRIBE_CALLS_CACHE_DIR', str(c.root / 'cache'))
+    def denied(*args, **kwargs):
+        raise PermissionError(13, 'Permission denied', str(c.note))
+    monkeypatch.setattr(module, 'preflight_write', denied)
+    monkeypatch.setattr(module, 'build_client', lambda: pytest.fail('Paid client created before preflight'))
+    result = CliRunner().invoke(module.app, [str(c.audio), '--out', str(c.output)])
+    assert result.exit_code == 1
+    assert 'Permission denied' in result.output
+
+
+def test_revision_mixed_modality_cost_with_cached_audio():
+    module = load_module()
+    response = SimpleNamespace(usage_metadata=SimpleNamespace(
+        prompt_token_count=1100, cached_content_token_count=200, candidates_token_count=100,
+        thoughts_token_count=50, total_token_count=1250,
+        prompt_tokens_details=[SimpleNamespace(modality='AUDIO', token_count=1000), SimpleNamespace(modality='TEXT', token_count=100)],
+        cache_tokens_details=[SimpleNamespace(modality='AUDIO', token_count=200)]))
+    price = {'test': {'input': .5, 'input_audio': 1., 'input_cached': .05, 'input_cached_audio': .1, 'output': 3.}}
+    usage = module.calculate_usage_cost(response, 'test', price)
+    assert usage.cost_usd == pytest.approx((800 + 50 + 20 + 450) / 1e6)
+
+
+def test_revision_known_local_timestamp_shift_ignores_inference_guard():
+    module = load_module()
+    assert module.render_chunk_timestamps('**A**: [20:00] Late first speech', 1499) == '**A**: [44:59] Late first speech'
+    assert module.render_chunk_timestamps('**A**: [00:02 - 00:04] Range', 59) == '**A**: [01:01 - 01:03] Range'
+
+
+def test_revision_atomic_save_failure_preserves_existing_note(tmp_path, monkeypatch):
+    module = load_module()
+    note = tmp_path / 'note.md'
+    note.write_text('Original notes')
+    def fail(*args, **kwargs):
+        raise OSError('replace failed')
+    monkeypatch.setattr(module.os, 'replace', fail)
+    with pytest.raises(OSError, match='replace failed'):
+        module.atomic_write(note, 'New notes')
+    assert note.read_text() == 'Original notes'
+    assert list(tmp_path.iterdir()) == [note]
+
+
+def test_revision_silent_chunks_are_complete_and_never_retried(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '[Silence]'
+    result = c.run()
+    assert result.returncode == 0, result.stderr
+    assert 'transcription_status: complete' in c.note.read_text()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+
+
+def test_revision_empty_response_keeps_paid_usage_and_does_not_retry(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = ''
+    failed = c.run()
+    assert failed.returncode == 1
+    assert 'Gemini returned empty output' in failed.stderr
+    assert 'cost: 0.000800' in c.note.read_text()
+    state = json.loads(next((c.root / 'cache').glob('chunk-*.json')).read_text())
+    assert state['raw_transcript'] == '' and state['status'] == 'failed'
+    assert state['attempts'][0]['usage']['total_tokens'] == 150
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 1
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '**A**: [00:01] Recovered'
+    assert c.run().returncode == 0
+    assert 'cost: 0.001600' in c.note.read_text()
+
+
+def test_revision_force_replacement_cost_excludes_previous_generation(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    assert c.run('--force').returncode == 0
+    assert 'cost: 0.000800' in c.note.read_text()
+    ledger = [json.loads(line) for line in (c.root / 'cache' / 'run.jsonl').read_text().splitlines()]
+    assert sum(row['event'] == 'attempt' for row in ledger) == 2
+
+
+def test_revision_failed_force_preserves_previous_complete_note(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    original = c.note.read_bytes()
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
+    failed = c.run('--force')
+    assert failed.returncode == 1
+    assert c.note.read_bytes() == original
+    assert 'transcription_status: incomplete' in c.note.with_suffix('.incomplete.md').read_text()
+
+
+def test_revision_patch_shifts_once_and_preserves_other_sections(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': 'Not a transcript'})
+    assert c.run().returncode == 1
+    module = load_module()
+    before = module.TRANSCRIPT_SECTION_RE.search(c.note.read_text())['body']
+    first = module.split_transcript_parts(before)[0]
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': '**B**: [00:03] Repaired'})
+    patched = c.run('--patch')
+    assert patched.returncode == 0, patched.stderr
+    after = module.split_transcript_parts(module.TRANSCRIPT_SECTION_RE.search(c.note.read_text())['body'])
+    assert after == [first, '**B**: [20:02] Repaired']
+    assert 'cost: 0.003200' in c.note.read_text()  # One first chunk, two failed responses, one patch.
+    requests_before = (c.root / 'requests.log').read_text()
+    assert c.run('--patch').returncode == 0
+    assert (c.root / 'requests.log').read_text() == requests_before
+
+
+def test_revision_global_timestamp_response_is_not_shifted_twice(revision_case):
+    c = revision_case
+    c.env["FAKE_FFPROBE_DURATION"] = "2155"
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': '**B**: [20:00] Globally timestamped'})
+    result = c.run()
+    assert result.returncode == 0, result.stderr
+    assert '**B**: [20:00] Globally timestamped' in c.note.read_text()
+    assert '[39:59]' not in c.note.read_text()
+
+
+def test_revision_custom_short_chunks_use_exact_window_starts(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '62'
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '**A**: [00:01] Speech'
+    result = c.run('--chunk', '1')
+    assert result.returncode == 0, result.stderr
+    assert '**A**: [01:00] Speech' in c.note.read_text()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+
+
+def test_revision_source_change_invalidates_single_chunk_cache(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    c.audio.write_bytes(b'new recording')
+    assert c.run().returncode == 0
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+
+
+def test_revision_local_processing_failure_resumes_raw_response_without_api(tmp_path, monkeypatch):
+    module = load_module()
+    audio = tmp_path / 'short.opus'
+    audio.write_bytes(b'audio')
+    requests = []
+    def response(*args, **kwargs):
+        requests.append(1)
+        return module.TranscriptionResult('**A**: [00:01] Durable raw words', module.UsageCost(1, 1, 2, .1))
+    monkeypatch.setattr(module, 'transcribe_single_audio', response)
+    normalize = module.normalize_chunk
+    def broken(*args):
+        raise RuntimeError('Local processing failure')
+    monkeypatch.setattr(module, 'normalize_chunk', broken)
+    kwargs = dict(system_prompt='Transcribe', user_prompt=None, model='test', client=object(), pricing={},
+        chunk_minutes=30, windows=[(0, 20)], cache_dir=tmp_path / 'cache')
+    with pytest.raises(RuntimeError, match='Local processing failure'):
+        module.transcribe_audio(audio, **kwargs)
+    state = json.loads(next((tmp_path / 'cache').glob('chunk-*.json')).read_text())
+    assert state['status'] == 'received' and state['raw_transcript'].endswith('Durable raw words')
+    monkeypatch.setattr(module, 'normalize_chunk', normalize)
+    resumed = module.transcribe_audio(audio, **kwargs)
+    assert len(requests) == 1 and resumed.usage.total_tokens == 0
+    assert resumed.saved_cost_usd == .1
+
+
+def test_revision_unknown_usage_is_not_reported_as_free():
+    module = load_module()
+    usage = module.calculate_usage_cost(SimpleNamespace(usage_metadata=None), 'test', {})
+    assert usage.cost_usd is None
+    assert module.combine_usage_costs([usage, module.UsageCost(1, 1, 2, .1)]).cost_usd is None
+
+
+def test_revision_local_and_global_timestamp_origins_that_both_fit_require_review():
+    module = load_module()
+    raw = '**A**: [20:00] Speech after twenty minutes of silence'
+    text, warning = module.normalize_chunk(raw, (1199, 1201))
+    assert text == raw
+    assert 'origin' in warning.lower()
+
+
+def test_revision_refusal_is_not_automatically_retried(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = 'I cannot transcribe this audio.'
+    result = c.run()
+    assert result.returncode == 1
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 1
+    assert 'I cannot transcribe this audio.' in c.note.read_text()
+
+
+def test_revision_missing_timestamp_helper_fails_before_any_request(revision_case):
+    c = revision_case
+    script = c.root / 'standalone-call.py'
+    shutil.copyfile(Path(__file__).resolve().parents[1] / 'call', script)
+    result = subprocess.run(['uv', 'run', str(script), str(c.audio), '--out', str(c.output),
+        '--system-prompt', str(c.root / 'prompt.md')], cwd=c.root, env=c.env, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert 'Install timestamp.py next to call' in result.stderr
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_revision_failed_force_resumes_and_promotes_candidate(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
+    assert c.run('--force').returncode == 1
+    candidate = c.note.with_suffix('.incomplete.md')
+    assert 'replacement_for:' in candidate.read_text()
+    del c.env['FAKE_GENAI_ERROR_FILES']
+    assert c.run().returncode == 0
+    assert not candidate.exists()
+    assert 'transcription_status: complete' in c.note.read_text()
+
+
+def test_revision_force_protects_unrelated_candidate_before_request(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    candidate = c.note.with_suffix('.incomplete.md')
+    candidate.write_text('Personal working notes')
+    before = (c.root / 'requests.log').read_bytes()
+    result = c.run('--force')
+    assert result.returncode == 1
+    assert 'Move or rename' in result.stderr
+    assert (c.root / 'requests.log').read_bytes() == before
+    assert candidate.read_text() == 'Personal working notes'
+
+
+def test_revision_successful_force_leaves_stale_candidate_without_blocking(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
+    assert c.run('--force').returncode == 1
+    del c.env['FAKE_GENAI_ERROR_FILES']
+    assert c.run('--force').returncode == 0
+    assert c.run().returncode == 0
+    assert c.note.with_suffix('.incomplete.md').exists()
+
+
+def test_revision_model_separator_does_not_create_extra_chunks():
+    module = load_module()
+    raw = '**A**: [00:01] First\n\n---\n\n**A**: [00:02] Second'
+    cleaned, warning = module.normalize_chunk(raw, (0, 20))
+    assert warning is None
+    assert len(module.split_transcript_parts(cleaned)) == 1
+    assert 'First' in cleaned and 'Second' in cleaned
+
+
+def test_revision_patch_save_failure_reuses_paid_response_and_cost(revision_case, monkeypatch):
+    c = revision_case
+    module = load_module()
+    monkeypatch.setattr(module, 'plan_audio_chunks', lambda *a, **kw: (20, [(0, 20)]))
+    monkeypatch.setenv('TRANSCRIBE_CALLS_CACHE_DIR', str(c.root / 'cache'))
+    monkeypatch.setattr(module, 'build_client', lambda: object())
+    monkeypatch.setattr(module, 'load_google_pricing', lambda: {})
+    responses = ['Not a transcript', 'Still not a transcript', '**A**: [00:01] Repaired']
+    requests = []
+    def response(*args, **kwargs):
+        requests.append(1)
+        return module.TranscriptionResult(responses.pop(0), module.UsageCost(1, 1, 2, .1))
+    monkeypatch.setattr(module, 'transcribe_single_audio', response)
+    kwargs = dict(audio=str(c.audio), user_prompt=None, force=False, patch=False,
+        model='test', chunk_minutes=30, out_dir=c.output, system_prompt_file=c.root / 'prompt.md', dry_run=False)
+    with pytest.raises(RuntimeError, match='Saved incomplete'):
+        module.process_audio(**kwargs)
+    original = c.note.read_bytes()
+    atomic = module.atomic_write
+    def fail_note(path, text):
+        if path == c.note:
+            raise OSError('note publish failed')
+        atomic(path, text)
+    monkeypatch.setattr(module, 'atomic_write', fail_note)
+    kwargs['patch'] = True
+    with pytest.raises(OSError, match='note publish failed'):
+        module.process_audio(**kwargs)
+    assert c.note.read_bytes() == original
+    monkeypatch.setattr(module, 'atomic_write', atomic)
+    module.process_audio(**kwargs)
+    assert len(requests) == 3
+    assert 'cost: 0.300000' in c.note.read_text()
+    assert 'transcription_status: complete' in c.note.read_text()
+
+
+def test_revision_patch_rejects_misaligned_cost_metadata_before_request(revision_case):
+    c = revision_case
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': 'Not a transcript'})
+    assert c.run().returncode == 1
+    c.note.write_text(load_module().set_frontmatter_fields(c.note.read_text(), {'chunk_costs': '[]'}, prepend=False))
+    before = (c.root / 'requests.log').read_bytes()
+    result = c.run('--patch')
+    assert result.returncode == 1
+    assert 'chunk_costs' in result.stderr and 'no API request made' in result.stderr
+    assert (c.root / 'requests.log').read_bytes() == before
+
+
+def test_run_logs_success_cache_skip_and_failure_with_separate_ids(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    assert c.run().returncode == 0
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
+    assert c.run('--force').returncode == 1
+    runs = sorted((c.root / 'cache' / 'runs').iterdir())
+    assert len(runs) == 3
+    summaries = [json.loads((run / 'summary.json').read_text()) for run in runs]
+    assert [row['exit_code'] for row in summaries] == [0, 0, 1]
+    assert [row['new_cost_usd'] for row in summaries] == [.0008, 0, None]
+    assert [row['api_attempts'] for row in summaries] == [1, 0, 1]
+    assert len({row['run_id'] for row in summaries}) == 3
+    assert all(row['elapsed_seconds'] >= 0 and row['code_sha256'] and row['python'] for row in summaries)
+    assert 'Already transcribed' in (runs[1] / 'console.log').read_text()
+    assert 'forced error' in (runs[2] / 'console.log').read_text()
+    events = [json.loads(line) for line in (runs[0] / 'events.jsonl').read_text().splitlines()]
+    assert all(row['run_id'] == summaries[0]['run_id'] for row in events)
+    response = next(row for row in events if row['event'] == 'response')
+    assert response['elapsed_seconds'] >= 0 and 'finish_reasons' in response
+    assert response['usage']['total_tokens'] == 150
+    receipt = json.loads(next(runs[0].glob('chunk-*-attempt1-*.json')).read_text())
+    assert receipt['status'] == 'received' and receipt['raw_transcript']
+    assert not any('GEMINI_API_KEY' in (run / 'summary.json').read_text() for run in runs)
+
+
+def test_run_logs_argument_errors_and_dry_run_without_api(revision_case):
+    c = revision_case
+    assert c.run('--bogus').returncode != 0
+    assert c.run('--dry-run').returncode == 0
+    runs = sorted((c.root / 'cache' / 'runs').iterdir())
+    assert len(runs) == 2
+    assert json.loads((runs[0] / 'summary.json').read_text())['exit_code'] == 2
+    assert 'No such option' in (runs[0] / 'console.log').read_text()
+    assert 'dry-run' in (runs[1] / 'console.log').read_text()
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_thinking_config_invalidates_cache_and_reaches_sdk(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    c.note.unlink()
+    c.env['TRANSCRIBE_CALLS_THINKING'] = 'minimal'
+    assert c.run().returncode == 0
+    assert len(list((c.root / 'cache').glob('chunk-*.json'))) == 2
+    assert 'THINKING\tminimal' in (c.root / 'requests.log').read_text()
+
+
+def test_invalid_thinking_setting_fails_before_request(revision_case):
+    c = revision_case
+    c.env['TRANSCRIBE_CALLS_THINKING'] = 'invalid'
+    result = c.run()
+    assert result.returncode == 1
+    assert 'TRANSCRIBE_CALLS_THINKING' in result.stderr
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_context_limits_bound_prior_prompt_and_allow_no_context(monkeypatch):
+    module = load_module()
+    text = '\n'.join(f'**A**: [00:{i:02}] Turn {i}' for i in range(10))
+    monkeypatch.setenv('TRANSCRIBE_CALLS_CONTEXT_LINES', '2')
+    context = module.build_prior_chunk_context([text])
+    assert 'Turn 9' in context and 'Turn 8' in context and 'Turn 7' not in context
+    monkeypatch.setenv('TRANSCRIBE_CALLS_CONTEXT_LINES', '0')
+    assert module.build_prior_chunk_context([text]) is None
+
+
+def test_invalid_context_limit_fails_before_request(revision_case):
+    c = revision_case
+    c.env['TRANSCRIBE_CALLS_CONTEXT_LINES'] = '-1'
+    result = c.run()
+    assert result.returncode == 1 and 'TRANSCRIBE_CALLS_CONTEXT' in result.stderr
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_run_logging_permission_failure_prevents_api(revision_case):
+    c = revision_case
+    blocked = c.root / 'blocked-cache'
+    blocked.write_text('not a directory')
+    c.env['TRANSCRIBE_CALLS_CACHE_DIR'] = str(blocked)
+    result = c.run()
+    assert result.returncode == 1
+    assert 'cannot create diagnostic logs' in result.stderr and 'no API request made' in result.stderr
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_run_logging_interrupt_keeps_diagnostic_summary(tmp_path, monkeypatch):
+    module = load_module()
+    monkeypatch.setenv('TRANSCRIBE_CALLS_CACHE_DIR', str(tmp_path))
+    monkeypatch.setattr(sys, 'argv', ['call', 'meeting'])
+    def interrupted():
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(module, 'app', interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        module.run_cli()
+    run = next((tmp_path / 'runs').iterdir())
+    assert json.loads((run / 'summary.json').read_text())['exit_code'] == 130
+    assert 'KeyboardInterrupt' in (run / 'console.log').read_text()
+
+
+def test_inline_timestamps_preserve_valid_prefix_without_paid_retry(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '**A**: [00:01] Real words [00:15] More words [00:25] Spurious continuation'
+    result = c.run()
+    assert result.returncode == 0, result.stderr
+    assert 'Real words' in c.note.read_text() and 'More words' in c.note.read_text()
+    assert 'Spurious continuation' not in c.note.read_text()
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 1
+    state = json.loads(next((c.root / 'cache').glob('chunk-*.json')).read_text())
+    assert 'Spurious continuation' in state['raw_transcript']

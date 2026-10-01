@@ -1,5 +1,57 @@
 # Transcribe Calls
 
+## Current contract, 01 Oct 2026
+
+The sections below record design history. The active interface is documented in
+`README.md` and `call --help`; earlier requests for `--glob`, no-argument batch
+processing, one-day cache expiry, five-line validation and inaccurate chunk
+timestamps are superseded.
+
+Keep direct/multiple audio arguments, substring lookup, `--prompt`, `--force`,
+`--patch`, `--list-changes` and `--dry-run`. Save cumulative timestamps, raw responses,
+durable exact-request caches and diagnostic logs for every operational run.
+Dry runs write diagnostic logs only. Keep `timestamp.py` for legacy/ambiguous notes.
+Benchmark thinking, continuity context and chunk sizes before changing defaults;
+prefer transcript fidelity over a lower token bill when they conflict.
+
+## Fix errors, 01 Oct 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+See ~/Downloads/call-error.log which is the log of what happened when I ran `call`. This happens regularly, i.e.
+
+1. After transcribing part 2/2, it again transcribes a 2/2 at the end. Why does this happen? Is it required? Can we avoid it robustly?
+2. Failures with list-assignment index out of range. This sort of thing keeps happening periodically. Why does this happen? When it - and any similar, or perhaps even any kind of, failure - happens, can we print the ACTIONABLE reason for the failure?
+
+Make the fixes you are confident of. Feel free to test out on the file I just tried transcribing and perhaps other files if required.
+
+---
+
+I would like to improve `call` - and my intent is below.
+
+We've built this historically in many stages - prompts/call.md and the git history and even fish usage patterns and logs will show how.
+There might be redundant or mostly unused features, even conflicting requirements, and things that are no longer relevant for the current models, etc.
+There might be extra LLM API cost incurred because of unnecessary retries or for other reasons.
+Further, timestamp.py is often run post-facto where ideally it would be an integral part of how `call` saves the output.
+Can we revise and fix for these?
+
+Plan first. Think about what changes are required, prioritized. Perhaps use a sub-agent to focus this thread on the execution.
+Report the prioritized changes and I'll suggest what to proceed with. You can then implement (with realistic tests written first).
+
+---
+
+OK, proceed with 1-4. Then suggest next steps.
+
+---
+
+Save logs for each run - including information that will help diagnosis in the future.
+Also proceed with the recommended next steps.
+
+<!-- codex resume 01a0f524-c86f-7302-b85f-7d18cb2c86b8 -->
+
 ## Force should not use cache, 09 Sep 2026
 
 <!--
