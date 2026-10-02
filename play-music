@@ -30,6 +30,7 @@ from pathlib import Path
 
 MUSIC = Path("~/Music").expanduser()
 CATALOG = Path(os.environ.get("MUSICDUMP_CSV", MUSIC / "musicdump.csv")).expanduser()
+HISTORY = Path(os.environ.get("VLC_HISTORY", "~/.local/share/sanand-scripts/vlc-history.tsv")).expanduser()
 QUEUE_SIZE = 10
 CANDIDATE_POOL = 30
 JITTER = 0.65
@@ -46,6 +47,17 @@ LANGUAGE_SIMILARITY = {
 }
 INDIAN_LANGUAGES = {"tamil", "telugu", "malayalam", "hindi"}
 PERSON_SPLIT = re.compile(r"\s*[,;]\s*")
+AUDIO_FILE = re.compile(r"\.(?:mp3|m4a|aac|flac|ogg|opus|wav|wma|aiff?|ape|alac)$", re.IGNORECASE)
+
+
+def last_played_song() -> str:
+    lines = [line for line in HISTORY.read_text(errors="replace").splitlines() if line.strip()]
+    if not lines:
+        raise SystemExit(f"play-music: no song found in {HISTORY}")
+    songs = [fragment.strip() for fragment in re.split(r"[,\t|]", lines[-1]) if AUDIO_FILE.search(Path(fragment.strip()).name)]
+    if not songs:
+        raise SystemExit(f"play-music: no audio filename found in last line of {HISTORY}")
+    return Path(songs[-1]).name
 
 
 def people(value: str) -> set[str]:
@@ -249,7 +261,7 @@ def play(selected: Path, queue: list[Path]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("song", help="selected MP3 path or filename")
+    parser.add_argument("song", nargs="?", help="selected MP3 path or filename (defaults to last played song)")
     parser.add_argument("--dry-run", action="store_true", help="print recommended filenames without playing")
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
     parser.add_argument("--max", type=int, default=QUEUE_SIZE, help=f"maximum songs to pick (default: {QUEUE_SIZE})")
@@ -257,7 +269,7 @@ def main() -> None:
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
-    selected = find_song(args.song)
+    selected = find_song(args.song or last_played_song())
     try:
         rows = load_catalog()
         seed = next(row for row in rows if row["filename"] == selected.name)
