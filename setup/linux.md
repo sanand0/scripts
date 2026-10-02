@@ -239,13 +239,14 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 # mise use -g github:watchexec/watchexec       # watchexec - Re-run commands when files change (tests, builds, wrangler dev, etc.)
 # mise use -g github:zellij-org/zellij         # zellij - Modern terminal multiplexer; sane defaults vs tmux for demos & REPLs
 
-npm install -g @googleworkspace/cli@latest    # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
-npm install -g @openai/codex@latest           # codex - AI code assistant CLI
-npm install -g remark-cli remark-inline-links # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
-npm install -g trash-cli@latest               # trash - Move files to trash instead of deleting
-npm install -g agent-browser@latest           # agent-browser - Allow AI coding agents to use the browser
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent  # pi - customizable AI coding agent
-npm install -g opencode-ai                    # opencode - agent
+npm install -g @googleworkspace/cli@latest     # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
+npm install -g @openai/codex@latest            # codex - AI code assistant CLI
+npm install -g remark-cli remark-inline-links  # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
+npm install -g trash-cli@latest                # trash - Move files to trash instead of deleting
+npm install -g agent-browser@latest            # agent-browser - Allow AI coding agents to use the browser
+npm install -g opencode-ai@latest              # opencode - agent
+npm install -g cf@latest                       # Cloudflare agent
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest  # pi - customizable AI coding agent
 # claude copilot git-standup zx
 
 # Install pi extensions

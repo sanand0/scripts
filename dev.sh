@@ -252,6 +252,7 @@ args=(
   -v "$HOME/.config/gws-root.node@gmail.com/:/home/vscode/.config/gws-root.node@gmail.com"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
   -v "$HOME/.config/opencode:/home/vscode/.config/opencode"
+  -v "$HOME/.config/cloudflare/:/home/vscode/.config/cloudflare"
   # -v "$HOME/.config/wrangler/:/home/vscode/wrangler"    # 🔴
   -v "$HOME/.copilot:/home/vscode/.copilot"
   -v "$HOME/.gemini:/home/vscode/.gemini"

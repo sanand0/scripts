@@ -170,13 +170,14 @@ RUN bash -lc 'eval "$(mise env -s bash)"; \
   gws --help; \
   npm install -g pixelmatch@latest pngjs@latest; \
   npm install -g @firecrawl/anydoc@latest; \
+  npm install -g cf@latest; \
   mise reshim node \
   '
 
 # Install frequently changing agent CLIs last to keep them fresh
 # Takes ~1.5 min
 RUN bash -lc 'eval "$(mise env -s bash)"; \
-  echo "30 Sep 2026: Updating agents and fast-moving agent tools"; \
+  echo "02 Oct 2026: Updating agents and fast-moving agent tools"; \
   npm install -g agent-browser@latest; \
   npm install -g @openai/codex@latest; \
   npm install -g @github/copilot@latest; \

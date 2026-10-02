@@ -10,5 +10,6 @@ agent-browser (use stable tab IDs like t45; inspect visible DOM before clicking)
 npx -y @firecrawl/anydoc (pdf, word, ppt to Markdown, no OCR)
 pdfcpu, qpdf, pdftoppm, pdfplumber, pandoc
 magick (~/.local/overrides/magick), cwebp, ffmpeg, melt (avoid imgcat, prefer view_image / read tool)
+cf (Cloudflare CLI)
 
 See other files in this directory for usage examples.

@@ -127,7 +127,7 @@ dev_args+=("$@")
 "$SCRIPT_DIR/dev.sh" "${dev_args[@]}" -- "$SCRIPT_DIR/mcpserver.py" </dev/tty &
 server_pid=$!
 
-deadline=$((SECONDS + 10))
+deadline=$((SECONDS + 20))
 until curl --silent --output /dev/null --max-time 1 "$MCP_URL"; do
   if ! kill -0 "$server_pid" 2>/dev/null; then
     printf 'ERROR: MCP server exited before becoming reachable at %s\n' "$MCP_URL" >&2
