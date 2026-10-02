@@ -794,6 +794,20 @@ def test_read_file_is_one_based_bounded_and_resumable(tmp_path) -> None:
     assert result["next_start_line"] == 4
 
 
+def test_read_file_allows_utf8_character_crossing_probe_boundary(tmp_path) -> None:
+    path = tmp_path / "boundary.txt"
+    path.write_bytes(b"a" * 8191 + "—\nend\n".encode())
+    result = mcpserver._read_file(str(path))
+    assert "—\nend\n" in result["content"]
+
+
+def test_read_file_rejects_invalid_utf8(tmp_path) -> None:
+    path = tmp_path / "invalid.txt"
+    path.write_bytes(b"hello\xffworld\n")
+    with pytest.raises(ToolError, match="Not UTF-8 text"):
+        mcpserver._read_file(str(path))
+
+
 def test_read_files_keeps_partial_successes_and_limits_batch_size(tmp_path) -> None:
     good = tmp_path / "good.txt"
     good.write_text("hello\nworld\n")

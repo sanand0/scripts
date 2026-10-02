@@ -1,6 +1,39 @@
 # MCP Server
 
-## Improve logs
+## Improve MCP Network Switching, 02 Oct 2026
+
+<!-- MCP Network Switching Analysis: https://chatgpt.com/c/6abf8947-3ae0-83ec-aefb-18143e07db8a (2026-10-02T21:05:27+08:00) -->
+
+Does the secure MCP tunnel that OpenAI support - https://developers.openai.com/api/docs/guides/secure-mcp-tunnels - handle network changes? When I switched from my office WiFi to my phone hotspot a short while ago, ChatGPT couldn't connect to [LocalMCP2](/plugins/plugin_asdk_app_6ab0b6c561508191882e58b23665db3e) - which runs via ~/code/scripts/mcpserver
+
+Is that a problem in the OpenAI implementation? Or in my implementation?
+Research carefully, double-check your answer, and share recommendations on how to persist an MCP connection even while switching networks.
+
+---
+
+Yes, proceed.
+
+---
+
+Do I need to upgrade fastmcp or any other components? Would you recommend it upgrading or staying with the current version?
+
+Also, mcpserver reported the error below. Why did this happen? Has this sort of issue occurred before? What do you recommend to fix these?
+
+18:52:46.045 ▶ read_files 4 files • lines 1–130
+...
+~/Dropbox/notes/transcripts/2026-09-24 IIS Evidence to Impact Talk.md
+18:52:46.052 ✓ read_files 4.5 ms • 3/4 files • 290 lines • 50.6 KB • 1 error
+...
+━━ ~/Dropbox/notes/transcripts/2026-09-24 IIS Evidence to Impact Talk.md • ERROR ━━
+{
+"code": "unsupported_encoding",
+"retryable": false,
+"message": "Not UTF-8 text: /home/vscode/Dropbox/notes/transcripts/2026-09-24 IIS Evidence to Impact Talk.md. Use download_file or bash instead.",
+"path": "/home/vscode/Dropbox/notes/transcripts/2026-09-24 IIS Evidence to Impact Talk.md"
+}
+
+
+## Improve logs, 27 Sep 2026
 
 <!-- Remote Desktop Commander vs LocalMCP2 Comparison: https://chatgpt.com/c/6ab73373-c868-83ec-9fc1-46e23328a4e3 (2026-09-27T14:33:46+08:00) -->
 

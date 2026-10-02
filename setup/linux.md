@@ -318,6 +318,15 @@ cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/downloa
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
 
+# Install OpenAI Tunnel Client and Cloudflared for secure tunneling. Update: rerun to update
+mkdir -p ~/.local/share/tunnel-client ~/.local/bin
+rm -f /tmp/tunnel-client.zip
+curl -fsSL https://github.com/openai/tunnel-client/releases/latest/download/PUBLIC_URLS.txt | grep -E '/tunnel-client-v[^/]+-linux-amd64\.zip$' | head -1 | xargs curl -fsSL -o /tmp/tunnel-client.zip
+unzip -jo /tmp/tunnel-client.zip tunnel-client cloudflared -d ~/.local/share/tunnel-client
+chmod +x ~/.local/share/tunnel-client/tunnel-client ~/.local/share/tunnel-client/cloudflared
+ln -sfn ~/.local/share/tunnel-client/tunnel-client ~/.local/bin/tunnel-client
+rm /tmp/tunnel-client.zip
+
 # I used the version at https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-02-28-12-59 since the latest version (2026-08-08) reports: Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0. The minimum required Nvidia driver for nvenc is 610.00 or newer
 cd ~/.local/bin; curl -L https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' '*/bin/ffplay'  # FFmpeg - Audio/video processing
 # Set `~/.cmdg/cmdg.conf` to `{"OAuth":{"ClientID":"...","ClientSecret":"..."}}`

@@ -2,7 +2,7 @@
 
 # /// script
 # requires-python = ">=3.14"
-# dependencies = ["fastmcp>=3.4,<4", "pygments>=2.19,<3"]
+# dependencies = ["fastmcp==3.4.7", "pygments>=2.19,<3"]
 # ///
 
 # Usage: uv run mcpserver.py
@@ -13,6 +13,7 @@
 
 import asyncio
 import base64
+import codecs
 import errno
 import hashlib
 import json
@@ -1331,7 +1332,8 @@ def _read_file(path: str, start_line: int = 1, line_count: int = DEFAULT_READ_LI
                 path=file_path,
             )
         try:
-            sample.decode("utf-8")
+            # The sample may end midway through a valid multibyte character.
+            codecs.getincrementaldecoder("utf-8")().decode(sample, final=False)
         except UnicodeDecodeError as error:
             raise LocalToolError(
                 "unsupported_encoding",

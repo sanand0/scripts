@@ -46,6 +46,9 @@ The [mcpserver wrapper](../mcpserver):
 4. Otherwise stops the stale runtime and reconnects the same tunnel ID with a
    10-second MCP startup wait.
 5. Waits for strict tunnel health before reporting LocalMCP2 ready.
+6. While the MCP server is running, checks tunnel health every 10 seconds. If
+   no successful control-plane poll has been observed for 90 seconds, it logs a
+   snapshot and recreates the managed runtime using the same tunnel ID.
 
 Ctrl-C or an MCP server exit also stops the managed tunnel runtime, so ChatGPT
 does not keep routing calls to a dead local endpoint. Tunnel health uses
@@ -332,6 +335,12 @@ Expected responses are `live` and `ready`. The same base URL has `/ui` and
 tail -n 100 ~/.local/state/tunnel-client/logs/localmcp2.log | jaq .
 ```
 
+The wrapper watchdog logs only when it detects or repairs a problem:
+
+```bash
+cat ~/.local/state/tunnel-client/logs/localmcp2-watchdog.log
+```
+
 For a fuller diagnosis:
 
 ```bash
@@ -345,6 +354,9 @@ Common issues:
   Tunnels Read + Use permission. Organization membership alone is insufficient.
 - **Runtime is live but not ready:** confirm `mcpserver` is still running and
   that the target remains `http://127.0.0.1:2428/mcp2428`.
+- **After switching networks:** `tunnel-client` gets up to 90 seconds to recover
+  its outbound control-plane polling itself. If it does not, the wrapper
+  watchdog records the failed health state and recreates the managed runtime.
 - **After a reboot:** run `mcpserver ...`; the wrapper starts the MCP server
   and creates or repairs the managed runtime as required.
 - **Runtime metadata is stale:** run `tunnel-client runtimes stop localmcp2`,
