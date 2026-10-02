@@ -13,6 +13,18 @@ For example, pick anything that ends with a .mp3 or similar audio extension, sep
 Ignore the full path - just the filename would suffice.
 Implement the change minimally.
 
+---
+
+Dry-run and test. I think you need to unescape history.
+
+---
+
+Minimally add an `--next` option that'll skip the mentioned song and play the songs AFTER the mentioned songs. Dry-run and test.
+
+---
+
+`play-music` opens VLC and returns the the shell. `play-music --next` waits for VLC to end - but I want it to return to the shell, just like `play-music` does.
+
 <!-- codex resume 01a0fb9c-43d8-7bf2-8f86-48ef8499ad85 --yolo -->
 
 ## Add more options, 30 Sep 2026

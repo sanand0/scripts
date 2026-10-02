@@ -27,6 +27,7 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from urllib.parse import unquote
 
 MUSIC = Path("~/Music").expanduser()
 CATALOG = Path(os.environ.get("MUSICDUMP_CSV", MUSIC / "musicdump.csv")).expanduser()
@@ -54,7 +55,7 @@ def last_played_song() -> str:
     lines = [line for line in HISTORY.read_text(errors="replace").splitlines() if line.strip()]
     if not lines:
         raise SystemExit(f"play-music: no song found in {HISTORY}")
-    songs = [fragment.strip() for fragment in re.split(r"[,\t|]", lines[-1]) if AUDIO_FILE.search(Path(fragment.strip()).name)]
+    songs = [unquote(fragment.strip()) for fragment in re.split(r"[,\t|]", lines[-1]) if AUDIO_FILE.search(unquote(Path(fragment.strip()).name))]
     if not songs:
         raise SystemExit(f"play-music: no audio filename found in last line of {HISTORY}")
     return Path(songs[-1]).name
@@ -262,6 +263,7 @@ def play(selected: Path, queue: list[Path]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("song", nargs="?", help="selected MP3 path or filename (defaults to last played song)")
+    parser.add_argument("--next", action="store_true", help="queue recommendations after the selected song without replaying it")
     parser.add_argument("--dry-run", action="store_true", help="print recommended filenames without playing")
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
     parser.add_argument("--max", type=int, default=QUEUE_SIZE, help=f"maximum songs to pick (default: {QUEUE_SIZE})")
@@ -287,6 +289,9 @@ def main() -> None:
 
     selected = selected.resolve()
     queue = queue_paths(selected, recommendations, rng, args.max) if recommendations else random_queue(selected, rng, args.max)
+    if args.next:
+        subprocess.Popen(["vlc", "--one-instance", "--playlist-enqueue", *(str(path) for path in queue)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     play(selected, queue)
 
 

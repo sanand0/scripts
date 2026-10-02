@@ -110,7 +110,7 @@ abbr --add localtunnel 'npx -y localtunnel'
 # Kill process by name, port and/or number (e.g. fkill :8000)
 abbr --add fkill 'npx -y fkill-cli fkill'
 
-# Search
+# Google Search on CLI (not used much)
 abbr --add google 'mise x github:zquestz/s -- s -p google'
 
 # GMail command line
@@ -166,6 +166,7 @@ abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g ~/code/blog/posts/**/*.md
 # Summarize descriptions & keywords for blogs, transcripts, etc.
 abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > description.md"
 
+# Replace previously used commands with a single agentlog.py
 abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
 abbr --add codexsession 'agentlog.py codex ls | head -20'
@@ -174,11 +175,17 @@ abbr --add copilotlog 'agentlog.py copilot'
 # Count number of open tabs on Edge
 abbr --add counttabs "edge tabs --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"
 
+# tau is like pi, but for learning. I don't use it much.
 abbr --add tau 'uvx --from tau-ai tau'
 
+# List all skills and descriptions across my scripts and blog.
 abbr --add skilllist "ug ^description ~/code/blog/pages/skills/*/SKILL.md ~/code/scripts/agents/*/SKILL.md | sed -E 's|.*/([^/]+)/SKILL.md:description: (.*)|\1: \2|' | sort"
 
+# llama (not ollama) serves Qwen3.6 quantized
 abbr --add qwen3.6 'llama serve -hf ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M --ctx-size 65536 --n-gpu-layers all --n-cpu-moe 35 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1'
+
+# When the last song VLC played is truncated, I copy it into my list of songs to download later.
+abbr --add copylastsong 'tail -2 ~/.local/share/sanand-scripts/vlc-history.tsv | head -1 | cut -f2 | xclip -selection clipboard'
 
 # File sync utilities
 # -----------------------------------------------
