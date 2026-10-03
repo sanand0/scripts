@@ -17,6 +17,8 @@ Examples:
   edge md docs.example.com | xclip -selection clipboard
   edge cookies google.com
   edge contents google.com | jaq 'length'
+  edge js 'WhatsApp' 'document.title'
+  edge cdp 'WhatsApp' Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
 """
 
 from __future__ import annotations
@@ -338,6 +340,35 @@ def cdp_targets(cdp_url: str) -> list[dict[str, object]]:
     return [target for target in response.json() if target.get("type") == "page"]
 
 
+def resolve_cdp_page(query: str, cdp_url: str) -> dict[str, object]:
+    """Resolve one live page target by exact ID/title/URL, else partial title/URL."""
+    targets = cdp_targets(cdp_url)
+    needle = query.casefold()
+    exact = [
+        target
+        for target in targets
+        if needle in {
+            str(target.get("id", "")).casefold(),
+            str(target.get("title", "")).casefold(),
+            str(target.get("url", "")).casefold(),
+        }
+    ]
+    matches = exact or [
+        target
+        for target in targets
+        if needle in str(target.get("title", "")).casefold()
+        or needle in str(target.get("url", "")).casefold()
+    ]
+    if not matches:
+        raise RuntimeError(f"No live CDP page matches: {query}")
+    if len(matches) > 1:
+        lines = "\n".join(
+            f"- {target.get('title', '')} — {target.get('url', '')}" for target in matches
+        )
+        raise RuntimeError(f"Multiple live CDP pages match: {query}\n{lines}")
+    return matches[0]
+
+
 def cdp_cookies(cdp_url: str) -> list[dict[str, object]]:
     """Return all cookies exposed by the Edge browser's CDP endpoint."""
     import httpx
@@ -408,6 +439,54 @@ def cdp_command(connection: object, request_id: int, method: str, params: dict |
     if "error" in result:
         raise RuntimeError(result["error"]["message"])
     return result["result"]
+
+
+def page_cdp_command(target: dict[str, object], method: str, params: dict | None = None) -> dict:
+    """Send one CDP command directly to a page target without activating its tab."""
+    import websocket
+
+    websocket_url = target.get("webSocketDebuggerUrl")
+    if not isinstance(websocket_url, str):
+        raise RuntimeError("CDP page target has no WebSocket URL")
+    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
+        return cdp_command(connection, 1, method, params)
+
+
+def js_command(query: str, expression: str, cdp_url: str) -> int:
+    """Evaluate JavaScript in one live page target and print the by-value result as JSON."""
+    try:
+        target = resolve_cdp_page(query, cdp_url)
+        response = page_cdp_command(
+            target,
+            "Runtime.evaluate",
+            {"expression": expression, "returnByValue": True, "awaitPromise": True},
+        )
+        if "exceptionDetails" in response:
+            remote = response.get("result", {})
+            raise RuntimeError(
+                str(remote.get("description") or response["exceptionDetails"].get("text") or "JavaScript exception")
+            )
+        remote = response.get("result", {})
+        value = remote["value"] if "value" in remote else remote.get("unserializableValue")
+        print(json.dumps(value, ensure_ascii=False))
+        return 0
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+
+def cdp_cli_command(query: str, method: str, params_json: str, cdp_url: str) -> int:
+    """Send a raw CDP method to one live page target and print its result as JSON."""
+    try:
+        params = json.loads(params_json)
+        if not isinstance(params, dict):
+            raise ValueError("CDP params must be a JSON object")
+        target = resolve_cdp_page(query, cdp_url)
+        print(json.dumps(page_cdp_command(target, method, params), ensure_ascii=False))
+        return 0
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def cdp_tab_targets(cdp_url: str) -> dict[tuple[int, int], dict[str, object]]:
@@ -716,11 +795,26 @@ def main() -> None:
     add_session_arguments(contents_parser)
     contents_parser.add_argument("--wake", action="store_true", help="Wake sleeping tabs before extracting them")
     contents_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
+    js_parser = subparsers.add_parser("js", help="Evaluate JavaScript in one live tab without activating it")
+    js_parser.add_argument("query", help="Exact/partial page title or URL, or exact CDP page target ID")
+    js_parser.add_argument("expression", help="JavaScript expression to evaluate")
+    js_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
+    cdp_parser = subparsers.add_parser("cdp", help="Send a raw CDP command directly to one live tab")
+    cdp_parser.add_argument("query", help="Exact/partial page title or URL, or exact CDP page target ID")
+    cdp_parser.add_argument("method", help="CDP method, e.g. Runtime.evaluate")
+    cdp_parser.add_argument("params", nargs="?", default="{}", help="CDP params as a JSON object, default: {}")
+    cdp_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
 
     if args.command == "cookies":
         cookies_command(args.domain, args.cdp_url, args.json)
         return
+    if args.command == "js":
+        raise SystemExit(js_command(args.query, args.expression, args.cdp_url))
+    if args.command == "cdp":
+        raise SystemExit(cdp_cli_command(args.query, args.method, args.params, args.cdp_url))
 
     profiles = args.profile or DEFAULT_PROFILES
     if args.command == "contents":

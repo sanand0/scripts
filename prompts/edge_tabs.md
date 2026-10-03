@@ -3,6 +3,24 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Add edge js and cdp, 03 Oct 2026
+
+<!-- Background websocket browser automation skill: https://chatgpt.com/c/6ac037fe-6554-83ec-81dc-e4ed801bc4b1 (2026-10-03T07:41:20+08:00) -->
+
+On @LocalMCP2 ~/code/scripts/backupwhatsapp.py is able to use my browser (maybe through websockets) without raising it, i.e. bringing it to the foreground for most actions. Playwright, agent-browser, etc. typically raise the browser for many actions - other scripts in the same directory do that.
+
+What's the key difference in implementation?
+Can agent-browser leverage this approach? How?
+Test and verify if you can - without disturbing existing tabs. You can open new tabs to test if you like.
+
+---
+
+What's the minimal modifications required to my skills to enable this? Analyze the logs in ~/Documents/chatgpt as well as ~/.local/share/sanand-scripts/mcpserver/ and ~/.codex/sessions/ to understand how agent-browser, playwright, rodney, and other browser automations are typically invoked, used and behave. Use this to infer the patterns of behavior and suggest what the best approach would be. My coding skills are ~/code/scripts/agents/ (AGENTS.md and \*/SKILL.md and thinking skills at ~/code/blog/pages/skills/SKILL.md
+
+---
+
+Add tests for and implement the `edge js` and `edge cdp` commands and run and test.
+
 ## Contents filter, 18 Aug 2026
 
 <!--

@@ -100,5 +100,5 @@ Preferred JS style:
 - Handle expected/recoverable errors where they occur; let unexpected errors propagate to a top-level handler
 - Prefer `textContent`/DOM APIs for untrusted content; never interpolate untrusted data into `innerHTML`
 
-Debug front-end apps with agent-browser, Playwright via CDP on localhost:9222.
+For browser debugging, use the `devtools` skill.
 For single-page HTML, prefer `file://` when a server isn't required.

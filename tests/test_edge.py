@@ -135,6 +135,137 @@ class EdgeTest(unittest.TestCase):
 
         cookies_command.assert_called_once_with("google.com", "http://edge:9333", True)
 
+    def test_resolve_cdp_page_prefers_exact_match_and_reports_ambiguity(self):
+        targets = [
+            {"id": "one", "title": "WhatsApp", "url": "https://web.whatsapp.com/", "webSocketDebuggerUrl": "ws://one"},
+            {"id": "two", "title": "WhatsApp Help", "url": "https://faq.whatsapp.com/", "webSocketDebuggerUrl": "ws://two"},
+        ]
+
+        with patch.object(edge, "cdp_targets", return_value=targets):
+            self.assertEqual(edge.resolve_cdp_page("WhatsApp", "http://localhost:9222")["id"], "one")
+            with self.assertRaisesRegex(RuntimeError, "Multiple live CDP pages match: what"):
+                edge.resolve_cdp_page("what", "http://localhost:9222")
+
+    def test_page_cdp_command_uses_direct_page_websocket_without_activation(self):
+        target = {"webSocketDebuggerUrl": "ws://edge/devtools/page/123"}
+        connection = MagicMock()
+        connection.recv.side_effect = [
+            json.dumps({"method": "Runtime.consoleAPICalled", "params": {}}),
+            json.dumps({"id": 1, "result": {"ok": True}}),
+        ]
+        websocket = MagicMock()
+        websocket.create_connection.return_value = connection
+
+        with patch.dict(sys.modules, {"websocket": websocket}):
+            result = edge.page_cdp_command(target, "Runtime.evaluate", {"expression": "document.title"})
+
+        self.assertEqual(result, {"ok": True})
+        websocket.create_connection.assert_called_once_with(
+            "ws://edge/devtools/page/123", timeout=10, suppress_origin=True
+        )
+        message = json.loads(connection.send.call_args.args[0])
+        self.assertEqual(
+            message,
+            {
+                "id": 1,
+                "method": "Runtime.evaluate",
+                "params": {"expression": "document.title"},
+            },
+        )
+        self.assertNotIn(message["method"], {"Target.activateTarget", "Page.bringToFront"})
+
+    def test_js_command_evaluates_on_unique_live_page_and_prints_json_value(self):
+        target = {"id": "page-1", "title": "Test", "url": "https://example.com/", "webSocketDebuggerUrl": "ws://page"}
+        output = StringIO()
+        with patch.object(edge, "resolve_cdp_page", return_value=target), patch.object(
+            edge,
+            "page_cdp_command",
+            return_value={"result": {"type": "object", "value": {"hidden": True, "count": 2}}},
+        ) as page_command, redirect_stdout(output):
+            result = edge.js_command("Test", "({hidden:document.hidden,count:2})", "http://localhost:9222")
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue()), {"hidden": True, "count": 2})
+        page_command.assert_called_once_with(
+            target,
+            "Runtime.evaluate",
+            {
+                "expression": "({hidden:document.hidden,count:2})",
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        )
+
+    def test_js_command_reports_javascript_exception(self):
+        target = {"id": "page-1", "title": "Test", "url": "https://example.com/", "webSocketDebuggerUrl": "ws://page"}
+        error = StringIO()
+        with patch.object(edge, "resolve_cdp_page", return_value=target), patch.object(
+            edge,
+            "page_cdp_command",
+            return_value={
+                "result": {"type": "object", "subtype": "error", "description": "ReferenceError: missing is not defined"},
+                "exceptionDetails": {"text": "Uncaught"},
+            },
+        ), redirect_stderr(error):
+            result = edge.js_command("Test", "missing()", "http://localhost:9222")
+
+        self.assertEqual(result, 1)
+        self.assertIn("ReferenceError: missing is not defined", error.getvalue())
+
+    def test_cdp_cli_command_parses_params_and_prints_protocol_result(self):
+        target = {"id": "page-1", "title": "Test", "url": "https://example.com/", "webSocketDebuggerUrl": "ws://page"}
+        output = StringIO()
+        with patch.object(edge, "resolve_cdp_page", return_value=target), patch.object(
+            edge, "page_cdp_command", return_value={"result": {"value": 42}}
+        ) as page_command, redirect_stdout(output):
+            result = edge.cdp_cli_command(
+                "Test",
+                "Runtime.evaluate",
+                '{"expression":"6*7","returnByValue":true}',
+                "http://localhost:9222",
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue()), {"result": {"value": 42}})
+        page_command.assert_called_once_with(
+            target, "Runtime.evaluate", {"expression": "6*7", "returnByValue": True}
+        )
+
+    def test_cdp_cli_command_rejects_non_object_params(self):
+        error = StringIO()
+        with redirect_stderr(error):
+            result = edge.cdp_cli_command("Test", "Runtime.evaluate", "[]", "http://localhost:9222")
+
+        self.assertEqual(result, 1)
+        self.assertIn("CDP params must be a JSON object", error.getvalue())
+
+    def test_main_dispatches_js_and_cdp_subcommands(self):
+        with patch.object(edge, "js_command", return_value=0) as js_command, patch.object(
+            sys, "argv", ["edge", "js", "WhatsApp", "document.title", "--cdp-url", "http://edge:9333"]
+        ), self.assertRaises(SystemExit) as js_exit:
+            edge.main()
+        self.assertEqual(js_exit.exception.code, 0)
+        js_command.assert_called_once_with("WhatsApp", "document.title", "http://edge:9333")
+
+        with patch.object(edge, "cdp_cli_command", return_value=0) as cdp_command, patch.object(
+            sys,
+            "argv",
+            [
+                "edge",
+                "cdp",
+                "WhatsApp",
+                "Runtime.evaluate",
+                '{"expression":"document.title"}',
+                "--cdp-url",
+                "http://edge:9333",
+            ],
+        ), self.assertRaises(SystemExit) as cdp_exit:
+            edge.main()
+        self.assertEqual(cdp_exit.exception.code, 0)
+        cdp_command.assert_called_once_with(
+            "WhatsApp", "Runtime.evaluate", '{"expression":"document.title"}', "http://edge:9333"
+        )
+
     def test_contents_skips_sleeping_tabs_and_isolates_extraction_errors(self):
         live = edge.Tab(1, window_id=100, visual_index=0, navigations={0: edge.Navigation("https://live.example/", "Live")})
         broken = edge.Tab(2, window_id=100, visual_index=1, navigations={0: edge.Navigation("https://broken.example/", "Broken")})
