@@ -31,6 +31,10 @@ class BashContext:
     request_id = "test-request"
 
 
+def home_path(relative: str) -> str:
+    return str(Path.home() / relative)
+
+
 def successful_bash_result() -> tuple[str, dict]:
     return "ok", {"stderr_bytes": 0, "exit_code": 0, "ok": True}
 
@@ -1188,14 +1192,14 @@ def test_console_color_uses_ansi_only_on_tty(monkeypatch) -> None:
 
 def test_tool_console_formats_file_info_for_rapid_scanning() -> None:
     request = mcpserver.format_tool_request(
-        "file_info", {"path": "/home/vscode/code/demo/report.md", "sha256": False}
+        "file_info", {"path": home_path("code/demo/report.md"), "sha256": False}
     )
     response = mcpserver.format_tool_response(
         "file_info",
         {
             "is_error": False,
             "structured_content": {
-                "path": "/home/vscode/code/demo/report.md",
+                "path": home_path("code/demo/report.md"),
                 "type": "file",
                 "size": 1_234_567,
                 "modified": "2026-09-26T02:37:12+00:00",
@@ -1218,14 +1222,14 @@ def test_tool_console_formats_file_info_for_rapid_scanning() -> None:
 def test_tool_console_formats_content_tools_with_compact_preview() -> None:
     read_request = mcpserver.format_tool_request(
         "read_file",
-        {"path": "/home/vscode/code/demo/a.py", "start_line": 21, "line_count": 50},
+        {"path": home_path("code/demo/a.py"), "start_line": 21, "line_count": 50},
     )
     read_response = mcpserver.format_tool_response(
         "read_file",
         {
             "is_error": False,
             "structured_content": {
-                "path": "/home/vscode/code/demo/a.py",
+                "path": home_path("code/demo/a.py"),
                 "start_line": 21,
                 "end_line": 70,
                 "line_count": 50,
@@ -1251,8 +1255,8 @@ def test_tool_console_formats_content_tools_with_compact_preview() -> None:
                 "matched_files": 2,
                 "total_matches": 3,
                 "matches": [
-                    {"path": "/home/vscode/code/a.py", "line": 10, "text": "needle one"},
-                    {"path": "/home/vscode/code/b.py", "line": 20, "text": "needle two"},
+                    {"path": home_path("code/a.py"), "line": 10, "text": "needle one"},
+                    {"path": home_path("code/b.py"), "line": 20, "text": "needle two"},
                 ],
             },
         },
@@ -1267,7 +1271,7 @@ def test_tool_console_formats_edit_and_errors_compactly() -> None:
     request = mcpserver.format_tool_request(
         "edit_block",
         {
-            "path": "/home/vscode/code/a.py",
+            "path": home_path("code/a.py"),
             "old_string": "old\ntext",
             "new_string": "new\ntext",
             "expected_replacements": 1,
@@ -1317,7 +1321,7 @@ def test_console_read_previews_truncate_middle_and_keep_file_headers(monkeypatch
         {
             "is_error": False,
             "structured_content": {
-                "path": "/home/vscode/code/a.txt",
+                "path": home_path("code/a.txt"),
                 "line_count": 3,
                 "next_start_line": None,
                 "byte_limited": False,
@@ -1338,14 +1342,14 @@ def test_console_read_previews_truncate_middle_and_keep_file_headers(monkeypatch
             "structured_content": {
                 "files": [
                     {
-                        "path": "/home/vscode/code/a.txt",
+                        "path": home_path("code/a.txt"),
                         "start_line": 1,
                         "end_line": 3,
                         "line_count": 3,
                         "content": long_content,
                     },
                     {
-                        "path": "/home/vscode/code/b.txt",
+                        "path": home_path("code/b.txt"),
                         "start_line": 10,
                         "end_line": 12,
                         "line_count": 3,

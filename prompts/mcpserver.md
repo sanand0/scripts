@@ -1,5 +1,16 @@
 # MCP Server
 
+## Fix tests, 03 Oct 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6-luna --config model_reasoning_effort=high
+-->
+
+Modify mcpserver.py (and tests/test_mcpserver.py if required) so that `~/...` is used generally instead of `/home/vscode/...` or `/home/sanand/...` and wherever the tests or mcpserver.py is run (i.e. with any home directory) these outputs should use `~/...` instead.
+
+<!-- codex resume 01a0ff12-fb01-7841-8857-fdabb3528ff4 -->
+
 ## Improve MCP Network Switching, 02 Oct 2026
 
 <!-- MCP Network Switching Analysis: https://chatgpt.com/c/6abf8947-3ae0-83ec-aefb-18143e07db8a (2026-10-02T21:05:27+08:00) -->
