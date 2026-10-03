@@ -13,6 +13,7 @@ playlist, and +0.05 if it shares a non-Appa playlist with the selected song.
 
 Use --dry-run to print recommended filenames without starting VLC. Set
 MUSICDUMP_CSV to test against another catalog, e.g. the copy in ~/code/infra/music/.
+Exclude the last 30 unique played songs; --avoid-recent 0 disables this.
 """
 
 from __future__ import annotations
@@ -51,14 +52,19 @@ PERSON_SPLIT = re.compile(r"\s*[,;]\s*")
 AUDIO_FILE = re.compile(r"\.(?:mp3|m4a|aac|flac|ogg|opus|wav|wma|aiff?|ape|alac)$", re.IGNORECASE)
 
 
+def history_song(line: str) -> str:
+    songs = [unquote(fragment.strip()) for fragment in re.split(r"[,\t|]", line) if AUDIO_FILE.search(unquote(Path(fragment.strip()).name))]
+    return Path(songs[-1]).name if songs else ""
+
+
 def last_played_song() -> str:
     lines = [line for line in HISTORY.read_text(errors="replace").splitlines() if line.strip()]
     if not lines:
         raise SystemExit(f"play-music: no song found in {HISTORY}")
-    songs = [unquote(fragment.strip()) for fragment in re.split(r"[,\t|]", lines[-1]) if AUDIO_FILE.search(unquote(Path(fragment.strip()).name))]
-    if not songs:
+    song = history_song(lines[-1])
+    if not song:
         raise SystemExit(f"play-music: no audio filename found in last line of {HISTORY}")
-    return Path(songs[-1]).name
+    return song
 
 
 def people(value: str) -> set[str]:
@@ -122,6 +128,28 @@ def is_duplicate(seed: dict[str, str], candidate: dict[str, str]) -> bool:
 def load_catalog() -> list[dict[str, str]]:
     with CATALOG.open(encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
+
+
+def recent_songs(rows: list[dict[str, str]], limit: int) -> set[str]:
+    """Exclude recent unique songs and their catalog duplicates using the existing match rule."""
+    if not limit or not HISTORY.exists():
+        return set()
+    by_name = {row["filename"]: row for row in rows}
+    names: set[str] = set()
+    songs: list[dict[str, str]] = []
+    for line in reversed(HISTORY.read_text(errors="replace").splitlines()):
+        name = history_song(line)
+        if not name or name in names:
+            continue
+        row = by_name.get(name)
+        if row and any(is_duplicate(row, song) for song in songs):
+            continue
+        names.add(name)
+        if row:
+            songs.append(row)
+        if len(names) >= limit:
+            break
+    return names | {row["filename"] for row in rows if any(is_duplicate(row, song) for song in songs)}
 
 
 def load_playlists() -> dict[str, set[str]]:
@@ -194,16 +222,16 @@ def pick_queue(
     return selected
 
 
-def random_queue(selected: Path, rng: random.Random, max_songs: int) -> list[Path]:
-    candidates = [path for path in MUSIC.rglob("*.mp3") if path.resolve() != selected]
+def random_queue(selected: Path, rng: random.Random, max_songs: int, excluded: set[str]) -> list[Path]:
+    candidates = [path for path in MUSIC.rglob("*.mp3") if path.resolve() != selected and path.name not in excluded]
     return rng.sample(candidates, min(max_songs, len(candidates)))
 
 
-def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], float, dict[str, float]]], rng: random.Random, max_songs: int) -> list[Path]:
+def queue_paths(selected: Path, recommendations: list[tuple[dict[str, str], float, dict[str, float]]], rng: random.Random, max_songs: int, excluded: set[str]) -> list[Path]:
     by_name = {path.name: path for path in MUSIC.rglob("*.mp3")}
     queue = [by_name[row["filename"]] for row, _, _ in recommendations if row["filename"] in by_name][:max_songs]
     if len(queue) < max_songs:
-        extras = [path for path in by_name.values() if path.resolve() != selected and path not in queue]
+        extras = [path for path in by_name.values() if path.resolve() != selected and path not in queue and path.name not in excluded]
         rng.shuffle(extras)
         queue.extend(extras[: max_songs - len(queue)])
     return queue
@@ -268,18 +296,24 @@ def main() -> None:
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
     parser.add_argument("--max", type=int, default=QUEUE_SIZE, help=f"maximum songs to pick (default: {QUEUE_SIZE})")
     parser.add_argument("--pool", type=int, default=CANDIDATE_POOL, help=f"candidate pool size (default: {CANDIDATE_POOL})")
+    parser.add_argument("--avoid-recent", type=int, default=30, help="exclude this many unique played songs from VLC history (default: 30; 0 disables)")
     args = parser.parse_args()
+    if args.avoid_recent < 0:
+        parser.error("--avoid-recent must be nonnegative")
 
     rng = random.Random(args.seed)
     selected = find_song(args.song or last_played_song())
+    rows = []
     try:
         rows = load_catalog()
+        excluded = recent_songs(rows, args.avoid_recent)
         seed = next(row for row in rows if row["filename"] == selected.name)
-        recommendations = pick_queue(seed, rows, load_playlists(), rng, args.max, args.pool)
+        recommendations = pick_queue(seed, [row for row in rows if row["filename"] not in excluded], load_playlists(), rng, args.max, args.pool)
     except (FileNotFoundError, StopIteration) as exc:
         if args.dry_run:
             raise SystemExit(f"Cannot recommend from metadata: {exc}") from exc
         print(f"play-music: metadata unavailable for {selected.name}; using random queue", file=sys.stderr)
+        excluded = recent_songs(rows, args.avoid_recent)
         recommendations = []
 
     if args.dry_run:
@@ -288,7 +322,7 @@ def main() -> None:
         return
 
     selected = selected.resolve()
-    queue = queue_paths(selected, recommendations, rng, args.max) if recommendations else random_queue(selected, rng, args.max)
+    queue = queue_paths(selected, recommendations, rng, args.max, excluded) if recommendations else random_queue(selected, rng, args.max, excluded)
     if args.next:
         subprocess.Popen(["vlc", "--one-instance", "--playlist-enqueue", *(str(path) for path in queue)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return

@@ -1,5 +1,18 @@
 # play-music
 
+## Avoid recent songs, 03 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+`play-music` should, by default, avoid recommending songs the last 30 (default, configurable via CLI) unique played songs from VLC history.
+Match songs the same way they're currently matched.
+Implement the change minimally.
+
+<!-- codex resume 01a10038-f36a-7702-aeae-c0a8d44166fd --yolo -->
+
 ## Continue from last song, 02 Oct 2026
 
 <!--
