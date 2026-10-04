@@ -1,5 +1,23 @@
 # backup_linkedin.py
 
+## Run, fix errors, 04 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data/ -- codex --yolo --model gpt-5.1-sol --config model_reasoning_effort=medium
+-->
+
+Check if the assumptions made in `backuplinkedin.py` are still valid on Linkedin Web on CDP.
+Read `prompts/backuplinkedin.md` for how the prompting has evolved - and any other related files.
+Carefully review what's changed, if additional information can be extracted, if existing information needs to be sourced differently, etc.
+Revise `backuplinkedin.py` and tests as required. Run and test.
+Document changes in `/~Documents/data/linkedin-changes.md` in an update with today's date and ensure that there's enough information for a future thread to pick up from where you left off.
+
+If possible, switch to using the approach used by `backupwhatsapp.py` or `edge` which uses `webSocketDebuggerUrl` and avoids activating a tab.
+Run and test.
+
+<!-- codex resume 01a10521-3cbd-7700-9fa6-be6b296acdce --yolo -->
+
 ## Run, fix errors, 15 Jun 2026
 
 <!--

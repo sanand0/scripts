@@ -20,8 +20,8 @@ test-backup-google:
     {{ pytest }} --with typer pytest -q tests/test_backupgoogle.py
 
 # Run the LinkedIn backup transport, timestamp, and merge tests.
-test-backup-linkedin:
-    {{ pytest }} --with typer --with websockets pytest -q tests/test_backuplinkedin.py
+test-backup-linkedin: playwright-install
+    {{ pytest }} --with typer --with websockets --with 'playwright=={{ playwright }}' pytest -q tests/test_backuplinkedin.py
 
 # Run the WhatsApp backup parser, merge, and incremental-selection tests.
 test-backup-whatsapp:
@@ -37,7 +37,7 @@ test-fish-usage:
 
 [private]
 playwright-install:
-    test -x "$HOME/.cache/ms-playwright/chromium_headless_shell-{{ playwright_revision }}/chrome-headless-shell-linux64/chrome-headless-shell" || uv run --isolated --no-project --python {{ python }} --with 'playwright=={{ playwright }}' playwright install chromium
+    test -x "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}/chromium_headless_shell-{{ playwright_revision }}/chrome-headless-shell-linux64/chrome-headless-shell" || uv run --isolated --no-project --python {{ python }} --with 'playwright=={{ playwright }}' playwright install chromium
 
 # Run the ChatGPT CLI tests, installing their matching Chromium build if needed.
 test-chatgpt: playwright-install
