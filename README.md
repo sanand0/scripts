@@ -66,6 +66,7 @@ Here are the setup details for my laptops.
     - Pinch In 2 fingers: Zoom Out
     - Swipe Left 3 fingers: Back
     - Swipe Right 3 fingers: Forward
+- [redirector.json](redirector.json): config for [Redirector](https://chromewebstore.google.com/detail/redirector/lioaeidejmlpffbndjhaameocfldlhin) browser extension.
 
 # Scripts
 

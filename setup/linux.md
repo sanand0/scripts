@@ -398,6 +398,11 @@ ollama pull gemma3 qwen3-vl
 # Enable Copilot on Microsoft Edge. Then restart Edge.
 # https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714
 curl -L https://github.com/user-attachments/files/17536771/HubApps.txt  > ~/.config/microsoft-edge/Default/HubApps
+
+# See custom VLC installation with composer.
+# https://github.com/videolan/vlc/tree/9fc51da497ffcb77f065ff4550e1a7fb0ebfeb20/extras/package/ubuntu-personal
+# After that, link the run-vlc script to ~/.local/bin/vlc so that it can be run from anywhere.
+ln -sfn ~/.local/bin/vlc-composer ~/.local/bin/vlc
 ```
 
 ## Settings

@@ -1,0 +1,69 @@
+[
+  {
+    "name": "GitHub/sanand0",
+    "from": "http://gh/(.*)",
+    "to": "https://github.com/sanand0/$1",
+    "mode": "regex"
+  },
+  {
+    "name": "sanand0.github.io",
+    "from": "http://gi/(.*)",
+    "to": "https://sanand0.github.com/$1",
+    "mode": "regex"
+  },
+  {
+    "name": "HN Top Links to Hacker News",
+    "from": "https://www.hntoplinks.com/week",
+    "to": "https://news.ycombinator.com/best?h=168",
+    "mode": "url-pattern"
+  },
+
+  {
+    "name": "ccusage - Claude usage",
+    "from": "^http://ccusage/?$",
+    "to": "https://claude.ai/settings/usage",
+    "mode": "regex"
+  },
+  {
+    "name": "codexusage - Codex usage",
+    "from": "^http://codexusage/?$",
+    "to": "https://chatgpt.com/settings/usage",
+    "mode": "regex"
+  },
+  {
+    "name": "weekly - ChatGPT weekly project",
+    "from": "^http://weekly/?$",
+    "to": "https://chatgpt.com/g/g-p-6a40b2ac3dfc8191b48ad8d978d0e8bf-weekly/project",
+    "mode": "regex"
+  },
+  {
+    "name": "Localhost port shortcut",
+    "from": "^http://l([0-9]+)/?$",
+    "to": "http://localhost:$1",
+    "mode": "regex"
+  },
+  {
+    "name": "LMArena to Arena",
+    "from": "^https://lmarena\\.ai/leaderboard/(.*)$",
+    "to": "https://arena.ai/leaderboard/$1",
+    "mode": "regex"
+  },
+  {
+    "name": "Google Maps SG canonical URL",
+    "from": "^https://maps\\.google\\.com\\.sg(?:/maps)?/?$",
+    "to": "https://www.google.com.sg/maps",
+    "mode": "regex"
+  },
+  {
+    "name": "Netflix directly to browse",
+    "from": "^https://www\\.netflix\\.com/?$",
+    "to": "https://www.netflix.com/browse",
+    "mode": "regex"
+  },
+  {
+    "name": "YouTube Shorts in normal player",
+    "from": "^https://(?:www\\.)?youtube\\.com/shorts/([^/?#]+).*$",
+    "to": "https://www.youtube.com/watch?v=$1",
+    "mode": "regex"
+  }
+]
