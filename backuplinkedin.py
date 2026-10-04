@@ -9,7 +9,7 @@ Examples:
   backuplinkedin.py posts --username sanand0 --limit 5
   backuplinkedin.py posts --username sanand0 --limit 100 --format jsonl | moor
   backuplinkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000
-  backuplinkedin.py posts --username sanand0 --no-comments --dry-run
+  backuplinkedin.py posts --username sanand0 --analytics --since 1y --limit 0
   backuplinkedin.py --describe | jaq .
 """
 
@@ -338,6 +338,9 @@ def row_key(row: dict[str, Any]) -> str:
 
 
 LATEST_FIELDS = {
+    "analytics",
+    "reposts",
+    "repostScrapeStats",
     "commentCount",
     "commentScrapeStats",
     "commentedText",
@@ -436,11 +439,13 @@ def describe() -> dict[str, Any]:
         "commands": ["posts"],
         "output": str(OUT_PATH),
         "primary_key": "type:id",
+        "analytics": {"selection": "saved original posts by username, newest first", "since": "inclusive ISO date or relative period", "until": "exclusive ISO date or relative period", "fields": [key for key, offset in ANALYTICS_METRICS.values()] + ["profileViewerSummary", "topDemographics", "demographics", "videoPerformance"], "reposts": "public repost details; private shares excluded"},
         "examples": [
             "backuplinkedin.py posts --username sanand0",
             "backuplinkedin.py posts --username sanand0 --limit 100 --format jsonl",
             "backuplinkedin.py posts --username sanand0 --limit 0 --max-scrolls 1000",
             "backuplinkedin.py posts --username sanand0 --no-comments --dry-run",
+            "backuplinkedin.py posts --username sanand0 --analytics --since 1y --limit 0",
         ],
     }
 
@@ -922,6 +927,225 @@ async def scroll_page(page: CDPPage, settle_ms: int) -> dict[str, Any]:
     return data
 
 
+# Metrics have opposite label/value order in Discovery and Engagement.
+ANALYTICS_METRICS = {
+    "Impressions": ("impressionCount", -1), "Members reached": ("membersReached", -1),
+    "In-network (followers and connections)": ("inNetworkPercent", 1),
+    "Out-of-network": ("outOfNetworkPercent", 1),
+    "Profile viewers from this post": ("profileViewers", -1),
+    "Followers gained from this post": ("followersGained", -1),
+    "Social engagements": ("socialEngagements", -1), "Reactions": ("reactionCount", 1),
+    "Comments": ("commentCount", 1), "Reposts": ("repostCount", 1),
+    "Saves": ("saveCount", 1), "Sends on LinkedIn": ("sendCount", 1),
+}
+DEMOGRAPHIC_CATEGORIES = ("Job title", "Location", "Seniority", "Company", "Industry", "Company size")
+
+
+def parse_demographics(text: str, category: str = "") -> list[dict[str, Any]]:
+    """Parse the visible demographic tab; percentages are rounded by LinkedIn."""
+    if "Top demographics" not in text:
+        return []
+    lines = [line.strip() for line in text.rsplit("Top demographics", 1)[1].split("Analytics & tools", 1)[0].splitlines() if line.strip()]
+    # Navigation precedes the actual results, including categories in the All tab.
+    if "Company size" in lines:
+        lines = lines[lines.index("Company size") + 1:]
+    rows = []
+    for index, line in enumerate(lines):
+        if not re.fullmatch(r"\d+(?:\.\d+)?%", line) or index == 0:
+            continue
+        rows.append({"category": category or (lines[index - 2] if index >= 2 else ""),
+                     "value": lines[index - 1], "percent": float(line[:-1])})
+    return rows
+
+
+def parse_analytics(text: str) -> dict[str, Any]:
+    """Keep missing/withheld metrics null, distinct from measured zero."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if "Discovery" not in lines:
+        raise ValueError("LinkedIn analytics has no Discovery section")
+    lines = lines[max(index for index, line in enumerate(lines) if line == "Discovery") + 1:]
+    if "Top demographics" in lines:
+        lines = lines[:lines.index("Top demographics")]
+    result: dict[str, Any] = {}
+    for label, (key, offset) in ANALYTICS_METRICS.items():
+        value = lines[lines.index(label) + offset] if label in lines and 0 <= lines.index(label) + offset < len(lines) else ""
+        result[key] = float(value[:-1]) if key.endswith("Percent") and re.fullmatch(r"\d+(?:\.\d+)?%", value) else parse_count(value)
+        if label in lines and result[key] is None and value not in {"—", "–", "-", "N/A"}:
+            raise ValueError(f"LinkedIn analytics metric {label} has no readable value yet")
+    if result["impressionCount"] is None:
+        raise ValueError("LinkedIn analytics has no readable Impressions metric")
+    if "Video performance" in lines:
+        video = {}
+        for label, key, offset in (("Video views", "views", -1), ("Watch time", "watchTime", 1), ("Average watch time", "averageWatchTime", 1)):
+            value = lines[lines.index(label) + offset] if label in lines and 0 <= lines.index(label) + offset < len(lines) else ""
+            video[key] = parse_count(value) if key == "views" else value
+        result["videoPerformance"] = video
+    result["profileViewerSummary"] = []
+    heading = "Who’s viewed your profile since this post"
+    if heading in lines:
+        viewer_lines = lines[lines.index(heading) + 1:]
+        stop = next((index for index, line in enumerate(viewer_lines) if line.startswith(("Don’t miss out", "Restart Premium", "Try Premium"))), len(viewer_lines))
+        result["profileViewerSummary"] = [line for line in viewer_lines[:stop] if line != "View"]
+    result["topDemographics"] = parse_demographics(text)
+    return result
+
+
+def parse_period(value: str, reference: dt.datetime) -> dt.datetime:
+    """ISO instants (UTC by default), or relative periods such as 7d / 2 months ago."""
+    match = re.fullmatch(r"(\d+)\s*(d|days?|w|weeks?|mo|months?|y|years?)(?:\s+ago)?", value.strip(), re.I)
+    if match:
+        unit = match[2].lower()
+        days = 365 if unit.startswith("y") else 30 if unit.startswith("mo") else 7 if unit.startswith("w") else 1
+        return reference - dt.timedelta(days=int(match[1]) * days)
+    date = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return date.replace(tzinfo=dt.UTC) if date.tzinfo is None else date.astimezone(dt.UTC)
+
+
+def select_analytics_posts(rows: list[dict[str, Any]], username: str, since: dt.datetime | None, until: dt.datetime | None, limit: int) -> list[dict[str, Any]]:
+    """Select saved original posts by author and exact activity timestamp."""
+    selected = {}
+    for row in rows:
+        if row.get("type") != "post" or urlparse(row.get("authorProfile", "")).path.rstrip("/") != f"/in/{username}" or row.get("repostedBy"):
+            continue
+        date = linkedin_id_datetime(row.get("id", ""))
+        if date is None and row.get("postedAt"):
+            date = parse_period(row["postedAt"], now_utc())
+        if date is None or (since and date < since) or (until and date >= until):
+            continue
+        selected[row["id"]] = (date, row)
+    ordered = [row for date, row in sorted(selected.values(), key=lambda item: item[0], reverse=True)]
+    return ordered[:limit] if limit else ordered
+
+
+REPOSTS_JS = r"""() => {
+  const text = el => (el?.innerText || el?.textContent || '').trim();
+  const number = el => {const m = text(el).match(/^[\d,]+/); return m ? Number(m[0].replaceAll(',', '')) : null;};
+  const rows = [...document.querySelectorAll('.member-analytics-addon-entity-list__item')].map(el => {
+    const actor = el.querySelector('a[href*="/in/"], a[href*="/company/"]');
+    const link = el.querySelector('a[href*="/feed/update/"]');
+    const id = (link?.href.match(/urn:li:activity:\d+/) || [])[0] || '';
+    const body = [...el.querySelectorAll('a[aria-label^="View full post."]')].map(a => a.getAttribute('aria-label').replace('View full post. ', '')).sort((a,b) => b.length-a.length)[0] || '';
+    return {id, url:link?.href.split('?')[0] || '',
+      name:text(el.querySelector('.feed-mini-update-actor__name [aria-hidden="true"]')) || text(el.querySelector('.feed-mini-update-actor__name')),
+      profile:actor?.href.split('?')[0] || '', description:text(el.querySelector('.feed-mini-update-actor__description')),
+      degree:text(el.querySelector('.artdeco-entity-lockup__degree')).replace(/^[\s•]+/, ''),
+      postedText:text(el.querySelector('.feed-mini-update-contextual-description__text [aria-hidden="true"]')) || text(el.querySelector('.feed-mini-update-contextual-description__text')),
+      content:body, reactionCount:number(el.querySelector('[data-reaction-details]')),
+      commentCount:number(el.querySelector('.social-details-social-counts__comments button'))};
+  });
+  return rows.filter((r,i) => r.id && rows.findIndex(other => other.id === r.id) === i);
+}"""
+
+
+REPOSTS_MORE_JS = """() => {
+  const button = [...document.querySelectorAll('main button')].find(b => b.innerText.trim() === 'Show more results');
+  if (!button) return false;
+  button.click();
+  return true;
+}"""
+
+
+async def analytics_text(page: CDPPage, urn: str, reposts: bool = False) -> str:
+    """Wait for the requested document and hydrated metrics, never a previous post."""
+    started = time.monotonic()
+    deadline = started + 30
+    previous = ""
+    while time.monotonic() < deadline:
+        data = await page.evaluate("() => ({url:location.href,text:document.querySelector('main')?.innerText || '',loading:Boolean(document.querySelector('main [aria-busy=true], main [role=progressbar]:not([aria-valuenow])')),links:[...document.querySelectorAll('main a[href]')].map(a=>a.href)})")
+        if urn in data["url"]:
+            if reposts and ("People who reposted" in data["text"] or "No results" in data["text"]):
+                return data["text"]
+            if not reposts and any(f"/feed/update/{urn}" in url for url in data["links"]):
+                try:
+                    parse_analytics(data["text"])
+                    if "Top demographics" in data["text"] and "Analytics & tools" in data["text"] and previous == data["text"] and not data["loading"]:
+                        return data["text"]
+                except ValueError:
+                    pass
+        if "/login" in data["url"] or "/checkpoint" in data["url"]:
+            raise RuntimeError("LinkedIn requires authentication; log in manually and rerun")
+        previous = data["text"]
+        await asyncio.sleep(0.2)
+    raise TimeoutError(f"Analytics did not finish loading for {urn}")
+
+
+async def extract_analytics(page: CDPPage, urn: str, max_scrolls: int, settle_ms: int) -> dict[str, Any]:
+    url = f"https://www.linkedin.com/analytics/post-summary/{urn}/"
+    await page.goto(url)
+    metrics = parse_analytics(await analytics_text(page, urn))
+    metrics.update({"url": url, "scrapedAt": now_utc().isoformat(), "demographics": {}})
+    # Each category exposes more rows than the All-tab summary.
+    for category in DEMOGRAPHIC_CATEGORIES:
+        clicked = await page.evaluate("category => {const b=[...document.querySelectorAll('main button')].find(b=>b.innerText.trim()===category);if(!b)return false;b.click();return true}", category)
+        if not clicked:
+            continue
+        await page.wait_for_timeout(settle_ms)
+        metrics["demographics"][category] = parse_demographics(await analytics_text(page, urn), category)
+    reposts = []
+    stats = {"expected": metrics["repostCount"], "loaded": 0, "complete": metrics["repostCount"] == 0, "excludesPrivate": True}
+    if metrics["repostCount"]:
+        # Follow the actual Reposts link, which can vary across LinkedIn surfaces.
+        link = await page.evaluate("() => [...document.querySelectorAll('main a[href]')].find(a=>a.href.includes('resultType=RESHARES'))?.href")
+        if not link or urn not in link:
+            raise RuntimeError(f"Missing Reposts link for {urn}")
+        await page.goto(link)
+        await analytics_text(page, urn, reposts=True)
+        stale = 0
+        for _ in range(max_scrolls):
+            current = await page.evaluate(REPOSTS_JS)
+            previous = {row["id"]: row for row in reposts}
+            for row in current:
+                previous[row["id"]] = merge_row(previous.get(row["id"], {}), row)
+            stale = stale + 1 if len(previous) == len(reposts) else 0
+            reposts = list(previous.values())
+            if len(reposts) >= metrics["repostCount"] or stale >= 3:
+                break
+            # Hydration can remove the loader between discovery and a CDP click.
+            if await page.evaluate(REPOSTS_MORE_JS):
+                await page.wait_for_timeout(settle_ms)
+            await scroll_page(page, settle_ms)
+        stats.update({"loaded": len(reposts), "complete": len(reposts) >= metrics["repostCount"]})
+        if not stats["complete"]:
+            eprint(f"warning: reposts for {urn}: loaded={len(reposts)} expected={metrics['repostCount']} (private shares excluded)")
+    return {"type": "post", "id": urn, "analyticsUrl": url, "analytics": metrics, "reposts": reposts, "repostScrapeStats": stats,
+            **{key: metrics[key] for key in ("impressionCount", "reactionCount", "commentCount", "repostCount")}}
+
+
+async def update_analytics(cdp_url: str, username: str, limit: int, out_path: Path, since: dt.datetime | None, until: dt.datetime | None, max_scrolls: int, settle_ms: int, dry_run: bool, format: str) -> None:
+    rows = load_jsonl(out_path)
+    selected = select_analytics_posts(rows, username, since, until, limit)
+    eprint(f"analytics: selected={len(selected)} saved_posts={sum(row.get('type') == 'post' for row in rows)}; updating {out_path}")
+    trace = obs.new_run("backuplinkedin", cache_dir=Path.home() / ".cache/sanand-scripts/backuplinkedin", args=obs.sanitize_args({"analytics": True, "username": username, "since": str(since), "until": str(until), "limit": limit, "dry_run": dry_run, "out": out_path, "cdp_url": cdp_url, "max_scrolls": max_scrolls, "settle_ms": settle_ms}))
+    page = None
+    changed = processed = incomplete = 0
+    try:
+        if not selected:
+            raise ValueError("No saved original posts match the analytics selection")
+        with trace.span("cdp_connection", {"cdp_url": cdp_url}):
+            page = await connect_linkedin_page(cdp_url)
+        for post in selected:
+            eprint(f"analytics: {processed + 1}/{len(selected)} {post['id']}")
+            with trace.span("analytics_extraction", {"post_hash": obs.short_hash(post["id"])}):
+                row = await extract_analytics(page, post["id"], max_scrolls, settle_ms)
+            if not dry_run:
+                with trace.span("writing", {"path": str(out_path)}):
+                    changed += update_jsonl(out_path, [row])
+            processed += 1
+            incomplete += not row["repostScrapeStats"]["complete"]
+            event = {"event": "analytics", "post": post["id"], "impressions": row["impressionCount"], "reposts_loaded": len(row["reposts"])}
+            print(compact_json(event) if format == "jsonl" else f"analytics: {post['id']} impressions={row['impressionCount']} reposts={len(row['reposts'])}", flush=True)
+        summary = {"status": "ok", "analytics": True, "posts": processed, "rows_changed": changed, "incomplete_reposts": incomplete, "dry_run": dry_run, "path": str(out_path)}
+        trace.finish(summary)
+        print(compact_json(summary) if format == "jsonl" else f"updated analytics: posts={processed} changed={changed} incomplete_reposts={incomplete} -> {out_path}", flush=True)
+    except Exception as exc:
+        trace.exception(exc)
+        trace.finish({"status": "failed", "analytics": True, "posts": processed, "error_message": str(exc)})
+        raise
+    finally:
+        if page is not None:
+            await page.close()
+
+
 async def scrape_posts(
     cdp_url: str,
     username: str,
@@ -1104,11 +1328,14 @@ def main(
         raise typer.Exit(0)
 
 
-@app.command(help="Back up recent LinkedIn posts and comments from a profile activity page.")
+@app.command(help="Back up profile posts/comments, or refresh analytics for saved posts.")
 def posts(
     username: str = typer.Option(..., "--username", help="LinkedIn public identifier, e.g. sanand0."),
     limit: int = typer.Option(100, "--limit", "-n", min=0, help="Maximum posts to scrape. Use 0 for no explicit limit."),
     out: Path = typer.Option(OUT_PATH, "--out", help="JSONL file to update in place."),
+    analytics: bool = typer.Option(False, "--analytics", help="Update analytics and repost details for original posts already saved in --out."),
+    since: str | None = typer.Option(None, "--since", help="Analytics posts since an ISO date or period, e.g. 7d, 1y, 2 months ago (inclusive)."),
+    until: str | None = typer.Option(None, "--until", help="Analytics posts before an ISO date or relative period (exclusive)."),
     comments: bool = typer.Option(True, "--comments/--no-comments", help="Expand and scrape comments for each post."),
     cdp_url: str = typer.Option(CDP_URL, "--cdp-url", help="Chrome DevTools Protocol URL."),
     max_scrolls: int = typer.Option(240, "--max-scrolls", help="Maximum profile activity scroll rounds."),
@@ -1120,7 +1347,17 @@ def posts(
     if format not in {"text", "jsonl"}:
         raise typer.BadParameter("--format must be text or jsonl")
     try:
-        asyncio.run(scrape_posts(cdp_url, username, limit, out.expanduser(), comments, max_scrolls, max_comment_rounds, settle_ms, dry_run, format))
+        if (since or until) and not analytics:
+            raise ValueError("--since/--until require --analytics")
+        reference = now_utc()
+        start = parse_period(since, reference) if since else None
+        end = parse_period(until, reference) if until else None
+        if start and end and start >= end:
+            raise ValueError("--since must precede --until")
+        if analytics:
+            asyncio.run(update_analytics(cdp_url, username, limit, out.expanduser(), start, end, max_scrolls, settle_ms, dry_run, format))
+        else:
+            asyncio.run(scrape_posts(cdp_url, username, limit, out.expanduser(), comments, max_scrolls, max_comment_rounds, settle_ms, dry_run, format))
     except Exception as exc:
         typer.echo(f"backuplinkedin.py: {exc}", err=True)
         raise typer.Exit(1) from exc

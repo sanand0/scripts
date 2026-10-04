@@ -1,10 +1,29 @@
 # backup_linkedin.py
 
+## Include analytics, fix errors, 04 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data/ -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Extend backuplinkedin.py with an `--analytics` flag to update analytics for the selected LinkedIn posts.
+
+For example, from https://www.linkedin.com/analytics/post-summary/urn:li:activity:7510870387140857856/ I can extract # of impressions, % in-network and out-of-network, profile activity, followers gained from this post (though the actual followers requires a click and we can skip that), who viewed your profile since this post, top demographics, etc.
+
+It also has reactions, coments, reposts, saves, sends on linkedin. Capture the stats. But do go through the reposts link and capture this data as well.
+
+Run, test for different time periods, actually update the existing JSONL for a year, fixing errors on the way, and ensuring tests capture what needs to be captured.
+
+Feel free to use sub-agents for research, exploration, testing, etc. while the main thread is focused on the clean path.
+
+<!-- codex resume 01a1056d-b158-78e1-b9c0-c753c73a56c1 --yolo -->
+
 ## Run, fix errors, 04 Oct 2026
 
 <!--
 cd ~/code/scripts
-dev.sh -p ~/Documents/data/ -- codex --yolo --model gpt-5.1-sol --config model_reasoning_effort=medium
+dev.sh -p ~/Documents/data/ -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
 -->
 
 Check if the assumptions made in `backuplinkedin.py` are still valid on Linkedin Web on CDP.

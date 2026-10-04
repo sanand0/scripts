@@ -45,15 +45,15 @@ SDUI_FIXTURE = r'''
 '''
 
 
-def extract_fixture(html: str, script: str) -> list[dict[str, object]]:
+def extract_fixture(html: str, script: str, selector: str = "#post") -> list[dict[str, object]]:
     async def run() -> list[dict[str, object]]:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch()
             page = await browser.new_page(base_url="https://www.linkedin.com")
-            await page.set_content(html)
-            element = await page.query_selector("#post")
+            await page.set_content('<base href="https://www.linkedin.com">' + html)
+            element = await page.query_selector(selector)
             assert element is not None
             result = await element.evaluate(script, {"scrapedAt": "2026-10-04T00:00:00+00:00"})
             await browser.close()
@@ -129,6 +129,449 @@ def test_new_snapshot_counts_can_decrease_to_zero() -> None:
     assert backup.merge_row(old, new) == new
 
 
+def test_parse_analytics_extracts_summary_and_engagement_counts() -> None:
+    text = """
+    Discovery
+    12,345
+    Impressions
+    9,876
+    Members reached
+    In-network (followers and connections)
+    72.5%
+    Out-of-network
+    27.5%
+    Profile activity
+    123
+    Profile viewers from this post
+    4
+    Followers gained from this post
+    87
+    Social engagements
+    Reactions
+    12
+    Comments
+    7
+    Reposts
+    3
+    Saves
+    2
+    Sends on LinkedIn
+    5
+    """
+
+    result = backup.parse_analytics(text)
+
+    assert result == {
+        "impressionCount": 12345,
+        "membersReached": 9876,
+        "inNetworkPercent": 72.5,
+        "outOfNetworkPercent": 27.5,
+        "profileViewers": 123,
+        "followersGained": 4,
+        "socialEngagements": 87,
+        "reactionCount": 12,
+        "commentCount": 7,
+        "repostCount": 3,
+        "saveCount": 2,
+        "sendCount": 5,
+        "profileViewerSummary": [],
+        "topDemographics": [],
+    }
+
+
+def test_parse_analytics_requires_discovery_and_impressions() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Discovery"):
+        backup.parse_analytics("Impressions 10")
+    with pytest.raises(ValueError, match="Impressions"):
+        backup.parse_analytics("Discovery\nMembers reached 10")
+
+
+def test_parse_analytics_retries_unreadable_present_metric_but_accepts_withheld_dash() -> None:
+    import pytest
+
+    incomplete = """Discovery
+10
+Impressions
+Sends on LinkedIn
+Top demographics
+Analytics & tools"""
+    with pytest.raises(ValueError, match="Sends on LinkedIn"):
+        backup.parse_analytics(incomplete)
+
+    withheld = incomplete.replace("Sends on LinkedIn\n", "Sends on LinkedIn\n–\n")
+    assert backup.parse_analytics(withheld)["sendCount"] is None
+
+
+def test_parse_analytics_keeps_profile_viewer_rows_and_sparse_metrics() -> None:
+    text = """Post body mentions Discovery
+9 work at Warner Bros. Discovery
+Discovery
+10
+Impressions
+Who’s viewed your profile since this post
+View
+Alice
+Researcher
+Bob
+Engineer
+Don’t miss out
+Top demographics
+Analytics & tools"""
+
+    result = backup.parse_analytics(text)
+
+    assert result["impressionCount"] == 10
+    assert result["profileViewerSummary"] == ["Alice", "Researcher", "Bob", "Engineer"]
+    assert result["inNetworkPercent"] is None
+    assert result["topDemographics"] == []
+
+
+def test_parse_analytics_extracts_video_performance_only_when_present() -> None:
+    text = """Discovery
+10
+Impressions
+Video performance
+4,661
+Video views
+Watch time
+19h 40m
+Average watch time
+15s
+Top demographics
+Analytics & tools"""
+
+    result = backup.parse_analytics(text)
+
+    assert result["videoPerformance"] == {
+        "views": 4661,
+        "watchTime": "19h 40m",
+        "averageWatchTime": "15s",
+    }
+
+
+def test_parse_demographics_stops_before_analytics_tools_and_skips_navigation() -> None:
+    text = """
+    Top demographics
+    All
+    Job title
+    Location
+    Seniority
+    Company
+    Industry
+    Company size
+    Location
+    United States
+    45%
+    India
+    20%
+    Analytics & tools
+    Export data
+    """
+
+    assert backup.parse_demographics(text, "Location") == [
+        {"category": "Location", "value": "United States", "percent": 45.0},
+        {"category": "Location", "value": "India", "percent": 20.0},
+    ]
+
+
+def test_select_analytics_posts_filters_author_date_and_reposts() -> None:
+    def activity(when: dt.datetime) -> str:
+        return f"urn:li:activity:{int(when.timestamp() * 1000) << 22}"
+
+    rows = [
+        {
+            "type": "post",
+            "id": activity(dt.datetime(2026, 8, 14, 12, tzinfo=dt.UTC)),
+            "authorProfile": "https://www.linkedin.com/in/sanand0/",
+            "postedAt": "2020-01-01T00:00:00+00:00",
+        },
+        {
+            "type": "post",
+            "id": activity(dt.datetime(2026, 8, 13, 12, tzinfo=dt.UTC)),
+            "authorProfile": "https://www.linkedin.com/in/sanand0/",
+            "postedAt": "2026-08-13T12:00:00+00:00",
+        },
+        {
+            "type": "post",
+            "id": activity(dt.datetime(2026, 8, 14, 13, tzinfo=dt.UTC)),
+            "authorProfile": "https://www.linkedin.com/in/other/",
+            "postedAt": "2026-08-14T13:00:00+00:00",
+        },
+        {
+            "type": "post",
+            "id": activity(dt.datetime(2026, 8, 14, 14, tzinfo=dt.UTC)),
+            "authorProfile": "https://www.linkedin.com/in/sanand0/",
+            "repostedBy": "Someone else",
+            "postedAt": "2026-08-14T14:00:00+00:00",
+        },
+    ]
+
+    selected = backup.select_analytics_posts(
+        rows,
+        "sanand0",
+        dt.datetime(2026, 8, 13, tzinfo=dt.UTC),
+        dt.datetime(2026, 8, 14, 12, tzinfo=dt.UTC),
+        0,
+    )
+
+    assert [row["id"] for row in selected] == [activity(dt.datetime(2026, 8, 13, 12, tzinfo=dt.UTC))]
+
+
+def test_parse_period_supports_iso_relative_and_ago() -> None:
+    reference = dt.datetime(2026, 10, 4, 12, tzinfo=dt.UTC)
+
+    assert backup.parse_period("2026-09-01", reference) == dt.datetime(2026, 9, 1, tzinfo=dt.UTC)
+    assert backup.parse_period("7d", reference) == reference - dt.timedelta(days=7)
+    assert backup.parse_period("1y", reference) == reference - dt.timedelta(days=365)
+    assert backup.parse_period("2 months ago", reference) == reference - dt.timedelta(days=60)
+
+
+def test_merge_row_updates_analytics_and_allows_empty_reposts() -> None:
+    old = {
+        "type": "post",
+        "id": "urn:li:activity:1",
+        "impressionCount": 100,
+        "reposts": [{"id": "r1"}],
+        "content": "A rich post",
+    }
+    new = {
+        "type": "post",
+        "id": "urn:li:activity:1",
+        "impressionCount": 0,
+        "reposts": [],
+    }
+
+    merged = backup.merge_row(old, new)
+
+    assert merged["impressionCount"] == 0
+    assert merged["reposts"] == []
+    assert merged["content"] == "A rich post"
+
+
+def test_update_jsonl_preserves_unselected_rows_and_is_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "posts.jsonl"
+    backup.write_jsonl(
+        path,
+        [
+            {"type": "post", "id": "urn:li:activity:1", "content": "rich", "impressionCount": 10},
+            {"type": "comment", "id": "urn:li:comment:1", "content": "keep me"},
+        ],
+    )
+
+    changed = backup.update_jsonl(
+        path,
+        [{"type": "post", "id": "urn:li:activity:1", "impressionCount": 0, "analytics": {"impressionCount": 0}}],
+    )
+    again = backup.update_jsonl(
+        path,
+        [{"type": "post", "id": "urn:li:activity:1", "impressionCount": 0, "analytics": {"impressionCount": 0}}],
+    )
+    rows = backup.load_jsonl(path)
+
+    assert changed == 1
+    assert again == 0
+    assert {row["id"] for row in rows} == {"urn:li:activity:1", "urn:li:comment:1"}
+    assert next(row for row in rows if row["type"] == "post")["content"] == "rich"
+
+
+def test_describe_and_cli_expose_analytics_options() -> None:
+    from typer.testing import CliRunner
+
+    metadata = backup.describe()
+    assert "analytics" in metadata
+    result = CliRunner().invoke(backup.app, ["posts", "--help"])
+    assert result.exit_code == 0
+    assert "--analytics" in result.stdout
+    assert "--since" in result.stdout
+    assert "--until" in result.stdout
+
+
+def test_analytics_text_waits_for_non_loading_stable_hydrated_snapshot(monkeypatch) -> None:
+    urn = "urn:li:activity:1234567890123456789"
+    hydrated = """Discovery
+10
+Impressions
+Top demographics
+Analytics & tools"""
+    snapshots = [
+            {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": hydrated, "loading": True, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+            {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": hydrated, "loading": False, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+            {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": hydrated, "loading": False, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+        ]
+
+    class FakePage:
+        async def evaluate(self, _expression):
+            return snapshots.pop(0) if len(snapshots) > 1 else snapshots[0]
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(backup.asyncio, "sleep", no_sleep)
+    assert asyncio.run(backup.analytics_text(FakePage(), urn)) == hydrated
+
+
+def test_analytics_text_defers_incomplete_visible_metric_until_zero_arrives(monkeypatch) -> None:
+    urn = "urn:li:activity:1234567890123456789"
+    incomplete = _analytics_fixture(0).replace("Sends on LinkedIn\n5", "Sends on LinkedIn")
+    complete = _analytics_fixture(0).replace("Sends on LinkedIn\n5", "Sends on LinkedIn\n0")
+    snapshots = [
+        {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": incomplete, "loading": False, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+        {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": complete, "loading": False, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+        {"url": f"https://www.linkedin.com/analytics/post-summary/{urn}/", "text": complete, "loading": False, "links": [f"https://www.linkedin.com/feed/update/{urn}/"]},
+    ]
+
+    class FakePage:
+        async def evaluate(self, _expression):
+            return snapshots.pop(0) if len(snapshots) > 1 else snapshots[0]
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(backup.asyncio, "sleep", no_sleep)
+    assert asyncio.run(backup.analytics_text(FakePage(), urn)) == complete
+
+
+def _analytics_fixture(reposts: int = 2) -> str:
+    return f"""Discovery
+10
+Impressions
+87
+Social engagements
+Reactions
+12
+Comments
+7
+Reposts
+{reposts}
+Saves
+2
+Sends on LinkedIn
+5
+Top demographics
+Analytics & tools"""
+
+
+class _AnalyticsPage:
+    def __init__(self, repost_batches: list[list[dict[str, object]]], repost_link: str = "https://www.linkedin.com/analytics/post-summary/urn:li:activity:1/resultType=RESHARES") -> None:
+        self.repost_batches = iter(repost_batches)
+        self.repost_link = repost_link
+        self.urls: list[str] = []
+
+    async def goto(self, url: str, **_kwargs) -> None:
+        self.urls.append(url)
+
+    async def evaluate(self, expression, *_args):
+        if expression == backup.REPOSTS_JS:
+            try:
+                return next(self.repost_batches)
+            except StopIteration:
+                return []
+        if "resultType=RESHARES" in expression:
+            return self.repost_link
+        if "button" in expression:
+            return False
+        raise AssertionError(f"unexpected evaluate expression: {expression[:100]}")
+
+    async def query_selector_all(self, _selector: str):
+        return []
+
+    async def wait_for_timeout(self, _timeout: int):
+        return None
+
+
+def test_extract_analytics_follows_reposts_link_scrolls_and_preserves_rich_duplicate(monkeypatch) -> None:
+    page = _AnalyticsPage(
+        [
+            [{"id": "r1", "content": "rich", "reactionCount": 5}],
+            [{"id": "r1", "content": "", "reactionCount": None}, {"id": "r2", "content": "second"}],
+        ]
+    )
+    async def analytics_text(*_args, **_kwargs):
+        return _analytics_fixture(2)
+    async def scroll_page(*_args, **_kwargs):
+        return None
+    async def click_all(*_args, **_kwargs):
+        return 0
+    monkeypatch.setattr(backup, "DEMOGRAPHIC_CATEGORIES", ())
+    monkeypatch.setattr(backup, "analytics_text", analytics_text)
+    monkeypatch.setattr(backup, "scroll_page", scroll_page)
+    monkeypatch.setattr(backup, "click_all", click_all)
+
+    result = asyncio.run(backup.extract_analytics(page, "urn:li:activity:1", 3, 0))
+
+    assert page.urls[-1].endswith("resultType=RESHARES")
+    assert [row["id"] for row in result["reposts"]] == ["r1", "r2"]
+    assert result["reposts"][0]["content"] == "rich"
+    assert result["repostScrapeStats"]["complete"] is True
+
+
+def test_extract_analytics_zero_reposts_does_not_open_reposts_link(monkeypatch) -> None:
+    page = _AnalyticsPage([])
+    async def analytics_text(*_args, **_kwargs):
+        return _analytics_fixture(0)
+    monkeypatch.setattr(backup, "DEMOGRAPHIC_CATEGORIES", ())
+    monkeypatch.setattr(backup, "analytics_text", analytics_text)
+
+    result = asyncio.run(backup.extract_analytics(page, "urn:li:activity:1", 3, 0))
+
+    assert len(page.urls) == 1
+    assert result["reposts"] == []
+    assert result["repostScrapeStats"]["complete"] is True
+
+
+def test_extract_analytics_marks_private_or_missing_reposts_incomplete(monkeypatch) -> None:
+    page = _AnalyticsPage([[{"id": "r1", "content": "public"}], [], [], []])
+    async def analytics_text(*_args, **_kwargs):
+        return _analytics_fixture(2)
+    async def scroll_page(*_args, **_kwargs):
+        return None
+    async def click_all(*_args, **_kwargs):
+        return 0
+    monkeypatch.setattr(backup, "DEMOGRAPHIC_CATEGORIES", ())
+    monkeypatch.setattr(backup, "analytics_text", analytics_text)
+    monkeypatch.setattr(backup, "scroll_page", scroll_page)
+    monkeypatch.setattr(backup, "click_all", click_all)
+
+    result = asyncio.run(backup.extract_analytics(page, "urn:li:activity:1", 5, 0))
+
+    assert result["repostScrapeStats"]["loaded"] == 1
+    assert result["repostScrapeStats"]["complete"] is False
+
+
+def test_update_analytics_dry_run_does_not_write(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "posts.jsonl"
+    original = {"type": "post", "id": "urn:li:activity:1", "authorProfile": "https://www.linkedin.com/in/me/", "postedAt": "2026-01-01T00:00:00+00:00"}
+    backup.write_jsonl(path, [original])
+
+    class Trace:
+        def span(self, *_args, **_kwargs):
+            from contextlib import nullcontext
+            return nullcontext()
+        def finish(self, _summary):
+            return None
+        def exception(self, _exc):
+            return None
+
+    class Page:
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(backup.obs, "new_run", lambda *_args, **_kwargs: Trace())
+    async def connect(*_args, **_kwargs):
+        return Page()
+    async def extract(*_args, **_kwargs):
+        return {"type": "post", "id": original["id"], "impressionCount": 999, "repostScrapeStats": {"complete": True}, "reposts": []}
+    monkeypatch.setattr(backup, "connect_linkedin_page", connect)
+    monkeypatch.setattr(backup, "extract_analytics", extract)
+    monkeypatch.setattr(backup, "update_jsonl", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("dry run wrote")))
+
+    asyncio.run(backup.update_analytics("unused", "me", 0, path, None, None, 1, 0, True, "text"))
+
+    assert backup.load_jsonl(path) == [original]
+
+
 def test_direct_cdp_click_delivers_one_native_dom_click() -> None:
     async def run() -> int:
         from playwright.async_api import async_playwright
@@ -188,6 +631,67 @@ def test_sdui_extracts_post_and_nested_comments_from_semantic_dom() -> None:
     assert reply["commenterDegree"] == "3rd"
     assert reply["content"] == "Reply body"
     assert reply["parentCommentId"] == comment["id"]
+
+
+def test_reposts_js_extracts_repost_cards_and_deduplicates_ids() -> None:
+    html = r'''
+    <section id="reposts">
+      <div class="member-analytics-addon-entity-list__item">
+        <a class="feed-mini-update-actor__name" href="https://www.linkedin.com/in/alice/"><span aria-hidden="true">Alice</span></a>
+        <div class="feed-mini-update-actor__description">Researcher</div>
+        <a href="/feed/update/urn:li:activity:2/">post</a>
+        <div class="feed-mini-update-contextual-description__text"><span aria-hidden="true">2d</span></div>
+        <a aria-label="View full post. Hello from Alice">Hello</a>
+        <button data-reaction-details="true">5</button><div class="social-details-social-counts__comments"><button>2</button></div>
+      </div>
+      <div class="member-analytics-addon-entity-list__item">
+        <a class="feed-mini-update-actor__name" href="https://www.linkedin.com/in/alice/"><span aria-hidden="true">Alice</span></a>
+        <a href="/feed/update/urn:li:activity:2/">duplicate</a>
+        <a aria-label="View full post. Hello from Alice">Hello</a>
+      </div>
+    </section>
+    '''
+
+    rows = extract_fixture(html, backup.REPOSTS_JS, "#reposts")
+
+    assert rows == [
+        {
+            "id": "urn:li:activity:2",
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:2/",
+            "name": "Alice",
+            "profile": "https://www.linkedin.com/in/alice/",
+            "description": "Researcher",
+            "degree": "",
+            "postedText": "2d",
+            "content": "Hello from Alice",
+            "reactionCount": 5,
+            "commentCount": 2,
+        }
+    ]
+
+
+def test_reposts_more_js_clicks_present_loader_and_handles_removed_loader() -> None:
+    async def run() -> tuple[bool, bool, int]:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch()
+            page = await browser.new_page()
+            await page.set_content('<main><button>Show more results</button><output>0</output></main>')
+            await page.evaluate(
+                """() => document.querySelector('button').addEventListener('click', () => {
+                    const output = document.querySelector('output');
+                    output.textContent = String(Number(output.textContent) + 1);
+                })"""
+            )
+            clicked = await page.evaluate(backup.REPOSTS_MORE_JS)
+            await page.evaluate("() => document.querySelector('button').remove()")
+            absent = await page.evaluate(backup.REPOSTS_MORE_JS)
+            count = int(await page.locator("output").inner_text())
+            await browser.close()
+            return clicked, absent, count
+
+    assert asyncio.run(run()) == (True, False, 1)
 
 
 def test_legacy_extract_still_handles_basic_post() -> None:
