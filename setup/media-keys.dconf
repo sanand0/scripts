@@ -66,10 +66,10 @@ binding='<Control><Alt>c'
 command='/home/sanand/code/scripts/copy-to-markdown.sh'
 name='Copy to Markdown'
 
-# Ctrl+Win+C opens ChatGPT after the active tab in the Main Edge window
+# Ctrl+Win+C opens ChatGPT after the active tab in the Edge window containing Gmail
 [custom-keybindings/chatgpt]
 binding='<Control><Super>c'
-command='/home/sanand/code/scripts/edge open --window Main https://chatgpt.com/'
+command='/home/sanand/code/scripts/edge open --window mail.google https://chatgpt.com/'
 name='Open ChatGPT'
 
 # Ctrl+Alt+L to clean markdown text in clipboard
