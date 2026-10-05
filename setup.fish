@@ -185,7 +185,7 @@ abbr --add skilllist "ug ^description ~/code/blog/pages/skills/*/SKILL.md ~/code
 abbr --add qwen3.6 'llama serve -hf ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M --ctx-size 65536 --n-gpu-layers all --n-cpu-moe 35 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1'
 
 # When the last song VLC played is truncated, I copy it into my list of songs to download later.
-abbr --add lastsong 'tail -2 ~/.local/share/sanand-scripts/vlc-history.tsv | head -1 | cut -f2 | xclip -selection clipboard'
+abbr --add lastsong 'tail -2 ~/Music/music-history.tsv | head -1 | cut -f2 | xclip -selection clipboard'
 
 # File sync utilities
 # -----------------------------------------------

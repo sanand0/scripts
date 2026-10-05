@@ -27,8 +27,8 @@ standalone services, and can run a health check.
   12:30am.
 - `trending-repo-weekly.*`: updates trending GitHub repos on Sunday mornings.
 - `vlc-history.service`: follows VLC over MPRIS using `playerctl` and appends one
-  row per played track to `~/.local/share/sanand-scripts/vlc-history.tsv` as
-  `ISO-8601 timestamp<TAB>URL`. It stays idle while VLC is not running.
+  row per played track to `~/Music/music-history.tsv` as
+  `ISO-8601 timestamp<TAB>path-or-filename<TAB>tool` (`vlc`).
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
 - `*.{service,timer}.disabled`: reference units that are intentionally not
@@ -73,7 +73,7 @@ after it has been linked:
 ```bash
 systemctl --user enable --now vlc-history.service
 systemctl --user status vlc-history.service
-tail -f ~/.local/share/sanand-scripts/vlc-history.tsv
+tail -f ~/Music/music-history.tsv
 ```
 
 Pausing and resuming a track does not add another row. Stopping VLC (or a track)

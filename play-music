@@ -32,7 +32,7 @@ from urllib.parse import unquote
 
 MUSIC = Path("~/Music").expanduser()
 CATALOG = Path(os.environ.get("MUSICDUMP_CSV", MUSIC / "musicdump.csv")).expanduser()
-HISTORY = Path(os.environ.get("VLC_HISTORY", "~/.local/share/sanand-scripts/vlc-history.tsv")).expanduser()
+HISTORY = Path(os.environ.get("VLC_HISTORY", "~/Music/music-history.tsv")).expanduser()
 QUEUE_SIZE = 10
 CANDIDATE_POOL = 30
 JITTER = 0.65

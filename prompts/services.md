@@ -1,5 +1,42 @@
 # services
 
+## Change VLC history path, 05 Oct 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6-luna --config model_reasoning_effort=medium
+-->
+
+Change the services/vlc-history.service and related scripts to log VLC history at
+~/Music/music-history.tsv instead of ~/.local/share/sanand-scripts/vlc-history.tsv.
+
+Also change the format to just log the filename - not full path - URL decoded. For example,
+"file:///home/sanand/Music/Dalapathi.Sundari%20Kannal%20Oru.mp3" becomes
+"Dalapathi.Sundari Kannal Oru.mp3"
+
+Add a third column for the tool that's logging. In this case, it should be "vlc".
+
+Copy the existing log file to the new location and update history to reflect the new format.
+
+Play and test that the new script works as expected.
+
+Let me know if I need to restart the service.
+
+---
+
+Rename ~/Music/history.tsv to ~/Music/music-history.tsv wherever required.
+Move the file as well.
+
+---
+
+Revise the script so that the full path is preserved UNLESS it's in ~/Music/
+So, for a file in /tmp/x.mp3 the path would be "//x.mp3" (or whatever it is.)
+But for `~/Music/x.mp3` it would be just `x.mp3`.
+Update the migration from ~/.local/share/sanand-scripts/vlc-history.tsv based on this.
+I don't mind losing any new history in music-history.tsv - just migrate the old file.
+
+<!-- codex resume 01a1098e-4121-7041-8469-fea611aacd7f -->
+
 ## Fix VLC history tracking, 12 Sep 2026
 
 <!--

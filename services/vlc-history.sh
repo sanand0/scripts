@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Log each VLC track when it starts playing. Output: ISO-8601 timestamp<TAB>MPRIS URL.
+# Log each VLC track when it starts playing. Output: timestamp, path, tool.
 
 set -euo pipefail
 
-data_dir="${XDG_DATA_HOME:-$HOME/.local/share}/sanand-scripts"
-log="$data_dir/vlc-history.tsv"
-mkdir -p "$data_dir"
+log="$HOME/Music/music-history.tsv"
 
 last_key=
 format=$'{{status}}\t{{mpris:trackid}}\t{{xesam:url}}'
@@ -19,7 +17,7 @@ vlc_ready() {
 }
 
 record() {
-  local status=$1 track=$2 url=$3 key
+  local status=$1 track=$2 url=$3 key path music_dir
   if [[ "$status" == Stopped ]]; then
     last_key=
     return
@@ -27,7 +25,13 @@ record() {
   [[ "$status" == Playing && -n "$url" ]] || return
   key="$track"$'\t'"$url"
   [[ "$key" == "$last_key" ]] && return
-  printf '%s\t%s\n' "$(date --iso-8601=seconds)" "$url" >> "$log"
+  path=${url#file://}
+  printf -v path '%b' "${path//%/\\x}"
+  music_dir="$HOME/Music/"
+  case "$path" in
+    "$music_dir"*) path=${path#"$music_dir"} ;;
+  esac
+  printf '%s\t%s\tvlc\n' "$(date --iso-8601=seconds)" "$path" >> "$log"
   last_key="$key"
 }
 

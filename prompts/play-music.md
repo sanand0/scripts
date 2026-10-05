@@ -20,7 +20,7 @@ cd ~/code/scripts
 dev.sh -- codex --yolo --model gpt-6-luna --config model_reasoning_effort=medium
 -->
 
-If `play-music` is run without arguments, find related songs for the last played song from `~/.local/share/sanand-scripts/vlc-history.tsv` (configurable default path) and continue from there.
+If `play-music` is run without arguments, find related songs for the last played song from `~/Music/music-history.tsv` (configurable via `VLC_HISTORY`) and continue from there. Rows contain timestamp, URL-decoded path or filename, and tool as tab-separated columns.
 Be forgiving about the format and pick any fragment from the last line that looks like a song.
 For example, pick anything that ends with a .mp3 or similar audio extension, separated by comma, tab, pipe, newline (not space) from the rest of the line.
 Ignore the full path - just the filename would suffice.

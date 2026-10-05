@@ -174,7 +174,7 @@ Here are the setup details for my laptops.
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `update-files-weekly.*`: Update mounted files
-- `vlc-history.service`: Log VLC playback URLs with timestamps to `~/.local/share/sanand-scripts/vlc-history.tsv`
+- `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 
 ## Archive
 
