@@ -71,6 +71,7 @@ Here are the setup details for my laptops.
 # Scripts
 
 - [aboutmerge.py](aboutmerge.py). Updates people-specific notes from my transcripts. I run [About Updates](https://github.com/sanand0/blog/blob/45ff12dee5c617d6ef27abcd9865077877146479/pages/prompts/about-updates.md) on ChatGPT, save output in `~/Dropbox/notes/about/week-YYYY-MM-DD.md`, and run `aboutmerge.py` to merge the new notes into `~/Dropbox/notes/about/*.md`.
+- [accept-invites](accept-invites). Accepts calendar invites shared between my work and personal calendars and cleans up the invites and acceptances.
 - [activities.py](activities.py) generates daily activity reports in `~/Documents/activities/YYYY-MM-DD.tsv` from calendar events, sent mail, commits, browser history, and coding-agent prompts. By default it fills pending days through yesterday. Examples: `activities.py --date 2026-05-14`, `activities.py --days 3 --limit-per-source 50`, `activities.py --sources calendar,email,commit --dry-run`.
 - [ask](ask) records a short voice note, sends it to `llm` for custom action (transcribe, bash code, fish code, ...), copies to clipboard
 - [askwin](askwin) calls [ask](ask) and pastes on window we called it from. Triggered by Ctrl + Alt + 0

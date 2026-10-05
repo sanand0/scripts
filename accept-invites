@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Accept every current/future calendar invite between my work and personal accounts,
+# then trash the resulting Google Calendar notification mail.
+
+set -euo pipefail
+
+WORK="s.anand@straive.com"
+ROOT="root.node@gmail.com"
+ROOT_CONFIG="${GWS_ROOT_CONFIG_DIR:-$HOME/.config/gws-root.node@gmail.com}"
+
+log() {
+  printf 'accept-invites: %s\n' "$*" >&2
+}
+
+gws_for() {
+  local account="$1"
+  shift
+  if [[ "$account" == root ]]; then
+    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$ROOT_CONFIG" gws "$@"
+  else
+    env -u GOOGLE_WORKSPACE_CLI_CONFIG_DIR gws "$@"
+  fi
+}
+
+check_account() {
+  local account="$1" expected="$2" actual
+  actual="$(gws_for "$account" gmail users getProfile --params '{"userId":"me"}' | jaq -r .emailAddress)"
+  [[ "$actual" == "$expected" ]] || {
+    log "$account gws profile is $actual, expected $expected"
+    exit 1
+  }
+}
+
+accept_from() {
+  local account="$1" self="$2" organizer="$3" now params event id summary body count=0
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  params="$(jaq -nc --arg q "$organizer" --arg now "$now"     '{calendarId:"primary",q:$q,timeMin:$now,singleEvents:false,showDeleted:false,showHiddenInvitations:true,maxResults:2500}')"
+
+  mapfile -t events < <(
+    gws_for "$account" calendar events list --params "$params" --page-all |
+      jaq -c --arg self "$self" --arg organizer "$organizer" '
+        .items[]?
+        | select(.organizer.email == $organizer)
+        | select(any(.attendees[]?; .self == true and .email == $self and .responseStatus != "accepted"))
+        | {id, summary}'
+  )
+
+  for event in "${events[@]}"; do
+    id="$(jaq -r .id <<<"$event")"
+    summary="$(jaq -r '.summary // "(untitled)"' <<<"$event")"
+    log "accepting $account invite: $summary"
+    body="$(jaq -nc --arg email "$self"       '{attendeesOmitted:true,attendees:[{email:$email,responseStatus:"accepted"}]}')"
+    gws_for "$account" calendar events patch       --params "$(jaq -nc --arg id "$id" '{calendarId:"primary",eventId:$id,sendUpdates:"all"}')"       --json "$body" >/dev/null
+    ((count += 1))
+  done
+
+  printf '%d\n' "$count"
+}
+
+trash_query() {
+  local account="$1" query="$2" label="$3" body
+  mapfile -t ids < <(
+    gws_for "$account" gmail users messages list       --params "$(jaq -nc --arg q "$query" '{userId:"me",q:$q,maxResults:500}')" --page-all |
+      jaq -r '.messages[]?.id'
+  )
+  (("${#ids[@]}" == 0)) && return 0
+
+  log "trashing ${#ids[@]} $label in $account Gmail"
+  body="$(printf '%s\n' "${ids[@]}" | jaq -Rsc '{ids:(split("\n") | map(select(length > 0))),addLabelIds:["TRASH"],removeLabelIds:["INBOX"]}')"
+  gws_for "$account" gmail users messages batchModify --params '{"userId":"me"}' --json "$body" >/dev/null
+}
+
+trash_invites() {
+  local account="$1" other="$2"
+  trash_query "$account"     "from:$other {subject:\"Invitation:\" subject:\"Updated invitation:\" subject:\"Cancelled event:\" subject:\"Canceled event:\"}"     "invitation messages"
+}
+
+trash_acceptances() {
+  local account="$1" other="$2"
+  trash_query "$account" "from:$other subject:\"Accepted:\"" "acceptance messages"
+}
+
+check_account work "$WORK"
+check_account root "$ROOT"
+
+accepted_root="$(accept_from root "$ROOT" "$WORK")"
+accepted_work="$(accept_from work "$WORK" "$ROOT")"
+accepted_total=$((accepted_root + accepted_work))
+
+trash_invites root "$WORK"
+trash_invites work "$ROOT"
+
+# Acceptance notifications can arrive after the Calendar API has returned.
+# Sweep now, then three more times if this run accepted anything.
+trash_acceptances root "$WORK"
+trash_acceptances work "$ROOT"
+if ((accepted_total > 0)); then
+  for _ in 1 2 3; do
+    sleep 3
+    trash_acceptances root "$WORK"
+    trash_acceptances work "$ROOT"
+  done
+fi
+
+log "done: accepted $accepted_root personal + $accepted_work work invite(s)"
