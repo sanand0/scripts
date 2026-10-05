@@ -1,5 +1,15 @@
 # play-music
 
+## Use music tool, 05 Oct 2026
+
+<!-- Music tool in browser: https://chatgpt.com/c/6ac2ec99-9728-83ec-99ef-7bde50d81976 (2026-10-05T17:41:30+08:00) -->
+
+That works. Now, how would I modify ~/code/scripts/play-music to use this app to play instead of VLC?
+
+---
+
+Write a patch in ~/Downloads/ that I can run to apply these changes.
+
 ## Avoid recent songs, 03 Oct 2026
 
 <!--

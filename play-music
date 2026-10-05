@@ -11,7 +11,7 @@ Pick from the 30 nearest songs, with slight randomness and soft repetition penal
 Personal M3U playlists add at most 0.10: +0.05 if a candidate is in any non-Appa
 playlist, and +0.05 if it shares a non-Appa playlist with the selected song.
 
-Use --dry-run to print recommended filenames without starting VLC. Set
+Use --dry-run to print recommended filenames without controlling the Music app. Set
 MUSICDUMP_CSV to test against another catalog, e.g. the copy in ~/code/infra/music/.
 Exclude the last 30 unique played songs; --avoid-recent 0 disables this.
 """
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import random
 import re
@@ -32,7 +33,7 @@ from urllib.parse import unquote
 
 MUSIC = Path("~/Music").expanduser()
 CATALOG = Path(os.environ.get("MUSICDUMP_CSV", MUSIC / "musicdump.csv")).expanduser()
-HISTORY = Path(os.environ.get("VLC_HISTORY", "~/Music/music-history.tsv")).expanduser()
+HISTORY = Path(os.environ.get("MUSIC_HISTORY", os.environ.get("VLC_HISTORY", "~/Music/music-history.tsv"))).expanduser()
 QUEUE_SIZE = 10
 CANDIDATE_POOL = 30
 JITTER = 0.65
@@ -252,40 +253,124 @@ def find_song(song: str) -> Path:
     raise SystemExit(f"play-music: no song in {MUSIC} matches {song!r}")
 
 
-def vlc_ready() -> bool:
-    return subprocess.run(
-        ["dbus-send", "--session", "--print-reply", "--dest=org.mpris.MediaPlayer2.vlc", "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Peer.Ping"],
+EDGE = Path("~/code/scripts/edge").expanduser()
+MUSIC_URL = os.environ.get("MUSIC_URL", "tools.s-anand.net/music/")
+
+
+def music_desktop() -> Path:
+    """Return the installed Chromium PWA launcher for the Music app."""
+    applications = Path("~/.local/share/applications").expanduser()
+    matches = []
+    for path in applications.glob("*.desktop"):
+        try:
+            if any(line == "Name=Music" for line in path.read_text(errors="replace").splitlines()):
+                matches.append(path)
+        except OSError:
+            continue
+    if len(matches) != 1:
+        detail = ", ".join(str(path) for path in matches) or "none"
+        raise RuntimeError(f"expected one installed Music PWA launcher, found: {detail}")
+    return matches[0]
+
+
+def music_eval(expression: str) -> object:
+    """Evaluate JavaScript in the Music PWA through Edge CDP with a user gesture."""
+    params = json.dumps(
+        {
+            "expression": expression,
+            "awaitPromise": True,
+            "returnByValue": True,
+            "userGesture": True,
+        }
+    )
+    result = subprocess.run(
+        [str(EDGE), "cdp", MUSIC_URL, "Runtime.evaluate", params],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "Music app is not available over Edge CDP")
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid response from edge cdp: {result.stdout.strip()}") from exc
+    if "exceptionDetails" in response:
+        remote = response.get("result", {})
+        raise RuntimeError(
+            remote.get("description")
+            or response["exceptionDetails"].get("text")
+            or "JavaScript exception in Music app"
+        )
+    remote = response.get("result", {})
+    return remote.get("value", remote.get("unserializableValue"))
+
+
+def launch_music() -> None:
+    subprocess.Popen(
+        ["gio", "launch", str(music_desktop())],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode == 0
+    )
 
 
-def play(selected: Path, queue: list[Path]) -> None:
-    selected_uri = selected.as_uri()
-    if vlc_ready():
-        subprocess.run(
-            ["gdbus", "call", "--session", "--dest=org.mpris.MediaPlayer2.vlc", "--object-path=/org/mpris/MediaPlayer2", "--method=org.mpris.MediaPlayer2.Player.OpenUri", selected_uri],
-            stdout=subprocess.DEVNULL,
-            check=True,
-        )
-    else:
-        subprocess.Popen(["vlc", "--dbus", "--one-instance", str(selected)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        while not vlc_ready():
-            time.sleep(0.05)
+def relative_track(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(MUSIC.resolve()).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(f"{path} is outside {MUSIC}; the Music app API expects library tracks") from exc
 
-    while True:
-        metadata = subprocess.run(
-            ["gdbus", "call", "--session", "--dest=org.mpris.MediaPlayer2.vlc", "--object-path=/org/mpris/MediaPlayer2", "--method=org.freedesktop.DBus.Properties.Get", "org.mpris.MediaPlayer2.Player", "Metadata"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if metadata.returncode == 0 and selected_uri in metadata.stdout:
-            break
-        time.sleep(0.05)
 
-    os.execvp("vlc", ["vlc", "--one-instance", "--playlist-enqueue", *(str(path) for path in queue)])
+def ensure_music(track_ids: list[str]) -> None:
+    """Launch Music if needed and wait until its library contains the requested tracks."""
+    try:
+        available = music_eval("typeof music !== 'undefined'")
+    except (RuntimeError, subprocess.TimeoutExpired):
+        available = False
+    if not available:
+        launch_music()
+
+    deadline = time.monotonic() + 15
+    expression = (
+        f"typeof music !== 'undefined' && "
+        f"{json.dumps(track_ids)}.every(id => music.getTrack(id) !== null)"
+    )
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            if music_eval(expression):
+                return
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            last_error = exc
+        time.sleep(0.1)
+
+    detail = f" ({last_error})" if last_error else ""
+    raise RuntimeError(
+        "Music app opened but its library did not expose the requested tracks. "
+        "Reconnect/refresh the Music folder and try again." + detail
+    )
+
+
+def play(selected: Path | None, queue: list[Path]) -> None:
+    """Play through the Music PWA, inserting recommendations after the current song."""
+    selected_id = relative_track(selected) if selected else None
+    queue_ids = [relative_track(path) for path in queue]
+    ensure_music(([selected_id] if selected_id else []) + queue_ids)
+
+    expression = f"""
+(async () => {{
+  const selected = {json.dumps(selected_id)};
+  const queue = {json.dumps(queue_ids)};
+  if (selected)
+    await music.control({{action: "play-track", track: selected}});
+  // play-next inserts immediately after current; reverse to preserve recommendation order.
+  for (const track of queue.toReversed())
+    await music.control({{action: "play-next", track}});
+  return music.getState();
+}})()
+"""
+    music_eval(expression)
 
 
 def main() -> None:
@@ -296,7 +381,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, help="random seed for reproducible recommendation inspection")
     parser.add_argument("--max", type=int, default=QUEUE_SIZE, help=f"maximum songs to pick (default: {QUEUE_SIZE})")
     parser.add_argument("--pool", type=int, default=CANDIDATE_POOL, help=f"candidate pool size (default: {CANDIDATE_POOL})")
-    parser.add_argument("--avoid-recent", type=int, default=30, help="exclude this many unique played songs from VLC history (default: 30; 0 disables)")
+    parser.add_argument("--avoid-recent", type=int, default=30, help="exclude this many unique played songs from music history (default: 30; 0 disables)")
     args = parser.parse_args()
     if args.avoid_recent < 0:
         parser.error("--avoid-recent must be nonnegative")
@@ -323,10 +408,7 @@ def main() -> None:
 
     selected = selected.resolve()
     queue = queue_paths(selected, recommendations, rng, args.max, excluded) if recommendations else random_queue(selected, rng, args.max, excluded)
-    if args.next:
-        subprocess.Popen(["vlc", "--one-instance", "--playlist-enqueue", *(str(path) for path in queue)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return
-    play(selected, queue)
+    play(None if args.next else selected, queue)
 
 
 if __name__ == "__main__":

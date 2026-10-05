@@ -1,7 +1,7 @@
 # When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/restore-dock/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/restore-dock/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-toggle/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-previous/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-next/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-backward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-forward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-open/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -9,13 +9,6 @@ logout=@as []
 
 # Set Win+L to lock screen. Same as Windows
 screensaver=['<Super>l']
-
-# Ctrl+Win+{Space/Up|Down/Left|Right} is play/track/volume control
-play=['<Control><Super>space']
-volume-up=['<Control><Super>Up']
-volume-down=['<Control><Super>Down']
-previous=['<Control><Super>Left']
-next=['<Control><Super>Right']
 
 # Win+E opens Downloads, not the home folder
 home=@as []
@@ -88,3 +81,42 @@ name='Restore Dock'
 volume-step-up=['<Control><Super>Up']
 # Ctrl+Win+Down decreases volume
 volume-step-down=['<Control><Super>Down']
+
+# Music controls below use CDP to target Music without changing focus.
+# Clear the old native bindings so GNOME does not dispatch them twice.
+play=@as []
+volume-up=['<Control><Super>Up']
+volume-down=['<Control><Super>Down']
+previous=@as []
+next=@as []
+
+[custom-keybindings/music-toggle]
+binding='<Control><Super>space'
+command="/home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"toggle\"}).then(state=>{if(state.error)throw new Error(state.error);return state})'"
+name='Music play/pause'
+
+[custom-keybindings/music-previous]
+binding='<Control><Super>Page_Up'
+command="/home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"previous\"}).then(state=>{if(state.error)throw new Error(state.error);return state})'"
+name='Music previous track'
+
+[custom-keybindings/music-next]
+binding='<Control><Super>Page_Down'
+command="/home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"next\"}).then(state=>{if(state.error)throw new Error(state.error);return state})'"
+name='Music next track'
+
+[custom-keybindings/music-backward]
+binding='<Control><Super>Left'
+command="/home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"backward\",\"seconds\":5}).then(state=>{if(state.error)throw new Error(state.error);return state})'"
+name='Music seek backward 5 seconds'
+
+[custom-keybindings/music-forward]
+binding='<Control><Super>Right'
+command="/home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"forward\",\"seconds\":5}).then(state=>{if(state.error)throw new Error(state.error);return state})'"
+name='Music seek forward 5 seconds'
+
+# Ctrl+Win+M focuses the installed Music PWA, or launches it if closed
+[custom-keybindings/music-open]
+binding='<Control><Super>m'
+command="bash -lc 'f=$(grep -l \"^Name=Music$\" \"$HOME\"/.local/share/applications/*.desktop 2>/dev/null | head -1); if [ -n \"$f\" ]; then gio launch \"$f\"; else xdg-open https://tools.s-anand.net/music/; fi'"
+name='Open Music'

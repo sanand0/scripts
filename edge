@@ -367,7 +367,10 @@ def resolve_cdp_page(query: str, cdp_url: str) -> dict[str, object]:
         lines = "\n".join(
             f"- {target.get('title', '')} — {target.get('url', '')}" for target in matches
         )
-        raise RuntimeError(f"Multiple live CDP pages match: {query}\n{lines}")
+        print(
+            f"Warning: multiple live CDP pages match: {query}; using the first match\n{lines}",
+            file=sys.stderr,
+        )
     return matches[0]
 
 
@@ -638,11 +641,26 @@ def active_cdp_tab_for_window_url(window_query: str, cdp_url: str) -> dict[str, 
     return active[0]
 
 
-def open_command(url: str, window_query: str, cdp_url: str) -> int:
+def open_command(url: str, window_query: str, cdp_url: str, *, reuse: bool = False) -> int:
     """Open URL after the active tab in the Edge window selected by tab URL."""
     try:
         target = active_cdp_tab_for_window_url(window_query, cdp_url)
+        if reuse:
+            tabs = cdp_tab_targets(cdp_url)
+            window_id = next(window for (window, _), tab in tabs.items() if tab["targetId"] == target["targetId"])
+            matches = [
+                tab for (window, _), tab in tabs.items()
+                if window == window_id and str(tab.get("url", "")).split("#", 1)[0] == url.split("#", 1)[0]
+            ]
+            if matches:
+                import websocket
+
+                with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=10, suppress_origin=True)) as connection:
+                    cdp_command(connection, 1, "Target.activateTarget", {"targetId": matches[0]["targetId"]})
+                return 0
         expression = f"window.open({json.dumps(url)}, '_blank'); true"
+        if reuse:
+            expression = f"window.open({json.dumps(url)}, '_blank')?.focus(); true"
         response = evaluate_tab_target(
             cdp_url,
             str(target["targetId"]),
@@ -922,6 +940,7 @@ def main() -> None:
 
     open_parser = subparsers.add_parser("open", help="Open URL after the active tab in a selected Edge window")
     open_parser.add_argument("url", help="URL to open")
+    open_parser.add_argument("--reuse", action="store_true", help="Focus an existing URL in the selected window, otherwise open it")
     open_parser.add_argument(
         "--window",
         required=True,
@@ -946,7 +965,7 @@ def main() -> None:
         cookies_command(args.domain, args.cdp_url, args.json)
         return
     if args.command == "open":
-        raise SystemExit(open_command(args.url, args.window_query, args.cdp_url))
+        raise SystemExit(open_command(args.url, args.window_query, args.cdp_url, **({"reuse": True} if args.reuse else {})))
     if args.command == "js":
         raise SystemExit(js_command(args.query, args.expression, args.cdp_url))
     if args.command == "cdp":

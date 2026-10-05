@@ -3,6 +3,30 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Revisions, 05 Oct 2026
+
+<!--
+cd ~/code/tools/
+dev.sh -p ~/Music,~/code/scripts -- codex --yolo --model gpt-6-luna --config model_reasoning_effort=high
+-->
+
+I get these errors:
+
+❯ /home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"toggle\"}).then(state=>{if(state.error)throw new Error(state.error);retu
+rn state})'
+Multiple live CDP pages match: Music · Your files, your listening
+- Music · Your files, your listening — https://tools.s-anand.net/music/
+- Music · Your files, your listening — http://127.0.0.1:8000/music/
+
+❯ /home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"toggle\"}).then(state=>{if(state.error)throw new Error(state.error);retu
+rn state})'
+SyntaxError: Invalid or unexpected token
+
+In the first case, when `edge` finds multiple pages matching, have it pick the first and log a warning.
+In the second case, find the problem and fix it.
+
+<!-- codex resume 01a10b52-40df-7a42-8321-b8b895d96525 --yolo -->
+
 ## Add edge js and cdp, 03 Oct 2026
 
 <!-- Background websocket browser automation skill: https://chatgpt.com/c/6ac037fe-6554-83ec-81dc-e4ed801bc4b1 (2026-10-03T07:41:20+08:00) -->

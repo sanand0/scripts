@@ -135,7 +135,7 @@ class EdgeTest(unittest.TestCase):
 
         cookies_command.assert_called_once_with("google.com", "http://edge:9333", True)
 
-    def test_resolve_cdp_page_prefers_exact_match_and_reports_ambiguity(self):
+    def test_resolve_cdp_page_prefers_exact_match_and_warns_when_ambiguous(self):
         targets = [
             {"id": "one", "title": "WhatsApp", "url": "https://web.whatsapp.com/", "webSocketDebuggerUrl": "ws://one"},
             {"id": "two", "title": "WhatsApp Help", "url": "https://faq.whatsapp.com/", "webSocketDebuggerUrl": "ws://two"},
@@ -143,8 +143,12 @@ class EdgeTest(unittest.TestCase):
 
         with patch.object(edge, "cdp_targets", return_value=targets):
             self.assertEqual(edge.resolve_cdp_page("WhatsApp", "http://localhost:9222")["id"], "one")
-            with self.assertRaisesRegex(RuntimeError, "Multiple live CDP pages match: what"):
-                edge.resolve_cdp_page("what", "http://localhost:9222")
+            warning = StringIO()
+            with redirect_stderr(warning):
+                selected = edge.resolve_cdp_page("what", "http://localhost:9222")
+            self.assertEqual(selected["id"], "one")
+            self.assertIn("multiple live CDP pages match: what; using the first match", warning.getvalue())
+            self.assertIn("https://faq.whatsapp.com/", warning.getvalue())
 
     def test_page_cdp_command_uses_direct_page_websocket_without_activation(self):
         target = {"webSocketDebuggerUrl": "ws://edge/devtools/page/123"}
@@ -495,6 +499,48 @@ class EdgeTest(unittest.TestCase):
             RuntimeError, "Multiple Edge windows contain a tab URL matching"
         ):
             edge.active_cdp_tab_for_window_url("mail.google", "http://localhost:9222")
+
+    def test_open_reuses_matching_url_only_in_selected_window_and_preserves_fragment(self):
+        active = {"targetId": "active", "url": "https://mail.google.com/"}
+        tabs = {
+            (100, 0): active,
+            (100, 1): {"targetId": "music-main", "url": "http://127.0.0.1:8000/music/#q=Ko"},
+            (200, 0): {"targetId": "music-other", "url": "http://127.0.0.1:8000/music/"},
+        }
+        websocket = MagicMock()
+        connection = websocket.create_connection.return_value
+        with patch.object(edge, "active_cdp_tab_for_window_url", return_value=active), patch.object(
+            edge, "cdp_tab_targets", return_value=tabs
+        ), patch.object(edge, "cdp_browser_url", return_value="ws://browser"), patch.object(
+            edge, "cdp_command", return_value={}
+        ) as command, patch.object(edge, "evaluate_tab_target") as evaluate, patch.dict(
+            sys.modules, {"websocket": websocket}
+        ):
+            result = edge.open_command("http://127.0.0.1:8000/music/", "mail.google", "http://localhost:9222", reuse=True)
+        self.assertEqual(result, 0)
+        command.assert_called_once_with(connection, 1, "Target.activateTarget", {"targetId": "music-main"})
+        evaluate.assert_not_called()
+
+    def test_open_reuse_opens_and_focuses_when_url_is_absent_in_selected_window(self):
+        active = {"targetId": "active", "url": "https://mail.google.com/"}
+        with patch.object(edge, "active_cdp_tab_for_window_url", return_value=active), patch.object(
+            edge, "cdp_tab_targets", return_value={(100, 0): active}
+        ), patch.object(edge, "evaluate_tab_target", return_value={"result": {"value": True}}) as evaluate:
+            result = edge.open_command("http://127.0.0.1:8000/music/", "mail.google", "http://localhost:9222", reuse=True)
+        self.assertEqual(result, 0)
+        evaluate.assert_called_once_with(
+            "http://localhost:9222", "active",
+            'window.open("http://127.0.0.1:8000/music/", \'_blank\')?.focus(); true',
+            user_gesture=True,
+        )
+
+    def test_main_dispatches_open_reuse(self):
+        with patch.object(edge, "open_command", return_value=0) as command, patch.object(
+            sys, "argv", ["edge", "open", "--reuse", "--window", "mail.google", "http://127.0.0.1:8000/music/"]
+        ), self.assertRaises(SystemExit) as exc:
+            edge.main()
+        self.assertEqual(exc.exception.code, 0)
+        command.assert_called_once_with("http://127.0.0.1:8000/music/", "mail.google", "http://localhost:9222", reuse=True)
 
     def test_open_command_targets_active_tab_in_selected_window(self):
         target = {"targetId": "tab-active", "embedderData": {"tabStripIndex": 81}}

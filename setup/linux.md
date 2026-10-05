@@ -505,6 +505,9 @@ sudo update-grub
 xdg-settings set default-web-browser microsoft-edge.desktop
 
 # Load/reload custom media keys (rofi, flameshot, lock screen, suspend, etc.)
+# Music: Ctrl+Super+Space toggles; PageUp/PageDown changes tracks; Left/Right
+# seeks five seconds via CDP. M opens/reuses Music in Main (the Gmail window).
+# Music currently uses http://127.0.0.1:8000/music/; change music-open's URL after deployment.
 # I keep them in a separate file because these are 3-line gsettings commands per key and inelegant to keep in a script.
 gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
 dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
