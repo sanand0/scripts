@@ -1,7 +1,7 @@
 # When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/restore-dock/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/restore-dock/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -65,6 +65,12 @@ name='Rofi Clip'
 binding='<Control><Alt>c'
 command='/home/sanand/code/scripts/copy-to-markdown.sh'
 name='Copy to Markdown'
+
+# Ctrl+Win+C opens ChatGPT after the active tab in the Main Edge window
+[custom-keybindings/chatgpt]
+binding='<Control><Super>c'
+command='/home/sanand/code/scripts/edge open --window Main https://chatgpt.com/'
+name='Open ChatGPT'
 
 # Ctrl+Alt+L to clean markdown text in clipboard
 [custom-keybindings/clean-markdown]

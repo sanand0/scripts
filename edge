@@ -17,6 +17,7 @@ Examples:
   edge md docs.example.com | xclip -selection clipboard
   edge cookies google.com
   edge contents google.com | jaq 'length'
+  edge open --window Main https://chatgpt.com/
   edge js 'WhatsApp' 'document.title'
   edge cdp 'WhatsApp' Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
 """
@@ -27,6 +28,7 @@ import argparse
 import datetime as dt
 import json
 import struct
+import subprocess
 import sys
 from contextlib import closing
 from collections.abc import Iterator
@@ -80,6 +82,7 @@ class Tab:
 class Window:
     id: int
     selected_tab_index: int = -1
+    user_title: str = ""
     tabs: list[Tab] = field(default_factory=list)
     profile: Path | None = None
 
@@ -201,6 +204,10 @@ def parse_snss(data: bytes) -> list[Window]:
             reader = PickleReader(payload, 4)  # First uint32 is Pickle payload size.
             group_id = (reader.uint64(), reader.uint64())
             group_titles[group_id] = reader.string16()
+        elif command_id == 31 and len(payload) >= 12:  # SetWindowUserTitle
+            reader = PickleReader(payload, 4)
+            window_id = reader.int32()
+            get_window(windows, window_id).user_title = reader.string()
 
     for tab in tabs.values():
         tab.group = group_titles.get(tab.group_id) if tab.group_id else None
@@ -210,7 +217,9 @@ def parse_snss(data: bytes) -> list[Window]:
         if tab.id in closed_tabs or tab.window_id in closed_windows or not tab.window_id or not tab.url:
             continue
         window = get_window(live_windows, tab.window_id)
-        window.selected_tab_index = windows.get(tab.window_id, Window(tab.window_id)).selected_tab_index
+        saved_window = windows.get(tab.window_id, Window(tab.window_id))
+        window.selected_tab_index = saved_window.selected_tab_index
+        window.user_title = saved_window.user_title
         window.tabs.append(tab)
 
     result = [window for window in live_windows.values() if window.tabs]
@@ -241,6 +250,7 @@ def windows_to_json(
             {
                 "id": window.id,
                 **({"profile": window.profile.name} if window.profile else {}),
+                "user_title": window.user_title,
                 "selected_tab_index": window.selected_tab_index,
                 "tab_count": len(window.tabs),
                 "tabs": [
@@ -274,7 +284,8 @@ def print_text(windows: list[Window], source: Path | list[Path], urls_only: bool
     for window_index, window in enumerate(windows, 1):
         print()
         profile = f", profile {window.profile.name}" if window.profile else ""
-        print(f"Window {window_index} (id {window.id}{profile}, {len(window.tabs)} tabs)")
+        title = f', "{window.user_title}"' if window.user_title else ""
+        print(f"Window {window_index} (id {window.id}{title}{profile}, {len(window.tabs)} tabs)")
         for tab_index, tab in enumerate(window.tabs, 1):
             active = " *" if tab_index - 1 == window.selected_tab_index else ""
             prefix = "[PIN] " if tab.pinned else ""
@@ -534,6 +545,169 @@ def cdp_tab_ids(cdp_url: str) -> dict[tuple[int, int], str]:
     """Map session (window ID, tab index) pairs to CDP tab target IDs."""
     return {key: str(target["targetId"]) for key, target in cdp_tab_targets(cdp_url).items()}
 
+
+
+
+def evaluate_tab_target(cdp_url: str, target_id: str, expression: str, *, user_gesture: bool = False) -> dict:
+    """Evaluate JavaScript in a CDP tab target's child page."""
+    import websocket
+
+    with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=10, suppress_origin=True)) as connection:
+        tab_session = cdp_command(
+            connection, 1, "Target.attachToTarget", {"targetId": target_id, "flatten": True}
+        )["sessionId"]
+        connection.send(
+            json.dumps(
+                {
+                    "id": 2,
+                    "method": "Target.setAutoAttach",
+                    "params": {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True},
+                    "sessionId": tab_session,
+                }
+            )
+        )
+        page_session = None
+        auto_attach_done = False
+        while page_session is None or not auto_attach_done:
+            response = json.loads(connection.recv())
+            if response.get("id") == 2:
+                if "error" in response:
+                    raise RuntimeError(response["error"]["message"])
+                auto_attach_done = True
+            elif (
+                response.get("method") == "Target.attachedToTarget"
+                and response.get("params", {}).get("targetInfo", {}).get("type") == "page"
+            ):
+                page_session = response["params"]["sessionId"]
+
+        connection.send(
+            json.dumps(
+                {
+                    "id": 3,
+                    "method": "Runtime.evaluate",
+                    "params": {
+                        "expression": expression,
+                        "returnByValue": True,
+                        "awaitPromise": True,
+                        "userGesture": user_gesture,
+                    },
+                    "sessionId": page_session,
+                }
+            )
+        )
+        while True:
+            response = json.loads(connection.recv())
+            if response.get("id") == 3:
+                if "error" in response:
+                    raise RuntimeError(response["error"]["message"])
+                return response["result"]
+
+
+def x11_edge_window_geometry(window_title: str) -> tuple[int, int, int, int]:
+    """Return X, Y, width, height for one visible Edge window with this exact X11 title."""
+    found = subprocess.run(
+        ["xdotool", "search", "--onlyvisible", "--name", window_title],
+        capture_output=True,
+        text=True,
+    )
+    matches = []
+    for window_id in found.stdout.split():
+        title = subprocess.run(
+            ["xdotool", "getwindowname", window_id],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.rstrip("\n")
+        if title != window_title:
+            continue
+        geometry = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", window_id],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        values = dict(line.split("=", 1) for line in geometry.splitlines() if "=" in line)
+        matches.append(tuple(int(values[key]) for key in ("X", "Y", "WIDTH", "HEIGHT")))
+
+    if not matches:
+        raise RuntimeError(f"No visible Edge window named: {window_title}")
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple visible Edge windows named: {window_title}")
+    return matches[0]
+
+
+def active_cdp_tab_for_x11_window(window_title: str, cdp_url: str) -> dict[str, object]:
+    """Map a named X11 Edge window to its active CDP tab using live window geometry."""
+    import websocket
+
+    x, y, width, height = x11_edge_window_geometry(window_title)
+    exact = []
+    normalized = []
+    with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=10, suppress_origin=True)) as connection:
+        targets = cdp_command(
+            connection,
+            1,
+            "Target.getTargets",
+            {"filter": [{"type": "tab", "exclude": False}, {"exclude": True}]},
+        )["targetInfos"]
+        active = [target for target in targets if target.get("embedderData", {}).get("tabActive")]
+        for request_id, target in enumerate(active, 2):
+            bounds = cdp_command(
+                connection,
+                request_id,
+                "Browser.getWindowForTarget",
+                {"targetId": target["targetId"]},
+            )["bounds"]
+            geometry = (
+                bounds.get("left"),
+                bounds.get("top"),
+                bounds.get("width"),
+                bounds.get("height"),
+            )
+            if geometry == (x, y, width, height):
+                exact.append(target)
+            elif (
+                geometry[0] == x
+                and geometry[2:] == (width, height)
+                and abs(int(geometry[1])) == abs(y)
+            ):
+                # Chromium and X11 can disagree on the sign of a monitor's Y origin.
+                normalized.append(target)
+
+    matches = exact or normalized
+    if not matches:
+        raise RuntimeError(f"Could not map Edge window {window_title!r} to a live CDP window")
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple CDP windows match Edge window: {window_title}")
+    return matches[0]
+
+
+def open_command(
+    url: str,
+    window_title: str,
+    profiles: list[Path],
+    session_file: Path | None,
+    cdp_url: str,
+) -> int:
+    """Open URL immediately after the active tab in a named Edge window."""
+    try:
+        target = active_cdp_tab_for_x11_window(window_title, cdp_url)
+        expression = f"window.open({json.dumps(url)}, '_blank'); true"
+        response = evaluate_tab_target(
+            cdp_url,
+            str(target["targetId"]),
+            expression,
+            user_gesture=True,
+        )
+        if "exceptionDetails" in response:
+            remote = response.get("result", {})
+            raise RuntimeError(
+                str(remote.get("description") or response["exceptionDetails"].get("text") or "JavaScript exception")
+            )
+        return 0
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 def wake_cdp_targets(cdp_url: str, target_ids: list[str]) -> dict[str, str]:
     """Wake Edge tabs without focusing them, waiting for each child page target."""
@@ -796,6 +970,12 @@ def main() -> None:
     contents_parser.add_argument("--wake", action="store_true", help="Wake sleeping tabs before extracting them")
     contents_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
 
+    open_parser = subparsers.add_parser("open", help="Open URL after the active tab in a named Edge window")
+    open_parser.add_argument("url", help="URL to open")
+    open_parser.add_argument("--window", required=True, dest="window_title", help="Exact Edge window name")
+    add_session_arguments(open_parser)
+    open_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
     js_parser = subparsers.add_parser("js", help="Evaluate JavaScript in one live tab without activating it")
     js_parser.add_argument("query", help="Exact/partial page title or URL, or exact CDP page target ID")
     js_parser.add_argument("expression", help="JavaScript expression to evaluate")
@@ -811,6 +991,16 @@ def main() -> None:
     if args.command == "cookies":
         cookies_command(args.domain, args.cdp_url, args.json)
         return
+    if args.command == "open":
+        raise SystemExit(
+            open_command(
+                args.url,
+                args.window_title,
+                args.profile or DEFAULT_PROFILES,
+                args.file,
+                args.cdp_url,
+            )
+        )
     if args.command == "js":
         raise SystemExit(js_command(args.query, args.expression, args.cdp_url))
     if args.command == "cdp":

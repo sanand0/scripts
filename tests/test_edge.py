@@ -444,6 +444,99 @@ class EdgeTest(unittest.TestCase):
         self.assertIn("second\tTwo", output.getvalue())
         tab_markdown.assert_not_called()
 
+
+
+    def test_parse_window_user_title(self):
+        body = struct.pack("<i", 100) + pickle_string("Main")
+        data = snss(
+            command(0, struct.pack("<ii", 100, 10)),
+            command(2, struct.pack("<ii", 10, 0)),
+            navigation(10, 0, "https://example.com/", "Example"),
+            command(31, struct.pack("<I", len(body)) + body),
+        )
+
+        window = edge.parse_snss(data)[0]
+
+        self.assertEqual(window.user_title, "Main")
+
+    def test_x11_window_geometry_uses_exact_title_without_class_lookup(self):
+        search = MagicMock(stdout="75497476\n")
+        name = MagicMock(stdout="Main\n")
+        geometry = MagicMock(stdout="WINDOW=75497476\nX=0\nY=0\nWIDTH=1920\nHEIGHT=1048\nSCREEN=0\n")
+
+        with patch.object(edge.subprocess, "run", side_effect=[search, name, geometry]) as run:
+            result = edge.x11_edge_window_geometry("Main")
+
+        self.assertEqual(result, (0, 0, 1920, 1048))
+        self.assertEqual(
+            [call.args[0][1] for call in run.call_args_list],
+            ["search", "getwindowname", "getwindowgeometry"],
+        )
+
+    def test_active_cdp_tab_matches_named_x11_window_geometry(self):
+        targets = [
+            {"targetId": "other", "embedderData": {"tabActive": True}},
+            {"targetId": "main", "embedderData": {"tabActive": True}},
+        ]
+        connection = MagicMock()
+        websocket = MagicMock()
+        websocket.create_connection.return_value = connection
+
+        with patch.object(edge, "x11_edge_window_geometry", return_value=(0, 0, 1920, 1048)), patch.object(
+            edge, "cdp_browser_url", return_value="ws://browser"
+        ), patch.object(
+            edge,
+            "cdp_command",
+            side_effect=[
+                {"targetInfos": targets},
+                {"bounds": {"left": 0, "top": 1080, "width": 1920, "height": 1168}},
+                {"bounds": {"left": 0, "top": 0, "width": 1920, "height": 1048}},
+            ],
+        ), patch.dict(sys.modules, {"websocket": websocket}):
+            target = edge.active_cdp_tab_for_x11_window("Main", "http://localhost:9222")
+
+        self.assertEqual(target["targetId"], "main")
+
+    def test_open_command_targets_active_tab_in_named_x11_window(self):
+        target = {"targetId": "tab-active", "embedderData": {"tabStripIndex": 81}}
+
+        with patch.object(edge, "active_cdp_tab_for_x11_window", return_value=target) as resolve, patch.object(
+            edge, "evaluate_tab_target", return_value={"result": {"value": True}}
+        ) as evaluate:
+            result = edge.open_command(
+                "https://chatgpt.com/",
+                "Main",
+                edge.DEFAULT_PROFILES,
+                None,
+                "http://localhost:9222",
+            )
+
+        self.assertEqual(result, 0)
+        resolve.assert_called_once_with("Main", "http://localhost:9222")
+        evaluate.assert_called_once_with(
+            "http://localhost:9222",
+            "tab-active",
+            """window.open("https://chatgpt.com/", '_blank'); true""",
+            user_gesture=True,
+        )
+
+    def test_main_dispatches_open_subcommand(self):
+        with patch.object(edge, "open_command", return_value=0) as open_command, patch.object(
+            sys,
+            "argv",
+            ["edge", "open", "--window", "Main", "https://chatgpt.com/", "--cdp-url", "http://edge:9333"],
+        ), self.assertRaises(SystemExit) as exc:
+            edge.main()
+
+        self.assertEqual(exc.exception.code, 0)
+        open_command.assert_called_once_with(
+            "https://chatgpt.com/",
+            "Main",
+            edge.DEFAULT_PROFILES,
+            None,
+            "http://edge:9333",
+        )
+
     def test_parse_windows_in_tab_order(self):
         data = snss(
             command(0, struct.pack("<ii", 100, 10)),
