@@ -1,3 +1,5 @@
+set fallback
+
 python := "3.14"
 pytest := "uv run --isolated --no-project --python " + python + " --with pytest"
 playwright := "1.62.0"

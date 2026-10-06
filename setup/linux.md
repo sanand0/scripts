@@ -422,6 +422,7 @@ ln -s $HOME /c
 # Create symlinks for versioned config files
 ln -s ~/code/scripts/.gitconfig ~/.gitconfig
 ln -s ~/code/scripts/.tmux.conf ~/.tmux.conf
+ln -s ~/code/scripts/setup/.justfile ~/.justfile
 mkdir -p ~/.config/yazi/
 ln -s ~/code/scripts/yazi.toml ~/.config/yazi/yazi.toml
 mkdir -p ~/.config/git
