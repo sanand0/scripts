@@ -1,105 +1,313 @@
-#!/usr/bin/env bash
-# Accept every current/future calendar invite between my work and personal accounts,
-# then trash the resulting Google Calendar notification mail.
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
+"""Reconcile calendar invitations and notification mail between two accounts.
 
-set -euo pipefail
+Accept pending RSVPs even for past/hidden invites. If a live invitation email
+refers to a deleted recipient copy, restore it from the organizer's event.
+Only trash invitation mail once the event is accepted (or the event was cancelled).
+"""
+from __future__ import annotations
 
-WORK="s.anand@straive.com"
-ROOT="root.node@gmail.com"
-ROOT_CONFIG="${GWS_ROOT_CONFIG_DIR:-$HOME/.config/gws-root.node@gmail.com}"
+import argparse
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from email import policy
+from email.parser import BytesParser
+from email.utils import getaddresses
+from pathlib import Path
 
-log() {
-  printf 'accept-invites: %s\n' "$*" >&2
-}
+WORK = "s.anand@straive.com"
+ROOT = "root.node@gmail.com"
+ROOT_CONFIG = Path(os.environ.get("GWS_ROOT_CONFIG_DIR", "~/.config/gws-root.node@gmail.com")).expanduser()
+ACCOUNTS = {"work": (WORK, ROOT), "root": (ROOT, WORK)}
+INVITATION_PREFIXES = ("invitation:", "updated invitation:")
+NOTIFICATION_PREFIXES = INVITATION_PREFIXES + ("cancelled event:", "canceled event:")
+MAX_PAGES = 100
 
-gws_for() {
-  local account="$1"
-  shift
-  if [[ "$account" == root ]]; then
-    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$ROOT_CONFIG" gws "$@"
-  else
-    env -u GOOGLE_WORKSPACE_CLI_CONFIG_DIR gws "$@"
-  fi
-}
 
-check_account() {
-  local account="$1" expected="$2" actual
-  actual="$(gws_for "$account" gmail users getProfile --params '{"userId":"me"}' | jaq -r .emailAddress)"
-  [[ "$actual" == "$expected" ]] || {
-    log "$account gws profile is $actual, expected $expected"
-    exit 1
-  }
-}
+def log(message: str) -> None:
+    print(f"accept-invites: {message}", file=sys.stderr, flush=True)
 
-accept_from() {
-  local account="$1" self="$2" organizer="$3" now params event id summary body count=0
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  params="$(jaq -nc --arg q "$organizer" --arg now "$now"     '{calendarId:"primary",q:$q,timeMin:$now,singleEvents:false,showDeleted:false,showHiddenInvitations:true,maxResults:2500}')"
 
-  mapfile -t events < <(
-    gws_for "$account" calendar events list --params "$params" --page-all |
-      jaq -c --arg self "$self" --arg organizer "$organizer" '
-        .items[]?
-        | select(.organizer.email == $organizer)
-        | select(any(.attendees[]?; .self == true and .email == $self and .responseStatus != "accepted"))
-        | {id, summary}'
-  )
+def gws(account: str, *args: str) -> object:
+    env = os.environ.copy()
+    if account == "root":
+        env["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"] = str(ROOT_CONFIG)
+    else:
+        env.pop("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", None)
+    result = subprocess.run(["gws", *args], env=env, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(f"{account}: gws {' '.join(args[:3])} failed: {result.stderr.strip()}")
+    # Gmail batchModify returns HTTP 204 with no JSON body.
+    return json.loads(result.stdout) if result.stdout.strip() else {}
 
-  for event in "${events[@]}"; do
-    id="$(jaq -r .id <<<"$event")"
-    summary="$(jaq -r '.summary // "(untitled)"' <<<"$event")"
-    log "accepting $account invite: $summary"
-    body="$(jaq -nc --arg email "$self"       '{attendeesOmitted:true,attendees:[{email:$email,responseStatus:"accepted"}]}')"
-    gws_for "$account" calendar events patch       --params "$(jaq -nc --arg id "$id" '{calendarId:"primary",eventId:$id,sendUpdates:"all"}')"       --json "$body" >/dev/null
-    ((count += 1))
-  done
 
-  printf '%d\n' "$count"
-}
+def paged(account: str, *args: str) -> list[dict]:
+    env = os.environ.copy()
+    if account == "root":
+        env["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"] = str(ROOT_CONFIG)
+    else:
+        env.pop("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", None)
+    result = subprocess.run(
+        ["gws", *args, "--page-all", "--page-limit", str(MAX_PAGES)],
+        env=env, capture_output=True, text=True,
+    )
+    if result.returncode:
+        raise RuntimeError(f"{account}: list failed: {result.stderr.strip()}")
+    pages = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    if pages and pages[-1].get("nextPageToken"):
+        raise RuntimeError(f"{account}: pagination stopped before all pages were read")
+    return [item for page in pages for item in page.get("items", page.get("messages", []))]
 
-trash_query() {
-  local account="$1" query="$2" label="$3" body
-  mapfile -t ids < <(
-    gws_for "$account" gmail users messages list       --params "$(jaq -nc --arg q "$query" '{userId:"me",q:$q,maxResults:500}')" --page-all |
-      jaq -r '.messages[]?.id'
-  )
-  (("${#ids[@]}" == 0)) && return 0
 
-  log "trashing ${#ids[@]} $label in $account Gmail"
-  body="$(printf '%s\n' "${ids[@]}" | jaq -Rsc '{ids:(split("\n") | map(select(length > 0))),addLabelIds:["TRASH"],removeLabelIds:["INBOX"]}')"
-  gws_for "$account" gmail users messages batchModify --params '{"userId":"me"}' --json "$body" >/dev/null
-}
+def calendar(account: str, other: str) -> list[dict]:
+    params = {
+        "calendarId": "primary", "q": other, "showDeleted": False,
+        "showHiddenInvitations": True, "singleEvents": False, "maxResults": 2500,
+        "fields": "nextPageToken,items(id,iCalUID,summary,organizer(email),attendees(email,responseStatus),status)",
+    }
+    events = paged(account, "calendar", "events", "list", "--params", json.dumps(params))
+    self_email = ACCOUNTS[account][0]
+    return [
+        event for event in events
+        if event.get("organizer", {}).get("email", "").lower() == other
+        and any(a.get("email", "").lower() == self_email for a in event.get("attendees", []))
+    ]
 
-trash_invites() {
-  local account="$1" other="$2"
-  trash_query "$account"     "from:$other {subject:\"Invitation:\" subject:\"Updated invitation:\" subject:\"Cancelled event:\" subject:\"Canceled event:\"}"     "invitation messages"
-}
 
-trash_acceptances() {
-  local account="$1" other="$2"
-  trash_query "$account" "from:$other subject:\"Accepted:\"" "acceptance messages"
-}
+def recipient_status(event: dict, recipient: str) -> str | None:
+    return next(
+        (a.get("responseStatus", "needsAction") for a in event.get("attendees", [])
+         if a.get("email", "").lower() == recipient), None,
+    )
 
-check_account work "$WORK"
-check_account root "$ROOT"
 
-accepted_root="$(accept_from root "$ROOT" "$WORK")"
-accepted_work="$(accept_from work "$WORK" "$ROOT")"
-accepted_total=$((accepted_root + accepted_work))
+def patch_rsvp(account: str, event: dict, self_email: str, dry_run: bool) -> None:
+    if recipient_status(event, self_email) == "accepted":
+        return
+    log(f"{'would accept' if dry_run else 'accepting'} in {account}: {event.get('summary', '?')} [{event['id']}]")
+    if dry_run:
+        return
+    params = {"calendarId": "primary", "eventId": event["id"], "sendUpdates": "all"}
+    body = {"attendeesOmitted": True, "attendees": [{"email": self_email, "responseStatus": "accepted"}]}
+    gws(account, "calendar", "events", "patch", "--params", json.dumps(params), "--json", json.dumps(body))
+    verified = gws(account, "calendar", "events", "get", "--params", json.dumps({"calendarId": "primary", "eventId": event["id"]}))
+    if recipient_status(verified, self_email) != "accepted":
+        raise RuntimeError(f"{account}: RSVP did not persist for {event['id']}")
 
-trash_invites root "$WORK"
-trash_invites work "$ROOT"
 
-# Acceptance notifications can arrive after the Calendar API has returned.
-# Sweep now, then three more times if this run accepted anything.
-trash_acceptances root "$WORK"
-trash_acceptances work "$ROOT"
-if ((accepted_total > 0)); then
-  for _ in 1 2 3; do
-    sleep 3
-    trash_acceptances root "$WORK"
-    trash_acceptances work "$ROOT"
-  done
-fi
+def message_ids(account: str, query: str) -> list[str]:
+    params = {"userId": "me", "q": query, "maxResults": 500}
+    result = paged(account, "gmail", "users", "messages", "list", "--params", json.dumps(params))
+    return list(dict.fromkeys(m["id"] for m in result))
 
-log "done: accepted $accepted_root personal + $accepted_work work invite(s)"
+
+def decode_mail(account: str, id: str):
+    data = gws(account, "gmail", "users", "messages", "get",
+               "--params", json.dumps({"userId": "me", "id": id, "format": "raw"}))
+    raw = data["raw"]
+    return BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+
+
+def addresses(*values: str) -> set[str]:
+    return {addr.lower() for _, addr in getaddresses(list(values)) if addr}
+
+
+def event_uid(message) -> tuple[str | None, bool]:
+    """Return iCalendar UID and whether this is a single recurring instance.
+
+    Never import a detached instance as a new event series.
+    """
+    for part in message.walk():
+        if part.get_content_type() not in ("text/calendar", "application/ics"):
+            continue
+        data = part.get_payload(decode=True) or b""
+        # RFC 5545 continuation lines start with a space or tab.
+        ics = re.sub(r"\r?\n[ \t]", "", data.decode("utf-8", errors="replace"))
+        uid = re.search(r"(?im)^UID:(.+)$", ics)
+        if uid:
+            return uid.group(1).strip(), bool(re.search(r"(?im)^RECURRENCE-ID(?:;[^:]*)?:", ics))
+    return None, False
+
+
+def mail_matches(message, sender: str, recipient: str, prefixes: tuple[str, ...]) -> bool:
+    return (
+        bool(addresses(message.get("From", "")) & {sender})
+        and recipient in addresses(message.get("To", ""), message.get("Cc", ""))
+        and str(message.get("Subject", "")).lower().startswith(prefixes)
+    )
+
+
+def organizer_status(account: str, event: dict, recipient: str, dry_run: bool) -> None:
+    """Set RSVP on the organizer copy without changing anyone else's response."""
+    if recipient_status(event, recipient) == "accepted":
+        return
+    log(f"{'would update' if dry_run else 'updating'} organizer RSVP: {event.get('summary', '?')}")
+    if dry_run:
+        return
+    guests = [
+        {k: a[k] for k in ("email", "responseStatus", "displayName", "optional", "comment", "additionalGuests")
+         if k in a}
+        for a in event["attendees"]
+    ]
+    for a in guests:
+        if a["email"].lower() == recipient:
+            a["responseStatus"] = "accepted"
+    params = {"calendarId": "primary", "eventId": event["id"], "sendUpdates": "none"}
+    gws(account, "calendar", "events", "patch", "--params", json.dumps(params),
+        "--json", json.dumps({"attendees": guests}))
+
+
+def restore_copy(account: str, organizer_account: str, event: dict, dry_run: bool) -> None:
+    """Import a genuinely emailed invitation whose recipient copy is missing."""
+    self_email, organizer_email = ACCOUNTS[account]
+    log(f"{'would restore' if dry_run else 'restoring'} missing {account} calendar copy: {event.get('summary', '?')}")
+    if dry_run:
+        return
+    # Preserve event identity and shared details; do not create an unrelated event.
+    fields = ("iCalUID", "summary", "description", "location", "start", "end", "recurrence")
+    body = {k: event[k] for k in fields if k in event}
+    body["organizer"] = {"email": organizer_email}
+    body["attendees"] = [
+        {"email": a["email"], "responseStatus": "accepted" if a["email"].lower() == self_email
+         else a.get("responseStatus", "needsAction")}
+        for a in event.get("attendees", [])
+    ]
+    if not body.get("iCalUID") or not body.get("start") or not body.get("end"):
+        raise RuntimeError(f"Missing event identity or timing for {event['id']}")
+    imported = gws(account, "calendar", "events", "import", "--params",
+                   '{"calendarId":"primary"}', "--json", json.dumps(body))
+    if imported.get("iCalUID") != event["iCalUID"] or recipient_status(imported, self_email) != "accepted":
+        raise RuntimeError(f"Import did not produce an accepted event copy for {event['id']}")
+    organizer_status(organizer_account, event, self_email, dry_run=False)
+
+
+def trash(account: str, ids: set[str], dry_run: bool, description: str) -> int:
+    if not ids:
+        return 0
+    log(f"{'would trash' if dry_run else 'trashing'} {len(ids)} {account} {description}")
+    if not dry_run:
+        for i in range(0, len(ids), 1000):
+            body = {"ids": sorted(ids)[i:i + 1000], "addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]}
+            gws(account, "gmail", "users", "messages", "batchModify",
+                "--params", '{"userId":"me"}', "--json", json.dumps(body))
+    return len(ids)
+
+
+def reconcile(dry_run: bool, poll_seconds: int) -> None:
+    for account, (self_email, _) in ACCOUNTS.items():
+        profile = gws(account, "gmail", "users", "getProfile", "--params", '{"userId":"me"}')
+        if profile.get("emailAddress", "").lower() != self_email:
+            raise RuntimeError(f"{account} login is not {self_email}")
+
+    events = {account: calendar(account, other) for account, (_, other) in ACCOUNTS.items()}
+    accepted = 0
+    for account, (self_email, _) in ACCOUNTS.items():
+        for event in events[account]:
+            if recipient_status(event, self_email) != "accepted":
+                patch_rsvp(account, event, self_email, dry_run)
+                accepted += 1
+
+    # A missing attendee copy can only be repaired when an actual invitation
+    # email gives an exact UID, and the organizer still owns an active event.
+    removable: dict[str, set[str]] = {account: set() for account in ACCOUNTS}
+    restored: set[tuple[str, str]] = set()
+    skipped: list[str] = []
+    for account, (self_email, other) in ACCOUNTS.items():
+        other_account = "root" if account == "work" else "work"
+        existing = {e.get("iCalUID") for e in events[account]}
+        organizer_events: dict[str, dict] = {}
+        query = (f"from:{other} "
+                 '{subject:"Invitation:" subject:"Updated invitation:" '
+                 'subject:"Cancelled event:" subject:"Canceled event:"}')
+        ids = message_ids(account, query)
+        source = None
+        for id in ids:
+            mail = decode_mail(account, id)
+            if not mail_matches(mail, other, self_email, NOTIFICATION_PREFIXES):
+                continue
+            subject = str(mail.get("Subject", ""))
+            if subject.lower().startswith(("cancelled event:", "canceled event:")):
+                removable[account].add(id)
+                continue
+            uid, instance = event_uid(mail)
+            if not uid:
+                skipped.append(f"{account}: invitation {id} has no iCalendar UID")
+                continue
+            if uid in existing or (account, uid) in restored:
+                removable[account].add(id)
+                continue
+            if instance:
+                skipped.append(f"{account}: detached recurring invite {id} needs manual review")
+                continue
+            if source is None:
+                # Read organizer's own event copies (not its incoming invitations).
+                params = {"calendarId": "primary", "q": self_email, "showDeleted": False,
+                          "singleEvents": False, "maxResults": 2500}
+                source = paged(other_account, "calendar", "events", "list",
+                               "--params", json.dumps(params))
+                organizer_events = {
+                    e["iCalUID"]: e for e in source
+                    if e.get("iCalUID") and e.get("organizer", {}).get("email", "").lower() == other
+                    and e.get("status") != "cancelled" and not e.get("recurringEventId")
+                    and recipient_status(e, self_email) is not None
+                }
+            event = organizer_events.get(uid)
+            if not event:
+                skipped.append(f"{account}: no active organizer event for invitation {id} ({uid})")
+                continue
+            restore_copy(account, other_account, event, dry_run)
+            restored.add((account, uid))
+            existing.add(uid)
+            removable[account].add(id)
+
+    # Do not delete a pending invite if its RSVP failed or its event was absent.
+    for account, ids in removable.items():
+        trash(account, ids, dry_run, "invitation notifications")
+
+    def sweep_acceptances() -> int:
+        total = 0
+        for account, (self_email, other) in ACCOUNTS.items():
+            ids = message_ids(account, f'{{from:{self_email} from:{other}}} subject:"Accepted:"')
+            matched = set()
+            for id in ids:
+                mail = decode_mail(account, id)
+                if str(mail.get("Subject", "")).lower().startswith("accepted:") and (
+                    mail_matches(mail, other, self_email, ("accepted:",))
+                    or mail_matches(mail, self_email, other, ("accepted:",))
+                ):
+                    matched.add(id)
+            total += trash(account, matched, dry_run, "acceptance notifications")
+        return total
+
+    swept = sweep_acceptances()
+    if not dry_run and (accepted or restored):
+        # Check for replies generated asynchronously by Calendar.
+        for _ in range(3):
+            time.sleep(poll_seconds)
+            swept += sweep_acceptances()
+    for note in skipped:
+        log(f"left unprocessed: {note}")
+    log(f"done: {accepted} RSVPs, {len(restored)} restored copies, "
+        f"{sum(map(len, removable.values()))} invitation notifications, {swept} acceptance notifications"
+        + (f"; {len(skipped)} unprocessed invitations" if skipped else ""))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true", help="Inspect without changing calendars or mail")
+    parser.add_argument("--poll-seconds", type=int, default=3, help="Delay between acceptance-mail sweeps")
+    args = parser.parse_args()
+    reconcile(args.dry_run, args.poll_seconds)
+
+
+if __name__ == "__main__":
+    main()
