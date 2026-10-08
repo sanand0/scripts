@@ -250,6 +250,7 @@ args=(
   # -v "$HOME/.config/gh:/home/vscode/.config/gh:ro"
   -v "$HOME/.config/gws/:/home/vscode/.config/gws"
   -v "$HOME/.config/gws-root.node@gmail.com/:/home/vscode/.config/gws-root.node@gmail.com"
+  -v "$HOME/.config/gws-anand@study.iitm.ac.in/:/home/vscode/.config/gws-anand@study.iitm.ac.in"
   -v "$HOME/.config/io.datasette.llm:/home/vscode/.config/io.datasette.llm"
   -v "$HOME/.config/opencode:/home/vscode/.config/opencode"
   -v "$HOME/.config/cloudflare/:/home/vscode/.config/cloudflare"

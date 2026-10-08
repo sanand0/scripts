@@ -83,6 +83,9 @@ abbr --add http 'uvx httpie'
 # Better ncdu
 abbr --add ncdu gdu
 
+# Print CPU temperature
+abbr --add temperature 'awk \'{printf "%.1f°C\n", $1/1000}\' /sys/class/thermal/thermal_zone0/temp'
+
 # 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
 abbr --add 7z 7zz
 

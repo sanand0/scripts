@@ -1229,11 +1229,21 @@ For ad-hoc Python, prefer `uv run --no-project --with pkg1 --with pkg2 -- python
 Avoid running AI agents (codex, claude, gemini, ...) unless the user explicitly requests it.
 Commands run transactionally; do not start persistent background servers.
 
-gws can access work email, calendar, chat, drive:
+gws account directories select the login for Gmail, Calendar, Drive, and Chat:
+  s.anand@straive.com (default): $HOME/.config/gws
+  root.node@gmail.com: $HOME/.config/gws-root.node@gmail.com
+  anand@study.iitm.ac.in: $HOME/.config/gws-anand@study.iitm.ac.in
+Use the matching GOOGLE_WORKSPACE_CLI_CONFIG_DIR prefix for every service:
   gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
-  gws calendar events list --params '{{"calendarId":"s.anand@straive.com","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}}'
-For personal email (root.node@gmail.com) use:
-  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
+  gws calendar events list --params '{{"calendarId":"primary","timeMin":"...","timeMax":"...","singleEvents":true,"orderBy":"startTime"}}'
+  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws drive files list --params '{{"pageSize":5}}'
+  GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-anand@study.iitm.ac.in" gws gmail users messages list --params '{{"userId":"me", "q": "from:..."}}'
+Unset GOOGLE_WORKSPACE_CLI_TOKEN and GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE overrides before relying on saved logins.
+Check `gws auth status` and `gws gmail users getProfile --params '{{"userId":"me","fields":"emailAddress"}}'` under the same prefix before writes; userId/calendarId do not switch accounts.
+All three accounts use Desktop OAuth clients in these permanent directories. Gmail/Calendar/Drive/Chat passed all 12 live checks on 2026-10-08 after regenerating token caches; saved client IDs, account identities, refresh credentials and recorded scopes were verified. IITM has Service Usage Consumer on encoded-ensign-221 for quota use.
+For new OAuth logins, use a client registered as Desktop app in Cloud Console; an edited `installed` JSON key does not change a Web client. Keep these directory selectors unchanged.
+If login/scopes changed and an API reports insufficient scopes despite `gws auth status` listing them, set aside only that account's token_cache.json and retry. Do not remove credentials.enc or client_secret.json. This resolved personal Chat's stale cached token. Scope lists for work/personal reauthorization: each directory's desktop-login-scopes.txt. Private rollback backups are documented in the setup notes.
+Setup, reauthorization, and dated service checks: ~/Dropbox/notes/gws-cli.md.
 
 Prefer `set -euo pipefail` for deterministic scripts. If so, then:
   Handle expected misses (`ug ... || true`, `test -e`, optional files) printing concise diagnostics.

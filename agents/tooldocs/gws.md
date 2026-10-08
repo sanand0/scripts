@@ -1,7 +1,17 @@
 ---
-title: qsv
+title: gws
 docs: https://github.com/googleworkspace/cli
 ---
+
+Accounts (the config directory selects every service):
+
+- Work `s.anand@straive.com`: `~/.config/gws` (default).
+- Personal `root.node@gmail.com`: `~/.config/gws-root.node@gmail.com`.
+- IITM `anand@study.iitm.ac.in`: `~/.config/gws-anand@study.iitm.ac.in`.
+
+Prefix any command with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-<email>"` for personal/IITM. Unset `GOOGLE_WORKSPACE_CLI_TOKEN` and `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` overrides before relying on saved logins. Verify identity with `gws gmail users getProfile --params '{"userId":"me","fields":"emailAddress"}'` under the same prefix before writes. `userId`/`calendarId` do not switch logins; `primary` selects the logged-in user's primary calendar.
+
+2026-10-08: **all three accounts passed Gmail/Calendar/Drive/Chat** after refreshing cached tokens. Each stored credential client matches its configured Desktop client; identities, refresh credentials and recorded scopes were verified. IITM has Service Usage Consumer on `encoded-ensign-221` for quota use. Permanent directories are unchanged; work/personal reauthorization scopes are in each directory's `desktop-login-scopes.txt`. A local `installed` label does not change a Web client's registered type; use genuine Desktop clients for random localhost ports. If scopes are present but a recently reauthorized account returns an insufficient-scope error, set aside only its `token_cache.json` and retry; preserve `credentials.enc` and `client_secret.json`. This fixed personal Chat. Setup, private rollback backups and dated checks: `~/Dropbox/notes/gws-cli.md`.
 
 ```bash
 gws auth status # (token + scope check)
