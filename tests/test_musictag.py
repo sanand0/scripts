@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 from mutagen.apev2 import APEv2, APENoHeaderError
-from mutagen.id3 import APIC, ID3, Encoding, POPM, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE2, USLT
+from mutagen.mp4 import MP4FreeForm, MP4Tags
+from mutagen.id3 import APIC, COMM, ID3, Encoding, POPM, TALB, TCOM, TCON, TDRC, TEXT, TIT2, TOLY, TPE1, TPE2, USLT
 from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -31,10 +32,28 @@ def text_frame(cls, value: str):
 def test_strip_site_suffix() -> None:
     assert musictag.strip_site_suffix("Song - MassTamilan.com") == "Song"
     assert musictag.strip_site_suffix("Song - StarMusiQ.Com - MassTamilan") == "Song"
+    assert musictag.strip_site_suffix("Song - MassTamilan.dev") == "Song"
+    assert musictag.strip_site_suffix("MassTamilan.so") == ""
+    assert musictag.strip_site_suffix("A MassTamilan reference") == "A MassTamilan reference"
 
 
 def test_filename_split_uses_first_dot() -> None:
     assert musictag.filename_album_title(Path("Album.Title.With.Dot.mp3")) == ("Album", "Title.With.Dot")
+
+
+def test_dump_mp4_track_and_freeform_values() -> None:
+    tags = MP4Tags()
+    tags["trkn"] = [(2, 10)]
+    tags["----:com.apple.iTunes:LYRICIST"] = [MP4FreeForm("Lyricist".encode())]
+    assert musictag.get_tag(tags, "TRCK") == "2/10"
+    assert musictag.get_tag(tags, "TEXT") == "Lyricist"
+    tags["trkn"] = [(2, 0)]
+    assert musictag.get_tag(tags, "TRCK") == "2"
+
+
+def test_apply_missing_csv_fails(tmp_path: Path) -> None:
+    result = runner.invoke(musictag.app, ["apply", str(tmp_path / "missing.csv")])
+    assert result.exit_code == 2
 
 
 def test_album_vote_picks_most_common() -> None:
@@ -56,6 +75,7 @@ def test_whitelist_deletion_and_filename_tags(tmp_path: Path) -> None:
         text_frame(TCOM, "Composer - MassTamilan"),
         text_frame(TEXT, "Lyricist - MassTamilan"),
         text_frame(TPE2, "Delete Me"),
+        COMM(encoding=Encoding.UTF8, lang="eng", desc="description", text=["Comment"]),
         APIC(encoding=Encoding.LATIN1, mime="image/jpeg", type=3, desc="", data=b"jpg"),
     )
     tags = musictag.read_id3(path)
@@ -106,6 +126,15 @@ def test_toly_migrates_to_empty_text_then_deletes(tmp_path: Path) -> None:
 
     assert "TOLY" not in tags
     assert musictag.current_value(tags, "TEXT") == "Lyricist"
+
+
+def test_fix_deletes_bare_site_value(tmp_path: Path) -> None:
+    path = tagged(tmp_path / "Album.Title.mp3", text_frame(TEXT, "MassTamilan.dev"))
+    tags = ID3(path)
+    values, _ = musictag.planned_tags(path, tags, [], {}, False)
+    assert {"field": "TEXT", "old": "MassTamilan.dev", "new": "", "status": "deleted"} in musictag.report_tags(tags, values)
+    musictag.apply_changes(tags, values)
+    assert "TEXT" not in tags
 
 
 def test_album_conflict_warnings_are_filename_based() -> None:
@@ -176,6 +205,43 @@ def test_fix_preview_ends_with_write_reminder(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert result.stderr.rstrip().endswith("No changes written. Re-run with --write to apply fixes.")
+
+
+def test_apply_clears_blanks_deletes_all_comments_and_uses_csv_directory(tmp_path: Path) -> None:
+    path = tagged(
+        tmp_path / "Album.Title.mp3",
+        text_frame(TEXT, "MassTamilan.dev"),
+        text_frame(TALB, "Album"),
+        COMM(encoding=Encoding.UTF8, lang="eng", desc="one", text=["Comment"]),
+        COMM(encoding=Encoding.UTF8, lang="tam", desc="two", text=["Comment"]),
+        POPM(email="me@example.com", rating=196, count=3),
+    )
+    old_ns = path.stat().st_mtime_ns
+    csv_path = tmp_path / "updates.csv"
+    csv_path.write_text(f"filename,TEXT\n{path.name},\n", encoding="utf-8")
+
+    result = runner.invoke(musictag.app, ["apply", str(csv_path)])
+
+    assert result.exit_code == 0, result.output
+    tags = ID3(path)
+    assert not tags.getall("COMM")
+    assert "TEXT" not in tags
+    assert str(tags["TALB"]) == "Album"
+    assert tags["POPM:me@example.com"].rating == 196
+    assert path.stat().st_mtime_ns == old_ns
+    result = runner.invoke(musictag.app, ["apply", str(csv_path)])
+    assert result.exit_code == 0
+    assert "updated=0 noops=1 skipped=0" in result.stdout
+
+
+def test_apply_retains_multiple_values_on_round_trip(tmp_path: Path) -> None:
+    path = tagged(tmp_path / "Album.Title.mp3", TPE1(encoding=Encoding.UTF8, text=["One", "Two"]))
+    csv_path = tmp_path / "updates.csv"
+    csv_path.write_text(f"filename,TPE1\n{path.name},{musictag.get_tag(ID3(path), 'TPE1')}\n", encoding="utf-8")
+    result = runner.invoke(musictag.app, ["apply", str(csv_path)])
+    assert result.exit_code == 0
+    assert "updated=0" in result.stdout
+    assert ID3(path)["TPE1"].text == ["One", "Two"]
 
 
 def test_fix_write_deletes_apev2_tags(tmp_path: Path, monkeypatch) -> None:

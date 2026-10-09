@@ -1,5 +1,22 @@
 # musictag.py
 
+## Delete descriptions, 09 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Music -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Modify `musictag.py fix` to delete COMM if it exists.
+If it already does this, delete the COMM frame from everything in ~/Music.
+Update ~/Music/musicdump.csv using `musictag.py dump` after the deletion.
+Verify that musicdump.csv has no COMM frames.
+Run `musictag.py apply` with the same music file and ensure that no COMM frames exist in the songs.
+Also delete any Masstamil suffixes (e.g. ` - MassTamilan.com`) from fields in `musicdump.csv` and re-apply it.
+Ensure that `dump` and `apply` work as I'd expect - and fix `musictag.py` if they don't.
+
+<!-- codex resume 01a11ea0-94a4-7442-b9d6-0be5297d746b --yolo -->
+
 ## Allow overrides, 20 Jul 2026
 
 <!--

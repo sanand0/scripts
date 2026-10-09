@@ -29,6 +29,7 @@ from typing import Any
 import typer
 from mutagen import File
 from mutagen.apev2 import delete as delete_apev2
+from mutagen.mp4 import MP4FreeForm
 from mutagen.id3 import (
     ID3,
     TALB,
@@ -58,10 +59,10 @@ FIELDS = ["filename"] + TAG_FIELDS[:8] + ["length"] + TAG_FIELDS[8:]
 SITES = ["MassTamilan", "StarMusiQ", "VmusiQ", "SenSongs", "IsaiKadal", "TamilWire", "NaaSongs", "Pagalworld", "SongsPk", "FriendsTamil"]
 MANAGED = set(TAG_FIELDS)
 MUSIC_CSV = Path("~/Music/musicdump.csv").expanduser()
-SITE_RE = re.compile(r"\s+-\s+(?:" + "|".join(map(re.escape, SITES)) + r")(?:\.(?:com|in|net|org))?\s*$", re.IGNORECASE)
+SITE_RE = re.compile(r"(?:\s+-\s+|^)(?:" + "|".join(map(re.escape, SITES)) + r")(?:\.[a-z]+)?\s*$", re.IGNORECASE)
 YEAR_RE = re.compile(r"^\d{4}$")
 TEXT_FRAMES = {"TCON": TCON, "TDRC": TDRC, "TALB": TALB, "TIT2": TIT2, "TCOM": TCOM, "TPE1": TPE1, "TRCK": TRCK, "TEXT": TEXT, "TOLY": TOLY}
-FALLBACK = {"TCON": ["©gen"], "TDRC": ["©day"], "TALB": ["©alb"], "TIT2": ["©nam"], "TCOM": ["©wrt"], "TPE1": ["©ART"], "TRCK": ["trkn"]}
+FALLBACK = {"TCON": ["©gen"], "TDRC": ["©day"], "TALB": ["©alb"], "TIT2": ["©nam"], "TCOM": ["©wrt"], "TPE1": ["©ART"], "TRCK": ["trkn"], "TEXT": ["----:com.apple.iTunes:LYRICIST"], "TXXX:MusicBrainz Album Id": ["----:com.apple.iTunes:MusicBrainz Album Id"], "UFID:http://musicbrainz.org": ["----:com.apple.iTunes:MusicBrainz Track Id"], "TXXX:WIKIPEDIA_PAGEID": ["----:com.apple.iTunes:WIKIPEDIA_PAGEID"]}
 STALE_KEYS = {
     "TXXX:MusicBrainz Album Artist Id",
     "TXXX:MusicBrainz Album Release Country",
@@ -78,6 +79,11 @@ def get_tag(audio: Any, key: str) -> str:
         if hasattr(val, "data"):
             return val.data.decode("utf-8", errors="replace")
         if isinstance(val, list):
+            if item == "trkn":
+                track, total = val[0]
+                return f"{track}/{total}" if total else str(track)
+            if isinstance(val[0], bytes):
+                return val[0].decode("utf-8")
             return str(val[0])
         return str(val)
     return ""
@@ -261,7 +267,9 @@ def report_tags(tags: ID3, values: dict[str, str]) -> list[dict[str, str]]:
     for key in TAG_FIELDS:
         old = current_value(tags, key)
         new = values.get(key, "")
-        if new and old != new:
+        if key in values and not new and old:
+            rows.append({"field": key, "old": old, "new": "", "status": "deleted"})
+        elif new and old != new:
             rows.append({"field": key, "old": old, "new": new, "status": "changed"})
         elif old or new:
             rows.append({"field": key, "old": old or new, "new": new or old, "status": "retained"})
@@ -281,8 +289,11 @@ def apply_changes(tags: ID3, values: dict[str, str]) -> None:
         if key not in MANAGED and not preserved_frame(tags, key):
             del tags[key]
     for key, value in values.items():
-        if key in MANAGED and value:
-            write_tag(tags, key, value)
+        if key in MANAGED:
+            if value:
+                write_tag(tags, key, value)
+            else:
+                tags.delall(key)
 
 @app.command()
 def dump() -> None:
@@ -299,29 +310,67 @@ def dump() -> None:
         writer.writerows(rows)
 
 @app.command("apply")
-def apply_cmd(csv_file: Path) -> None:
+def apply_cmd(csv_file: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True)) -> None:
+    """Apply supplied columns, clearing blank cells; filenames are relative to CSV."""
     updated = noops = skipped = 0
     for row in read_rows(csv_file):
-        path = Path((row.get("filename") or "").strip())
-        if not path.name:
+        filename = row.get("filename") or ""
+        if not filename:
             skipped += 1
-            typer.echo("missing filename")
+            typer.echo("missing filename", err=True)
             continue
-        if path.suffix.lower() != ".mp3" or not path.exists():
+        path = csv_file.parent / filename
+        if path.suffix.lower() not in {".mp3", ".mp4", ".m4a"} or not path.exists():
             skipped += 1
-            typer.echo(f"{path}: {'skip non-mp3' if path.suffix.lower() != '.mp3' else 'file not found'}")
+            typer.echo(f"{path}: {'unsupported file type' if path.exists() else 'file not found'}", err=True)
+            continue
+        if path.suffix.lower() != ".mp3":
+            audio = File(path)
+            before = {key: get_tag(audio, key) for key in TAG_FIELDS}
+            if audio.tags is None:
+                audio.add_tags()
+            changed = "©cmt" in audio.tags
+            audio.tags.pop("©cmt", None)
+            for key in TAG_FIELDS:
+                if key not in row:
+                    continue
+                value = row[key].strip()
+                if value == before[key]:
+                    continue
+                atom = FALLBACK[key][0]
+                if not value:
+                    audio.tags.pop(atom, None)
+                elif atom == "trkn":
+                    track, _, total = value.partition("/")
+                    audio.tags[atom] = [(int(track), int(total or 0))]
+                elif atom.startswith("----:"):
+                    audio.tags[atom] = [MP4FreeForm(value.encode("utf-8"))]
+                else:
+                    audio.tags[atom] = [value]
+            if changed or before != {key: get_tag(audio, key) for key in TAG_FIELDS}:
+                stat = path.stat()
+                audio.save()
+                os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+                updated += 1
+            else:
+                noops += 1
             continue
         tags = read_id3(path)
-        before = {key: current_value(tags, key) for key in TAG_FIELDS}
+        before = {key: get_tag(tags, key) for key in TAG_FIELDS}
         changed = False
-        for key in STALE_KEYS:
-            if key in tags:
+        for key in STALE_KEYS | {"COMM"}:
+            if tags.getall(key):
                 tags.delall(key)
                 changed = True
         for key in TAG_FIELDS:
-            if row.get(key, "").strip():
-                write_tag(tags, key, row[key].strip())
-        after = {key: current_value(tags, key) for key in TAG_FIELDS}
+            if key in row:
+                if row[key].strip():
+                    if row[key].strip() != before[key]:
+                        write_tag(tags, key, row[key].strip())
+                else:
+                    changed |= bool(tags.getall(key))
+                    tags.delall(key)
+        after = {key: get_tag(tags, key) for key in TAG_FIELDS}
         if changed or before != after:
             save_preserve_mtime(tags, path)
             updated += 1
