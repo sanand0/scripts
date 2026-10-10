@@ -301,12 +301,12 @@ cargo install --locked cctop  # Real-time agent monitor
 curl -LsSf https://llama.app/install.sh | sh
 
 # Set up uv environments
-mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.14; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
+mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.15; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
 playwright install --with-deps chromium firefox msedge
-mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv; source .venv/bin/activate.fish; uv pip install datasette
-mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
+mkdir -p ~/apps/datasette; cd ~/apps/datasette; uv venv --python 3.14; source .venv/bin/activate.fish; uv pip install datasette
 mkdir -p ~/apps/puddletag; cd ~/apps/puddletag; uv venv --python 3.12; source .venv/bin/activate.fish; uv pip install puddletag   # MP3 music metadata tag editor
 mkdir -p ~/apps/gramex; cd ~/apps/gramex; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install gramex; gramex setup --all
+# mkdir -p ~/apps/marimo; cd ~/apps/marimo; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install marimo
 
 # Install other tools
 cd ~/.local/bin; curl -L https://github.com/dprint/dprint/releases/latest/download/dprint-x86_64-unknown-linux-gnu.zip -o dprint.zip && unzip dprint.zip && rm dprint.zip   # dprint - Code formatter
@@ -317,6 +317,7 @@ cd ~/.local/bin; curl -L -o - https://pngquant.org/pngquant-linux.tar.bz2 | tar 
 cd ~/.local/bin; curl -L https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64 -o ttyd && chmod +x ttyd   # ttyd - Terminal sharing on web
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
+cd ~/.local/bin; curl -L https://github.com/storytold/pdfcraft/releases/download/v0.4.0/pdfcraft-0.4.0-linux-x86_64.AppImage -o pdfcraft && chmod +x pdfcraft  # pdfcraft - Adobe Acrobat rewrite
 
 # Install OpenAI Tunnel Client and Cloudflared for secure tunneling. Update: rerun to update
 mkdir -p ~/.local/share/tunnel-client ~/.local/bin

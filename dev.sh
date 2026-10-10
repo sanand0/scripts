@@ -206,6 +206,10 @@ if [[ -z "${GH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
   export GH_TOKEN
 fi
 
+# Create temp directory
+mkdir -p "$HOME/Downloads/mcpserver-tmp"
+chmod 1777 "$HOME/Downloads/mcpserver-tmp"
+
 args=(
   --rm                          # auto-remove container on exit
   --init                        # reap browser/agent child processes
@@ -240,6 +244,7 @@ args=(
   -v "$HOME/.cache/cctop:/home/vscode/.cache/cctop"
   -v "$HOME/.cache/uv:/home/vscode/.cache/uv"
   -v "$HOME/.cache/sanand-scripts:/home/vscode/.cache/sanand-scripts"
+  -v "$HOME/Downloads/mcpserver-tmp:/tmp"
   # Configs. Enable what's required.
   # 🔴 = sensitive credentials. (LLM API keys are OK - loss is a few dollars.)
   -v "$HOME/.claude:/home/vscode/.claude"
@@ -272,8 +277,8 @@ args=(
   -v "$HOME/.npm:/home/vscode/.npm"
   -v "$HOME/.gemini:/home/vscode/.gemini"
   -v "$HOME/.pi:/home/vscode/.pi"
-  # UV caches are shared above but the managed Python installations should be image-owned
-  # -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
+  # Share uv-managed Python installations too. (uv caches are shared above.)
+  -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
   -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json:ro"
