@@ -184,7 +184,7 @@ watch_tunnel() {
 
 # Start the MCP server first so an existing or new tunnel can reach it.
 status_line "Starting MCP server at $MCP_URL..."
-dev_args=(-v "$SCRIPT_DIR:$SCRIPT_DIR:ro")
+dev_args=(-v "$SCRIPT_DIR/mcpserver.py:$SCRIPT_DIR/mcpserver.py:ro")
 if [[ -n "${MCPSERVER_STATEFUL_HTTP:-}" ]]; then
   dev_args+=(-e "MCPSERVER_STATEFUL_HTTP=$MCPSERVER_STATEFUL_HTTP")
 fi

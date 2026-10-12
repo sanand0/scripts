@@ -1,0 +1,17 @@
+/* Native GNOME Shell menu + tabular figures. No extra theme dependency. */
+.ai-usage-panel { spacing: 5px; padding: 0 3px; }
+.ai-usage-icon { margin-right: 1px; }
+.ai-usage-panel-values { spacing: 0px; }
+.ai-usage-figures { font-weight: normal; font-variant-numeric: tabular-nums; }
+.ai-usage-heading { spacing: 8px; }
+.ai-usage-provider-title { font-weight: bold; }
+.ai-usage-claude-title { color: #d97757; }
+.ai-usage-quota-row { spacing: 0px; min-width: 360px; }
+.ai-usage-quota-prefix { min-width: 30px; }
+.ai-usage-percent { font-weight: bold; font-variant-numeric: tabular-nums; }
+.ai-usage-reset { font-variant-numeric: tabular-nums; }
+.ai-usage-green { color: #43c992; }
+.ai-usage-amber { color: #f3b34c; }
+.ai-usage-red { color: #f36f70; }
+.ai-usage-muted { color: #999; }
+.ai-usage-status { font-size: 12px; color: #aaa; }

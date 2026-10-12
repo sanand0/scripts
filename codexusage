@@ -1,61 +1,102 @@
 #!/usr/bin/env bash
-
-# Sources:
-#   10 Aug 2026: https://chatgpt.com/c/6a796d54-ffcc-83ec-ad0c-c0d0518f438a
-# References:
-#   https://github.com/openai/codex/blob/main/codex-rs/backend-client/src/client/rate_limit_resets.rs
-# If this reports an error, you may need to log into Codex again.
-
+# Codex subscription quota (not general ChatGPT chat limits).
+# HTTP fast path (undocumented), then official Codex app-server RPC on auth/
+# incompatible schema. Codex CLI alone owns and rotates ~/.codex/auth.json.
 set -euo pipefail
+usage() {
+  cat <<'HELP'
+Usage: codexusage [--json | --help]
+  --json  {provider,checked_at,windows:{"5h":{used_percent,resets_at},"7d":...}}
+No token is persisted by this script. HTTP first; Codex app-server RPC fallback.
+Set CODEXUSAGE_FORCE_RPC=1 to verify the native RPC path.
+Override CODEXUSAGE_AUTH to point at an alternate auth.json (HTTP only).
+HELP
+}
+case ${1:-} in --help|-h) usage; exit 0;; --json|'') ;; *) usage >&2; exit 2;; esac
+AUTH=${CODEXUSAGE_AUTH:-"${CODEX_HOME:-$HOME/.codex}/auth.json"}
+TMP=$(mktemp); trap 'rm -f "$TMP"' EXIT
+SOURCE=http
 
-AUTH=~/.codex/auth.json
+# Percentage and reset fields are only paired when the actual quota window is
+# 5 hours or 7 days. The primary quota window is NOT guaranteed to be 5h.
+normalize_http() {
+  jq -ce --arg checked "$(date -u +%FT%TZ)" '
+    def window($seconds):
+      [(.rate_limit.primary_window, .rate_limit.secondary_window) |
+       select((.limit_window_seconds // 0) == $seconds and (.used_percent | type) == "number")]
+      | first // null | if . then {used_percent:.used_percent,resets_at:(.reset_at // null)} else null end;
+    {provider:"codex",checked_at:$checked,windows:{"5h":window(18000),"7d":window(604800)}} |
+    if (.windows["5h"] == null and .windows["7d"] == null) then error("quota schema changed") else . end
+  ' "$TMP"
+}
+normalize_rpc() {
+  jq -ce --arg checked "$(date -u +%FT%TZ)" '
+    (.result.rateLimitsByLimitId.codex // .result.rateLimits) as $quota |
+    def window($mins):
+      [($quota.primary, $quota.secondary) |
+       select((.windowDurationMins // 0) == $mins and (.usedPercent | type) == "number")]
+      | first // null | if . then {used_percent:.usedPercent,resets_at:(.resetsAt // null)} else null end;
+    {provider:"codex",checked_at:$checked,windows:{"5h":window(300),"7d":window(10080)}} |
+    if (.windows["5h"] == null and .windows["7d"] == null) then error("no 5h/7d limits") else . end
+  ' "$TMP"
+}
 
-TOKEN=$(jq -r '.tokens.access_token' "$AUTH")
-ACCOUNT=$(jq -r '.tokens.account_id' "$AUTH")
-
-# Check usage
-response=$(curl -sS -w $'\n%{http_code}' https://chatgpt.com/backend-api/wham/usage \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "ChatGPT-Account-ID: $ACCOUNT" \
-  -H 'OpenAI-Beta: codex-1' \
-  -H 'originator: codex_cli_rs' \
-  -H 'Accept: application/json')
-status=${response##*$'\n'}
-body=${response%$'\n'*}
-
-# If this reports an error, log in via codex app-server
-if [[ $status == 401 ]]; then
-  coproc CODEX { codex app-server 2>/dev/null; }
-  printf '%s\n' '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexusage","version":"1"}}}' >&"${CODEX[1]}"
-  IFS= read -r _ <&"${CODEX[0]}"
-  printf '%s\n' '{"id":2,"method":"account/rateLimits/read"}' >&"${CODEX[1]}"
-  while IFS= read -r line <&"${CODEX[0]}"; do
-    jq -e '.id == 2 and .result' >/dev/null 2>&1 <<<"$line" && break
-  done
-  kill "$CODEX_PID" 2>/dev/null || true
-  wait "$CODEX_PID" 2>/dev/null || true
-
-  TOKEN=$(jq -r '.tokens.access_token' "$AUTH")
-  ACCOUNT=$(jq -r '.tokens.account_id' "$AUTH")
-  body=$(curl -fsS https://chatgpt.com/backend-api/wham/usage \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "ChatGPT-Account-ID: $ACCOUNT" \
-    -H 'OpenAI-Beta: codex-1' \
-    -H 'originator: codex_cli_rs' \
-    -H 'Accept: application/json')
-elif [[ $status != 200 ]]; then
-  printf 'codexusage: usage API returned HTTP %s\n' "$status" >&2
-  exit 1
+# Fast one-HTTP-request path. No local auth.json writes, and token not in argv.
+if [[ ${CODEXUSAGE_FORCE_RPC:-0} != 1 && -r "$AUTH" ]]; then
+  access=$(jq -r '.tokens.access_token // empty' "$AUTH")
+  account=$(jq -r '.tokens.account_id // empty' "$AUTH")
+  if [[ -n "$access" ]]; then
+    status=$(printf 'header = "Authorization: Bearer %s"\nheader = "ChatGPT-Account-ID: %s"\n' "$access" "$account" |
+      curl --config - -sS --connect-timeout 5 --max-time 15 -o "$TMP" -w '%{http_code}' \
+        'https://chatgpt.com/backend-api/wham/usage' \
+        -H 'OpenAI-Beta: codex-1' -H 'originator: codex_cli_rs' -H 'Accept: application/json') || status=000
+    if [[ "$status" == 200 ]]; then
+      output=$(normalize_http 2>/dev/null) || output=''
+    elif [[ "$status" == 429 ]]; then
+      echo 'codexusage: HTTP 429 (rate limited); try later' >&2; exit 1
+    fi
+  fi
 fi
 
-# Print in a friendly format
-jq -r '[.rate_limit.primary_window.used_percent, .rate_limit.primary_window.reset_at] | @tsv' <<<"$body" |
-while IFS=$'\t' read -r usage reset; do
-  when=$(TZ=Asia/Singapore date -d "@$reset" '+%-I:%M %P SGT on %a %d %b %Y')
-  printf "5h: %.0f%% - resets at %s\n" "$usage" "$when"
-done
-jq -r '[.rate_limit.secondary_window.used_percent, .rate_limit.secondary_window.reset_at] | @tsv' <<<"$body" |
-while IFS=$'\t' read -r usage reset; do
-  when=$(TZ=Asia/Singapore date -d "@$reset" '+%-I:%M %P SGT on %a %d %b %Y')
-  printf "7d: %.0f%% - resets at %s\n" "$usage" "$when"
-done
+# Fallback to native RPC. In particular 401 triggers Codex-managed credential
+# renewal, avoiding direct refresh-token redemption and shared-file races.
+if [[ -z ${output:-} ]]; then
+  [[ ${CODEXUSAGE_AUTH:-} == '' ]] || { echo 'codexusage: override credentials failed; RPC fallback disabled' >&2; exit 1; }
+  SOURCE=app-server
+  CODEX_BIN=$(command -v codex || true)
+  if [[ -z "$CODEX_BIN" ]]; then
+    for candidate in "$HOME/.local/share/mise/installs/node/latest/bin/codex" "$HOME/.local/bin/codex"; do
+      if [[ -x "$candidate" ]]; then CODEX_BIN=$candidate; break; fi
+    done
+  fi
+  [[ -n "$CODEX_BIN" ]] || { echo 'codexusage: Codex CLI not found; check GNOME session PATH' >&2; exit 1; }
+  # GNOME Shell may not inherit the interactive mise/node PATH.
+  export PATH="$(dirname "$CODEX_BIN"):$PATH"
+  coproc CODEX { "$CODEX_BIN" app-server --stdio 2>/dev/null; }
+  server_pid=$CODEX_PID
+  exec {RFD}<&"${CODEX[0]}"; exec {WFD}>&"${CODEX[1]}"
+  printf '%s\n' '{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codexusage","version":"1"}}}' >&$WFD
+  printf '%s\n' '{"method":"initialized","params":{}}' >&$WFD
+  printf '%s\n' '{"id":2,"method":"account/read","params":{"refreshToken":true}}' >&$WFD
+  printf '%s\n' '{"id":3,"method":"account/rateLimits/read"}' >&$WFD
+  found=0
+  for ((i=0;i<25;i++)); do
+    line=''
+    if ! IFS= read -r -t 1 line <&$RFD; then continue; fi
+    if jq -e '.id == 3' >/dev/null 2>&1 <<<"$line"; then
+      printf '%s\n' "$line" > "$TMP"; found=1; break
+    fi
+  done
+  kill "$server_pid" 2>/dev/null || true
+  exec {RFD}<&-; exec {WFD}>&-
+  wait "$server_pid" 2>/dev/null || true
+  [[ $found == 1 ]] || { echo 'codexusage: app-server timed out; run codex login if needed' >&2; exit 1; }
+  output=$(normalize_rpc 2>/dev/null) || { echo 'codexusage: app-server returned no recognized 5h/7d limits' >&2; exit 1; }
+fi
+if [[ ${1:-} == --json ]]; then printf '%s\n' "$output"; exit 0; fi
+jq -r '.windows | to_entries[] | [.key, (.value.used_percent // "N/A"), (.value.resets_at // "")] | @tsv' <<< "$output" |
+  while IFS=$'\t' read -r label pct reset; do
+    if [[ "$pct" == N/A ]]; then printf '%s: N/A\n' "$label"; continue; fi
+    when=$(TZ="${USAGE_TZ:-Asia/Singapore}" date -d "@$reset" '+%-I:%M %P %Z on %a %d %b %Y' 2>/dev/null || echo unknown)
+    printf '%s: %.0f%% - resets at %s\n' "$label" "$pct" "$when"
+  done

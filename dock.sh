@@ -26,7 +26,7 @@ exec 9>/tmp/dock-sh.lock
 /usr/bin/flock -n 9 || exit 0
 
 # Disable extensions
-/usr/bin/gnome-extensions disable "claude-code-usage@haletran.com"
+/usr/bin/gnome-extensions disable "ai-usage@sanand.net"
 sleep 0.15
 /usr/bin/gnome-extensions disable "Vitals@CoreCoding.com"
 sleep 0.15
@@ -50,4 +50,4 @@ sleep 0.15
 sleep 0.15
 /usr/bin/gnome-extensions enable "Vitals@CoreCoding.com"
 sleep 0.15
-/usr/bin/gnome-extensions enable "claude-code-usage@haletran.com"
+/usr/bin/gnome-extensions enable "ai-usage@sanand.net"

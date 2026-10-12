@@ -1,0 +1,5 @@
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ai-usage" path="/org/gnome/shell/extensions/ai-usage/">
+    <key name="refresh-minutes" type="i"><default>5</default><summary>Auto-refresh minutes; zero disables</summary></key>
+  </schema>
+</schemalist>

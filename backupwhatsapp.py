@@ -80,7 +80,7 @@ class CDPPage:
         command_id = self.command_id
         await self.socket.send(compact_json({"id": command_id, "method": method, "params": params}))
         try:
-            async with asyncio.timeout(30):
+            async with asyncio.timeout(60):
                 while True:
                     response = json.loads(await self.socket.recv())
                     if response.get("id") != command_id:
@@ -89,7 +89,7 @@ class CDPPage:
                         raise RuntimeError(f"CDP {method}: {response['error'].get('message', response['error'])}")
                     return response.get("result") or {}
         except TimeoutError as exc:
-            raise TimeoutError(f"CDP {method} did not respond within 30s") from exc
+            raise TimeoutError(f"CDP {method} did not respond within 60s") from exc
 
     async def evaluate(self, expression: str, arg: Any = ...) -> Any:
         source = f"({expression})()" if arg is ... else f"({expression})({compact_json(arg)})"

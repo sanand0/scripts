@@ -190,6 +190,9 @@ abbr --add qwen3.6 'llama serve -hf ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M --ctx-s
 # When the last song VLC played is truncated, I copy it into my list of songs to download later.
 abbr --add lastsong 'tail -2 ~/Music/music-history.tsv | head -1 | cut -f2 | xclip -selection clipboard'
 
+# Take a screenshot after 3 seconds
+abbr --add screenshot-delay 'flameshot gui --delay 3000'
+
 # File sync utilities
 # -----------------------------------------------
 
