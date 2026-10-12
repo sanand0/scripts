@@ -7,3 +7,7 @@ __pycache__/
 node_modules/
 test-audio.opus
 .claude/settings.local.json
+
+# Claude Code syncs skills from the server. Don't commit those.
+# I also disabled it via "syncClaudeAiSkills": false in ~/.claude/settings.json.
+agents/synced/
