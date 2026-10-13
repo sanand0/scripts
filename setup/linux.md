@@ -295,7 +295,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Rust - Systems programming language | Update: rustup update
 curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
-cargo install --locked cctop  # Real-time agent monitor
+# cargo install --locked cctop  # Real-time agent monitor
 
 # llama.cpp
 curl -LsSf https://llama.app/install.sh | sh

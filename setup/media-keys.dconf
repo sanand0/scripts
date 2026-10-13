@@ -1,7 +1,7 @@
 # When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/restore-dock/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-toggle/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-previous/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-next/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-backward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-forward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-open/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-toggle/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-previous/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-next/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-backward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-forward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-open/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -70,12 +70,6 @@ name='Open ChatGPT'
 binding='<Control><Alt>l'
 command='/home/sanand/code/scripts/clean_markdown.py --xclip'
 name='Clean Markdown'
-
-# Ctrl+Alt+U to restore the dock after unlocking
-[custom-keybindings/restore-dock]
-binding='<Control><Alt>u'
-command='/home/sanand/code/scripts/dock.sh'
-name='Restore Dock'
 
 # Ctrl+Win+Up increases volume
 volume-step-up=['<Control><Super>Up']
