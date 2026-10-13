@@ -84,7 +84,7 @@ Here are the setup details for my laptops.
   Set up the isolated login with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws auth login`, then run e.g. `backupmeet.py --dry-run`, `backupmeet.py --older-than 365d --type video --limit 3`, or `backupmeet.py --before "6 months ago" --type transcript`.
 - [backupwhatsapp.py](backupwhatsapp.py) backs up WhatsApp Web conversations through Chrome DevTools Protocol into `~/Documents/data/whatsapp/`. Examples: `backupwhatsapp.py --limit 5`, `backupwhatsapp.py --conversation "Family" --format jsonl`, `backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor`.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
-- [ccusage](ccusage) reports Claude Code subscription quota and resets; `ccusage --json` for agents, and `ccusage --setup` once for a separate automatically refreshing monitor login.
+- [ccusage](ccusage) reports Claude Code subscription quota and resets; `ccusage --json` for agents; uses the regular Claude Code login (restart Claude Code if its token expires).
 - [codexusage](codexusage) reports Codex quota and resets; `codexusage --json` for agents.
 - [ai-usage/](ai-usage/) is the GNOME panel widget for both, with colored quotas, reset countdowns, and adjustable refresh. Install with `cd ~/code/scripts/ai-usage && ./install.sh`; see its [README](ai-usage/README.md).
 - [chars](chars) lists non-ASCII characters in files.

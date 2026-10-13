@@ -1,63 +1,20 @@
 #!/usr/bin/env bash
-# Claude subscription quota; --json emits structured 5h/7d usage and resets.
-# Dedicated ~/.config/dock-stats/claude login may refresh its own rotating OAuth
-# token. Shared ~/.claude/.credentials.json is strictly READ ONLY.
+# Claude Code subscription quota. Uses Claude Code's existing credentials,
+# read-only; Claude Code itself owns token renewal. No separate login needed.
 set -euo pipefail
 usage() {
   cat <<'HELP'
-Usage: ccusage [--json | --setup | --help]
-  --setup  One-time independent Claude login for automatic token refresh.
+Usage: ccusage [--json | --help]
   --json   {provider, checked_at, windows:{"5h":{used_percent,resets_at},"7d":...}}
-Without setup, reads ~/.claude/.credentials.json but cannot renew its token.
-Overrides: CCUSAGE_DIR, CCUSAGE_CREDENTIALS (read-only if externally set).
+Reads Claude Code's normal login; start Claude Code if its token expires.
+For tests: CCUSAGE_CREDENTIALS selects an alternative read-only credentials file.
 HELP
 }
-case ${1:-} in --help|-h) usage; exit 0;; --json|'') ;; --setup) ;; *) usage >&2; exit 2;; esac
-OWNER_DIR=${CCUSAGE_DIR:-"${XDG_CONFIG_HOME:-$HOME/.config}/dock-stats/claude"}
-OWNED="$OWNER_DIR/.credentials.json"
-if [[ ${1:-} == --setup ]]; then
-  install -d -m 700 "$OWNER_DIR"
-  echo 'Signing into separate monitor profile; normal Claude login is untouched.' >&2
-  env -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$OWNER_DIR" claude auth login --claudeai
-  [[ -f "$OWNED" ]] || { echo 'ccusage: login did not create credentials' >&2; exit 1; }
-  chmod 600 "$OWNED"; echo "Monitor login stored in $OWNED" >&2; exit 0
-fi
-CRED=${CCUSAGE_CREDENTIALS:-$([[ -f "$OWNED" ]] && echo "$OWNED" || echo "$HOME/.claude/.credentials.json")}
-[[ -r "$CRED" ]] || { echo 'ccusage: no credentials; run ccusage --setup' >&2; exit 1; }
-TOKEN=$(jq -er '.claudeAiOauth.accessToken // .accessToken' "$CRED") || { echo 'ccusage: no usable OAuth token; run ccusage --setup' >&2; exit 1; }
-refresh_owned() {
-  if [[ "$CRED" != "$OWNED" ]]; then
-    echo 'ccusage: shared Claude token expired; run ccusage --setup once' >&2; return 1
-  fi
-  exec 9>"$OWNER_DIR/refresh.lock"
-  flock -w 10 9 || { echo 'ccusage: refresh lock timeout' >&2; return 1; }
-  local old="$TOKEN" latest temp status now
-  latest=$(jq -er '.claudeAiOauth.accessToken' "$CRED")
-  if [[ "$latest" != "$old" ]]; then TOKEN="$latest"; flock -u 9; return 0; fi
-  temp=$(mktemp -d "$OWNER_DIR/.refresh.XXXXXXXX")
-  jq -c '{grant_type:"refresh_token",client_id:"9d1c250a-e61b-44d9-88ed-5944d1962f5e",refresh_token:.claudeAiOauth.refreshToken,scope:(.claudeAiOauth.scopes|join(" "))}' "$CRED" > "$temp/request.json"
-  status=$(curl -sS --connect-timeout 5 --max-time 15 -o "$temp/response.json" -w '%{http_code}' \
-    'https://platform.claude.com/v1/oauth/token' -H 'Content-Type: application/json' \
-    --data-binary "@$temp/request.json") || status=000
-  if [[ "$status" != 200 ]] || ! jq -e '.access_token and .refresh_token and (.expires_in | numbers)' "$temp/response.json" >/dev/null 2>&1; then
-    rm -rf "$temp"; echo "ccusage: OAuth refresh failed (HTTP $status); run ccusage --setup if persistent" >&2; return 1
-  fi
-  now=$(( $(date +%s) * 1000 ))
-  jq -s --argjson now "$now" '
-    .[0] as $auth | .[1] as $new | $auth |
-    .claudeAiOauth.accessToken = $new.access_token |
-    .claudeAiOauth.refreshToken = $new.refresh_token |
-    .claudeAiOauth.expiresAt = ($now + ($new.expires_in * 1000)) |
-    (if $new.scope then .claudeAiOauth.scopes = ($new.scope | split(" ")) else . end)
-  ' "$CRED" "$temp/response.json" > "$temp/new.json"
-  chmod 600 "$temp/new.json"; mv -f "$temp/new.json" "$CRED"
-  TOKEN=$(jq -er '.claudeAiOauth.accessToken' "$CRED")
-  rm -rf "$temp"; flock -u 9
-}
-expires=$(jq -r '.claudeAiOauth.expiresAt // 0' "$CRED")
-if [[ "$CRED" == "$OWNED" && "$expires" =~ ^[0-9]+$ ]] && (( expires > 0 && expires <= $(date +%s) * 1000 + 300000 )); then
-  refresh_owned
-fi
+case ${1:-} in --help|-h) usage; exit 0;; --json|'') ;; *) usage >&2; exit 2;; esac
+CRED=${CCUSAGE_CREDENTIALS:-"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"}
+[[ -r "$CRED" ]] || { echo 'ccusage: no credentials; start Claude Code first' >&2; exit 1; }
+read_token() { jq -er '.claudeAiOauth.accessToken // .accessToken' "$CRED"; }
+TOKEN=$(read_token) || { echo 'ccusage: no OAuth token; start Claude Code first' >&2; exit 1; }
 RESP=$(mktemp); trap 'rm -f "$RESP"' EXIT
 fetch() {
   # Pass bearer via curl config stdin, never through the command-line argv.
@@ -67,10 +24,19 @@ fetch() {
       -H 'anthropic-beta: oauth-2025-04-20' -H 'Accept: application/json'
 }
 status=$(fetch) || { echo 'ccusage: network timeout/error' >&2; exit 1; }
-if [[ "$status" == 401 && "$CRED" == "$OWNED" ]]; then
-  refresh_owned; status=$(fetch) || { echo 'ccusage: network error after refresh' >&2; exit 1; }
+if [[ "$status" == 401 ]]; then
+  # If Claude rotated its token during our request, retry using the new one.
+  latest=$(read_token 2>/dev/null || true)
+  if [[ -n "$latest" && "$latest" != "$TOKEN" ]]; then
+    TOKEN=$latest
+    status=$(fetch) || { echo 'ccusage: network error on retry' >&2; exit 1; }
+  fi
 fi
-[[ "$status" == 200 ]] || { echo "ccusage: usage HTTP $status; $( [[ "$status" == 401 ]] && echo 'run ccusage --setup' || echo 'try later' )" >&2; exit 1; }
+if [[ "$status" == 401 ]]; then
+  echo 'ccusage: Claude Code token expired; start/restart Claude Code, then retry (no ccusage --setup).' >&2
+  exit 1
+fi
+[[ "$status" == 200 ]] || { echo "ccusage: usage HTTP $status; try again later" >&2; exit 1; }
 output=$(jq -ce --arg checked "$(date -u +%FT%TZ)" '
   def window($w): if (($w | type) == "object" and ($w.utilization | type) == "number")
     then {used_percent:$w.utilization, resets_at:($w.resets_at // null)} else null end;

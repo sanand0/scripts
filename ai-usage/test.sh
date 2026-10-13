@@ -6,7 +6,7 @@ SCRIPTS="$ROOT/.."
 cd "$ROOT"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/bin" "$T/profile"
+mkdir -p "$T/bin"
 cat > "$T/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
@@ -16,12 +16,24 @@ for ((i=1;i<=$#;i++)); do
   if [[ "$arg" == -o ]]; then j=$((i+1)); out=${!j}; fi
   if [[ "$arg" == https://* ]]; then url="$arg"; fi
 done
-# Consume the credential stream to mirror curl --config - behavior.
-if [[ " $* " == *'--config -'* ]]; then cat >/dev/null; fi
+# Consume the bearer config from stdin as curl would, without printing it.
+config=''
+if [[ " $* " == *'--config -'* ]]; then config=$(cat); fi
 if [[ $url == *'/oauth/token' ]]; then
   printf '{"access_token":"new-owned","refresh_token":"new-rotated","expires_in":28800,"scope":"user:profile user:inference"}' > "$out"
   printf 200
 elif [[ $url == *'api/oauth/usage' ]]; then
+  if [[ ${MOCK_CLAUDE_STATUS:-} == 401 ]]; then
+    printf '{"error":"unauthorized"}' > "$out"
+    printf 401
+    exit 0
+  fi
+  if [[ -n ${MOCK_CLAUDE_ROTATE_CRED:-} && "$config" == *old-token* ]]; then
+    printf '{"claudeAiOauth":{"accessToken":"new-token","refreshToken":"owned-by-claude"}}' > "$MOCK_CLAUDE_ROTATE_CRED"
+    printf '{"error":"stale token"}' > "$out"
+    printf 401
+    exit 0
+  fi
   printf '{"five_hour":{"utilization":17,"resets_at":"2026-10-12T09:09:59Z"},"seven_day":{"utilization":21,"resets_at":"2026-10-15T10:00:00Z"}}' > "$out"
   printf 200
 elif [[ $url == *'/wham/usage' ]]; then
@@ -50,14 +62,23 @@ before=$(sha256sum "$T/shared.json")
 CCUSAGE_CREDENTIALS="$T/shared.json" "$SCRIPTS/ccusage" --json > "$T/claude.json"
 jq -e '.provider=="claude" and .windows["5h"].used_percent==17 and .windows["7d"].used_percent==21' "$T/claude.json" >/dev/null
 [[ "$before" == "$(sha256sum "$T/shared.json")" ]]
-# Own profile, expired, should refresh and atomically rotate only own credentials.
-cat > "$T/profile/.credentials.json" <<'EOF_OWNED'
-{"claudeAiOauth":{"accessToken":"old-owned","refreshToken":"old-rotated","expiresAt":1,"scopes":["user:profile"]}}
-EOF_OWNED
-chmod 600 "$T/profile/.credentials.json"
-CCUSAGE_DIR="$T/profile" "$SCRIPTS/ccusage" --json > "$T/claude-owned.json"
-jq -e '.claudeAiOauth.accessToken=="new-owned" and .claudeAiOauth.refreshToken=="new-rotated" and .claudeAiOauth.expiresAt>1000000000000' "$T/profile/.credentials.json" >/dev/null
+# Unauthenticated access should explain how to renew via Claude Code, not launch browser login.
+if MOCK_CLAUDE_STATUS=401 CCUSAGE_CREDENTIALS="$T/shared.json" "$SCRIPTS/ccusage" --json > "$T/failed-out.json" 2>"$T/failed-err"; then
+  echo 'ERROR: expired token unexpectedly succeeded' >&2; exit 1
+fi
+grep -q 'start/restart Claude Code' "$T/failed-err"
 [[ "$before" == "$(sha256sum "$T/shared.json")" ]]
+# If Claude Code rotates a token concurrently, retry once with its new token.
+printf '{"claudeAiOauth":{"accessToken":"old-token","refreshToken":"owned-by-claude"}}' > "$T/rotating.json"
+MOCK_CLAUDE_ROTATE_CRED="$T/rotating.json" CCUSAGE_CREDENTIALS="$T/rotating.json" \
+  "$SCRIPTS/ccusage" --json > "$T/rotated.json"
+jq -e '.windows["5h"].used_percent == 17' "$T/rotated.json" >/dev/null
+jq -e '.claudeAiOauth.accessToken == "new-token"' "$T/rotating.json" >/dev/null
+[[ "$before" == "$(sha256sum "$T/shared.json")" ]]
+# A separate monitor login is no longer supported or needed.
+if "$SCRIPTS/ccusage" --setup > "$T/setup-out" 2> "$T/setup-err"; then
+  echo 'ERROR: obsolete --setup was accepted' >&2; exit 1
+fi
 # Direct Codex HTTP: identify window durations instead of assuming primary = 5h.
 echo '{"rate_limit":{"primary_window":{"used_percent":1,"reset_at":1792400000,"limit_window_seconds":604800},"secondary_window":{"used_percent":0,"reset_at":1791810000,"limit_window_seconds":18000}}}' > "$T/codex.json"
 echo '{"tokens":{"access_token":"fake","account_id":"fake"}}' > "$T/auth.json"
@@ -101,4 +122,4 @@ assert.match(ext, /fields\.date\.text/);
 assert.match(css, /min-width: 360px/);
 assert.match(css, /ai-usage-status \{ font-size: 12px/);
 JS
-echo 'PASS: Claude shared read-only, dedicated rotation, Codex duration mapping/RPC fallback, panel formatting'
+echo 'PASS: Claude shared read-only, expired-token guidance, concurrent rotation, Codex RPC fallback, panel formatting'

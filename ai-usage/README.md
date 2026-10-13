@@ -28,13 +28,7 @@ ccusage --json && codexusage --json
 
 **Log out of the Ubuntu desktop and log back in** to load the extension's JavaScript. Logging out of Ubuntu is different from logging out of Claude/ChatGPT. If necessary, run `gnome-extensions enable ai-usage@sanand.net`. Look for the indicator in the GNOME top panel or wherever Dash-to-Panel places the system status area. Click it to change refresh settings.
 
-**Claude automatic authentication:** `ccusage` can read your existing `~/.claude/.credentials.json` without modifying it, but that token expires. For unattended refreshing, run **once**:
-
-```bash
-ccusage --setup
-```
-
-Complete the browser sign-in. This creates a **separate** private Claude monitor profile under `~/.config/dock-stats/claude` and automatically rotates its own refresh token. Your main Claude Code login is untouched. If you already completed this setup, **do not repeat it**: updates and reinstallations reuse the existing profile. The monitor cannot guarantee indefinite authentication if Anthropic revokes an OAuth session; rerun setup only if the widget asks you to.
+**Claude authentication:** `ccusage` reads the existing Claude Code login from `~/.claude/.credentials.json` every time. It does not refresh, rotate, or modify your credentials. **No `ccusage --setup` or separate login is required.** If usage reports an expired token, start/restart Claude Code normally, then select **Refresh now** in the widget. Claude Code owns its token renewal; a plain usage check cannot guarantee renewal when Claude Code has not been run recently. An older dedicated-monitor login directory, if present, is ignored (the installer does not delete it).
 
 **Codex authentication:** Uses your existing `~/.codex/auth.json` as read-only input to a fast HTTP call, then falls back to Codex's app-server for authentication refresh/schema changes. Run `codex login` only if your session has expired or been revoked.
 
