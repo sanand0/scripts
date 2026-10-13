@@ -41,6 +41,11 @@ const UsageIndicator = GObject.registerClass(class UsageIndicator extends PanelM
         this.extension = extension;
         this.settings = extension.getSettings();
         this.snapshots = {claude: null, codex: null};
+        try {
+            Object.assign(this.snapshots, JSON.parse(this.settings.get_string('last-usage')));
+        } catch (error) {
+            console.error(`AI usage: could not restore last usage: ${error.message}`);
+        }
         this.errors = {};
         this._refreshing = false;
         this._disposed = false;
@@ -118,6 +123,7 @@ const UsageIndicator = GObject.registerClass(class UsageIndicator extends PanelM
             this._draw();
             return GLib.SOURCE_CONTINUE;
         });
+        this._draw();
         this.refresh();
     }
 
@@ -153,6 +159,7 @@ const UsageIndicator = GObject.registerClass(class UsageIndicator extends PanelM
             if (!this._disposed) {
                 this.snapshots[provider.key] = data;
                 delete this.errors[provider.key];
+                this.settings.set_string('last-usage', JSON.stringify(this.snapshots));
             }
         } catch (error) {
             if (!this._disposed) this.errors[provider.key] = error.message;

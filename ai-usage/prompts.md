@@ -1,5 +1,16 @@
 # ai-usage
 
+## Cache results, 13 Oct 2026
+
+<!--
+cd ~/code/scripts/
+dev.sh -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Minimally modify the ai-usage/ widget so that if `ccusage` or `codexusage` fail, it uses the last known value - which should persist even after a restart.
+
+<!-- codex resume 01a134cc-1ebd-7122-aa05-50d362e928b7 --yolo -->
+
 ## Initial draft, 12 Oct 2026
 
 <!-- 🔸Restart machine Gnome Widget for Codex Claude Code Usage: https://chatgpt.com/c/6acc703f-00b4-83ec-b7d6-4446af6a6bd2 (2026-10-12T17:45:25+08:00) -->

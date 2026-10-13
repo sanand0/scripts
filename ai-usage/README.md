@@ -34,6 +34,8 @@ ccusage --json && codexusage --json
 
 ## Usage / maintenance
 
+Successful readings are saved in GNOME settings. If either usage command fails, its last successful values remain visible, including after a restart, with the error and reading age shown in the popup. Until the first successful reading, unavailable values show `—`.
+
 ```bash
 ccusage                # Human-readable Claude usage and resets
 codexusage             # Human-readable Codex usage and resets

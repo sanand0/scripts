@@ -122,4 +122,76 @@ assert.match(ext, /fields\.date\.text/);
 assert.match(css, /min-width: 360px/);
 assert.match(css, /ai-usage-status \{ font-size: 12px/);
 JS
-echo 'PASS: Claude shared read-only, expired-token guidance, concurrent rotation, Codex RPC fallback, panel formatting'
+# Exercise the widget with GNOME stand-ins and settings persisted outside its runtime.
+AI_USAGE_TEST_STATE="$T/widget.json" node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import {existsSync, readFileSync, writeFileSync} from 'node:fs';
+import vm from 'node:vm';
+import * as format from './format.js';
+const state = process.env.AI_USAGE_TEST_STATE;
+class Actor {
+    constructor(options = {}) { Object.assign(this, options); this.label = {text: options}; this.menu = this; }
+    add_child() {}
+    addMenuItem() {}
+    connect() { return 1; }
+    setOrnament() {}
+}
+class Button extends Actor {
+    constructor(extension) { super(); this._init(extension); }
+    _init() {}
+}
+const source = readFileSync('./extension.js', 'utf8').replace(/^import .*;\n/gm, '')
+    .replace('export default class', 'class') + '\nUsageIndicator;';
+const reading = (provider, used) => ({provider, checked_at: new Date().toISOString(),
+    windows: {'5h': {used_percent: used}, '7d': null}});
+function start(responses) {
+    const settings = {
+        get_string: () => existsSync(state) ? readFileSync(state, 'utf8') : '{}',
+        set_string: (_, value) => writeFileSync(state, value),
+        get_int: () => 0, connect: () => 1,
+    };
+    const context = vm.createContext({...format, console, Extension: class {}, Clutter: {ActorAlign: {}},
+        GObject: {registerClass: value => value}, PanelMenu: {Button},
+        St: {Icon: Actor, BoxLayout: Actor, Label: Actor},
+        PopupMenu: {PopupMenuItem: Actor, PopupSeparatorMenuItem: Actor, PopupBaseMenuItem: Actor,
+            PopupSubMenuMenuItem: Actor, Ornament: {}},
+        GLib: {build_filenamev: parts => parts.join('/'), get_home_dir: () => '/test-home',
+            timeout_add_seconds: () => 1},
+        Gio: {_promisify() {}, FileIcon: Actor, File: {new_for_path: path => path}, SubprocessFlags: {},
+            Subprocess: class {
+                static new() {
+                    const response = responses.shift();
+                    return {communicate_utf8_async: async () => [JSON.stringify(response), 'offline'],
+                        get_successful: () => response !== null};
+                }
+            }},
+    });
+    const Indicator = vm.runInContext(source, context);
+    return new Indicator({path: '.', getSettings: () => settings});
+}
+const settled = () => new Promise(resolve => setImmediate(resolve));
+const empty = start([null, null]);
+await settled();
+assert.equal(empty._panel.claude['5h'].text, '—');
+assert.equal(existsSync(state), false);
+const good = start([reading('claude', 17), reading('codex', 0)]);
+await settled();
+assert.equal(good._panel.claude['5h'].text, '17%');
+const saved = readFileSync(state, 'utf8');
+const restarted = start([null, null]);
+assert.equal(restarted._panel.claude['5h'].text, '17%'); // Visible before refresh completes.
+assert.equal(restarted._panel.codex['5h'].text, '0%');
+await settled();
+assert.equal(readFileSync(state, 'utf8'), saved);
+assert.match(restarted._details.claude.status.text, /Last good: .*Error: offline/);
+const mixed = start([reading('claude', 23), null]);
+await settled();
+assert.equal(mixed._panel.claude['5h'].text, '23%');
+assert.equal(mixed._panel.codex['5h'].text, '0%');
+const invalid = start([{provider: 'claude'}, reading('claude', 99)]);
+await settled();
+assert.equal(invalid._panel.claude['5h'].text, '23%');
+assert.equal(invalid._panel.codex['5h'].text, '0%');
+assert.deepEqual(JSON.parse(readFileSync(state, 'utf8')), JSON.parse(JSON.stringify(mixed.snapshots)));
+JS
+echo 'PASS: Claude shared read-only, expired-token guidance, concurrent rotation, Codex RPC fallback, panel formatting, persistent widget fallback'
