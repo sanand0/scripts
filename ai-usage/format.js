@@ -25,8 +25,8 @@ export function quotaTone(value) {
 export function resetTone(duration, unixSeconds, nowSeconds = Date.now() / 1000) {
     if (!Number.isFinite(unixSeconds)) return 'muted';
     const hours = (unixSeconds - nowSeconds) / 3600;
-    const red = duration === '5h' ? 0.5 : 12;
-    const amber = duration === '5h' ? 1 : 24;
+    const red = duration === '5h' ? 0.5 : 24;
+    const amber = duration === '5h' ? 1 : 48;
     return hours <= red ? 'red' : hours <= amber ? 'amber' : 'green';
 }
 

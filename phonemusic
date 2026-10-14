@@ -1,0 +1,223 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer"]
+# ///
+"""Sync top-level ~/Music MP3s and music metadata to a mounted Android phone.
+
+Examples:
+  phonemusic sync
+  phonemusic path
+  phonemusic sync --help
+  phonemusic --help | moor
+  phonemusic --describe | jaq .
+"""
+
+from collections import Counter
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+import typer
+
+app = typer.Typer(add_completion=False, help=__doc__, invoke_without_command=True)
+MUSIC = Path.home() / "Music"
+PHONE_ROOT = Path(f"/run/user/{os.getuid()}/gvfs")
+PHONE_FOLDER = Path("Internal shared storage") / "Music"
+
+
+@app.callback()
+def cli(
+    ctx: typer.Context,
+    describe: bool = typer.Option(False, "--describe", help="Print machine-readable CLI metadata."),
+) -> None:
+    if describe:
+        typer.echo(
+            json.dumps(
+                {"command": "phonemusic sync", "description": "Sync local music to a mounted Android phone."}
+            )
+        )
+        raise typer.Exit()
+
+
+def run_gio(*args: str, capture: bool = False) -> str:
+    result = subprocess.run(
+        ["gio", *args], check=True, text=True, capture_output=capture
+    )
+    return result.stdout if capture else ""
+
+
+def phone_music() -> Path:
+    mounts = sorted(PHONE_ROOT.glob("mtp:host=*"))
+    if not mounts:
+        raise RuntimeError(f"No mounted MTP phone found under {PHONE_ROOT}")
+    folder = mounts[0] / PHONE_FOLDER
+    if not folder.is_dir():
+        raise RuntimeError(f"Phone Music folder is unavailable: {folder}")
+    return folder
+
+
+def phone_files(folder: Path) -> dict[str, int]:
+    listing = run_gio(
+        "list", "-l", "-a", "standard::name,standard::size", str(folder), capture=True
+    )
+    files: dict[str, int] = {}
+    for line in listing.splitlines():
+        name, size, kind = line.rsplit("\t", 2)
+        if kind == "(regular)" and size.isdigit():
+            files[name] = int(size)
+    return files
+
+
+def copy_checkpoint(folder: Path, filename: str) -> Path:
+    device = hashlib.sha256(folder.parent.name.encode()).hexdigest()[:16]
+    song = hashlib.sha256(filename.encode()).hexdigest()
+    return Path.home() / ".cache/sanand-scripts/phonemusic" / device / f"{song}.json"
+
+
+def source_fingerprint(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "ctime_ns": stat.st_ctime_ns}
+
+
+def save_checkpoint(path: Path, status: str, fingerprint: dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as temp:
+        temp_path = Path(temp.name)
+        temp.write(json.dumps({"status": status, "fingerprint": fingerprint}).encode())
+        temp.flush()
+        os.fsync(temp.fileno())
+    try:
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def merge_history(local: Path, phone: Path | None) -> tuple[int, int, bytes]:
+    laptop_rows = local.read_text(encoding="utf-8").splitlines()
+    phone_rows = run_gio("cat", str(phone), capture=True).splitlines() if phone else []
+    # Use the maximum multiplicity from either copy: repeated events in one file
+    # survive, while rows already synced to both sides are not doubled.
+    laptop_counts = Counter(laptop_rows)
+    phone_counts = Counter(phone_rows)
+    merged = laptop_counts | phone_counts
+    laptop_added = sum((laptop_counts - phone_counts).values())
+    phone_added = sum((phone_counts - laptop_counts).values())
+    rows = sorted(merged.elements(), key=lambda row: (row.split("\t", 1)[0], row))
+    content = "\n".join(rows) + ("\n" if rows else "")
+    return laptop_added, phone_added, content.encode()
+
+
+@app.command()
+def path() -> None:
+    """Print the mounted phone Music folder path."""
+    try:
+        typer.echo(phone_music())
+    except (OSError, RuntimeError) as exc:
+        typer.echo(f"Warning: phone Music folder is unavailable: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
+@app.command()
+def sync(
+    delete: bool = typer.Option(False, "--delete", help="Delete extra phone MP3s after syncing."),
+) -> None:
+    """Copy top-level MP3s and sync musicdump.csv and music-history.tsv."""
+    try:
+        if not MUSIC.is_dir():
+            raise RuntimeError(f"Music folder is unavailable: {MUSIC}")
+        local_mp3s = sorted(
+            path for path in MUSIC.iterdir() if path.is_file() and path.suffix == ".mp3"
+        )
+        if not (MUSIC / "musicdump.csv").is_file():
+            raise RuntimeError(f"Missing source file: {MUSIC / 'musicdump.csv'}")
+        local_history = MUSIC / "music-history.tsv"
+        if not local_history.is_file():
+            raise RuntimeError(f"Missing source file: {local_history}")
+        folder = phone_music()
+        remote = phone_files(folder)
+
+        local_mp3_names = {path.name for path in local_mp3s}
+        extras = sorted(
+            name for name in remote if name.endswith(".mp3") and name not in local_mp3_names
+        )
+        if not delete:
+            for name in extras:
+                typer.echo(f"Warning: extra phone MP3: {name}", err=True)
+
+        copied = 0
+        copied_bytes = 0
+        for source in local_mp3s:
+            fingerprint = source_fingerprint(source)
+            checkpoint = copy_checkpoint(folder, source.name)
+            if checkpoint.exists():
+                saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+                if not isinstance(saved, dict):
+                    raise RuntimeError(f"Invalid resume checkpoint: {checkpoint}")
+                if (
+                    saved.get("status") == "done"
+                    and saved.get("fingerprint") == fingerprint
+                    and remote.get(source.name) == fingerprint["size"]
+                ):
+                    continue
+
+            typer.echo(f"Copying {source.name}", err=True)
+            save_checkpoint(checkpoint, "copying", fingerprint)
+            run_gio("copy", "-T", str(source), str(folder / source.name))
+            copied += 1
+            copied_bytes += fingerprint["size"]
+            if source_fingerprint(source) == fingerprint:
+                save_checkpoint(checkpoint, "done", fingerprint)
+
+        dump = MUSIC / "musicdump.csv"
+        typer.echo("Copying musicdump.csv", err=True)
+        run_gio("copy", "-T", str(dump), str(folder / dump.name))
+
+        laptop_rows, phone_rows, merged_bytes = merge_history(
+            local_history,
+            folder / local_history.name if local_history.name in remote else None,
+        )
+        with tempfile.NamedTemporaryFile(dir=MUSIC, prefix=".music-history.tsv.", delete=False) as temp:
+            local_temp = Path(temp.name)
+            temp.write(merged_bytes)
+        try:
+            local_temp.replace(local_history)
+        finally:
+            local_temp.unlink(missing_ok=True)
+        with tempfile.NamedTemporaryFile() as merged_file:
+            merged_file.write(merged_bytes)
+            merged_file.flush()
+            typer.echo("Writing merged music-history.tsv", err=True)
+            run_gio("copy", "-T", merged_file.name, str(folder / local_history.name))
+
+        if delete:
+            for name in extras:
+                typer.echo(f"Deleting extra phone MP3: {name}", err=True)
+                run_gio("remove", str(folder / name))
+
+        final_remote = phone_files(folder)
+        laptop_bytes = sum(path.stat().st_size for path in local_mp3s)
+        phone_mp3s = {name: size for name, size in final_remote.items() if name.endswith(".mp3")}
+        extra_mp3s = sum(name not in local_mp3_names for name in phone_mp3s)
+        typer.echo(f"Copied: {copied} MP3 - {copied_bytes / 1_000_000:.1f} MB")
+        typer.echo(f"Laptop has: {len(local_mp3s)} MP3 - {laptop_bytes / 1_000_000_000:.1f} GB")
+        typer.echo(
+            f"Phone has: {len(phone_mp3s)} MP3 ({extra_mp3s} extra) - "
+            f"{sum(phone_mp3s.values()) / 1_000_000_000:.1f} GB"
+        )
+        typer.echo(f"History merged: {laptop_rows} from laptop, {phone_rows} from phone")
+    except (OSError, RuntimeError, subprocess.CalledProcessError, ValueError) as exc:
+        detail = (
+            exc.stderr.strip()
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr
+            else str(exc)
+        )
+        typer.echo(f"Warning: phone music sync failed: {detail}", err=True)
+        raise typer.Exit(1) from exc
+
+
+if __name__ == "__main__":
+    app()
