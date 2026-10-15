@@ -103,6 +103,9 @@ mise use -g eza
 mise use -g github:walles/moor
 ```
 
+For GWS, copy `client_secret.json` from Linux `~/.config/{gws,gws-root.node@gmail.com,gws-anand@study.iitm.ac.in}/` into the matching Windows `$HOME\.config\` directories; encrypted credentials may not decrypt across machines, so run `gws auth login` locally.
+Select non-default accounts via `GOOGLE_WORKSPACE_CLI_CONFIG_DIR` and verify with `gws auth status`.
+
 ## Recent GitHub repos
 
 Clone repos pushed in the last 90 days; existing repos are only fetched, not reset.
