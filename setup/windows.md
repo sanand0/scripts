@@ -2,50 +2,107 @@
 
 Here is the setup for my Windows laptops.
 
-# Configuration changes, 28 Sep 2026
+# Configuration, 15 Oct 2026
 
-These supersede older setup notes below.
+This supersedes the older setup notes below.
 
-## Paths
+## End state
 
-Use `C:\github` as the physical GitHub root and expose it as `~/code` in Cygwin. Keep the same home-relative paths for Dropbox and the main user folders.
+`~` paths should resolve the same way on Linux and Windows for both these homes:
+
+- `C:\Users\Anand`, used by PowerShell, Python's `Path.home()` and Desktop Commander.
+- `C:\cygwin\home\Anand`, used by Cygwin bash.
+
+Each home contains:
+
+- `code/` → `C:\code`: GitHub repos, including `scripts/` (this repo: shared `.gitconfig`, `agents/AGENTS.md`, setup docs)
+- `Documents/` → `C:\Documents`: personal data copied from graphene
+  - `data/`: mail, chat and calendar snapshots per account, WhatsApp, browsing history, the `context/` index
+  - `Mail/`: older mail as mbox files plus a search index
+  - `chatgpt/`, `claude/`: AI conversation exports
+  - `activities/`: daily activity logs
+- `r2/` → `C:\r2`: large files and media (`files/`, `media/`, `private/`)
+- `Dropbox/` → `C:\Dropbox`: live-synced `notes/` and `scripts/`
+- `Downloads/`, `Music/`, `Pictures/`, `Videos/` → `C:\<name>`
+- `.ssh/` → `C:\Dropbox\scripts\.ssh`
+- `.gitconfig` → `C:\code\scripts\.gitconfig`
+
+The Windows home also contains:
+
+- `.codex/AGENTS.md` → `C:\code\scripts\agents\AGENTS.md`
+- `.config/gws*/`: one Google Workspace CLI config per account
+
+## Folders
+
+Real folders live at `C:\<name>`, outside both homes. That way each exists once, and Windows' known folders (Documents, Music, ...) already point there.
+
+Junctions link them into both homes. Junctions need no admin rights and work for Windows and Cygwin programs alike.
 
 ```powershell
-C:\cygwin\bin\bash.exe -lc '[ -e /c ] || ln -s /cygdrive/c /c; [ -e /github ] || ln -s /cygdrive/c/github /github; [ -e ~/code ] || ln -s /github ~/code; [ -e ~/Documents ] || ln -s /c/Documents ~/Documents'
-
-$targets = @{ Dropbox='C:\Dropbox'; Downloads='C:\Downloads'; Music='C:\Music'; Pictures='C:\Pictures'; Videos='C:\Videos' }
-foreach ($root in @($env:USERPROFILE, 'C:\cygwin\home\Anand')) {
-  foreach ($name in $targets.Keys) {
-    $path = Join-Path $root $name
-    if (-not (Test-Path $path)) { New-Item -ItemType Junction -Path $path -Target $targets[$name] }
+$folders = [ordered]@{
+  code      = 'C:\code'        # graphene keeps repos in ~/code; Windows tools need a real path outside Cygwin
+  Documents = 'C:\Documents'   # Windows' Documents known folder already points here
+  r2        = 'C:\r2'          # copied from graphene; linked once it exists
+  Dropbox   = 'C:\Dropbox'     # Dropbox syncs here
+  Downloads = 'C:\Downloads'
+  Music     = 'C:\Music'
+  Pictures  = 'C:\Pictures'
+  Videos    = 'C:\Videos'
+}
+foreach ($root in @($env:USERPROFILE, 'C:\cygwin\home\Anand')) {   # Windows home: PowerShell, Python, Desktop Commander. Cygwin home: bash
+  foreach ($name in $folders.Keys) {
+    $link = Join-Path $root $name
+    if ((Test-Path $folders[$name]) -and -not (Test-Path $link)) { New-Item -ItemType Junction -Path $link -Target $folders[$name] }
   }
 }
+C:\cygwin\bin\bash.exe -lc '[ -e /c ] || ln -s /cygdrive/c /c'   # lets Cygwin scripts write /c/... for C:\...
 ```
+
+## Personal data
+
+Copy these from graphene, then rerun the folder links so `~/r2` appears:
+
+- `~/Documents/data/` → `C:\Documents\data\`
+- `~/Documents/Mail/` → `C:\Documents\Mail\` (~49 GB)
+- `~/Documents/chatgpt/` → `C:\Documents\chatgpt\`
+- `~/Documents/claude/` → `C:\Documents\claude\`
+- `~/Documents/activities/` → `C:\Documents\activities\`
+- `~/r2/` → `C:\r2\` (~7 GB)
+
+Check with `uv run $HOME\code\scripts\context.py status`.
 
 ## PATH
 
-Install mise first, then keep User PATH small. Keep `C:\Apps\nodejs` in Machine PATH until Remote Desktop Commander no longer depends on it; `node` therefore remains the legacy install until that path is removed, while mise shims expose the other installed CLIs.
+Install mise first, then keep User PATH small. Keep `C:\Apps\nodejs` in Machine PATH until Remote Desktop Commander no longer depends on it. Until then, `node` remains the legacy install, while mise shims expose the other installed CLIs.
 
 ```powershell
 $user = @(
-  "$env:LOCALAPPDATA\Microsoft\WindowsApps",
-  "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
-  "$env:LOCALAPPDATA\mise\shims",
-  "$env:USERPROFILE\.local\bin",
-  'C:\github\scripts', 'C:\Dropbox\scripts', 'C:\Apps\utils',
-  'C:\Program Files\Git\usr\bin',
+  "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+  "$env:LOCALAPPDATA\Microsoft\WinGet\Links"              # winget CLIs, e.g. mise, duckdb
+  "$env:LOCALAPPDATA\mise\shims"                          # mise CLIs
+  "$env:USERPROFILE\.local\bin"                           # uv tools, e.g. llm
+  'C:\code\scripts'
+  'C:\Dropbox\scripts'
+  'C:\Apps\utils'                                         # portable CLIs, e.g. uv, sqlite3
+  'C:\Program Files\Git\usr\bin'
   "$env:LOCALAPPDATA\Programs\cursor\resources\app\bin"
 )
 [Environment]::SetEnvironmentVariable('Path', ($user -join ';'), 'User')
 ```
 
-Run this once in **Admin PowerShell** to de-duplicate Machine PATH, remove dead entries, and keep Cygwin plus the broken built-in Windows OpenSSH out of native command resolution. `ssh` then comes from Git for Windows:
+Run this once in **Admin PowerShell**. It de-duplicates Machine PATH, removes dead entries, and keeps Cygwin and the broken built-in Windows OpenSSH out of native command resolution:
 
 ```powershell
+$drop = @(
+  'C:\cygwin\bin'                                         # Cygwin tools would shadow native ones
+  'C:\Windows\System32\OpenSSH'                           # broken; ssh comes from Git for Windows
+  'C:\Dropbox\scripts'                                    # in User PATH
+  'C:\Apps\utils'                                         # in User PATH
+  'C:\Program Files\C'
+  "$env:LOCALAPPDATA\Programs\cursor\resources\app\bin"   # in User PATH
+)
 $remove = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-@('C:\cygwin\bin','C:\Windows\System32\OpenSSH','C:\Dropbox\scripts','C:\Apps\utils','C:\Program Files\C',
-  "$env:LOCALAPPDATA\Programs\cursor\resources\app\bin") |
-  ForEach-Object { [void]$remove.Add($_.TrimEnd('\')) }
+$drop | ForEach-Object { [void]$remove.Add($_.TrimEnd('\')) }
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $clean = foreach ($entry in ([Environment]::GetEnvironmentVariable('Path','Machine') -split ';')) {
   $entry = $entry.Trim(); $key = $entry.TrimEnd('\')
@@ -58,18 +115,18 @@ Restart terminals after changing PATH.
 
 ## Git and SSH
 
-The shared Git config is `C:\github\scripts\.gitconfig`. Both Windows and Cygwin home configs point to it.
+Both homes' `.gitconfig` point to the shared one in this repo:
 
 ```powershell
-$gitconfig = 'C:\github\scripts\.gitconfig'
+$gitconfig = 'C:\code\scripts\.gitconfig'
 foreach ($path in @("$env:USERPROFILE\.gitconfig", 'C:\cygwin\home\Anand\.gitconfig')) {
   if (Test-Path $path) { Copy-Item $path "$path.backup-$(Get-Date -Format yyyyMMddHHmmss)" }
   Remove-Item $path -Force -ErrorAction SilentlyContinue
-  cmd /c "mklink `"$path`" `"$gitconfig`""
+  cmd /c "mklink `"$path`" `"$gitconfig`""   # file symlink: needs Admin PowerShell or Developer Mode
 }
 ```
 
-Keep SSH config and keys in Dropbox and link both homes to the same directory. Dropbox reinstalls may broaden ACLs, so tighten them afterward.
+SSH config and keys live in Dropbox, and both homes link to them. Dropbox reinstalls may broaden ACLs, so tighten them afterward:
 
 ```powershell
 $ssh = 'C:\Dropbox\scripts\.ssh'
@@ -86,39 +143,91 @@ gh auth login
 
 ```powershell
 winget install --id jdx.mise --exact
+winget install --id Wilfred.difftastic --exact   # mise 2026.9.5 picks the wrong Windows asset for difftastic
 $mise = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\mise.exe"
-$core = @('age','bun','deno','fd','jaq','jq','node','ripgrep','sops','starship','yazi','yq','zoxide')
-$github = @('github:direnv/direnv[bin=direnv]','github:cantino/mcfly','github:casey/just','github:dandavison/delta','github:junegunn/fzf','github:pnpm/pnpm')
-foreach ($tool in $core + $github) { & $mise use --global $tool }
+$tools = @(
+  'age'
+  'bun'
+  'deno'
+  'eza'
+  'fd'
+  'jaq'
+  'jq'
+  'node'
+  'ripgrep'
+  'sops'
+  'starship'
+  'yazi'
+  'yq'
+  'zoxide'
+  'github:cantino/mcfly'
+  'github:casey/just'
+  'github:dandavison/delta'
+  'github:direnv/direnv[bin=direnv]'
+  'github:junegunn/fzf'
+  'github:pnpm/pnpm'
+  'github:walles/moor'
+  'github:Genivia/ugrep'                 # ug; not in mise's registry
+  'github:phiresky/ripgrep-all@0.10.9'   # rga; 0.10.10 has no Windows build
+  'github:rtk-ai/rtk'                    # AGENTS.md prefixes high-output commands with rtk
+)
+foreach ($tool in $tools) { & $mise use --global $tool }
 
-# mise 2026.9.5 has a Windows asset-name bug for difftastic
-winget install --id Wilfred.difftastic --exact
-
-& $mise exec -- npm install -g @googleworkspace/cli@latest @openai/codex@latest @anthropic-ai/claude-code@latest opencode-ai agent-browser@latest
+$npm = @(
+  '@googleworkspace/cli@latest'          # gws
+  '@openai/codex@latest'
+  '@anthropic-ai/claude-code@latest'
+  'opencode-ai'
+  'agent-browser@latest'
+)
+& $mise exec -- npm install -g $npm
 & $mise exec -- npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-& $mise reshim  # expose npm-installed CLIs via mise shims
-uv tool install llm --with llm-cmd --with llm-openrouter --with llm-gemini --with llm-anthropic --with llm-openai-plugin --with llm-whisper-api --with llm-groq-whisper
+& $mise reshim   # expose npm-installed CLIs via mise shims
 
-mise use -g eza
-mise use -g github:walles/moor
+$llmPlugins = @(
+  'llm-cmd'
+  'llm-openrouter'
+  'llm-gemini'
+  'llm-anthropic'
+  'llm-openai-plugin'
+  'llm-whisper-api'
+  'llm-groq-whisper'
+)
+uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
 ```
 
-For GWS, copy `client_secret.json` from Linux `~/.config/{gws,gws-root.node@gmail.com,gws-anand@study.iitm.ac.in}/` into the matching Windows `$HOME\.config\` directories; encrypted credentials may not decrypt across machines, so run `gws auth login` locally.
-Select non-default accounts via `GOOGLE_WORKSPACE_CLI_CONFIG_DIR` and verify with `gws auth status`.
+Run `mise` from plain PowerShell. Remote Desktop Commander's processes on Plutonium inherit `XDG_DATA_HOME=/home/Anand/.local/share`. mise run there installs into `C:\home\Anand\.local\share\mise` instead of `%LOCALAPPDATA%\mise`, whose shims are on PATH. If a tool works in one shell but not another, run `Remove-Item Env:XDG_DATA_HOME; mise install; mise reshim`.
 
-## Recent GitHub repos
+## Google Workspace
 
-Clone repos pushed in the last 90 days; existing repos are only fetched, not reset.
+Copy `client_secret.json` from each Linux config folder into the matching `$HOME\.config\` folder:
+
+- `~/.config/gws/` (default account)
+- `~/.config/gws-root.node@gmail.com/`
+- `~/.config/gws-anand@study.iitm.ac.in/`
+
+Encrypted credentials may not decrypt across machines, so run `gws auth login` locally for each. Select a non-default account with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR` and verify with `gws auth status`.
+
+## Agent instructions
 
 ```powershell
-New-Item -ItemType Directory -Force C:\github | Out-Null
+cmd /c mklink "$env:USERPROFILE\.codex\AGENTS.md" C:\code\scripts\agents\AGENTS.md   # Codex reads global rules here; file symlinks need Admin PowerShell or Developer Mode
+```
+
+## GitHub repos
+
+Clone repos pushed in the last 90 days. Existing repos are fetched, then fast-forwarded only if clean; nothing is reset.
+
+```powershell
+if (-not (Test-Path C:\code)) { New-Item -ItemType Directory C:\code | Out-Null }
 $cutoff = (Get-Date).AddDays(-90)
-gh repo list sanand0 --limit 1000 --json name,pushedAt,sshUrl | ConvertFrom-Json |
+(gh repo list sanand0 --limit 1000 --json name,pushedAt,sshUrl | ConvertFrom-Json) |   # parentheses: PowerShell 5.1 otherwise passes the whole array as one object
   Where-Object { [datetime]$_.pushedAt -ge $cutoff } |
   ForEach-Object {
-    $dest = "C:\github\$($_.name)"
-    if (Test-Path "$dest\.git") { git -C $dest fetch --prune }
-    else { git clone $_.sshUrl $dest }
+    $dest = "C:\code\$($_.name)"
+    if (-not (Test-Path "$dest\.git")) { git clone $_.sshUrl $dest; return }
+    git -C $dest fetch --prune
+    if (-not (git -C $dest status --porcelain)) { git -C $dest merge --ff-only '@{u}' }   # fast-forward only; never discards local work
   }
 ```
 
