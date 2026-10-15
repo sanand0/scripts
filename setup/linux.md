@@ -406,6 +406,40 @@ curl -L https://github.com/user-attachments/files/17536771/HubApps.txt  > ~/.con
 ln -sfn ~/.local/bin/vlc-composer ~/.local/bin/vlc
 ```
 
+## Android debugging (ADB)
+
+```bash
+# Fresh install: download Google's official Platform-Tools ZIP (adb + fastboot).
+# This is how ~/code/infra/usb-debugging installed adb; no Android SDK or apt adb required.
+# The ZIP contains platform-tools/adb, so extracting into ~/.local/opt creates
+# ~/.local/opt/platform-tools/adb. Re-run these commands to update it.
+sudo apt install -y unzip
+mkdir -p ~/.local/opt ~/.local/bin
+curl -fsSLo /tmp/platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+unzip -oq /tmp/platform-tools.zip -d ~/.local/opt
+rm /tmp/platform-tools.zip
+~/.local/opt/platform-tools/adb version   # Verify the binary was installed
+
+# dev.sh already shares ~/.local/bin read-only and uses --network host.
+# Copy, not symlink: ~/.local/opt is not mounted inside the container.
+# Repeat this line after updating platform-tools.
+install -m 755 ~/.local/opt/platform-tools/adb ~/.local/bin/adb
+
+# Xiaomi USB permissions (vendor 2717). Already installed on Graphene, 13 Oct 2026.
+# If not in plugdev: sudo usermod -aG plugdev "$USER" (then log out/in).
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="2717", MODE="0660", GROUP="plugdev", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/51-android.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+# Unplug/replug the phone and accept its USB debugging authorization prompt.
+# Xiaomi also requires "USB debugging (Security settings)" for input, and "Install via USB" for APK installs.
+
+# Start adb on the HOST first. Containers share its localhost:5037 server;
+# they need neither USB passthrough nor ~/.android keys. No image rebuild needed.
+~/.local/opt/platform-tools/adb start-server
+~/.local/opt/platform-tools/adb devices -l
+~/code/scripts/dev.sh -- adb devices -l
+# Restart mcpserver if running; it uses dev.sh and gets the same adb access.
+```
+
 ## Settings
 
 ```bash
