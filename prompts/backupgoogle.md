@@ -1,5 +1,21 @@
 # Backup Google
 
+## Split into months, add IITM email, 17 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -p ~/Documents/data -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Modify backupgoogle.py as follows:
+
+- Use a monthly split of output files, e.g. mail-2026-10.jsonl, chat-spaces-2026-10.jsonl, etc.
+  - Migrate the existing files into the new monthly split.
+  - Revise the script to create new monthly files as required and test.
+- Include anand@study.iitm.ac.in as the third account to backup email, calendar, and chat data. Run the backup.
+
+<!-- codex resume 01a148d9-c26c-7851-9cf2-8982d5536476 --yolo -->
+
 ## Add useful fields, 02 Sep 2026
 
 <!-- Preserve Gmail thread IDs, Calendar recurrence/RSVP metadata, and Google Chat sender/space/thread IDs. https://chatgpt.com/c/6a97cdc6-1dc8-83ec-89e9-a523cafe7258 -->

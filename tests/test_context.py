@@ -269,6 +269,22 @@ def test_rebuild_is_deterministic_and_fts_matches(corpus) -> None:
     assert rows(db, "SELECT count(*) n FROM items WHERE native_id='2026-08-02-Bob Project.md'")[0]["n"] == 1
 
 
+def test_monthly_google_archives_preserve_records_and_locators(corpus) -> None:
+    home, config, db, _ = corpus
+    before = rows(db, "SELECT source,native_id,thread_id,extra FROM items WHERE source IN ('mail','calendar','gchat') ORDER BY source,native_id")
+    account = home / "Documents/data/me@example.com"
+    for source in ("mail", "calendar", "chat"):
+        (account / f"{source}.jsonl").rename(account / f"{source}-2026-08.jsonl")
+    jsonl(account / "mail-2026-09.jsonl", [{"id": "september", "time": "2026-09-01", "subject": "New month"}])
+    jsonl(account / "chat-spaces-2026-08.jsonl", [{"name": "spaces/ignored"}])
+    context.rebuild_database(db, config)
+    after = rows(db, "SELECT source,native_id,thread_id,extra FROM items WHERE source IN ('mail','calendar','gchat') AND native_id != 'september' ORDER BY source,native_id")
+    assert after == before
+    locators = rows(db, "SELECT locator FROM items WHERE source IN ('mail','calendar','gchat')")
+    assert len(locators) == len(before) + 1
+    assert all("-2026-" in row["locator"] and "#L" in row["locator"] for row in locators)
+
+
 def test_native_ids_metadata_actions_people_and_unique_edges(corpus) -> None:
     _, _, db, _ = corpus
     mail = rows(db, "SELECT native_id,thread_id FROM items WHERE source='mail' ORDER BY native_id")

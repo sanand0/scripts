@@ -193,6 +193,7 @@ else
   run_job "open-tabs" export_open_tabs || failures=$((failures + 1))
   run_unmetered_job "backupgoogle" "$UV" run /home/sanand/code/scripts/backupgoogle.py || failures=$((failures + 1))
   run_unmetered_job "backupgoogle-personal" "$UV" run /home/sanand/code/scripts/backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com || failures=$((failures + 1))
+  run_unmetered_job "backupgoogle-iitm" "$UV" run /home/sanand/code/scripts/backupgoogle.py --config-dir /home/sanand/.config/gws-anand@study.iitm.ac.in || failures=$((failures + 1))
   run_unmetered_job "backupmeet" "$UV" run /home/sanand/code/scripts/backupmeet.py --yes || failures=$((failures + 1))
   run_job "summary" "$UV" run /home/sanand/code/summary.py || failures=$((failures + 1))
   run_job "summarize-blog" "$UV" run /home/sanand/code/scripts/summarize.py blog || failures=$((failures + 1))

@@ -394,10 +394,13 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
         account_dirs = sorted(path for path in config.data.iterdir() if path.is_dir() and "@" in path.name)
     for account_dir in account_dirs:
         account = account_dir.name
-        for filename, source in (("mail.jsonl", "mail"), ("calendar.jsonl", "calendar"), ("chat.jsonl", "gchat")):
-            path = account_dir / filename
-            if not path.exists():
-                continue
+        paths = [
+            (path, source)
+            for stem, source in (("mail", "mail"), ("calendar", "calendar"), ("chat", "gchat"))
+            for path in sorted(account_dir.glob(f"{stem}-????-??.jsonl")) + [account_dir / f"{stem}.jsonl"]
+            if path.exists()
+        ]
+        for path, source in paths:
             for line_number, row in json_lines(path):
                 locator = f"{display_path(path, config.home)}#L{line_number}"
                 if source == "mail":

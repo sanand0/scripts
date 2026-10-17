@@ -315,11 +315,11 @@ def collect_calendar(start: dt.datetime, end: dt.datetime, account: str, *, conf
 
 
 def space_path(account_dir: Path) -> Path:
-    return account_dir / "chat-spaces.jsonl"
+    return Path.home() / ".cache/sanand-scripts/backupgoogle" / account_dir.name / "chat-spaces.jsonl"
 
 
 def user_path(account_dir: Path) -> Path:
-    return account_dir / "chat-users.jsonl"
+    return account_dir / f"chat-users-{dt.datetime.now(dt.UTC):%Y-%m}.jsonl"
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -331,7 +331,9 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = "".join(compact_json(row) + "\n" for row in rows)
-    path.write_text(text)
+    temporary = path.with_suffix(".jsonl.tmp")
+    temporary.write_text(text)
+    temporary.replace(path)
 
 
 def sort_time(row: dict[str, Any], key: str) -> float:
@@ -342,12 +344,50 @@ def sort_time(row: dict[str, Any], key: str) -> float:
         return 0
 
 
-def update_jsonl(path: Path, rows: list[dict[str, Any]], *, sort_key: str = "time") -> int:
-    existing = {row["id"]: row for row in load_jsonl(path) if row.get("id")}
-    for row in rows:
-        existing[row["id"]] = row
-    write_jsonl(path, sorted(existing.values(), key=lambda row: sort_time(row, sort_key), reverse=True))
-    return len(rows)
+def update_monthly(account_dir: Path, source: str, rows: list[dict[str, Any]]) -> list[Path]:
+    """Merge by native ID, moving updated records when their dates change.
+
+    Legacy files are retired after all monthly writes. On migration retries,
+    monthly records take precedence. Undated records use the legacy file's
+    modification month, or this month for new files.
+    """
+    legacy = account_dir / f"{source}.jsonl"
+    month = dt.datetime.fromtimestamp(legacy.stat().st_mtime, dt.UTC) if legacy.exists() else dt.datetime.now(dt.UTC)
+    previous = {path: load_jsonl(path) for path in sorted(account_dir.glob(f"{source}-????-??.jsonl"))}
+    key = "name" if source == "chat-spaces" else "id"
+    existing = {row[key]: row for row in load_jsonl(legacy)}
+    existing.update((row[key], row) for values in previous.values() for row in values)
+    existing.update((row[key], row) for row in rows)
+    grouped: dict[Path, list[dict[str, Any]]] = {}
+    for row in existing.values():
+        value = row.get("time") or row.get("lastActiveTime")
+        bucket = dt.date.fromisoformat(value[:10]).strftime("%Y-%m") if value else month.strftime("%Y-%m")
+        grouped.setdefault(account_dir / f"{source}-{bucket}.jsonl", []).append(row)
+    if not grouped and not previous:
+        grouped[account_dir / f"{source}-{month:%Y-%m}.jsonl"] = []
+    # Write destinations before removing old copies, so interrupted month moves
+    # can leave duplicates but cannot lose the only archived copy of a record.
+    for path, values in sorted(grouped.items()):
+        staged = {row[key]: row for row in previous.get(path, [])}
+        staged.update((row[key], row) for row in values)
+        values = sorted(staged.values(), key=lambda row: sort_time(row, "time"), reverse=True)
+        if path not in previous or values != previous[path]:
+            write_jsonl(path, values)
+        previous[path] = values
+    for path in sorted(previous.keys() | grouped.keys()):
+        values = sorted(grouped.get(path, []), key=lambda row: sort_time(row, "time"), reverse=True)
+        if path not in previous or values != previous[path]:
+            write_jsonl(path, values)
+    if legacy.exists():
+        legacy.unlink()
+    return sorted(previous.keys() | grouped.keys())
+
+
+def migrate_account(account_dir: Path) -> None:
+    for source in ("mail", "calendar", "chat", "chat-spaces", "chat-users"):
+        if (account_dir / f"{source}.jsonl").exists():
+            eprint(f"migrating: {account_dir.name}/{source}.jsonl")
+            update_monthly(account_dir, source, [])
 
 
 def normalize_space(space: dict[str, Any]) -> dict[str, Any]:
@@ -368,6 +408,7 @@ def collect_spaces(account_dir: Path, start: dt.datetime, *, config_dir: str, re
         spaces = load_jsonl(path)
     else:
         spaces = [normalize_space(space) for space in gws_items(["chat", "spaces", "list"], {"pageSize": 1000}, "spaces", config_dir=config_dir)]
+        update_monthly(account_dir, "chat-spaces", spaces)
         write_jsonl(path, sorted(spaces, key=lambda row: sort_time(row, "lastActiveTime"), reverse=True))
     return [space for space in spaces if parse_time(space.get("lastActiveTime") or space.get("createTime") or "1970-01-01T00:00:00Z") >= start]
 
@@ -383,7 +424,11 @@ def normalize_reactions(reactions: list[dict[str, Any]]) -> list[str]:
 
 
 def load_chat_users(account_dir: Path) -> dict[str, str]:
-    return {row["id"]: row.get("name", row["id"]) for row in load_jsonl(user_path(account_dir)) if row.get("id")}
+    return {
+        row["id"]: row.get("name", row["id"])
+        for path in sorted(account_dir.glob("chat-users-????-??.jsonl"))
+        for row in load_jsonl(path) if row.get("id")
+    }
 
 
 def write_chat_users(account_dir: Path, users: dict[str, str]) -> None:
@@ -459,12 +504,13 @@ def describe() -> dict[str, Any]:
     return {
         "name": "backupgoogle.py",
         "outputs": {
-            "chat": "~/Documents/data/{email}/chat.jsonl",
-            "calendar": "~/Documents/data/{email}/calendar.jsonl",
-            "mail": "~/Documents/data/{email}/mail.jsonl",
-            "chat_spaces": "~/Documents/data/{email}/chat-spaces.jsonl",
-            "chat_users": "~/Documents/data/{email}/chat-users.jsonl",
+            "chat": "~/Documents/data/{email}/chat-{YYYY-MM}.jsonl",
+            "calendar": "~/Documents/data/{email}/calendar-{YYYY-MM}.jsonl",
+            "mail": "~/Documents/data/{email}/mail-{YYYY-MM}.jsonl",
+            "chat_spaces": "~/Documents/data/{email}/chat-spaces-{YYYY-MM}.jsonl",
+            "chat_users": "~/Documents/data/{email}/chat-users-{YYYY-MM}.jsonl",
         },
+        "monthly_split": "Record date; spaces use lastActiveTime, undated user mappings use snapshot month.",
         "common_fields": ["time", "id"],
         "native_relationship_fields": {
             "mail": ["thread_id"],
@@ -502,6 +548,7 @@ def main(
     account_dir = out_root.expanduser() / safe_account(account)
     eprint(f"account: {account}")
     eprint(f"range: {start.isoformat()} to {end.isoformat()}")
+    migrate_account(account_dir)
 
     summaries = []
     collectors = {
@@ -523,10 +570,10 @@ def main(
             eprint(f"{source}: skipped ({summary['error']})")
             print(compact_json(summary) if format == "jsonl" else f"{source}: skipped ({summary['error']})")
             continue
-        count = update_jsonl(account_dir / f"{source}.jsonl", rows)
-        summary = {"source": source, "account": account, "rows_updated": count, "path": str(account_dir / f"{source}.jsonl")}
+        paths = update_monthly(account_dir, source, rows)
+        summary = {"source": source, "account": account, "rows_updated": len(rows), "paths": [str(path) for path in paths]}
         summaries.append(summary)
-        print(compact_json(summary) if format == "jsonl" else f"{source}: updated {count} rows -> {summary['path']}")
+        print(compact_json(summary) if format == "jsonl" else f"{source}: updated {len(rows)} rows -> {account_dir}/{source}-YYYY-MM.jsonl", flush=True)
 
 
 if __name__ == "__main__":
