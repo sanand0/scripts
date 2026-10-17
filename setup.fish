@@ -808,8 +808,9 @@ end
 
 # NVIDIA GPU encoding
 # Higher preset = better, slower compression (0=slowest, 8=fastest)
+# -readrate 3 limits GPU / CPU over-heating which can shut down my laptop. 16 Oct 2026: #TODO Review 2.5 to see if that works OK.
 # -cq 63 is the highest compression supported by AV1 NVENC (lower = larger file, higher quality)
-abbr --add videocompress ffmpeg -i input.mp4 -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq 55 -b:v 0 -spatial-aq 1 -temporal-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
+abbr --add videocompress ffmpeg -readrate 3 -i input.mp4 -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq 55 -b:v 0 -spatial-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
 # Older CPU encoding
 # Lower crf = higher quality (55 is poor, 45 is good)
 # abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
