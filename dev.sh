@@ -280,7 +280,7 @@ args=(
   # Share uv-managed Python installations too. (uv caches are shared above.)
   -v "$HOME/.local/share/uv:/home/vscode/.local/share/uv"
   # -v "$HOME/.ssh:/home/vscode/.ssh:ro"  # 🔴
-  -v "$HOME/code/scripts/agents:/home/vscode/code/scripts/agents:ro" # Agents code
+  -v "$HOME/code/scripts:/home/vscode/code/scripts:ro" # Scripts code
   -v "$HOME/Dropbox/scripts/llm.keys.json:/home/vscode/Dropbox/scripts/llm.keys.json:ro"
   -v "$HOME/Documents/data/agents:/home/vscode/Documents/data/agents" # Agents data
   "${font_mount_args[@]}"
