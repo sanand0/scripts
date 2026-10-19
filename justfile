@@ -7,7 +7,7 @@ playwright_revision := "1234"
 fastmcp := "3.4.7"
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-timestamp
+test: test-agentlog test-backup-chatgpt test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-timestamp
 
 # Run the agentlog tests.
 test-agentlog:
@@ -16,6 +16,10 @@ test-agentlog:
 # Run the backup observability tests.
 test-backup-observability:
     {{ pytest }} pytest -q tests/test_backup_observability.py
+
+# Run the ChatGPT backup integrity, revisions, title, and interruption tests.
+test-backup-chatgpt:
+    {{ pytest }} --with typer --with websockets pytest -q tests/test_backupchatgpt.py
 
 # Run the Google backup normalization and merge tests.
 test-backup-google:
