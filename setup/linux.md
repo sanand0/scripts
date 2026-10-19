@@ -369,6 +369,12 @@ espanso start
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
+# Install tailscale. Config: /var/lib/tailscale. Cache: /var/cache/tailscale
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+# To uninstall tailscale
+# sudo tailscale down; sudo systemctl disable --now tailscaled; sudo apt-get purge tailscale tailscale-archive-keyring
+
 # Install Zed
 # curl -f https://zed.dev/install.sh | sh
 

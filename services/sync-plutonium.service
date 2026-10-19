@@ -1,0 +1,13 @@
+[Unit]
+Description=Additive hourly sync of safe Documents folders to Plutonium
+Wants=network-online.target
+After=network-online.target
+OnFailure=timer-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/sanand/code/scripts/services/sync-plutonium.sh
+WorkingDirectory=/home/sanand
+TimeoutStartSec=0
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin
+Environment=HOME=/home/sanand

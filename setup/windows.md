@@ -139,6 +139,53 @@ C:\cygwin\bin\ssh.exe -T git@github.com
 gh auth login
 ```
 
+Set up Plutonium as an SSH server via Tailscale. After logging into Tailscale as `root.node@gmail.com`, run as Admin PowerShell:
+
+```powershell
+winget install --exact --id Tailscale.Tailscale --source winget
+# Run tailscale
+
+# This can be slow. Download from https://github.com/PowerShell/Win32-OpenSSH/releases into C:\Program Files\OpenSSH. Run install-sshd.ps1 as Admin PowerShell.
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+
+Set-Service -Name sshd -StartupType Automatic
+
+$pub = (Get-Content 'C:\Dropbox\scripts\.ssh\id_rsa.pub' -Raw).Trim()
+$auth = "$env:ProgramData\ssh\administrators_authorized_keys"
+
+if (!(Test-Path $auth)) {
+    Set-Content $auth $pub -Encoding ascii
+} elseif (!((Get-Content $auth) -contains $pub)) {
+    Add-Content $auth $pub -Encoding ascii
+}
+
+# Restrict permissions to SYSTEM and Administrators
+icacls.exe $auth /inheritance:r `
+  /grant:r '*S-1-5-32-544:F' 'SYSTEM:F'
+
+icacls.exe $auth
+
+# Permit Graphene
+New-NetFirewallRule `
+  -Name 'SSH-Graphene' `
+  -DisplayName 'SSH from Graphene' `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 22 `
+  -RemoteAddress '100.120.62.1' `
+  -Action Allow
+
+# Start SSH
+Start-Service sshd
+
+# Verify
+Get-Service sshd
+Get-NetTCPConnection -LocalPort 22 -State Listen
+
+# Display server identity for verification on Graphene
+ssh-keygen -lf "$env:ProgramData\ssh\ssh_host_ed25519_key.pub"
+```
+
 ## CLI tools
 
 ```powershell

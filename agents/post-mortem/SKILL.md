@@ -19,7 +19,7 @@ For each, document for the user (who may forget the context later), in 1 line ea
 - This ... (what happened, with practical impact)
 - Instead, ... (what generalizable change should the USER make to the prompts, skills, tools, environment, ... to prevent similar issues)
 
-Write into `~/Documents/data/agents/post-mortem-${date -u -Iseconds}.md`.
+Write into `~/Documents/data/agents/post-mortem-${date -u +%Y%m%dT%H%M%SZ}.md`. This UTC timestamp format is Windows/NTFS-safe (no colons) and sorts chronologically.
 
 Example:
 

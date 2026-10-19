@@ -17,7 +17,7 @@ safe_feed_name="$(
   python3 - "$feed_name" <<'PY'
 import re, sys
 name = sys.argv[1].strip()
-name = re.sub(r"[/\\\0\r\n\t]", "_", name)
+name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
 name = re.sub(r"\s+", " ", name)
 name = name.strip(" .")
 print(name or "unnamed-feed")
@@ -28,6 +28,47 @@ outdir="$base/$safe_feed_name"
 mkdir -p "$outdir"
 
 mise x github:Y2Z/monolith@2.10.1 -- monolith-gnu -I -e -q "$url" -o "$outdir/%timestamp% %title%.html"
+
+# Monolith interpolates article titles into filenames; sanitize after download.
+# Stable hash suffixes avoid overwriting old articles if sanitized names collide.
+python3 - "$outdir" <<'PY_RSS_NAMES'
+import hashlib, re, sys
+from pathlib import Path
+
+folder = Path(sys.argv[1])
+def portable(name: str) -> str:
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).rstrip(" .") or "_"
+
+occupied = {p.name.casefold() for p in folder.iterdir()}
+for path in sorted(folder.iterdir()):
+    if not path.is_file() or path.is_symlink():
+        continue
+    candidate = portable(path.name)
+    if candidate == path.name:
+        continue
+    occupied.discard(path.name.casefold())
+    stem, ext = Path(candidate).stem, Path(candidate).suffix
+    name_hash = hashlib.sha256(path.name.encode()).hexdigest()[:10]
+    content_hash = hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+    alternatives = [
+        candidate,
+        f"{stem} [{name_hash}]{ext}",
+        f"{stem} [{name_hash}-{content_hash}]{ext}",
+    ]
+    for name in alternatives:
+        target = folder / name
+        if name.casefold() not in occupied:
+            path.rename(target)
+            occupied.add(name.casefold())
+            break
+        # Monolith can fetch the same feed item again; keep just one
+        # verified identical copy rather than growing duplicate archives.
+        if target.exists() and target.read_bytes() == path.read_bytes():
+            path.unlink()
+            break
+    else:
+        raise RuntimeError(f"Cannot safely archive duplicate filename {path}")
+PY_RSS_NAMES
 
 # Set the feed folder mtime to this item's updated time, if feed2exec supplied it.
 if [[ -n "$item_updated" && "$item_updated" != "None" ]]; then

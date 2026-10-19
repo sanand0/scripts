@@ -1,6 +1,6 @@
 ---
 name: anand-laptops
-description: Locate and use Anand's files, projects, notes, archives and agent history on his laptops - graphene (Linux) and Plutonium (Windows, usually online) - which share one ~/ layout. Use before reading or searching his files via Remote Desktop Commander, LocalMCP2 or a local shell.
+description: Locate and use Anand's files, projects, notes, archives and agent history on his laptops - graphene (Linux) and Plutonium (Windows, usually online) - which share one ~/ layout. Use before reading or searching his files via LocalMCP2, Remote Desktop Commander or a local shell.
 ---
 
 # Machines
@@ -9,8 +9,8 @@ description: Locate and use Anand's files, projects, notes, archives and agent h
 - **Use Plutonium** (Windows) when graphene is offline, e.g. while Anand travels.
   - It has the same `~/...` layout, but its `~/Documents` and `~/r2` may be missing or older.
   - Name the sources you couldn't reach. Unreachable is not the same as absent.
+- Prefer **LocalMCP2** - which reaches only the graphene folders it was started with. Its `~` is `/home/vscode`, aliased to `/home/sanand`. A missing path there may just be unmounted.
 - **Remote Desktop Commander** reaches both machines, so pick the device explicitly.
-- **LocalMCP2** reaches only the graphene folders it was started with. Its `~` is `/home/vscode`, aliased to `/home/sanand`. A missing path there may just be unmounted.
 - **Paths:**
   - When passing a path to a program, write `"$HOME/..."`. That works in bash and in PowerShell; Windows PowerShell 5.1 doesn't expand `~` for programs.
   - Desktop Commander's file tools accept `~/...` on both machines.

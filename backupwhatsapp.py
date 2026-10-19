@@ -597,11 +597,11 @@ def parse_chat_list_time(value: str) -> dt.datetime | None:
 
 
 def safe_name(value: str, fallback: str = "untitled", limit: int = 180) -> str:
-    name = re.sub(r"[/\\:\0-\x1f]+", " ", value)
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", value)
     name = re.sub(r"\s+", " ", name).strip(" .")
     if not name:
         name = fallback
-    return name[:limit]
+    return name[:limit].rstrip(" .") or fallback
 
 
 def filename_for(title: str, conversation_id: str = "") -> Path:

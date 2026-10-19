@@ -176,7 +176,7 @@ def json_compact(value: dict[str, Any]) -> str:
 
 
 def clean(text: str) -> str:
-    text = re.sub(r"[/\r\n\t]", " ", text)
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", text)
     text = re.sub(r"[\x00-\x1f]", "", text)
     return re.sub(r"\s+", " ", text).strip(" .")
 

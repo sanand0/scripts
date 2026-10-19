@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync safe Documents folders to Plutonium approximately hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=5m
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target
