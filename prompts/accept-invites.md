@@ -19,3 +19,24 @@ I moved the script to ~/code/scripts/accept-invites and have been running it. I'
 So you get the idea, right? I'm looking for a synced end-state. Implement this.
 
 BTW, if you think Python is better than a shell script for this, feel free. But if you think a shell script is better, stay with it.
+
+--- <!-- 19 Oct 2026 -->
+
+I got the following results:
+
+accept-invites: accepting in root: AIPL talk story [2240b1ot3u6a581ilshtl2kun6]
+accept-invites: accepting in root: backupchatgpt.py [2e6auruhaqk3ve81krmg19127a]
+accept-invites: accepting in root: Plutonium sync [79gadutcr40h99apir0ql4t6g1]
+accept-invites: trashing 4 root invitation notifications
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a153348e0b7c546 (4kj5ain2vi2th2rhs2g44urevh@google.com)
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a152d8372474d3c (4uf79mjvi5h9o97f3hkbfis8k4@google.com)
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a152d6ac1e1d408 (40md4id60gd53aa725le12eifv@google.com)
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a152d648e633282 (0nj9rb28s41r22c7ncgj9b2n4v@google.com)
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a14dd5145813d71 (1qsctlfqcnk5pljgqnmuiiddh4@google.com)
+accept-invites: left unprocessed: root: no active organizer event for invitation 1a14dd1c8755164e (040000008200E00074C5B7101A82E00800000000B0CC5E2C755DDD01000000000000000010000000697C03F02A5C2A43B329361D7330D627)
+accept-invites: done: 3 RSVPs, 0 restored copies, 4 invitation notifications, 0 acceptance notifications; 6 unprocessed invitations
+
+A few suggestions:
+
+- When mentioning what's unprocessed, mention the email subject (like in what's being accepted).
+- I have no problem accepting all of these. Take a closer look at these invites, why they weren't accepted, what a sensible approach is that will accept these emails, implement and test
