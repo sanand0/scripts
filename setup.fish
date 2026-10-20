@@ -88,6 +88,9 @@ abbr --add temperature 'awk \'{printf "%.1f°C\n", $1/1000}\' /sys/class/thermal
 # Print GPU temperature
 abbr --add temperature-gpu 'nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits -l'
 
+# Adjust mic volume. mic-volume 2.0 increases volume by 2.0x, mic-volume 1.0 is default.
+abbr --add mic-volume 'wpctl set-volume @DEFAULT_AUDIO_SOURCE@'
+
 # 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
 abbr --add 7z 7zz
 
