@@ -84,7 +84,9 @@ abbr --add http 'uvx httpie'
 abbr --add ncdu gdu
 
 # Print CPU temperature
-abbr --add temperature 'awk \'{printf "%.1f°C\n", $1/1000}\' /sys/class/thermal/thermal_zone0/temp'
+abbr --add temperature 'awk \'{printf "%.1f°C\n", $1/1000}\' /sys/class/thermal/thermal_zone0/temp' # ' <-- extra quote in comment for VS Code syntax highlighting.
+# Print GPU temperature
+abbr --add temperature-gpu 'nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits -l'
 
 # 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
 abbr --add 7z 7zz
@@ -835,14 +837,76 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         $out
 end
 
-# NVIDIA GPU encoding
-# Higher preset = better, slower compression (0=slowest, 8=fastest)
-# -readrate 3 limits GPU / CPU over-heating which can shut down my laptop. 16 Oct 2026: #TODO Review 2.5 to see if that works OK.
-# -cq 63 is the highest compression supported by AV1 NVENC (lower = larger file, higher quality)
-abbr --add videocompress ffmpeg -readrate 3 -i input.mp4 -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq 55 -b:v 0 -spatial-aq 1 -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
-# Older CPU encoding
-# Lower crf = higher quality (55 is poor, 45 is good)
-# abbr --add videocompress ffmpeg -i input.mp4 -c:v libsvtav1 -crf 55 -preset 6 -pix_fmt yuv420p -c:a libopus -b:a 24k -vbr on -compression_level 10 output.webm
+# Background AV1 NVENC compression: pause at 79°C, resume below 65°C.
+# Default CQ 55 (lower = better quality); keep original -readrate 3 and codec options.
+# Usage: videocompress [-q|--quality 45] "/path/to/File Name.mp4" -> file-name.webm
+function videocompress --description "Background AV1 compression with GPU thermal protection"
+    argparse 'q/quality=!_validate_int' 'h/help' -- $argv; or return 2
+    if set -q _flag_help
+        echo 'Usage: videocompress [-q|--quality 1..63] input-video'
+        return
+    end
+    if test (count $argv) -ne 1; or not test -f "$argv[1]"
+        echo 'videocompress: supply one existing input video' >&2
+        return 2
+    end
+    set -l cq 55
+    set -q _flag_quality; and set cq $_flag_quality
+    if test $cq -lt 1 -o $cq -gt 63
+        echo 'videocompress: quality must be 1..63' >&2
+        return 2
+    end
+    if not command -sq ffmpeg; or not command -sq nvidia-smi
+        echo 'videocompress: ffmpeg and nvidia-smi are required' >&2
+        return 1
+    end
+    set -l temp (nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -n 1 | string trim)
+    if not string match -qr '^[0-9]+$' -- "$temp"
+        echo 'videocompress: cannot read GPU temperature' >&2
+        return 1
+    end
+
+    set -l input (realpath -- "$argv[1]")
+    set -l slug (path basename -- "$input" | string replace -r '\.[^.]+$' '' | string lower | string replace -ra '[^\p{L}\p{N}]+' '-' | string trim -c '-')
+    set -l output (path dirname -- "$input")/$slug.webm
+    if test -z "$slug" -o -e "$output"
+        echo "videocompress: invalid filename or output already exists: $output" >&2
+        return 1
+    end
+    mkdir -p "$HOME/.cache/videocompress"; or return 1
+    set -l log (mktemp "$HOME/.cache/videocompress/videocompress.XXXXXXXX.log"); or return 1
+
+    # One detached supervisor monitors its own FFmpeg child and cleans up on exit.
+    nohup bash -c '
+        input=$1 output=$2 cq=$3
+        tmp="$output.partial-$$.webm"
+        ffmpeg -nostdin -n -readrate 3 -i "$input" \
+            -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq "$cq" -b:v 0 -spatial-aq 1 \
+            -c:a libopus -b:a 24k -vbr on -compression_level 10 "$tmp" &
+        pid=$!
+        trap '\''kill -CONT "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null; rm -f "$tmp"'\'' EXIT
+        paused=0
+        while kill -0 "$pid" 2>/dev/null; do
+            temp=$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d "[:space:]")
+            if [[ $temp =~ ^[0-9]+$ ]]; then
+                if (( temp >= 79 && !paused )); then
+                    kill -STOP "$pid" && paused=1 && echo "Paused at $temp°C"
+                elif (( temp < 65 && paused )); then
+                    kill -CONT "$pid" && paused=0 && echo "Resumed at $temp°C"
+                fi
+            elif (( !paused )); then
+                kill -STOP "$pid" && paused=1 && echo "Paused: temperature unavailable"
+            fi
+            sleep 1
+        done
+        wait "$pid" || { echo "FFmpeg failed" >&2; exit 1; }
+        ln -- "$tmp" "$output" && echo "Complete: $output"
+    ' videocompress "$input" "$output" "$cq" >"$log" 2>&1 </dev/null &
+    set -l pid $last_pid
+    disown $pid
+    echo "Started videocompress (PID $pid): $output"
+    echo "Log: $log"
+end
 
 # https://yazi-rs.github.io/docs/quick-start
 function y --description "Run yazi to change working directory based on project context"
