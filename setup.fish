@@ -762,6 +762,35 @@ function youtube-subtitles --description "downloads subtitles from YouTube video
     curl -s "$(uvx --with mutagen yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
 end
 
+# Extract the first embedded subtitle track, retaining speaker names in the text.
+# Usage: subtitles-srt video.webm -> video.srt
+function subtitles-srt --description "Extract embedded subtitles (with speaker names) to .srt"
+    if test (count $argv) -ne 1
+        echo "Usage: subtitles-srt input-video" >&2
+        return 2
+    end
+    set -l output (path change-extension .srt -- "$argv[1]")
+    if test -e "$output"
+        echo "Skipping $argv[1] -> $output (already exists)"
+        return
+    end
+    ffmpeg -hide_banner -stats -v warning -i "$argv[1]" -map 0:s:0 -c:s srt "$output"
+end
+
+# Usage: subtitles-vtt video.webm -> video.vtt
+function subtitles-vtt --description "Extract embedded subtitles (with speaker names) to .vtt"
+    if test (count $argv) -ne 1
+        echo "Usage: subtitles-vtt input-video" >&2
+        return 2
+    end
+    set -l output (path change-extension .vtt -- "$argv[1]")
+    if test -e "$output"
+        echo "Skipping $argv[1] -> $output (already exists)"
+        return
+    end
+    ffmpeg -hide_banner -stats -v warning -i "$argv[1]" -map 0:s:0 -c:s webvtt "$output"
+end
+
 # Convert file to Opus. (libopus has no GPU encoder.)
 function opus --description "opus *.mp4 converts it to *.opus (voice quality)"
     for file in $argv
