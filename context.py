@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import time
 from collections import defaultdict
 from collections.abc import Iterable
@@ -1068,7 +1069,13 @@ def describe() -> dict[str, Any]:
 
 
 def emit(value: Any) -> None:
-    typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
+    text = json.dumps(value, ensure_ascii=False, indent=2)
+    try:
+        text.encode(sys.stdout.encoding or "utf-8")
+    except UnicodeEncodeError:
+        # Windows consoles may use cp1252; ASCII escapes keep JSON lossless.
+        text = json.dumps(value, ensure_ascii=True, indent=2)
+    typer.echo(text)
 
 
 @app.callback(invoke_without_command=True)
