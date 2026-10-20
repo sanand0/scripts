@@ -33,13 +33,11 @@ standalone services, and can run a health check.
   `ISO-8601 timestamp<TAB>path-or-filename<TAB>tool` (`vlc`).
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
-- `sync-plutonium.*`: hourly additive rsync over Tailscale/SSH from
-  `~/Documents` on Graphene to `C:\Documents` on Plutonium. It revisits
-  the 24 originally NTFS-safe top-level directories, adding new files only.
-  It **never deletes or overwrites** files on either machine. Directories with
-  new invalid Windows names, case collisions or symlinks are skipped and
-  reported as errors until reconciled. Nine other top-level directories remain
-  excluded pending Windows-side reconciliation and explicit inclusion.
+- `sync-plutonium.*`: hourly, one-way rsync of the entire
+  `~/Documents/` on Graphene to `C:\Documents\` on Plutonium.
+  New and changed files are copied from Graphene; **Plutonium-only files are
+  never deleted**. The source is checked for Windows-invalid names and
+  case collisions; symlinks to files within Documents are copied as files.
 - `*.{service,timer}.disabled`: reference units that are intentionally not
   installed by `setup.sh`. This includes the retired
   `consolidate-transcripts-daily.*` units.
@@ -75,27 +73,18 @@ file aside and re-run setup so the repo version is linked.
 
 ## Hourly Documents Sync
 
-Run the sync manually with `./sync-plutonium.sh` (or preview with
-`./sync-plutonium.sh --dry-run`). The systemd timer runs approximately
-once per hour and catches up after Graphene resumes or the user logs in.
+`./sync-plutonium.sh --dry-run` syncs ~/Documents/ from graphene to Plutonium via rsync/SSH on Tailscale.
+Plutonium files are updated, but never deleted.
+
+The systemd timer runs hourly after Graphene resumes or the user logs in.
 Concurrent runs are prevented by `flock`.
 
-Logs: `~/.cache/sanand-scripts/sync-plutonium/run.log`, plus
-`journalctl --user -u sync-plutonium.service`. The original one-time
-transfer log and completion markers are retained separately under
-`~/.local/state/documents-safe-transfer/` for historical reference.
-Failure diagnostics use the shared `timer-failure-notify@.service`.
+Logs: `~/.cache/sanand-scripts/sync-plutonium/run.log`
+Logs: `journalctl --user -u sync-plutonium.service`
+Failure logs use the shared `timer-failure-notify@.service`.
 
 Only unmetered connections are used by default (same as daily-activities);
 set `SYNC_DOCUMENTS_ALLOW_METERED=1` for an intentional one-off override.
-The receiver uses Windows OpenSSH and Cygwin rsync; no rsync daemon needed.
-The verified SSH server ED25519 fingerprint is pinned in the script.
-
-**Important:** This is *additive backup*, not two-way sync or mirroring:
-new source files are copied, while modifications to already-existing
-destination files and Windows-only entries are retained unchanged.
-Do not enable `--delete` or change the conflict policy until the pending
-NTFS filenames and destination-only entries have been reconciled.
 
 ## VLC Playback History
 

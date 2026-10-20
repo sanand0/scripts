@@ -1,5 +1,5 @@
 [Unit]
-Description=Additive hourly sync of safe Documents folders to Plutonium
+Description=One-way hourly Documents sync to Plutonium
 Wants=network-online.target
 After=network-online.target
 OnFailure=timer-failure-notify@%n.service
