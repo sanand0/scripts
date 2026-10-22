@@ -193,7 +193,7 @@ abbr --add skilllist "ug ^description ~/code/blog/pages/skills/*/SKILL.md ~/code
 abbr --add qwen3.6 'llama serve -hf ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M --ctx-size 65536 --n-gpu-layers all --n-cpu-moe 35 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1'
 
 # When the last song VLC played is truncated, I copy it into my list of songs to download later.
-abbr --add lastsong 'tail -2 ~/Music/music-history.tsv | head -1 | cut -f2 | xclip -selection clipboard'
+abbr --add lastsong 'ug -v / ~/Music/music-history.tsv | tail -2 | head -1 | cut -f2 | xclip -selection clipboard'
 
 # Take a screenshot after 3 seconds
 abbr --add screenshot-delay 'flameshot gui --delay 3000'
@@ -242,22 +242,12 @@ abbr --add hetznerbackup rsync -avzP \
 # Clipboard Utilities
 # -----------------------------------------------
 
-# Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
-abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
-
 # Copy to clipboard. Typical usage: command | clip
 abbr --add clip 'xclip -selection clipboard'
-
-# Convert clipboard to Markdown rich text. Useful to copy Markdown and paste into GMail.
-abbr --add md2rtf 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -t text/html -i'
-
-# Convert clipboard to Markdown HTML. Useful to copy Markdown and paste into code.
-abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -i'
 
 # LLM Utilities
 # -----------------------------------------------
 
-abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
 abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
@@ -490,8 +480,6 @@ abbr --add youtube-audio 'uvx --with mutagen yt-dlp --remote-components ejs:gith
 abbr --add youtube-mp3 'uvx --with mutagen yt-dlp --remote-components ejs:github --extract-audio --audio-format mp3 --audio-quality 5'
 abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 
-abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
-abbr --add transcribe 'llm -m gemini-3.1-pro-preview -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 
 function avif --description "Convert images to AVIF with optional quality, speed, width, and height"

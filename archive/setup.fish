@@ -1,5 +1,19 @@
 # Archived fish functions from setup.fish
 
+# Archived: 22 Oct 2026. I don't use shorten - I use Google.
+abbr --add shorten 'llm --system "Suggest 5 alternatives that a VERY concise, with fewer words"'
+# Archived: 22 Oct 2026. Replaced transcribe with ~/code/scripts/transcribe.
+abbr --add transcribe 'llm -m gemini-3.1-pro-preview -s "Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Begin each paragraph with a timestamp. Format as Markdown. Use *emphasis* or **bold** for key points. Prefix audience questions with Question: ... and answers with Answer: ..." -a'
+# Archived: 22 Oct 2026. I use the `-claude` keyboard shortcut.
+abbr --add claude-yolo 'npx -y @anthropic-ai/claude-code --dangerously-skip-permissions'
+
+# Archived: 22 Oct 2026. I use rofi-clip.sh now. Convert unicode characters to ASCII. Useful to strip em-dashes, smart quotes, etc. from ChatGPT
+abbr --add ascii 'xclip -selection clipboard -o | uv run --with anyascii python -c "import sys, anyascii; sys.stdout.write(anyascii.anyascii(sys.stdin.read()))" | xclip -selection clipboard'
+# Archived: 22 Oct 2026. I use rofi-clip.sh now. Convert clipboard to Markdown rich text. Useful to copy Markdown and paste into GMail.
+abbr --add md2rtf 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -t text/html -i'
+# Archived: 22 Oct 2026. I use rofi-clip.sh now. Convert clipboard to Markdown HTML. Useful to copy Markdown and paste into code.
+abbr --add md2html 'xclip -sel clip -o | pandoc -f gfm-gfm_auto_identifiers+bracketed_spans+fenced_divs+subscript+superscript+hard_line_breaks -t html --syntax-highlighting=none --wrap=none | xclip -sel clip -i'
+
 # Archived: 24 Aug 2026. I no longer use these tools and the .venv directories are large.
 mkdir -p ~/apps/openwebui; cd ~/apps/openwebui; uv venv --python 3.11; source .venv/bin/activate.fish; uv pip install open-webui
 mkdir -p ~/apps/whisper-ctranslate2; cd ~/apps/whisper-ctranslate2; uv venv --python 3.11; source .venv/bin/activate.fish; UV_TORCH_BACKEND=auto uv pip install whisper-ctranslate2 nvidia-cublas-cu12 nvidia-cudnn-cu12==9.1.1.17 nvidia-cuda-runtime-cu12==12.4.127 librosa soundfile torch torchaudio
