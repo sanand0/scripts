@@ -275,6 +275,13 @@ def write_fake_google_prices(prices_path: Path) -> Path:
                 "vendor": "google",
                 "models": [
                     {
+                        "id": "gemini-3.8-flash",
+                        "name": "Gemini 3.8 Flash",
+                        "price_history": [
+                            {"input": 2.0, "input_audio": 2.0, "output": 12.0, "input_cached": None}
+                        ],
+                    },
+                    {
                         "id": "gemini-3-flash-preview",
                         "name": "Gemini 3 Flash Preview",
                         "price_history": [
@@ -695,7 +702,7 @@ def test_script_creates_transcripts_for_multiple_audio_files(tmp_path: Path) -> 
     call_a = (output_dir / "call-a.md").read_text(encoding="utf-8")
     assert call_a.startswith(
         "---\n"
-        "model: gemini-3-flash-preview\n"
+        "model: gemini-3.8-flash\n"
         "cost: 0.000800\n"
         "prompt: |-\n"
         "  Use this exact prompt\n"
@@ -713,7 +720,7 @@ def test_script_creates_transcripts_for_multiple_audio_files(tmp_path: Path) -> 
     assert "Already transcribed: call-a.md" in second.stdout
 
 
-def test_script_stops_after_first_failed_audio(tmp_path: Path) -> None:
+def test_script_continues_after_failed_audio(tmp_path: Path) -> None:
     script_path = Path(__file__).resolve().parents[1] / "call"
     input_dir = tmp_path / "calls"
     output_dir = tmp_path / "transcripts"
@@ -758,13 +765,15 @@ def test_script_stops_after_first_failed_audio(tmp_path: Path) -> None:
     assert "forced error for call-b.opus" in result.stderr
     assert (output_dir / "call-a.md").exists()
     assert "transcription_status: incomplete" in (output_dir / "call-b.md").read_text()
-    assert not (output_dir / "call-c.md").exists()
+    assert (output_dir / "call-c.md").exists()
+    assert "transcription_status: complete" in (output_dir / "call-c.md").read_text()
+    assert "FAILED 1/3 recording(s):" in result.stderr
     audio_requests = [
         Path(line.split("\t", 1)[1]).name
         for line in log_path.read_text(encoding="utf-8").splitlines()
         if line.startswith("AUDIO\t")
     ]
-    assert audio_requests == ["call-a.opus", "call-b.opus"]
+    assert audio_requests == ["call-a.opus", "call-b.opus", "call-c.opus"]
 
 
 def test_script_looks_up_audio_by_stem_in_default_input_dir(tmp_path: Path) -> None:
@@ -2301,6 +2310,17 @@ def test_run_logs_argument_errors_and_dry_run_without_api(revision_case):
     assert 'No such option' in (runs[0] / 'console.log').read_text()
     assert 'dry-run' in (runs[1] / 'console.log').read_text()
     assert not (c.root / 'requests.log').exists()
+
+
+def test_default_model_and_thinking_level(monkeypatch):
+    module = load_module()
+    monkeypatch.delenv("TRANSCRIBE_CALLS_THINKING", raising=False)
+    assert module.DEFAULT_MODEL == "gemini-3.8-flash"
+    assert module.generation_settings(module.DEFAULT_MODEL) == {"thinking_config": {"thinking_level": "low"}}
+    monkeypatch.setenv("TRANSCRIBE_CALLS_THINKING", "default")
+    assert module.generation_settings(module.DEFAULT_MODEL) == {}
+    monkeypatch.setenv("TRANSCRIBE_CALLS_THINKING", "high")
+    assert module.generation_settings(module.DEFAULT_MODEL) == {"thinking_config": {"thinking_level": "high"}}
 
 
 def test_thinking_config_invalidates_cache_and_reaches_sdk(revision_case):

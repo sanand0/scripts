@@ -1,0 +1,195 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["google-genai>=1.67.0", "python-dotenv>=1.0.1", "typer>=0.12"]
+# ///
+"""Transcribe audio files to adjacent .md files using Gemini.
+
+Examples:
+    transcribe file1.mp3 /path/to/file2.opus
+    transcribe meeting.opus --prompt "Transcribe correcting basic spelling and grammar"
+    transcribe meeting.opus --model gemini-3.8-flash --force
+    transcribe meeting.opus | cut -f1 | xargs -r cat | moor
+
+WebM files are losslessly remuxed to Ogg Opus using ffmpeg before upload.
+"""
+
+import os
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import typer
+
+DEFAULT_MODEL = "gemini-3.8-flash"
+# Gemini API standard paid-tier USD per million tokens, as of October 2026.
+RATES = {"gemini-3.8-flash": (0.75, 3.75, 0.075)}  # input, output incl. thinking, cached input
+app = typer.Typer(add_completion=False, help=__doc__)
+
+
+@dataclass(frozen=True)
+class Transcript:
+    text: str
+    cost_usd: float | None
+    thinking: str
+
+
+class EmptyTranscript(RuntimeError):
+    def __init__(self, message: str, cost_usd: float | None, thinking: str):
+        super().__init__(message)
+        self.cost_usd = cost_usd
+        self.thinking = thinking
+
+
+def estimate_cost(usage, model: str) -> float | None:
+    """Estimate standard API charges, including paid thinking and empty responses."""
+    if usage is None:
+        return None
+    prompt = getattr(usage, "prompt_token_count", None)
+    total = getattr(usage, "total_token_count", None)
+    if prompt is None or total is None or total < prompt:
+        return None
+    cached = getattr(usage, "cached_content_token_count", None) or 0
+    if model in RATES:
+        input_rate, output_rate, cached_rate = RATES[model]
+        return ((prompt - cached) * input_rate + cached * cached_rate + (total - prompt) * output_rate) / 1_000_000
+    if model == "gemini-3-flash-preview":
+        # Legacy Flash charges audio and text input at different rates.
+        def audio_tokens(details):
+            return sum((item.token_count or 0) for item in (details or [])
+                       if str(getattr(item.modality, "name", item.modality)).upper().endswith("AUDIO"))
+
+        details = getattr(usage, "prompt_tokens_details", None)
+        if not details:
+            return None  # Do not guess the audio share of mixed input.
+        audio = audio_tokens(details)
+        cached_audio = audio_tokens(getattr(usage, "cache_tokens_details", None))
+        return ((audio - cached_audio) * 1.00 + (prompt - audio - cached + cached_audio) * 0.50
+                + cached_audio * 0.10 + (cached - cached_audio) * 0.05
+                + (total - prompt) * 3.00) / 1_000_000
+    return None
+
+
+def format_cost(cost: float | None) -> str:
+    return "unknown" if cost is None else f"${cost:.6f}"
+
+
+def build_client():
+    """Use the same API key lookup as call: environment, current .env, then script .env."""
+    from dotenv import dotenv_values, load_dotenv
+    from google import genai
+
+    load_dotenv(dotenv_path=Path.cwd() / ".env")
+    if not os.environ.get("GEMINI_API_KEY"):
+        key = dotenv_values(Path(__file__).resolve().parent / ".env").get("GEMINI_API_KEY")
+        if key:
+            os.environ["GEMINI_API_KEY"] = key
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise RuntimeError("GEMINI_API_KEY is not set (environment, current .env, or script .env).")
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+
+def wait_for_file_active(client, uploaded, timeout: float = 120, interval: float = 2):
+    """Wait for Gemini's asynchronous file processing before asking the model."""
+    deadline = time.monotonic() + timeout
+    while True:
+        state = getattr(uploaded.state, "name", uploaded.state)
+        if state == "ACTIVE":
+            return uploaded
+        if state == "FAILED":
+            raise RuntimeError(f"Gemini could not process file {uploaded.name}: {uploaded.error}")
+        if state not in (None, "PROCESSING", "STATE_UNSPECIFIED"):
+            raise RuntimeError(f"Unexpected Gemini file state {state}: {uploaded.name}")
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Gemini file {uploaded.name} did not become ACTIVE within {timeout:g}s")
+        time.sleep(min(interval, max(0, deadline - time.monotonic())))
+        uploaded = client.files.get(name=uploaded.name)
+
+
+def transcribe_file(client, audio: Path, model: str, prompt: str) -> Transcript:
+    from google import genai
+
+    with tempfile.TemporaryDirectory(prefix="transcribe-") as temporary:
+        source = audio
+        if audio.suffix.lower() == ".webm":
+            # Browser-recorded WebM can have headers Gemini's file processor rejects.
+            # Repackage Opus losslessly; leave the original recording untouched.
+            source = Path(temporary) / f"{audio.stem}.opus"
+            result = subprocess.run(
+                ["ffmpeg", "-nostdin", "-hide_banner", "-v", "error", "-y", "-i", str(audio),
+                 "-map", "0:a:0", "-c:a", "copy", "-f", "ogg", str(source)],
+                capture_output=True, text=True,
+            )
+            if result.returncode:
+                raise RuntimeError(f"Cannot remux WebM audio: {result.stderr.strip()}")
+        uploaded = client.files.upload(file=source)
+    uploaded = wait_for_file_active(client, uploaded)
+    costs: list[float | None] = []
+    levels = ("low", "medium", "high")
+    for index, level in enumerate(levels):
+        chat = client.chats.create(
+            model=model,
+            config=genai.types.GenerateContentConfig(
+                system_instruction=prompt,
+                thinking_config=genai.types.ThinkingConfig(thinking_level=level),
+            ),
+        )
+        response = chat.send_message([uploaded])
+        costs.append(estimate_cost(response.usage_metadata, model))
+        total_cost = sum(costs) if all(cost is not None for cost in costs) else None
+        text = (response.text or "").strip()
+        if text:
+            return Transcript(text + "\n", total_cost, "+".join(levels[:index + 1]))
+        feedback = getattr(response, "prompt_feedback", None)
+        block = getattr(getattr(feedback, "block_reason", None), "name", None)
+        finish = [str(candidate.finish_reason) for candidate in (response.candidates or [])]
+        reason = f"block_reason={block or 'none'}, finish={finish or 'no candidates'}"
+        if block in {"SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"} or any(
+            "SAFETY" in item or "PROHIBITED_CONTENT" in item for item in finish
+        ):
+            raise EmptyTranscript(f"Gemini blocked the transcription ({reason})", total_cost, level)
+        if index < len(levels) - 1:
+            typer.echo(f"RETRY {audio}: empty response ({reason}); using {levels[index + 1]} thinking", err=True)
+        else:
+            raise EmptyTranscript(f"Gemini returned an empty transcript after retries ({reason})", total_cost, "+".join(levels))
+    raise AssertionError("Unreachable")
+
+
+@app.command()
+def main(
+    audio: list[Path] = typer.Argument(..., help="One or more audio file paths."),
+    prompt: str = typer.Option("Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Use *emphasis* or **bold** for key points.", "--prompt", help="Transcription instruction."),
+    model: str = typer.Option(DEFAULT_MODEL, "--model", envvar="TRANSCRIBE_CALLS_MODEL", help="Gemini model."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing .md transcript."),
+) -> None:
+    """Write each transcript beside its audio file, skipping existing output unless forced."""
+    client = None
+    failed: list[Path] = []
+    for path in audio:
+        try:
+            if not path.is_file():
+                raise ValueError(f"Not a file: {path}")
+            if path.suffix.lower() == ".md":
+                raise ValueError(f"Expected audio, not Markdown: {path}")
+            output = path.with_suffix(".md")
+            if output.exists() and not force:
+                typer.echo(f"SKIP {output}", err=True)
+                continue
+            if client is None:
+                client = build_client()
+            result = transcribe_file(client, path, model, prompt)
+            output.write_text(result.text, encoding="utf-8")
+            typer.echo(f"{output}\tmodel={model}\tthinking={result.thinking}\tcost_est_usd={format_cost(result.cost_usd)}")
+        except Exception as exc:
+            cost = format_cost(getattr(exc, "cost_usd", None))
+            typer.echo(f"ERROR {path}: {exc} model={model} cost_est_usd={cost}", err=True)
+            failed.append(path)
+    if failed:
+        typer.echo(f"FAILED {len(failed)}/{len(audio)} recording(s): {', '.join(map(str, failed))}", err=True)
+        raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()

@@ -43,7 +43,7 @@ DEFAULT_INPUT_DIR = Path("/home/sanand/Documents/calls")
 DEFAULT_OUTPUT_DIR = Path("/home/sanand/Dropbox/notes/transcripts")
 DEFAULT_PROMPT_FILE = Path("/home/sanand/code/blog/pages/prompts/transcribe-call-recording.md")
 DEFAULT_SYSTEM_PROMPT = "Transcribe"
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3.8-flash"
 DEFAULT_CHUNK_MINUTES = 30.0
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "sanand-scripts" / "transcribe_calls"
 CHUNK_OVERLAP_SECONDS = 1.0
@@ -419,7 +419,7 @@ def sum_costs(costs: list[float | None]) -> float | None:
 
 def generation_settings(model: str) -> dict[str, Any]:
     """Explicit thinking levels are part of the exact request and cache identity."""
-    level = os.environ.get("TRANSCRIBE_CALLS_THINKING", "default").lower()
+    level = os.environ.get("TRANSCRIBE_CALLS_THINKING", "low").lower()
     if level not in {"default", "minimal", "low", "medium", "high"}:
         raise RuntimeError("TRANSCRIBE_CALLS_THINKING must be default, minimal, low, medium or high.")
     return {} if level == "default" else {"thinking_config": {"thinking_level": level}}
@@ -1486,6 +1486,7 @@ def main(
     if patch and dry_run:
         raise typer.BadParameter("--patch cannot be used with --dry-run.")
 
+    failed_audio: list[str] = []
     for audio_arg in audio:
         try:
             process_audio(
@@ -1499,7 +1500,7 @@ def main(
                 system_prompt_file=system_prompt_file,
                 dry_run=dry_run,
             )
-        except (typer.Exit, typer.BadParameter):
+        except typer.Exit:
             raise
         except Exception as exc:
             if isinstance(exc, PermissionError):
@@ -1517,7 +1518,11 @@ def main(
                 traceback.print_exc()
             append_run(None, "error", audio=audio_arg, exception_type=type(exc).__name__, reason=str(exc), action=action)
             typer.echo(f"ERROR {audio_arg}: {type(exc).__name__}: {exc} Action: {action}", err=True)
-            raise typer.Exit(1) from exc
+            failed_audio.append(audio_arg)
+            continue
+    if failed_audio:
+        typer.echo(f"FAILED {len(failed_audio)}/{len(audio)} recording(s): {', '.join(failed_audio)}", err=True)
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
