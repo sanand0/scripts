@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["typer>=0.12"]
+# dependencies = ["typer>=0.12", "zstandard>=0.25; python_version < '3.14'"]
 # ///
 
 from __future__ import annotations
@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import typer
+
+try:
+    from compression import zstd  # Python 3.14+
+except ImportError:
+    import zstandard as zstd
 
 TS_MIN = "0001-01-01T00:00:00.000Z"
 TS_MAX = "9999-12-31T23:59:59.999Z"
@@ -165,7 +170,9 @@ def read_jsonl(
 ) -> list[tuple[int, dict[str, Any]]]:
     rows: list[tuple[int, dict[str, Any]]] = []
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with (zstd.open if path.suffix == ".zst" else open)(
+            path, "rt", encoding="utf-8"
+        ) as handle:
             for line_no, line in enumerate(handle, start=1):
                 line = line.strip()
                 if not line:
@@ -1530,11 +1537,11 @@ class CodexBackend:
             if not base.exists():
                 continue
             if base.name == "sessions":
-                iterator = base.rglob("*.jsonl")
+                iterator = base.rglob("*.jsonl*")
             else:
-                iterator = base.glob("*.jsonl")
+                iterator = base.glob("*.jsonl*")
             for path in iterator:
-                if not path.is_file():
+                if not path.name.endswith((".jsonl", ".jsonl.zst")) or not path.is_file():
                     continue
                 stats.files_scanned += 1
                 try:

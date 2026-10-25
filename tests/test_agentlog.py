@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 import sys
 
+import pytest
 from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,6 +25,7 @@ from agentlog import (
     _truncate_search_line,
     build_app,
     build_root_app,
+    zstd,
 )
 
 
@@ -325,11 +327,19 @@ def test_codex_md_supports_current_schema_without_duplicating_legacy_chat() -> N
     assert "Legacy assistant" in markdown and "Duplicate assistant" not in markdown
 
 
-def test_codex_ls_finds_current_schema_user_prompt(tmp_path: Path) -> None:
+@pytest.mark.parametrize("compressed, archived", [(False, False), (True, False), (True, True)])
+def test_codex_ls_finds_current_schema_user_prompt(
+    tmp_path: Path, compressed: bool, archived: bool
+) -> None:
     session_id = "01a05c7a-3806-7b22-be3e-74de0971b68e"
-    path = tmp_path / "sessions" / "2026" / "09" / "01" / "session.jsonl"
+    directory = (
+        tmp_path / "archived_sessions"
+        if archived
+        else tmp_path / "sessions" / "2026" / "09" / "01"
+    )
+    path = directory / ("session.jsonl.zst" if compressed else "session.jsonl")
     path.parent.mkdir(parents=True)
-    path.write_text(
+    content = (
         json.dumps(
             {
                 "timestamp": "2026-09-01T10:18:28Z",
@@ -355,9 +365,13 @@ def test_codex_ls_finds_current_schema_user_prompt(tmp_path: Path) -> None:
                 },
             }
         )
-        + "\n",
-        encoding="utf-8",
+        + "\n"
     )
+    if compressed:
+        with zstd.open(path, "wb") as stream:
+            stream.write(content.encode())
+    else:
+        path.write_text(content, encoding="utf-8")
 
     result = RUNNER.invoke(
         build_app(CodexBackend()), ["ls", "--root", str(tmp_path)]
@@ -366,6 +380,14 @@ def test_codex_ls_finds_current_schema_user_prompt(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     assert session_id in result.stdout
     assert "Human prompt" in result.stdout
+    for command, expected in (("resolve", str(path)), ("dump", "Human prompt")):
+        result = RUNNER.invoke(build_app(CodexBackend()), [command, session_id, "--root", str(tmp_path)])
+        assert result.exit_code == 0, result.stdout
+        assert expected in result.stdout
+    result = RUNNER.invoke(build_app(CodexBackend()), ["ls", "--root", str(tmp_path), "--search", "Human prompt"])
+    assert result.exit_code == 0, result.stdout
+    assert session_id in result.stdout
+
 
 def test_ls_search_streams_search_results() -> None:
     backend = FakeBackend()
