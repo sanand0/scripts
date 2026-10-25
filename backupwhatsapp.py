@@ -15,6 +15,7 @@ and investigation output in /tmp/, never in conversation backup files.
 Examples:
   backupwhatsapp.py --limit 5 --format jsonl > /tmp/whatsapp-run.jsonl
   backupwhatsapp.py --conversation "Family" --conversation "Notes" --format jsonl
+  backupwhatsapp.py --conversation "TDS | Sept 2026" --since 2026-10-23
   backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor
   backupwhatsapp.py --describe | jaq .
 """
@@ -22,6 +23,7 @@ Examples:
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import hashlib
 import json
@@ -75,12 +77,12 @@ class CDPPage:
         self.browser_version = browser_version
         self.command_id = 0
 
-    async def command(self, method: str, **params: Any) -> dict[str, Any]:
+    async def command(self, method: str, *, timeout: int = 120, **params: Any) -> dict[str, Any]:
         self.command_id += 1
         command_id = self.command_id
         await self.socket.send(compact_json({"id": command_id, "method": method, "params": params}))
         try:
-            async with asyncio.timeout(60):
+            async with asyncio.timeout(timeout):
                 while True:
                     response = json.loads(await self.socket.recv())
                     if response.get("id") != command_id:
@@ -89,11 +91,11 @@ class CDPPage:
                         raise RuntimeError(f"CDP {method}: {response['error'].get('message', response['error'])}")
                     return response.get("result") or {}
         except TimeoutError as exc:
-            raise TimeoutError(f"CDP {method} did not respond within 60s") from exc
+            raise TimeoutError(f"CDP {method} did not respond within {timeout}s") from exc
 
-    async def evaluate(self, expression: str, arg: Any = ...) -> Any:
+    async def evaluate(self, expression: str, arg: Any = ..., *, timeout: int = 120) -> Any:
         source = f"({expression})()" if arg is ... else f"({expression})({compact_json(arg)})"
-        result = await self.command("Runtime.evaluate", expression=source, awaitPromise=True, returnByValue=True, userGesture=True)
+        result = await self.command("Runtime.evaluate", timeout=timeout, expression=source, awaitPromise=True, returnByValue=True, userGesture=True)
         if details := result.get("exceptionDetails"):
             exception = details.get("exception") or {}
             raise RuntimeError(exception.get("description") or details.get("text") or "JavaScript evaluation failed")
@@ -338,7 +340,7 @@ CLICK_CHAT_JS = r"""
 }
 """.replace("%CHAT_ID_JS%", CHAT_ID_JS)
 SCROLL_HISTORY_JS = r"""
-({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs }) => new Promise(async (resolve) => {
+async ({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs, images, knownMedia }) => {
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
   const seen = Object.create(null);
   const richness = (value) => {
@@ -449,6 +451,27 @@ SCROLL_HISTORY_JS = r"""
     }
     return { times, rows };
   };
+  const mediaFiles = [];
+  const mediaSeen = new Set(knownMedia || []);
+  const captureImages = async () => {
+    if (!images) return;
+    for (const img of document.querySelectorAll('div#main [data-id] [aria-label="Open picture"] img[src^="blob:"]')) {
+      const messageId = messageIdFromDataId(img.closest('[data-id]')?.getAttribute('data-id'));
+      if (!messageId || mediaSeen.has(messageId)) continue;
+      try {
+        const blob = await (await fetch(img.currentSrc || img.src)).blob();
+        if (!/^image\/(jpeg|png|webp|gif)$/.test(blob.type)) continue;
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        mediaFiles.push({ messageId, data });
+        mediaSeen.add(messageId);
+      } catch { /* A revoked blob may be available on a later scroll. */ }
+    }
+  };
   const gather = () => {
     const corrected = rowsFromDateChips();
     const messages = (globalThis.whatsappscraper?.whatsappMessages(document) || [])
@@ -470,13 +493,17 @@ SCROLL_HISTORY_JS = r"""
   const scrollers = [...document.querySelectorAll("div#main div")]
     .filter((el) => el.scrollHeight > el.clientHeight + 200);
   const scroller = scrollers.sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
-  if (!scroller) return resolve({ rounds: 0, reason: "no-history-scroller", messages: gather() });
+  if (!scroller) { gather(); await captureImages(); return { rounds: 0, reason: "no-history-scroller", messages: Object.values(seen), mediaFiles }; }
   let bottomJumps = 0;
+  let previousBottom = "";
   for (; bottomJumps < 80; bottomJumps += 1) {
     const button = document.querySelector('button[aria-label="Scroll to bottom"]');
-    if (!button) break;
+    if (!button || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) break;
     button.click();
     await sleep(settleMs);
+    const bottom = `${scroller.scrollTop}:${scroller.scrollHeight}`;
+    if (bottom === previousBottom) break;
+    previousBottom = bottom;
   }
   for (let jump = 0; jump < 4; jump += 1) {
     scroller.scrollTop = scroller.scrollHeight;
@@ -489,6 +516,7 @@ SCROLL_HISTORY_JS = r"""
   let rounds = 0;
   for (; rounds < maxRounds; rounds += 1) {
     const messages = gather();
+    await captureImages();
     const oldest = messages.map((msg) => msg.time).filter(Boolean).sort()[0] || "";
     const signature = `${scroller.scrollTop}:${scroller.scrollHeight}:${messages.length}:${oldest}`;
     if (maxMessages && messages.length >= maxMessages) {
@@ -506,13 +534,18 @@ SCROLL_HISTORY_JS = r"""
       break;
     }
     previous = signature;
-    scroller.scrollTop = 0;
-    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    const earlier = document.querySelector('div#main [title^="Load earlier messages"]');
+    if (earlier) earlier.click();
+    else {
+      scroller.scrollTop = 0;
+      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    }
     await sleep(settleMs);
   }
   gather();
-  resolve({ bottomJumps, rounds, reason, messages: Object.values(seen) });
-})
+  await captureImages();
+  return { bottomJumps, rounds, reason, messages: Object.values(seen), mediaFiles };
+}
 """
 
 
@@ -522,6 +555,28 @@ def eprint(message: str) -> None:
 
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def save_image(path: Path, conversation_id: str, message_id: str, data: str) -> str:
+    """Save decrypted WhatsApp image bytes; return a path relative to the JSONL directory."""
+    extensions = {"jpeg": ".jpg", "png": ".png", "webp": ".webp", "gif": ".gif"}
+    header, separator, encoded = data.partition(",")
+    media_type = header.removeprefix("data:image/").removesuffix(";base64")
+    if not separator or header != f"data:image/{media_type};base64" or media_type not in extensions:
+        raise ValueError(f"Unsupported image data for message {message_id}")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", message_id):
+        raise ValueError("Unsafe WhatsApp message ID for image filename")
+    image = base64.b64decode(encoded, validate=True)
+    signatures = {"jpeg": b"\xff\xd8\xff", "png": b"\x89PNG", "webp": b"RIFF", "gif": b"GIF8"}
+    if not image.startswith(signatures[media_type]):
+        raise ValueError(f"Invalid {media_type} image bytes for message {message_id}")
+    target = path.parent / "media" / safe_name(conversation_id) / f"{message_id}{extensions[media_type]}"
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f".{target.name}.{time.time_ns()}.tmp")
+        tmp.write_bytes(image)
+        tmp.replace(target)
+    return target.relative_to(path.parent).as_posix()
 
 
 def state_path() -> Path:
@@ -982,6 +1037,7 @@ def describe() -> dict[str, Any]:
         "primary_key": "messageId",
         "conversation_key": "conversationId",
         "history": "~/Documents/data/whatsapp/.history/{conversation file stem}.history.jsonl",
+        "images": "~/Documents/data/whatsapp/media/{conversation id}/{message id}.{jpg,png,webp,gif} (default; --no-images to skip; relative mediaPath in JSONL)",
         "logs": "~/.cache/sanand-scripts/backupwhatsapp/{YYYY-MM-runs.jsonl,latest.json}",
         "cdp": CDP_URL,
         "filters": ["--conversation", "--name", "--updated-since", "--updated-until", "--since", "--until", "--max-messages", "--limit"],
@@ -1138,6 +1194,8 @@ async def scrape_open_chat(
     max_messages: int,
     max_rounds: int,
     settle_ms: int,
+    images: bool = True,
+    known_media: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     await inject_scraper(page, SCRAPER)
     cutoff_text = cutoff.isoformat() if cutoff else ""
@@ -1149,8 +1207,12 @@ async def scrape_open_chat(
             "maxMessages": max_messages,
             "maxRounds": max_rounds,
             "settleMs": settle_ms,
+            "images": images,
+            "knownMedia": known_media or [],
         },
+        timeout=600 if images else 120,
     )
+    media_files = {item["messageId"]: item["data"] for item in scroll.pop("mediaFiles", [])}
     messages = scroll.pop("messages", [])
     unique = {row_key(row): row for row in messages if row.get("messageId")}
     conversation_id = await current_chat_id(page)
@@ -1161,6 +1223,8 @@ async def scrape_open_chat(
         })"""
     )
     for row in unique.values():
+        if row.get("messageId") in media_files:
+            row["_imageData"] = media_files[row["messageId"]]
         if conversation_id:
             row.setdefault("userId", conversation_id.partition("@")[0])
     return list(unique.values()), {**scroll, **dom_counts, "scraper_dom_count": len(messages), "conversation_id": conversation_id}
@@ -1181,6 +1245,7 @@ async def run_backup(
     settle_ms: int,
     dry_run: bool,
     format: str,
+    images: bool = True,
 ) -> None:
     cache_dir = Path("~/.cache/sanand-scripts/backupwhatsapp").expanduser()
     trace = obs.new_run(
@@ -1203,6 +1268,7 @@ async def run_backup(
                 "settle_ms": settle_ms,
                 "dry_run": dry_run,
                 "format": format,
+                "images": images,
             }
         ),
     )
@@ -1283,7 +1349,14 @@ async def run_backup(
                     continue
                 run_stats["opened_chats"] += 1
                 with trace.span("scrolling", {"conversation_hash": obs.short_hash(chat_key(title, expected_id))}):
-                    messages, scroll = await scrape_open_chat(page, chat["since"], chat["list_time"], max_messages, max_scroll_rounds, settle_ms)
+                    known_media = [
+                        row["messageId"] for row in load_jsonl(path)
+                        if images and row.get("mediaPath") and (path.parent / row["mediaPath"]).is_file()
+                    ]
+                    messages, scroll = await scrape_open_chat(
+                        page, chat["since"], chat["list_time"], max_messages, max_scroll_rounds, settle_ms,
+                        images=images, known_media=known_media,
+                    )
                 opened_conversation_id = scroll.get("conversation_id") or ""
                 conversation_id = opened_conversation_id or ("" if expected_id else chat.get("conversationId") or "")
                 chat_stats = {
@@ -1314,6 +1387,14 @@ async def run_backup(
                     run_stats["skipped_chats"] += 1
                     emit({**summary, "event": "skipped", "reason": scroll.get("reason", "no-messages"), "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
                     continue
+                images_saved = 0
+                if images:
+                    for message in kept:
+                        if data := message.pop("_imageData", None):
+                            message["mediaPath"] = save_image(path, conversation_id, message["messageId"], data)
+                            images_saved += 1
+                    for message in messages:
+                        message.pop("_imageData", None)
                 before_rows = len(load_jsonl(path))
                 with trace.span("writing", {"path": str(path), "before_rows": before_rows}):
                     changed = update_conversation(path, title, conversation_id, messages, since, until, max_messages)
@@ -1324,7 +1405,7 @@ async def run_backup(
                     local_since = max_message_time(load_jsonl(path))
                     checked_state[chat_key(title, conversation_id)] = chat_state({**chat, "conversationId": conversation_id}, chat["list_time"], local_since)
                     write_checked_state(checked_state)
-                emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "scroll": scroll}, format)
+                emit({**summary, "messages_seen": len(messages), "messages_kept": len(kept), "rows_changed": changed, "images_saved": images_saved, "scroll": scroll}, format)
         dom = await obs.capture_dom_outline(page)
         await page.close()
         page = None
@@ -1355,6 +1436,8 @@ def emit(event: dict[str, Any], format: str) -> None:
         bits.append(f"changed={event['rows_changed']}")
     if event.get("messages_seen") is not None:
         bits.append(f"seen={event['messages_seen']}")
+    if event.get("images_saved"):
+        bits.append(f"images={event['images_saved']}")
     if event.get("reason"):
         bits.append(str(event["reason"]))
     bits.append(f"-> {event['path']}")
@@ -1378,6 +1461,7 @@ def main(
     max_scroll_rounds: int = typer.Option(200, "--max-scroll-rounds", help="Maximum upward history scrolls per conversation."),
     settle_ms: int = typer.Option(900, "--settle-ms", help="Delay after each history scroll in milliseconds."),
     dry_run: bool = typer.Option(False, "--dry-run", help="List conversations that would be backed up."),
+    images: bool = typer.Option(True, "--images/--no-images", help="Export available images (default: on)."),
     format: str = typer.Option("text", "--format", help="text or jsonl."),
     describe_schema: bool = typer.Option(False, "--describe", help="Print machine-readable CLI/schema description and exit."),
 ) -> None:
@@ -1411,6 +1495,7 @@ def main(
                 settle_ms,
                 dry_run,
                 format,
+                images,
             )
         )
     except Exception as exc:

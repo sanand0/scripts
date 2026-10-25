@@ -1,16 +1,57 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import json
 import sys
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backupwhatsapp as backup
+
+
+@pytest.mark.parametrize(("flags", "enabled"), [
+    ([], True),
+    (["--no-images"], False),
+    (["--images"], True),
+])
+def test_image_download_cli_defaults(monkeypatch, flags: list[str], enabled: bool) -> None:
+    received = []
+
+    async def fake_run_backup(*args):
+        received.append(args[-1])
+
+    monkeypatch.setattr(backup, "run_backup", fake_run_backup)
+    result = CliRunner().invoke(backup.app, flags)
+    assert result.exit_code == 0, result.output
+    assert received == [enabled]
+
+
+def test_image_export_is_relative_and_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "TDS [123@g.us].jsonl"
+    jpeg = b"\xff\xd8\xff" + b"example-image"
+    data = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+    relative = backup.save_image(path, "123@g.us", "ABC123", data)
+    assert relative == "media/123@g.us/ABC123.jpg"
+    assert (tmp_path / relative).read_bytes() == jpeg
+    assert backup.save_image(path, "123@g.us", "ABC123", data) == relative
+    assert len([p for p in (tmp_path / "media").rglob("*") if p.is_file()]) == 1
+
+
+@pytest.mark.parametrize("data", [
+    "data:image/jpeg;base64," + base64.b64encode(b"not-an-image").decode(),
+    "data:text/html;base64," + base64.b64encode(b"hello").decode(),
+    "data:image/jpeg;base64,not:base64",
+])
+def test_image_export_rejects_bad_content(tmp_path: Path, data: str) -> None:
+    with pytest.raises((ValueError, base64.binascii.Error)):
+        backup.save_image(tmp_path / "Chat.jsonl", "123@g.us", "ABC123", data)
+    assert not (tmp_path / "media").exists()
 
 
 def test_load_jsonl_reports_corrupt_file_without_changing_it(tmp_path: Path) -> None:
@@ -135,9 +176,10 @@ def test_chat_scan_does_not_stop_on_repeated_virtualized_rows(monkeypatch) -> No
 
 def test_scrape_open_chat_passes_chat_list_time_as_dom_fallback(monkeypatch) -> None:
     class FakePage:
-        async def evaluate(self, expression, arg=...):
+        async def evaluate(self, expression, arg=..., **kwargs):
             if expression == backup.SCROLL_HISTORY_JS:
                 assert arg["fallbackTime"] == "2026-09-05T01:24:00+00:00"
+                assert arg["images"] is True
                 return {"messages": []}
             if "parser_dom_count" in expression:
                 return {"parser_dom_count": 0, "history_scroller_found": False}
