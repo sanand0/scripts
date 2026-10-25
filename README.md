@@ -139,6 +139,7 @@ Here are the setup details for my laptops.
   - New blog posts: `ug -rl '^date: "?2026-04' /home/sanand/code/blog/posts/ | xargs summarize.py blog` (edit `2026-04` to the target month)
 - [timers](timers) picks a systemd user timer with `fzf`, sorted by its most recent run, then follows the activated service's journal.
 - [transcribe](transcribe) transcribes audio files into adjacent `.md` files, skipping existing files. Example: `transcribe a.mp3 /x/b.opus`. Supports `--prompt`, `--model`. Retries empty responses at `medium`, then `high` thinking
+- [translate](translate) creates a virtual mic that translates what I say into any other language. Useful for Google Meet, etc.
 - [call](call) transcribes matching paths from `~/Documents/calls` into `~/Dropbox/notes/transcripts/*.md` with cumulative timestamps. Uses [timestamp.py](timestamp.py) helpers.
   - Transcribe/resume: `call "Meeting"`; add context with `call "Meeting" --prompt "Speaker names and context"`.
   - Plan: `call "Meeting" --dry-run`; list pending/incomplete notes: `call --list-changes | moor`. Both save logs.

@@ -6,6 +6,9 @@ playwright := "1.62.0"
 playwright_revision := "1234"
 fastmcp := "3.4.7"
 
+# Verify the repository using its canonical test suite.
+verify: test
+
 # Run the complete test suite, failing on the first test module with an error.
 test: test-agentlog test-backup-chatgpt test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
 
@@ -120,3 +123,7 @@ test-transcribe:
 # Run transcript timestamp normalization tests.
 test-timestamp:
     {{ pytest }} --with typer pytest -q tests/test_timestamp.py
+
+# Run translate tests
+test-translate:
+    {{ pytest }} --with websockets --with python-dotenv pytest -q tests/test_translate.py

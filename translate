@@ -1,0 +1,892 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["websockets>=15,<17", "python-dotenv>=1"]
+# ///
+"""Translate microphone speech to a stable PipeWire virtual microphone with Gemini.
+
+Examples:
+    translate --to hi                 # Start, then enter commands
+    translate --to fr --off           # Original voice until "on"
+    translate --model gemini-3.8-live --to ta
+    translate --test                  # Test Gemini without opening audio devices
+    translate --usage                 # Print current-process usage (zero at launch)
+    translate --set-key               # Prompt for new API key, save to script .env
+
+In-app: help, status, on, off, lang CODE, model NAME, echo on|off,
+        key [save], test, usage (cost), input [NAME], quit.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import base64
+import contextlib
+import getpass
+import json
+import os
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import quote
+
+import websockets
+from dotenv import dotenv_values
+
+DEFAULT_MODEL = "gemini-3.5-live-translate-preview"
+BASE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+ENV_FILE = Path(__file__).resolve().parent / ".env"
+FEED = "translate_mic_feed"
+MIC = "translate_mic"
+INPUT_RATE = 16000
+OUTPUT_RATE = 24000
+CHUNK_BYTES = 3200  # 100 ms, 16kHz, mono 16-bit
+PRICES = {  # USD per million audio tokens, public Standard paid-tier list prices, Oct 2026
+    "gemini-3.5-live-translate-preview": (3.50, 21.00),
+    "gemini-3.8-live": (3.00, 12.00),
+    "gemini-3.8-live-extended-thinking": (3.00, 12.00),
+    "gemini-3.1-flash-live-preview": (3.00, 12.00),
+}
+# Supported output languages documented for Gemini 3.5 Live Translate (Sep 2026).
+# Keep the official names and BCP-47 codes together for input and help output.
+LANGUAGE_DATA = """Afrikaans|af
+Akan|ak
+Albanian|sq
+Amharic|am
+Arabic|ar
+Armenian|hy
+Azerbaijani|az
+Basque|eu
+Belarusian|be
+Bengali|bn
+Bulgarian|bg
+Burmese (Myanmar)|my
+Catalan|ca
+Chinese (Simplified)|zh-Hans
+Chinese (Traditional)|zh-Hant
+Croatian|hr
+Czech|cs
+Danish|da
+Dutch|nl
+English|en
+Estonian|et
+Filipino|fil
+Finnish|fi
+French|fr
+Galician|gl
+Georgian|ka
+German|de
+Greek|el
+Gujarati|gu
+Hausa|ha
+Hebrew|he
+Hindi|hi
+Hungarian|hu
+Icelandic|is
+Indonesian|id
+Italian|it
+Japanese|ja
+Javanese|jv
+Kannada|kn
+Kazakh|kk
+Khmer|km
+Kinyarwanda|rw
+Korean|ko
+Lao|lo
+Latvian|lv
+Lithuanian|lt
+Macedonian|mk
+Malay|ms
+Malayalam|ml
+Marathi|mr
+Mongolian|mn
+Nepali|ne
+Norwegian|no, nb
+Persian|fa
+Polish|pl
+Portuguese (Brazil)|pt-BR
+Portuguese (Portugal)|pt-PT
+Punjabi|pa
+Romanian|ro
+Russian|ru
+Serbian|sr
+Sindhi|sd
+Sinhala|si
+Slovak|sk
+Slovenian|sl
+Spanish|es
+Sundanese|su
+Swahili|sw
+Swedish|sv
+Tamil|ta
+Telugu|te
+Thai|th
+Turkish|tr
+Ukrainian|uk
+Urdu|ur
+Uzbek|uz
+Vietnamese|vi
+Zulu|zu"""
+LANGUAGES = {name: tuple(code.strip() for code in codes.split(","))
+             for name, codes in (row.split("|", 1) for row in LANGUAGE_DATA.splitlines())}
+LANGUAGE_BY_NAME = {name.casefold(): codes[0] for name, codes in LANGUAGES.items()}
+LANGUAGE_BY_NAME["chinese"] = "zh-Hans"  # Existing convenient shorthand
+LANGUAGE_BY_CODE = {code.casefold(): code for codes in LANGUAGES.values() for code in codes}
+
+
+def format_languages() -> str:
+    """Show all supported codes and full language names in two readable columns."""
+    lines = [f"{', '.join(codes):<12} {name}" for name, codes in LANGUAGES.items()]
+    half = (len(lines) + 1) // 2
+    width = max(len(line) for line in lines[:half]) + 3
+    return ("Supported languages (code — full name):\n" +
+            "\n".join(f"  {left:<{width}}{right}"
+                      for left, right in zip(lines[:half], lines[half:] + [""] * half)))
+HELP = """Commands (also see translate --help):
+  on / off              Translate / original voice (virtual mic stays present)
+  lang [CODE|NAME]      List all languages, or switch (e.g. lang fr, lang tamil)
+  model NAME            Change Live model (translation or voice-agent type)
+  echo on|off           Echo speech already spoken in the target language
+  voice NAME            Voice for Live Agent models only (e.g. Aoede)
+  temperature NUMBER    Sampling temperature for Live Agent models
+  input [NAME]          Show/set physical microphone's PipeWire node.name
+  key [save]            Securely enter a new key; 'save' stores it in script .env
+  test                  Verify Gemini WebSocket setup using current settings
+  usage / cost          Duration, input/output tokens and estimated USD cost
+  status                Print devices, connection state, settings and key source
+  help                  Show these commands
+  quit / exit           Remove the temporary virtual microphone and exit
+Changes to model/language/echo/voice/temperature reconnect Gemini but keep
+the same PipeWire microphone selected in Meet or Zoom.
+Live Translate imitates the speaker's voice and can drift within a session;
+a fixed voice is not supported. Try gemini-3.8-live with 'voice Aoede'
+for a configured voice, but its translation is less continuous.
+"""
+
+
+def key_from_sources() -> tuple[str, str]:
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        if os.environ.get(name):
+            return os.environ[name], f"environment {name}"
+    for path in (Path.cwd() / ".env", ENV_FILE):
+        try:
+            values = dotenv_values(path)
+        except OSError:
+            continue
+        for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            if values.get(name):
+                return values[name], str(path)
+    return "", "missing"
+
+
+def save_key(key: str, path: Path = ENV_FILE) -> None:
+    # Never rewrite unrelated keys, print credentials, or follow a symlink.
+    if path.is_symlink():
+        raise RuntimeError(f"Refusing to modify symlink {path}")
+    import tempfile
+    lines = path.read_text().splitlines(keepends=True) if path.exists() else []
+    edited = False
+    result = []
+    for line in lines:
+        if re.match(r"^\s*(?:export\s+)?GEMINI_API_KEY\s*=", line):
+            if not edited:
+                result.append("GEMINI_API_KEY=" + key + "\n")
+                edited = True
+        else:
+            result.append(line)
+    if not edited:
+        if result and not result[-1].endswith("\n"):
+            result[-1] += "\n"
+        result.append("GEMINI_API_KEY=" + key + "\n")
+    fd, tmp = tempfile.mkstemp(prefix=".translate-key-", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.writelines(result)
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+
+
+def valid_model(model: str) -> str:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,150}", model):
+        raise ValueError("Invalid model name")
+    if not model.startswith("gemini-") or "live" not in model:
+        raise ValueError("This app needs a Gemini Live API model (e.g. gemini-3.5-live-translate-preview)")
+    return model
+
+
+def valid_language(language: str) -> str:
+    """Accept documented short codes or full names, case-insensitively."""
+    normalized = " ".join(language.strip().split()).casefold()
+    code = LANGUAGE_BY_NAME.get(normalized) or LANGUAGE_BY_CODE.get(normalized)
+    if code is None:
+        raise ValueError(f"Unsupported language: {language!r}. Type 'lang' for the list.")
+    return code
+
+
+def language_name(code: str) -> str:
+    return next((name for name, codes in LANGUAGES.items()
+                 if code.casefold() in {x.casefold() for x in codes}), code)
+
+
+@dataclass
+class Settings:
+    model: str = DEFAULT_MODEL
+    language: str = "hi"
+    echo: bool = True
+    voice: str = "Aoede"
+    temperature: float = 1.0
+    source: str = ""
+
+    def setup(self) -> dict:
+        model = valid_model(self.model)
+        is_translate = "live-translate" in model
+        generation = {"responseModalities": ["AUDIO"]}
+        payload = {"model": "models/" + model}
+        if is_translate:
+            generation["translationConfig"] = {
+                "targetLanguageCode": valid_language(self.language),
+                "echoTargetLanguage": self.echo,
+            }
+        else:
+            generation["speechConfig"] = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self.voice}}}
+            generation["temperature"] = self.temperature
+            target_name = language_name(self.language)
+            payload["systemInstruction"] = {"parts": [{"text":
+                "Act as a simultaneous speech interpreter. Translate everything spoken into "
+                + target_name + f" ({self.language}). Speak only the translation, never answer questions. "
+                "Preserve tone and meaning. Avoid commentary."}]}
+        payload["generationConfig"] = generation
+        return {"setup": payload}
+
+
+@dataclass
+class SessionUsage:
+    model: str
+    input_bytes: int = 0
+    output_bytes: int = 0
+    prompt_tokens: int = 0
+    response_tokens: int = 0
+    reported: bool = False
+    last_prompt: int = 0
+    last_response: int = 0
+    started_at: float = field(default_factory=time.monotonic)
+
+    def update(self, m: dict) -> None:
+        if not isinstance(m, dict):
+            return
+        if "promptTokenCount" not in m and "responseTokenCount" not in m:
+            return
+        # Live usage metadata is periodically reported. Repeated or increasing
+        # snapshots should not be charged again; reset counters imply new turns.
+        p = int(m.get("promptTokenCount") or 0)
+        r = int(m.get("responseTokenCount") or 0)
+        for name, previous_name, new in (
+            ("prompt_tokens", "last_prompt", p),
+            ("response_tokens", "last_response", r),
+        ):
+            previous = getattr(self, previous_name)
+            increment = new - previous if new >= previous else new
+            setattr(self, name, getattr(self, name) + increment)
+            setattr(self, previous_name, new)
+        self.reported = True
+
+    def tokens(self) -> tuple[int, int]:
+        # Count audio from PCM duration at Google's published ~25 audio tokens/s
+        # when usageMetadata is absent. Both are estimates until billed by Google.
+        if self.reported:
+            return self.prompt_tokens, self.response_tokens
+        return round(self.input_bytes / 2 / INPUT_RATE * 25), round(self.output_bytes / 2 / OUTPUT_RATE * 25)
+
+    def charge(self) -> float | None:
+        price = PRICES.get(self.model)
+        if price is None:
+            return None
+        p, r = self.tokens()
+        return (p * price[0] + r * price[1]) / 1_000_000
+
+
+class Totals:
+    def __init__(self):
+        self.started = time.monotonic()
+        self.sessions: list[SessionUsage] = []
+        self.translated_seconds = 0.0
+        self.active_since: float | None = None
+
+    def show(self):
+        elapsed = time.monotonic() - self.started
+        active = self.translated_seconds + (time.monotonic() - self.active_since if self.active_since else 0)
+        it = ot = 0
+        cost = 0.0
+        unknown = []
+        approximated = False
+        for session in self.sessions:
+            p, r = session.tokens()
+            it += p
+            ot += r
+            approximated |= not session.reported
+            charge = session.charge()
+            if charge is None:
+                unknown.append(session.model)
+            else:
+                cost += charge
+        duration = lambda s: f"{int(s // 3600):02}:{int(s // 60) % 60:02}:{int(s) % 60:02}"
+        print(f"Elapsed {duration(elapsed)} | Translating {duration(active)} | Sessions {len(self.sessions)}")
+        print(f"Input {it:,} tokens | Output {ot:,} tokens | Total {it + ot:,} tokens")
+        print(f"Estimated paid-tier cost: ${cost:.6f}" + (" + unknown model charges" if unknown else ""))
+        print("Token totals: server reports where available; otherwise PCM-duration estimates (25 tokens/sec)." if approximated
+              else "Token totals: Gemini usageMetadata snapshots; not a billing statement.")
+        if unknown:
+            print("Unpriced models:", ", ".join(sorted(set(unknown))))
+
+
+async def terminate(process: asyncio.subprocess.Process | None) -> None:
+    if not process or process.returncode is not None:
+        return
+    process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=1.2)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+
+
+def physical_source() -> str:
+    out = subprocess.run(["wpctl", "inspect", "@DEFAULT_AUDIO_SOURCE@"],
+                         capture_output=True, text=True, check=True).stdout
+    match = re.search(r'node.name = "([^"]+)"', out)
+    if not match:
+        raise RuntimeError("Cannot find the physical microphone (wpctl inspect failed)")
+    if match[1] == MIC:
+        raise RuntimeError("Default microphone is our virtual mic. Select a physical input.")
+    return match[1]
+
+
+def props(name: str, cls: str, label: str) -> str:
+    return json.dumps({"node.name": name, "node.description": label,
+                       "media.class": cls, "node.virtual": True, "node.autoconnect": False,
+                       "audio.position": ["MONO"], "priority.session": 0})
+
+
+class Audio:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.source = ""
+        self.cable = None
+        self.bypass = None
+        self.player = None
+        self.recorder = None
+
+    async def start(self):
+        self.source = self.settings.source or await asyncio.to_thread(physical_source)
+        dump = await asyncio.create_subprocess_exec("pw-dump", "-N", stdout=asyncio.subprocess.PIPE)
+        raw, _ = await dump.communicate()
+        nodes = json.loads(raw)
+        names = {n.get("info", {}).get("props", {}).get("node.name") for n in nodes}
+        if FEED in names or MIC in names:
+            raise RuntimeError("translate_mic already exists. Close the other instance first.")
+        self.cable = await asyncio.create_subprocess_exec(
+            "pw-loopback", "-n", "translate-cli-owned", "-c", "1", "-m", "[ MONO ]",
+            "-i", props(FEED, "Audio/Sink", "Translated Mic Feed"),
+            "-o", props(MIC, "Audio/Source", "TranslatedMic"),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        for _ in range(30):
+            if self.cable.returncode is not None:
+                raise RuntimeError("pw-loopback could not create virtual microphone")
+            proc = await asyncio.create_subprocess_exec("pw-dump", "-N", stdout=asyncio.subprocess.PIPE)
+            raw, _ = await proc.communicate()
+            nodes = json.loads(raw)
+            found = {n.get("info", {}).get("props", {}).get("node.name") for n in nodes}
+            if FEED in found and MIC in found:
+                break
+            await asyncio.sleep(.1)
+        else:
+            raise RuntimeError("Timed out waiting for PipeWire virtual mic")
+        await self.passthrough()
+        print(f"Virtual microphone: TranslatedMic (PipeWire: {MIC})")
+        print(f"Physical microphone: {self.source}")
+
+    async def passthrough(self):
+        await self.stop_streams()
+        if self.bypass and self.bypass.returncode is None:
+            return
+        self.bypass = await asyncio.create_subprocess_exec(
+            "pw-loopback", "-n", "translate-cli-bypass", "-c", "1", "-m", "[ MONO ]",
+            "-C", self.source, "-P", FEED,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await asyncio.sleep(.1)
+        if self.bypass.returncode is not None:
+            raise RuntimeError("Could not route physical microphone to TranslatedMic")
+
+    async def translate(self):
+        # Prepare streams before muting passthrough to minimize the gap.
+        args = ["--channels", "1", "--format", "s16", "--channel-map", "mono"]
+        self.player = await asyncio.create_subprocess_exec(
+            "pw-cat", "-p", "--target", FEED, "--rate", str(OUTPUT_RATE), *args, "-",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL)
+        self.recorder = await asyncio.create_subprocess_exec(
+            "pw-cat", "-r", "--target", self.source, "--rate", str(INPUT_RATE), *args, "-",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        await asyncio.sleep(.2)
+        if self.player.returncode is not None or self.recorder.returncode is not None:
+            raise RuntimeError("Could not open PipeWire PCM streams")
+        await terminate(self.bypass)
+        self.bypass = None
+
+    async def stop_streams(self):
+        await terminate(self.recorder)
+        self.recorder = None
+        await terminate(self.player)
+        self.player = None
+
+    async def close(self):
+        await self.stop_streams()
+        await terminate(self.bypass)
+        self.bypass = None
+        await terminate(self.cable)
+        self.cable = None
+
+
+class Translator:
+    def __init__(self, settings: Settings, api_key: str, key_source: str):
+        self.settings = settings
+        self.api_key = api_key
+        self.key_source = key_source
+        self.audio = Audio(settings)
+        self.totals = Totals()
+        self.desired = False
+        self.connected = False
+        self.socket = None
+        self.worker = None
+        self.generation = 0
+        self.lock = asyncio.Lock()
+
+    async def connect(self, key=None):
+        if not (key or self.api_key):
+            raise RuntimeError("No GEMINI_API_KEY found. Use 'key' or --set-key.")
+        settings = self.settings.setup()  # validate before disrupting audio
+        uri = BASE_URL + "?key=" + quote(key or self.api_key, safe="")
+        ws = await websockets.connect(uri, open_timeout=12, max_size=8 * 1024 * 1024,
+                                      ping_interval=20, ping_timeout=15)
+        try:
+            await ws.send(json.dumps(settings))
+            while True:
+                packet = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+                if packet.get("error"):
+                    raise RuntimeError("Gemini rejected setup: " + str(packet["error"].get("message", ""))[:220])
+                if "setupComplete" in packet:  # an empty object {} is a valid acknowledgement
+                    return ws
+        except BaseException:
+            await ws.close()
+            raise
+
+    async def test(self):
+        print(f"Testing {self.settings.model} ({self.settings.language})...")
+        try:
+            ws = await self.connect()
+            await ws.close()
+            print("PASS: Gemini Live WebSocket setupComplete; audio not transmitted.")
+            return True
+        except Exception as exc:
+            print("FAIL:", safe_error(exc))
+            return False
+
+    async def off(self, message="Original microphone"):
+        async with self.lock:
+            self.desired = False
+            self.generation += 1
+            await self._stop()
+            await self.audio.passthrough()
+            print(message)
+
+    async def _stop(self):
+        self.connected = False
+        if self.totals.active_since is not None:
+            self.totals.translated_seconds += time.monotonic() - self.totals.active_since
+            self.totals.active_since = None
+        ws, self.socket = self.socket, None
+        if self.worker:
+            worker, self.worker = self.worker, None
+            if worker is not asyncio.current_task():
+                worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await worker
+        await self.audio.stop_streams()
+        if ws:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(ws.close(), timeout=1)
+
+    async def on(self):
+        async with self.lock:
+            self.desired = True
+            self.generation += 1
+            generation = self.generation
+            await self._stop()
+            # A model/language change should immediately restore the original
+            # microphone until the replacement session is accepting audio.
+            await self.audio.passthrough()
+            try:
+                ws = await self.connect()
+                self.socket = ws
+                self.worker = asyncio.create_task(self._run(ws, generation))
+                print(f"TRANSLATING: {self.settings.model} → {self.settings.language}")
+            except Exception as exc:
+                await self.audio.passthrough()
+                self.desired = False
+                print("Cannot start translation:", safe_error(exc), "(original mic active)")
+
+    async def reconfigure(self):
+        if self.desired:
+            await self.on()
+        else:
+            print(f"Updated: {self.settings.model} → {self.settings.language}; original mic remains active.")
+
+    async def _run(self, ws, generation):
+        usage = SessionUsage(self.settings.model)
+        self.totals.sessions.append(usage)
+        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=12)
+        try:
+            await self.audio.translate()
+            if generation != self.generation:
+                return
+            self.connected = True
+            self.totals.active_since = time.monotonic()
+            async def send():
+                while True:
+                    chunk = await self.audio.recorder.stdout.readexactly(CHUNK_BYTES)
+                    if ws.transport and ws.transport.get_write_buffer_size() > 128_000:
+                        continue  # Discard old audio rather than build latency
+                    await ws.send(json.dumps({"realtimeInput": {"audio": {
+                        "data": base64.b64encode(chunk).decode("ascii"),
+                        "mimeType": "audio/pcm;rate=16000"}}}))
+                    usage.input_bytes += len(chunk)
+
+            async def receive():
+                async for message in ws:
+                    packet = json.loads(message)
+                    if "usageMetadata" in packet:
+                        usage.update(packet["usageMetadata"])
+                    if packet.get("error"):
+                        raise RuntimeError("Gemini: " + str(packet["error"].get("message", ""))[:120])
+                    if packet.get("goAway"):
+                        raise RuntimeError("Gemini requested reconnection")
+                    content = packet.get("serverContent") or {}
+                    if content.get("interrupted"):
+                        while not queue.empty():
+                            queue.get_nowait()
+                    for part in (content.get("modelTurn") or {}).get("parts", []):
+                        blob = part.get("inlineData") or {}
+                        if not str(blob.get("mimeType", "")).startswith("audio/pcm"):
+                            continue
+                        pcm = base64.b64decode(blob.get("data", ""))
+                        usage.output_bytes += len(pcm)
+                        # Keep only recent audio; never let an output backlog grow.
+                        for offset in range(0, len(pcm), 4800):
+                            if queue.full():
+                                queue.get_nowait()
+                            queue.put_nowait(pcm[offset:offset + 4800])
+
+            async def play():
+                while True:
+                    chunk = await queue.get()
+                    if not self.audio.player or not self.audio.player.stdin:
+                        return
+                    self.audio.player.stdin.write(chunk)
+                    await self.audio.player.stdin.drain()
+
+            tasks = [asyncio.create_task(task()) for task in (send, receive, play)]
+            try:
+                finished, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in finished:
+                    task.result()
+                raise RuntimeError("Streaming ended")
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if generation == self.generation:
+                print("Audio connection stopped:", safe_error(exc))
+        finally:
+            if generation == self.generation:
+                self.connected = False
+                if self.totals.active_since is not None:
+                    self.totals.translated_seconds += time.monotonic() - self.totals.active_since
+                    self.totals.active_since = None
+                await self.audio.passthrough()
+                if self.socket is ws:
+                    self.socket = None
+                with contextlib.suppress(Exception):
+                    await ws.close()
+                if self.desired:
+                    # Retry a failed connection in the background, retaining the mic.
+                    asyncio.create_task(self._retry(generation))
+
+    async def _retry(self, generation):
+        for delay in (1, 2, 4):
+            await asyncio.sleep(delay)
+            if generation != self.generation or not self.desired:
+                return
+            try:
+                ws = await self.connect()
+                if generation != self.generation:
+                    await ws.close()
+                    return
+                self.socket = ws
+                self.worker = asyncio.create_task(self._run(ws, generation))
+                print("Gemini reconnected.")
+                return
+            except Exception as exc:
+                print("Reconnect failed:", safe_error(exc))
+        if generation == self.generation:
+            self.desired = False
+            print("Translation paused after 3 retries; original microphone still active.")
+
+    def status(self):
+        print(f"Mode: {'TRANSLATING' if self.connected else 'connecting/retrying' if self.desired else 'ORIGINAL'}")
+        print(f"Virtual mic: TranslatedMic ({MIC}) | Physical mic: {self.audio.source or '(not started)'}")
+        print(f"Model: {self.settings.model} | Target: {self.settings.language} | Echo: {self.settings.echo}")
+        if "live-translate" in self.settings.model:
+            print("Voice: model-managed speaker imitation; voice changes are a known limitation")
+        else:
+            print(f"Voice: {self.settings.voice} | Temperature: {self.settings.temperature:g} (Live Agent)")
+        print(f"API key: {'configured' if self.api_key else 'missing'} ({self.key_source}; value hidden)")
+
+    async def command(self, line: str):
+        try:
+            tokens = shlex.split(line)
+        except ValueError as exc:
+            print(exc)
+            return True
+        if not tokens:
+            return True
+        cmd, *args = tokens
+        cmd = cmd.lower()
+        try:
+            if cmd in ("help", "?"):
+                print(HELP)
+            elif cmd in ("quit", "exit", "q"):
+                return False
+            elif cmd == "on":
+                await self.on()
+            elif cmd == "off":
+                await self.off()
+            elif cmd in ("usage", "cost"):
+                self.totals.show()
+            elif cmd == "status":
+                self.status()
+            elif cmd == "test":
+                await self.test()
+            elif cmd in ("lang", "language", "to"):
+                if not args:
+                    print(format_languages())
+                    return True
+                requested = " ".join(args)
+                try:
+                    code = valid_language(requested)
+                except ValueError:
+                    print(f"Unknown language: {requested!r}\n{format_languages()}")
+                    return True
+                if code == self.settings.language:
+                    print(f"Already translating to {language_name(code)} ({code}).")
+                    return True
+                self.settings.language = code
+                await self.reconfigure()
+            elif cmd == "model":
+                if len(args) != 1:
+                    raise ValueError("Usage: model NAME")
+                self.settings.model = valid_model(args[0])
+                await self.reconfigure()
+            elif cmd == "echo":
+                if len(args) != 1 or args[0].lower() not in ("on", "off"):
+                    raise ValueError("Usage: echo on|off")
+                self.settings.echo = args[0].lower() == "on"
+                await self.reconfigure()
+            elif cmd == "voice":
+                if len(args) != 1 or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,40}", args[0]):
+                    raise ValueError("Usage: voice NAME")
+                self.settings.voice = args[0]
+                if "live-translate" in self.settings.model:
+                    print(f"Voice preference {self.settings.voice} saved for Live Agent models only. "
+                          "Live Translate cannot lock the voice; it may drift. "
+                          "Try 'model gemini-3.8-live' for a configured voice.")
+                else:
+                    await self.reconfigure()
+            elif cmd == "temperature":
+                temp = float(args[0]) if len(args) == 1 else -1
+                if not (0 <= temp <= 2):
+                    raise ValueError("Usage: temperature NUMBER (0..2)")
+                self.settings.temperature = temp
+                await self.reconfigure()
+            elif cmd == "input":
+                if not args:
+                    print(f"Physical source: {self.audio.source}")
+                else:
+                    source = args[0]
+                    if source in (FEED, MIC):
+                        raise ValueError("Cannot use virtual microphone as physical input")
+                    self.settings.source = source
+                    self.audio.source = source
+                    was = self.desired
+                    await self.off("Microphone changed; original voice active")
+                    if was:
+                        await self.on()
+            elif cmd == "key":
+                save = len(args) == 1 and args[0].lower() == "save"
+                if args and not save:
+                    raise ValueError("Usage: key [save] (secure hidden prompt)")
+                key = await asyncio.to_thread(getpass.getpass, "New Gemini API key (hidden): ")
+                if not key.strip():
+                    print("Unchanged.")
+                    return True
+                old, oldsrc = self.api_key, self.key_source
+                self.api_key, self.key_source = key.strip(), "interactive"
+                if not await self.test():
+                    self.api_key, self.key_source = old, oldsrc
+                    print("Previous key retained.")
+                    return True
+                if save:
+                    save_key(self.api_key)
+                    self.key_source = str(ENV_FILE)
+                    print(f"Saved to {ENV_FILE} (600).")
+                await self.reconfigure()
+            else:
+                print("Unknown command. Type help.")
+        except (ValueError, RuntimeError) as exc:
+            print("Error:", safe_error(exc))
+        return True
+
+    async def close(self):
+        self.desired = False
+        self.generation += 1
+        await self._stop()
+        await self.audio.close()
+
+
+def safe_error(exc: Exception) -> str:
+    # In particular, never print a WebSocket URL containing ?key=....
+    msg = str(exc)
+    msg = re.sub(r"(?i)([?&]key=)[^&\s'\"]+", r"\1[redacted]", msg)
+    return msg[:250] or type(exc).__name__
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     epilog=HELP)
+    parser.add_argument("--to", "--language", "-t", default="hi", help="Target language code or full name")
+    parser.add_argument("--languages", "--list-languages", action="store_true",
+                        help="List every supported Live Translate language and code without starting audio")
+    parser.add_argument("--model", "-m", default=DEFAULT_MODEL, help="Live API model")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--on", dest="enabled", action="store_true", help="Start translating (default)")
+    group.add_argument("--off", dest="enabled", action="store_false", help="Start in original microphone mode")
+    parser.set_defaults(enabled=True)
+    parser.add_argument("--echo", dest="echo", action="store_true", default=True, help="Echo target-language input")
+    parser.add_argument("--no-echo", dest="echo", action="store_false")
+    parser.add_argument("--voice", default="Aoede", help="Live Agent voice")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Live Agent temperature 0..2")
+    parser.add_argument("--input", default="", help="Physical PipeWire source node.name")
+    parser.add_argument("--test", action="store_true", help="Test Gemini WebSocket setup, without audio routing")
+    parser.add_argument("--set-key", action="store_true", help="Prompt for new key and optionally save to .env")
+    parser.add_argument("--status", action="store_true", help="Print settings/key source without starting")
+    parser.add_argument("--usage", "--cost", action="store_true", help="Print process usage without starting")
+    return parser.parse_args()
+
+
+async def read_command(prompt: str = "") -> str:
+    """Read a terminal command without blocking audio or leaving input threads behind."""
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    def ready():
+        if not future.done():
+            future.set_result(sys.stdin.readline())
+
+    loop.add_reader(sys.stdin.fileno(), ready)
+    try:
+        if prompt:
+            print(prompt, end="", flush=True)
+        return await future
+    finally:
+        loop.remove_reader(sys.stdin.fileno())
+
+
+async def main():
+    loop = asyncio.get_running_loop()
+    with contextlib.suppress(NotImplementedError):
+        loop.add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    args = parse_args()
+    if args.languages:
+        print(format_languages())
+        return 0
+    try:
+        target = valid_language(args.to)
+    except ValueError:
+        print(f"Unknown language: {args.to!r}\n{format_languages()}", file=sys.stderr)
+        return 2
+    settings = Settings(model=valid_model(args.model), language=target,
+                        echo=args.echo, voice=args.voice, temperature=args.temperature, source=args.input)
+    settings.setup()
+    key, source = key_from_sources()
+    app = Translator(settings, key, source)
+    if args.set_key:
+        entered = await asyncio.to_thread(getpass.getpass, "New Gemini API key (hidden): ")
+        if not entered.strip():
+            print("No key entered")
+            return 1
+        app.api_key, app.key_source = entered.strip(), "interactive"
+        if not await app.test():
+            print("Key not saved.")
+            return 1
+        choice = await asyncio.to_thread(input, f"Save to {ENV_FILE}? [y/N] ")
+        if choice.strip().lower() in ("y", "yes"):
+            save_key(app.api_key)
+            print(f"Saved to {ENV_FILE} (600).")
+        return 0
+    if args.test:
+        return 0 if await app.test() else 1
+    if args.status:
+        app.status()
+        return 0
+    if args.usage:
+        app.totals.show()
+        return 0
+    if not key and args.enabled:
+        print("No Gemini key found; starting with original audio. Use 'key' to configure.")
+        args.enabled = False
+    try:
+        await app.audio.start()
+        if args.enabled:
+            await app.on()
+        app.status()
+        interactive = sys.stdin.isatty()
+        if interactive:
+            print("Type help for commands. Ctrl+C to exit.")
+        while line := await read_command("translate> " if interactive else ""):
+            if not await app.command(line):
+                break
+    finally:
+        await app.close()
+        app.totals.show()
+        print("Virtual microphone removed.")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(asyncio.run(main()))
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\nInterrupted; audio cleaned up.")
+    except (ValueError, RuntimeError, OSError, FileNotFoundError) as e:
+        print("Error:", safe_error(e), file=sys.stderr)
+        sys.exit(1)

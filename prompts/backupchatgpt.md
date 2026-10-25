@@ -1,5 +1,11 @@
 # backupchatgpt.py
 
+## Revisions, 23 Oct 2026
+
+A few changes:
+
+- If the conversation ID / URL is already open in the browser and accessible via CDP, re-use that tab by scrolling instead of opening a new one. That saves requests.
+
 ## Initial build, 19 Oct 2026
 
 <!--
