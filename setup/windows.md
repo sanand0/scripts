@@ -245,6 +245,27 @@ uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
 
 Run `mise` from plain PowerShell. Remote Desktop Commander's processes on Plutonium inherit `XDG_DATA_HOME=/home/Anand/.local/share`. mise run there installs into `C:\home\Anand\.local\share\mise` instead of `%LOCALAPPDATA%\mise`, whose shims are on PATH. If a tool works in one shell but not another, run `Remove-Item Env:XDG_DATA_HOME; mise install; mise reshim`.
 
+## Remote Desktop Commander
+
+To keep Plutonium remotely accessible after reboot, first pair it with `npx @wonderwhy-er/desktop-commander@latest remote`. Then run in **Admin PowerShell**:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+  -Argument '-NoProfile -NonInteractive -WindowStyle Hidden -Command "& ''C:\Apps\nodejs\npx.cmd'' -y ''@wonderwhy-er/desktop-commander@latest'' remote"' `
+  -WorkingDirectory 'C:\Users\Anand'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$trigger.Delay = 'PT1M'
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 `
+  -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+$principal = New-ScheduledTaskPrincipal -UserId 'PLUTONIUM\Anand' -LogonType S4U -RunLevel Highest
+Register-ScheduledTask -TaskName 'DesktopCommanderRemote' -Action $action `
+  -Trigger $trigger -Settings $settings -Principal $principal
+```
+
+This uses the stable `C:\Apps\nodejs\npx.cmd` rather than mise's versioned Node path. S4U avoids the local account password (password-based registration failed). The task starts one minute after boot, runs elevated, and retries failures. Registration succeeded; connectivity **after a reboot is not yet verified**, and S4U's network restrictions may prevent the remote connection.
+
+After reboot, check `Get-ScheduledTaskInfo -TaskName DesktopCommanderRemote` and verify Plutonium is online at [Desktop Commander](https://mcp.desktopcommander.app/).
+
 ## Google Workspace
 
 Copy `client_secret.json` from each Linux config folder into the matching `$HOME\.config\` folder:
