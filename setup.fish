@@ -94,6 +94,9 @@ abbr --add mic-volume 'wpctl set-volume @DEFAULT_AUDIO_SOURCE@'
 # 7zz is a faster, better 7z (installed via mise use -g github:ip7z/7zip)
 abbr --add 7z 7zz
 
+# gridcraft is a clean-room implementation of Excel
+abbr --add excel gridcraft
+
 # Use xz with all CPU cores for compression
 abbr --add xz 'xz -T0'
 
