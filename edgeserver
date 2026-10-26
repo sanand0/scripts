@@ -1,0 +1,652 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["aiohttp>=3.10", "typer>=0.12"]
+# ///
+"""Phone remote for presenting Edge tabs: scroll, zoom, point and switch tabs from a phone.
+
+Serves edgeserver.html on 127.0.0.1 and drives Edge over CDP. `tailscale serve` exposes it
+(HTTPS, dedicated port) to the phone; CDP itself is never exposed.
+
+\b
+Examples:
+  edgeserver                          # serve + tailscale https on :8765
+  edgeserver check                    # pre-talk check: CDP, serve, tailscale ping (direct/relayed)
+  edgeserver check --format jsonl | jaq -c 'select(.ok | not)'
+  edgeserver --no-tailscale --port 9000 2>&1 | moor
+"""
+
+import asyncio
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import typer
+
+CACHE = Path.home() / ".cache/sanand-scripts/edgeserver"
+STATE_FILE = CACHE / "state.json"
+PAGE = Path(__file__).resolve().with_name("edgeserver.html")
+CAPS = ["scroll", "pinch", "pointer", "tabs", "playlist", "checkpoints", "viewpoints"]
+MAX_SCALE = 4.0  # Edge's maximum page scale (measured)
+FRAME = 1 / 60
+
+# Injected into the stage page: ring, input overlay, viewport state, checkpoint capture/restore.
+PAGE_JS = r"""
+window.__es?.v === "__V__" || (window.__es = (() => {
+  const vv = visualViewport, de = document.documentElement;
+  const mk = (id, css) => { let e = document.getElementById(id);
+    if (!e) { e = document.createElement('div'); e.id = id; e.style.cssText = css; de.append(e); }
+    else if (!e.isConnected) de.append(e);
+    return e; };
+  const fixed = 'position:fixed;z-index:2147483647;pointer-events:none;margin:0;padding:0;';
+  const ov = () => mk('__es_ov', fixed + 'inset:0;background:transparent;touch-action:pinch-zoom');
+  const ring = () => mk('__es_ring', fixed + 'left:0;top:0;border-radius:50%;box-sizing:border-box;display:none;transition:opacity .15s');
+  const scrollable = e => { const s = getComputedStyle(e);
+    return /(auto|scroll)/.test(s.overflowY + s.overflowX) && (e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1); };
+  const root = document.scrollingElement || de;
+  const rootScrolls = () => root.scrollHeight > innerHeight + 1 || root.scrollWidth > innerWidth + 1;
+  const scrollerAt = (x, y) => { for (let e = document.elementFromPoint(x, y); e && e !== root && e !== de; e = e.parentElement)
+    if (scrollable(e)) return e; return root; };
+  const path = e => { const p = [];
+    for (; e && e !== de && e.parentElement; e = e.parentElement) {
+      if (e.id && !/^\d/.test(e.id)) { p.unshift('#' + CSS.escape(e.id)); break; }
+      p.unshift(e.tagName.toLowerCase() + ':nth-child(' + (Array.from(e.parentElement.children).indexOf(e) + 1) + ')'); }
+    return p.join('>'); };
+  const vp = () => ({s: vv.scale, pl: vv.pageLeft, pt: vv.pageTop, vw: vv.width, vh: vv.height, sw: vv.width * vv.scale, sh: vv.height * vv.scale});
+  const px = (fx, fy) => [vv.width * fx, vv.height * fy];
+  return {
+    v: "__V__",
+    vp,
+    // Where to send a wheel for a scroll starting at (fx, fy): the point itself, or the biggest scroller if nothing scrolls there
+    wheelAt(fx, fy) {
+      const [x, y] = px(fx, fy), e = scrollerAt(x, y);
+      if (e !== root || rootScrolls()) return {...vp(), fx, fy};
+      let best = null, area = 0;
+      for (const c of document.querySelectorAll('body *')) {
+        if (c.clientHeight < 100 || !scrollable(c)) continue;
+        const r = c.getBoundingClientRect(), a = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+        if (a > area) { area = a; best = r; }
+      }
+      if (!best) return {...vp(), fx, fy};
+      return {...vp(), fx: ((best.left + best.right) / 2 - vv.offsetLeft) / vv.width, fy: ((best.top + best.bottom) / 2 - vv.offsetTop) / vv.height};
+    },
+    // Ring at (fx, fy) of the visual viewport; kind: aim | pointer | null (hide). Returns viewport state.
+    ring(fx, fy, kind) {
+      const r = ring();
+      if (!kind) { r.style.display = 'none'; return vp(); }
+      const d = (kind === 'pointer' ? 28 : 56) / vv.scale, b = 3 / vv.scale;
+      Object.assign(r.style, {display: 'block', width: d + 'px', height: d + 'px',
+        transform: `translate(${vv.offsetLeft + vv.width * fx - d / 2}px, ${vv.offsetTop + vv.height * fy - d / 2}px)`,
+        border: `${b}px solid ${kind === 'pointer' ? '#fff' : '#ff2d55'}`,
+        background: kind === 'pointer' ? 'rgba(255,45,85,.85)' : 'rgba(255,45,85,.12)',
+        boxShadow: `0 0 0 ${b}px rgba(0,0,0,.35), 0 0 ${12 / vv.scale}px ${4 / vv.scale}px rgba(255,45,85,.5)`});
+      return vp();
+    },
+    overlay(on) { ov().style.pointerEvents = on ? 'auto' : 'none';
+      return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(vp())))); },
+    // Checkpoint: viewport + window scroll + the scroller under (fx, fy) + a text anchor
+    capture(fx = 0.5, fy = 0.5) {
+      const [x, y] = px(fx, fy), e = scrollerAt(x, y);
+      let t = document.elementFromPoint(x, y);
+      while (t && t.parentElement && (t.innerText || '').trim().length < 20) t = t.parentElement;
+      const text = ((t && t.innerText) || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+      return {url: location.href, ...vp(), sx: scrollX, sy: scrollY,
+        el: e === root ? '' : path(e), et: e.scrollTop, elx: e.scrollLeft, text};
+    },
+    restore(c) {
+      let e = c.el && document.querySelector(c.el);
+      if (e) { e.scrollTop = c.et; e.scrollLeft = c.elx; }
+      else if (c.el && c.text) {
+        const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const needle = c.text.slice(0, 40);
+        for (let n; (n = w.nextNode());) if (n.textContent.includes(needle)) { n.parentElement.scrollIntoView({block: 'center'}); break; }
+      }
+      scrollTo(c.sx, c.sy);
+      return vp();
+    },
+  };
+})());
+"""
+PAGE_JS = PAGE_JS.replace("__V__", hashlib.sha1(PAGE_JS.encode()).hexdigest()[:8])  # re-inject when the helper changes
+
+
+def log(*args) -> None:
+    print(time.strftime("%H:%M:%S"), *args, file=sys.stderr, flush=True)
+
+
+class CDP:
+    """One browser-level CDP WebSocket with flattened sessions."""
+
+    def __init__(self, url: str):
+        self.url, self.ws, self.n, self.pending, self.listeners = url, None, 0, {}, []
+
+    async def connect(self, http) -> None:
+        async with http.get(f"{self.url}/json/version") as r:
+            ws_url = (await r.json())["webSocketDebuggerUrl"]
+        self.ws = await http.ws_connect(ws_url, max_msg_size=0, autoping=False)
+        self.reader = asyncio.create_task(self.read())
+
+    async def read(self) -> None:
+        async for m in self.ws:
+            d = json.loads(m.data)
+            if "id" in d:
+                f = self.pending.pop(d["id"], None)
+                if f and not f.done():
+                    f.set_result(d)
+            else:
+                for fn in self.listeners:
+                    fn(d)
+        for f in self.pending.values():
+            f.set_exception(ConnectionError("CDP closed"))
+        self.pending.clear()
+
+    @property
+    def alive(self) -> bool:
+        return self.ws is not None and not self.ws.closed
+
+    async def send(self, method: str, params: dict | None = None, session: str | None = None) -> dict:
+        self.n += 1
+        f = asyncio.get_running_loop().create_future()
+        self.pending[self.n] = f
+        msg = {"id": self.n, "method": method, "params": params or {}} | ({"sessionId": session} if session else {})
+        await self.ws.send_str(json.dumps(msg))
+        d = await asyncio.wait_for(f, 10)
+        if "error" in d:
+            raise RuntimeError(f"{method}: {d['error'].get('message')}")
+        return d["result"]
+
+
+class Server:
+    def __init__(self, cdp_url: str):
+        self.cdp = CDP(cdp_url)
+        self.clients: set = set()
+        self.windows: list[dict] = []  # [{id, tabs: [tab target infos + window]}]
+        self.stage_win: int | None = None
+        self.locked = False
+        self.stage: dict | None = None  # tab target info of the stage tab
+        self.tsid = self.sid = None  # tab session, page session
+        self.attached_at = 0.0
+        self.zoom = 1.0  # Edge page zoom of the stage tab
+        self.scale = 1.0
+        self.lock = asyncio.Lock()  # serializes stage CDP commands
+        self.latest: dict | None = None  # latest gesture frame from the phone
+        self.wake = asyncio.Event()
+        self.g: dict = {}  # active gesture state
+        self.checkpoints: dict[str, list] = {}  # tab target id -> stack
+        saved = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+        self.playlist: set[str] = set(saved.get("playlist", []))
+        self.viewpoints: list[dict] = saved.get("viewpoints", [])
+        self.pushed = ""
+
+    def save(self) -> None:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps({"playlist": sorted(self.playlist), "viewpoints": self.viewpoints}, indent=1))
+
+    # ---------- Tabs and windows
+    async def scan(self) -> None:
+        t0 = time.monotonic()
+        tabs = (await self.cdp.send("Target.getTargets", {"filter": [{"type": "tab"}]}))["targetInfos"]
+        wins = await asyncio.gather(*(self.cdp.send("Browser.getWindowForTarget", {"targetId": t["targetId"]}) for t in tabs), return_exceptions=True)
+        by_win: dict[int, list] = {}
+        for t, w in zip(tabs, wins):
+            if isinstance(w, dict):
+                by_win.setdefault(w["windowId"], []).append(t)
+        key = lambda t: (t.get("embedderData", {}).get("tabStripIndex", 10**6), t["title"])
+        self.windows = [{"id": w, "tabs": sorted(ts, key=key)} for w, ts in by_win.items()]
+        self.windows.sort(key=lambda w: -len(w["tabs"]))
+        if self.stage_win not in by_win:
+            self.stage_win = self.focused_window()
+        active = next((t for t in by_win.get(self.stage_win, []) if t.get("embedderData", {}).get("tabActive")), None)
+        changed = lambda: active and (not self.stage or active["targetId"] != self.stage["targetId"])
+        if changed():
+            async with self.lock:
+                if changed() and self.attached_at < t0:  # skip stale snapshots taken before an action's attach
+                    await self.attach(active)
+        elif active:
+            self.stage = active
+        await self.push()
+
+    def focused_window(self) -> int | None:
+        """The Edge window whose active tab title matches the focused X window, else the biggest."""
+        name = subprocess.run(["xdotool", "getactivewindow", "getwindowname"], check=False, capture_output=True, text=True).stdout
+        for w in self.windows:
+            if any(t.get("embedderData", {}).get("tabActive") and t["title"] and name.startswith(t["title"]) for t in w["tabs"]):
+                return w["id"]
+        return self.windows[0]["id"] if self.windows else None
+
+    def window_of(self, tab_id: str) -> dict | None:
+        return next((w for w in self.windows if any(t["targetId"] == tab_id for t in w["tabs"])), None)
+
+    async def attach(self, tab: dict) -> None:
+        """Attach to the tab target, then auto-attach its page: one stage session at a time."""
+        if self.tsid:
+            await self.cdp.send("Target.detachFromTarget", {"sessionId": self.tsid})
+            self.tsid = self.sid = None
+        self.stage, self.g, self.attached_at = tab, {}, time.monotonic()
+        got = asyncio.get_running_loop().create_future()
+        tsid = (await self.cdp.send("Target.attachToTarget", {"targetId": tab["targetId"], "flatten": True}))["sessionId"]
+
+        def on(d):
+            if d.get("method") == "Target.attachedToTarget" and d.get("sessionId") == tsid and d["params"]["targetInfo"]["type"] == "page" and not got.done():
+                got.set_result(d["params"]["sessionId"])
+
+        self.cdp.listeners.append(on)
+        try:
+            await self.cdp.send("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}, tsid)
+            self.tsid, self.sid = tsid, await asyncio.wait_for(got, 10)
+        finally:
+            self.cdp.listeners.remove(on)
+        m = await self.cdp.send("Page.getLayoutMetrics", {}, self.sid)
+        self.zoom, self.scale = m["cssVisualViewport"].get("zoom", 1), m["cssVisualViewport"]["scale"]
+        log("stage", tab["title"][:60], f"zoom {self.zoom:.2f}")
+        await self.checkpoint()
+
+    async def js(self, expr: str):
+        r = await self.cdp.send("Runtime.evaluate", {"expression": PAGE_JS + ";" + expr, "returnByValue": True, "awaitPromise": True}, self.sid)
+        if "exceptionDetails" in r:
+            raise RuntimeError(r["exceptionDetails"].get("exception", {}).get("description", "JS error"))
+        return r["result"].get("value")
+
+    async def activate(self, tab_id: str) -> None:
+        await self.cdp.send("Target.activateTarget", {"targetId": tab_id})
+        w = self.window_of(tab_id)
+        self.stage_win = w["id"] if w else self.stage_win
+        tab = next(t for w in self.windows for t in w["tabs"] if t["targetId"] == tab_id)
+        await self.attach(tab | {"embedderData": tab.get("embedderData", {}) | {"tabActive": True}})
+
+    def stage_tabs(self) -> list[dict]:
+        tabs = next((w["tabs"] for w in self.windows if w["id"] == self.stage_win), [])
+        listed = [t for t in tabs if t["url"] in self.playlist]
+        return listed or tabs
+
+    # ---------- Checkpoints and viewpoints
+    async def checkpoint(self, fx: float = 0.5, fy: float = 0.5) -> dict:
+        c = await self.js(f"__es.capture({fx},{fy})")
+        stack = self.checkpoints.setdefault(self.stage["targetId"], [])
+        stack.append(c)
+        del stack[:-20]
+        return c
+
+    async def restore(self, c: dict) -> None:
+        await self.js(f"__es.restore({json.dumps(c)})")
+        await self.cdp.send("Emulation.setPageScaleFactor", {"pageScaleFactor": c["s"]}, self.sid)
+        v = await self.js("__es.vp()")
+        if c["s"] > 1.001 and (abs(v["pl"] - c["pl"]) > 1 or abs(v["pt"] - c["pt"]) > 1):
+            await self.js("__es.overlay(true)")
+            await self.wheel(0.5, 0.5, (c["pl"] - v["pl"]) * c["s"] * self.zoom, (c["pt"] - v["pt"]) * c["s"] * self.zoom)
+            await asyncio.sleep(0.05)
+            await self.js("__es.overlay(false)")
+        self.scale = c["s"]
+
+    async def back(self) -> str:
+        stack = self.checkpoints.get(self.stage["targetId"], [])
+        if not stack:
+            return "none"
+        v = await self.js("__es.vp()")
+        same = lambda c: abs(c["s"] - v["s"]) < 0.01 and abs(c["pl"] - v["pl"]) < 4 and abs(c["pt"] - v["pt"]) < 4
+        if same(stack[-1]) and len(stack) > 1:
+            stack.pop()
+        await self.restore(stack[-1])
+        return "restore"
+
+    # ---------- Input
+    async def wheel(self, fx: float, fy: float, dx: float, dy: float) -> None:
+        v = self.g.get("v") or await self.js("__es.vp()")
+        await self.cdp.send("Input.dispatchMouseEvent", {"type": "mouseWheel", "x": v["vw"] * fx, "y": v["vh"] * fy, "deltaX": dx, "deltaY": dy}, self.sid)
+
+    async def touch(self, kind: str, points: list[tuple[float, float]], s: float) -> None:
+        tp = [{"x": x / s, "y": y / s, "id": i} for i, (x, y) in enumerate(points)]
+        await self.cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": tp}, self.sid)
+
+    def fingers(self, mx: float, my: float, r: float) -> list[tuple[float, float]]:
+        return [(mx - r, my), (mx + r, my)] if self.g["axis"] == "x" else [(mx, my - r), (mx, my + r)]
+
+    def room(self, mx: float, my: float) -> float:
+        v = self.g["v"]
+        return (min(mx, v["sw"] - mx) if self.g["axis"] == "x" else min(my, v["sh"] - my)) - 4
+
+    async def step(self, f: dict) -> bool:
+        """Apply one gesture frame. Returns True if it wants another step without new input."""
+        g, t = self.g, f["type"]
+        if g.get("id") != f.get("id") or g.get("type") != t or t == "end":
+            await self.finish()
+            g = self.g = {"id": f.get("id"), "type": t}
+        if t == "end":
+            return False
+        if t == "scroll":
+            if "v" not in g:
+                g["v"] = await self.js(f"__es.wheelAt({f['x0']},{f['y0']})")
+                g["at"], g["done"] = (g["v"]["fx"], g["v"]["fy"]), (0.0, 0.0)
+            want = (f["dx"], f["dy"])
+            d = [w - a for w, a in zip(want, g["done"])]
+            g["done"] = want
+            v = g["v"]
+            # X% of pad = X% of the visible viewport; wheel deltas are in screen DIPs
+            await self.wheel(*g["at"], -d[0] * v["sw"] * self.zoom, -d[1] * v["sh"] * self.zoom)
+            return False
+        if t in ("aim", "pointer"):
+            v = await self.js(f"__es.ring({f['x']},{f['y']},'{t}')")
+            self.scale = v["s"]
+            return False
+        if t == "pinch":
+            return await self.pinch(f)
+        return False
+
+    async def pinch(self, f: dict) -> bool:
+        g = self.g
+        if "v" not in g:
+            v = await self.js("__es.vp()")
+            if v["s"] < 1.01:
+                await self.checkpoint(f["x0"], f["y0"])
+            g["v"] = await self.js("__es.overlay(true)")
+            g["s0"] = v["s"]
+            mx, my = f["x0"] * v["sw"], f["y0"] * v["sh"]
+            g["axis"] = "x" if min(mx, v["sw"] - mx) >= min(my, v["sh"] - my) else "y"
+            g["r"] = max(24, min(150, self.room(mx, my) * 0.5))
+            g["off"] = [0.0, 0.0]
+            # Document point under the starting midpoint: kept under the current finger midpoint
+            g["doc"] = (v["pl"] + f["x0"] * v["vw"], v["pt"] + f["y0"] * v["vh"])
+            await self.touch("touchStart", self.fingers(mx, my, g["r"]), v["s"])
+        v = await self.js(f"__es.ring({f['x']},{f['y']},'aim')")
+        s = self.scale = v["s"]
+        target = min(MAX_SCALE, max(1.0, g["s0"] * f["ratio"]))
+        # Closed loops, because Chrome eats touch slop unpredictably: spread follows the scale error,
+        # synthetic midpoint = finger midpoint + an offset that cancels the position error.
+        err = [(v["pl"] - (g["doc"][0] - f["x"] * v["vw"])) * s, (v["pt"] - (g["doc"][1] - f["y"] * v["vh"])) * s]
+        lim = [0.25 * v["sw"], 0.25 * v["sh"]]
+        g["off"] = [max(-l, min(l, o + 0.3 * e)) for o, e, l in zip(g["off"], err, lim)]
+        mx = max(30.0, min(v["sw"] - 30, f["x"] * v["sw"] + g["off"][0]))
+        my = max(30.0, min(v["sh"] - 30, f["y"] * v["sh"] + g["off"][1]))
+        r = g["r"] * (target / s) ** 0.7 if abs(target / s - 1) > 0.004 else g["r"]
+        room = self.room(mx, my)
+        if r > room or r < 20:
+            await self.touch("touchCancel", [], s)
+            r = max(24, room * (0.4 if r > room else 0.9))
+            await self.touch("touchStart", self.fingers(mx, my, r), s)
+        g["r"] = r
+        await self.touch("touchMove", self.fingers(mx, my, r), s)
+        g["n"] = g.get("n", 0) + 1 if f is g.get("f") else 0
+        g["f"] = f
+        busy = abs(target / s - 1) > 0.01 or max(abs(e) for e in err) > 2
+        return busy and g["n"] < 60
+
+    async def finish(self) -> None:
+        g, self.g = self.g, {}
+        if g.get("type") == "pinch" and "v" in g:
+            await self.touch("touchCancel", [], 1)  # cancel, not end: no fling
+            await self.js("__es.overlay(false)")
+        if g.get("type") in ("pinch", "aim", "pointer"):
+            self.scale = (await self.js("__es.ring(0,0,null)"))["s"]
+
+    async def gestures(self) -> None:
+        """Serialize gesture frames, keeping only the latest one, at most once per frame."""
+        while True:
+            await self.wake.wait()
+            self.wake.clear()
+            f, t0 = self.latest, time.perf_counter()
+            if not f or not self.sid:
+                continue
+            try:
+                async with self.lock:
+                    again = await self.step(f)
+            except Exception as e:  # noqa: BLE001 - a bad frame must not kill the gesture loop
+                log("gesture error", f.get("type"), e)
+                self.g, again = {}, False
+            if again or self.latest is not f:
+                await asyncio.sleep(max(0, FRAME - (time.perf_counter() - t0)))
+                self.wake.set()
+
+    # ---------- Phone protocol
+    def state(self) -> dict:
+        wins = []
+        for w in self.windows:
+            active = next((t for t in w["tabs"] if t.get("embedderData", {}).get("tabActive")), w["tabs"][0])
+            wins.append({"id": w["id"], "title": active["title"], "count": len(w["tabs"]), "stage": w["id"] == self.stage_win,
+                         "tabs": [{"id": t["targetId"], "title": t["title"] or t["url"], "url": t["url"], "active": t.get("embedderData", {}).get("tabActive", False),
+                                   "playlist": t["url"] in self.playlist} for t in w["tabs"]]})
+        wins.sort(key=lambda w: not w["stage"])
+        stage = self.stage or {}
+        return {"kind": "state", "caps": CAPS, "windows": wins, "locked": self.locked,
+                "stage": {"id": stage.get("targetId"), "title": stage.get("title"), "url": stage.get("url"), "scale": round(self.scale, 2)},
+                "viewpoints": [{k: vp[k] for k in ("id", "name", "title", "url")} for vp in self.viewpoints]}
+
+    async def push(self, force: bool = False) -> None:
+        s = json.dumps(self.state())
+        if s != self.pushed or force:
+            self.pushed = s
+            await asyncio.gather(*(ws.send_str(s) for ws in list(self.clients)), return_exceptions=True)
+
+    async def command(self, ws, m: dict) -> None:
+        k = m["kind"]
+        reply = lambda **kw: ws.send_str(json.dumps(kw))
+        if k == "ping":
+            return await reply(kind="pong", t=m["t"])
+        if k == "g":
+            self.latest = m
+            return self.wake.set()
+        if k == "lock":
+            self.locked = m["on"]
+            self.stage_win = m.get("window", self.stage_win)
+        elif k == "playlist":
+            (self.playlist.add if m["on"] else self.playlist.discard)(m["url"])
+            self.save()
+        elif k in ("activate", "next", "prev", "back", "viewpoint.save", "viewpoint.go", "viewpoint.delete", "reset"):
+            async with self.lock:
+                await self.finish()
+                event = await self.action(k, m)
+            await reply(kind="event", event=event)
+        await self.scan()
+        await self.push(force=True)
+
+    async def action(self, k: str, m: dict) -> str:
+        if k == "activate":
+            w = self.window_of(m["tab"])
+            if self.locked and w and w["id"] != self.stage_win:
+                return "locked"
+            await self.activate(m["tab"])
+            return "switch"
+        if k in ("next", "prev"):
+            tabs = self.stage_tabs()
+            ids = [t["targetId"] for t in tabs]
+            i = ids.index(self.stage["targetId"]) if self.stage["targetId"] in ids else -1
+            j = i + (1 if k == "next" else -1) if i >= 0 else 0
+            if not 0 <= j < len(ids):
+                return "end"
+            await self.activate(ids[j])
+            return k
+        if k == "back":
+            return await self.back()
+        if k == "reset":
+            await self.cdp.send("Emulation.setPageScaleFactor", {"pageScaleFactor": 1}, self.sid)
+            self.scale = 1
+            return "reset"
+        if k == "viewpoint.save":
+            c = await self.js("__es.capture(0.5,0.5)")
+            self.viewpoints.append(c | {"id": f"{time.time():.0f}", "name": m["name"] or self.stage["title"][:40], "title": self.stage["title"]})
+            self.save()
+            return "saved"
+        vp = next((v for v in self.viewpoints if v["id"] == m["id"]), None)
+        if not vp:
+            return "none"
+        if k == "viewpoint.delete":
+            self.viewpoints.remove(vp)
+            self.save()
+            return "deleted"
+        if vp["url"] != self.stage["url"]:
+            tabs = sorted((t for w in self.windows for t in w["tabs"] if t["url"] == vp["url"]), key=lambda t: self.window_of(t["targetId"])["id"] != self.stage_win)
+            if not tabs:
+                return "missing"
+            if self.locked and self.window_of(tabs[0]["targetId"])["id"] != self.stage_win:
+                return "locked"
+            await self.activate(tabs[0]["targetId"])
+        else:
+            await self.checkpoint()
+        await self.restore(vp)
+        return "jump"
+
+    async def handle_ws(self, request):
+        from aiohttp import web
+
+        # Generous heartbeat: relayed (DERP) links and phones dimming their screen add seconds of lag
+        ws = web.WebSocketResponse(heartbeat=20)
+        await ws.prepare(request)
+        self.clients.add(ws)
+        log("phone connected", request.remote, len(self.clients))
+        await ws.send_str(json.dumps(self.state()))
+        try:
+            async for msg in ws:
+                if msg.type != web.WSMsgType.TEXT:  # ERROR carries an exception (e.g. heartbeat timeout), not JSON
+                    log("phone link", msg.type.name, repr(msg.data))
+                    break
+                try:
+                    await self.command(ws, json.loads(msg.data))
+                except Exception as e:  # noqa: BLE001 - report to the phone, keep the socket
+                    log("command error", msg.data[:80], repr(e))
+                    await ws.send_str(json.dumps({"kind": "event", "event": "error", "text": str(e)}))
+        finally:
+            self.clients.discard(ws)
+            # A dropped phone must not leave a pinch, ring or overlay behind
+            self.latest = {"kind": "g", "type": "end"}
+            self.wake.set()
+            log("phone disconnected", len(self.clients))
+        return ws
+
+    async def keep_alive(self, http) -> None:
+        """(Re)connect CDP and rescan tabs every 2 s."""
+        while True:
+            try:
+                if not self.cdp.alive:
+                    await self.cdp.connect(http)
+                    self.stage = self.tsid = self.sid = None
+                    log("CDP connected", self.cdp.url)
+                await self.scan()
+            except Exception as e:  # noqa: BLE001 - Edge restarts: keep retrying
+                log("CDP", repr(e))
+            await asyncio.sleep(2)
+
+
+# ---------- Tailscale
+def ts_json(*args: str) -> dict:
+    out = subprocess.run(["tailscale", *args, "--json"], capture_output=True, text=True, check=True).stdout
+    return json.loads(out or "{}")
+
+
+def serve_target(port: int) -> str | None:
+    """Return what tailscale already serves on https:port, if anything."""
+    cfg = ts_json("serve", "status")
+    for hp, web in (cfg.get("Web") or {}).items():
+        if hp.endswith(f":{port}"):
+            return json.dumps(web)
+    return None
+
+
+def tailscale_up(port: int) -> str:
+    existing = serve_target(port)
+    if existing and f"127.0.0.1:{port}" not in existing:
+        raise SystemExit(f"tailscale already serves https :{port} -> {existing}; pick another --port")
+    if not existing:
+        # Blocks forever (printing an admin URL) when Serve/HTTPS isn't enabled on the tailnet
+        try:
+            subprocess.run(["tailscale", "serve", "--bg", f"--https={port}", f"http://127.0.0.1:{port}"], check=True, capture_output=True, text=True, timeout=20)
+        except subprocess.CalledProcessError as e:
+            raise SystemExit(f"tailscale serve failed:\n{e.stdout}{e.stderr}Or run with --no-tailscale") from None
+        except subprocess.TimeoutExpired as e:
+            out = (e.stdout or b"") + (e.stderr or b"")  # bytes even with text=True
+            raise SystemExit(f"tailscale serve did not finish:{out.decode()}Or run with --no-tailscale") from None
+    host = ts_json("status")["Self"]["DNSName"].rstrip(".")
+    return f"https://{host}:{port}/"
+
+
+def phone_peer(name: str | None) -> dict | None:
+    peers = (ts_json("status").get("Peer") or {}).values()
+    match = lambda p: name.lower() in (p["HostName"] + p["DNSName"]).lower() if name else p.get("OS") == "android"
+    return next((p for p in peers if match(p)), None)
+
+
+app = typer.Typer(add_completion=False, invoke_without_command=True, help=__doc__, rich_markup_mode=None)
+
+
+@app.callback()
+def main(
+    ctx: typer.Context,
+    port: int = typer.Option(8765, help="Local port; also the tailscale HTTPS port"),
+    cdp: str = typer.Option("http://localhost:9222", help="Edge CDP endpoint"),
+    tailscale: bool = typer.Option(True, help="Expose via `tailscale serve` HTTPS on the same port"),
+):
+    if ctx.invoked_subcommand:
+        return
+    from aiohttp import ClientSession, web
+
+    server = Server(cdp)
+
+    async def index(_):
+        return web.FileResponse(PAGE, headers={"Cache-Control": "no-cache"})
+
+    async def run():
+        async with ClientSession() as http:
+            wa = web.Application()
+            wa.add_routes([web.get("/", index), web.get("/ws", server.handle_ws)])
+            runner = web.AppRunner(wa)
+            await runner.setup()
+            await web.TCPSite(runner, "127.0.0.1", port).start()
+            log(f"serving http://127.0.0.1:{port}/")
+            if tailscale:
+                log("phone:", await asyncio.to_thread(tailscale_up, port))
+            await asyncio.gather(server.keep_alive(http), server.gestures())
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if tailscale and serve_target(port):
+            subprocess.run(["tailscale", "serve", f"--https={port}", "off"], check=False, capture_output=True)
+            log(f"tailscale serve :{port} off")
+
+
+@app.command()
+def check(
+    port: int = typer.Option(8765, help="edgeserver port"),
+    cdp: str = typer.Option("http://localhost:9222", help="Edge CDP endpoint"),
+    phone: str = typer.Option(None, help="Phone tailscale hostname substring (default: first Android peer)"),
+    format: str = typer.Option("text", help="text | jsonl"),
+):
+    """Pre-talk check: Edge CDP, local server, tailscale serve, phone reachability (direct vs relayed)."""
+    import urllib.request
+
+    def row(name: str, ok: bool, detail: str) -> None:
+        print(json.dumps({"check": name, "ok": ok, "detail": detail}) if format == "jsonl" else f"{name}\t{'ok' if ok else 'FAIL'}\t{detail}", flush=True)
+
+    def get(url: str) -> bytes:
+        return urllib.request.urlopen(url, timeout=3).read()
+
+    try:
+        row("cdp", True, json.loads(get(f"{cdp}/json/version"))["Browser"])
+    except Exception as e:  # noqa: BLE001
+        row("cdp", False, f"{cdp}: {e}")
+    try:
+        row("server", b"edgeserver" in get(f"http://127.0.0.1:{port}/"), f"http://127.0.0.1:{port}/")
+    except Exception as e:  # noqa: BLE001
+        row("server", False, f"not running on :{port} ({e})")
+    target = serve_target(port)
+    row("serve", bool(target and f"127.0.0.1:{port}" in target), target or f"nothing on https :{port}")
+    p = phone_peer(phone)
+    if not p:
+        return row("phone", False, f"no tailscale peer matching {phone or 'OS=android'}")
+    row("phone", p.get("Online", False), f"{p['HostName']} ({p['DNSName'].rstrip('.')})")
+    out = subprocess.run(["tailscale", "ping", "-c", "3", "--timeout", "3s", p["TailscaleIPs"][0]], check=False, capture_output=True, text=True).stdout.strip()
+    last = out.splitlines()[-1] if out else "no reply"
+    m = re.search(r"via (\S+) in (\S+)", last)
+    if m:
+        relayed = m.group(1).startswith("DERP")
+        row("ping", True, f"{'RELAYED' if relayed else 'direct'} via {m.group(1)} in {m.group(2)}")
+    else:
+        row("ping", False, last)
+
+
+if __name__ == "__main__":
+    app()

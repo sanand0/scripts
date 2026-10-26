@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<!-- Declaring dark support stops Chrome/Edge "auto dark mode" from re-darkening the page -->
+<meta name="color-scheme" content="dark light">
+<title>edgeserver</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23000'/%3E%3Ccircle cx='32' cy='32' r='16' fill='none' stroke='%23ff2d55' stroke-width='6'/%3E%3Ccircle cx='32' cy='32' r='5' fill='%2334c759'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700&family=JetBrains+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+  /* Look: a theatre stage-manager's cue console. Black, with red "standby" and green "go" cue lights. */
+  :root {
+    color-scheme: dark;
+    --bg: #000; --panel: #0f0f10; --line: #232326; --ink: #f4f1ea; --dim: #8b8a86;
+    --go: #34c759; --standby: #ff2d55; --amber: #ffb340;
+    --sans: "Bricolage Grotesque", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  :root[data-theme="light"] { color-scheme: light; --bg: #f4f1ea; --panel: #fffdf8; --line: #ddd8cc; --ink: #141414; --dim: #6b6862; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sans); overscroll-behavior: none; }
+  button { font: inherit; color: inherit; }
+  #band { position: fixed; inset: 0 0 auto 0; height: 3px; background: var(--standby); z-index: 10; transition: background .3s; }
+  #band.up { background: var(--go); }
+
+  /* Present: the whole screen is a blind trackpad */
+  #pad { position: fixed; inset: 0; touch-action: none; overscroll-behavior: none; user-select: none; -webkit-user-select: none; background: #000; color: #f4f1ea; }
+  #pad[hidden] { display: none; }
+  #header-strip { position: absolute; inset: 28px 0 auto 0; height: 84px; border-bottom: 1px dashed #5a5960; display: grid; place-items: center; color: #b4b0a7; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  #header-strip i { font-size: 18px; }
+  #stage-title { position: absolute; top: 50%; left: 12%; right: 12%; translate: 0 -50%; text-align: center; font-size: clamp(18px, 5vw, 28px); color: #e6e2d8; text-wrap: balance; pointer-events: none; }
+  #scale { display: block; margin-top: 8px; font: 700 14px var(--mono); color: var(--go); }
+  .corner { position: absolute; bottom: 0; width: 26%; height: 16%; display: grid; place-items: center; color: #c9c5bc; font-size: 28px; border-top: 1px dashed #5a5960; pointer-events: none; }
+  .corner.left { left: 0; border-right: 1px dashed #5a5960; }
+  .corner.right { right: 0; border-left: 1px dashed #5a5960; }
+  .corner.flash { animation: flash .35s ease-out; }
+  @keyframes flash { from { background: color-mix(in oklch, var(--go) 35%, transparent); color: var(--go); } }
+  #rtt { position: absolute; bottom: 10px; left: 50%; translate: -50% 0; font: 13px var(--mono); color: #b4b0a7; pointer-events: none; }
+  #toast { position: absolute; top: 130px; left: 50%; translate: -50% 0; font: 700 13px var(--mono); color: var(--amber); opacity: 0; transition: opacity .4s; pointer-events: none; }
+  #toast.show { opacity: 1; transition: none; }
+
+  /* Select: the only screen you look at */
+  #select { padding: max(14px, env(safe-area-inset-top)) 14px 40px; max-width: 720px; margin: 0 auto; }
+  #select[hidden] { display: none; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; align-items: center; padding: 10px 0; background: var(--bg); }
+  .bar h1 { flex: 1; margin: 0; font-size: 22px; letter-spacing: -.02em; }
+  .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 8px 12px; min-height: 40px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--standby); color: var(--standby); }
+  .chip.go { background: var(--go); color: #000; border-color: var(--go); font-weight: 700; }
+  .chip:focus-visible, .tab button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  section { margin-top: 18px; }
+  h2 { font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin: 0 0 8px; }
+  details { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); margin-bottom: 10px; overflow: hidden; animation: rise .35s both; }
+  details:nth-of-type(2) { animation-delay: .05s; } details:nth-of-type(3) { animation-delay: .1s; } details:nth-of-type(n+4) { animation-delay: .15s; }
+  @keyframes rise { from { opacity: 0; translate: 0 8px; } }
+  @media (prefers-reduced-motion: reduce) { details, .corner.flash { animation: none; } }
+  summary { display: flex; gap: 10px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary .t { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .n { font: 12px var(--mono); color: var(--dim); }
+  .stage-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  details.stage .stage-dot { background: var(--standby); box-shadow: 0 0 10px var(--standby); }
+  .tab { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--line); }
+  .tab label { padding: 12px 8px 12px 14px; display: grid; place-items: center; cursor: pointer; }
+  .tab input { width: 20px; height: 20px; accent-color: var(--go); }
+  .tab button { flex: 1; min-width: 0; text-align: start; background: none; border: 0; padding: 12px 14px 12px 4px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab.active button { color: var(--go); font-weight: 700; }
+  .tab.active button::before { content: "● "; }
+  .win-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 14px 12px; }
+  form { display: flex; gap: 8px; }
+  form input { flex: 1; min-width: 0; min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 0 12px; font: inherit; }
+  .vp { display: flex; gap: 6px; align-items: center; border-bottom: 1px solid var(--line); }
+  .vp button.go-vp { flex: 1; min-width: 0; text-align: start; background: none; border: 0; padding: 12px 4px; cursor: pointer; }
+  .vp small { display: block; color: var(--dim); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vp .del { background: none; border: 0; color: var(--dim); padding: 12px; cursor: pointer; }
+  .hint { color: var(--dim); font-size: 13px; line-height: 1.5; }
+  .hint kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
+</style>
+</head>
+<body>
+<div id="band" title="Connection: green = connected"></div>
+
+<main id="pad" aria-label="Trackpad for the stage tab">
+  <div id="header-strip"><span><i class="bi bi-chevron-double-down"></i> swipe down for tabs</span></div>
+  <div id="stage-title">edgeserver<span id="scale"></span></div>
+  <div id="toast"></div>
+  <div class="corner left"><i class="bi bi-chevron-left"></i></div>
+  <div class="corner right"><i class="bi bi-chevron-right"></i></div>
+  <div id="rtt">—</div>
+</main>
+
+<div id="select" hidden>
+  <div class="bar">
+    <h1>Stage</h1>
+    <button class="chip" id="lock" aria-pressed="false" title="Lock the stage window: taps on other windows' tabs are refused"><i class="bi bi-lock"></i>Lock</button>
+    <button class="chip" id="theme" title="Toggle light / dark"><i class="bi bi-circle-half"></i></button>
+    <button class="chip go" id="present" title="Back to the trackpad"><i class="bi bi-hand-index"></i>Present</button>
+  </div>
+  <section>
+    <h2>Windows · tick tabs for prev/next</h2>
+    <div id="windows"></div>
+  </section>
+  <section>
+    <h2>Viewpoints</h2>
+    <form id="vp-form">
+      <input id="vp-name" name="name" placeholder="Name this view" autocomplete="off" enterkeyhint="done" autocapitalize="sentences">
+      <button class="chip go" type="submit"><i class="bi bi-bookmark-plus"></i>Save</button>
+    </form>
+    <div id="viewpoints"></div>
+  </section>
+  <section>
+    <h2>Settings</h2>
+    <div class="win-actions" style="padding:0">
+      <button class="chip" id="pointer" aria-pressed="true" title="Hold still ~350 ms, then drag to point"><i class="bi bi-cursor"></i>Pointer mode</button>
+      <button class="chip" id="full" aria-pressed="false" title="Toggle full screen. Android Back also exits."><i class="bi bi-arrows-fullscreen"></i>Full screen</button>
+      <button class="chip" id="reset" title="Reset zoom on the stage tab"><i class="bi bi-zoom-out"></i>Reset zoom</button>
+    </div>
+    <p class="hint">Drag: scroll · two fingers: aim, then pinch/pan · double-tap: back to last checkpoint · hold then drag: pointer · tap bottom corners: prev/next · swipe down from the header strip: this screen.</p>
+  </section>
+</div>
+
+<script type="module">
+// @ts-check
+const $ = (s) => /** @type {HTMLElement} */ (document.querySelector(s));
+const pad = $("#pad"), sel = $("#select");
+const BUZZ = { pointer: [30], pinch: [12], next: [15, 40, 15], prev: [15], restore: [40, 30, 40], none: [200], end: [90, 40, 90, 40, 90],
+  select: [8, 30, 8], switch: [15], locked: [200], error: [200, 60, 200], saved: [20, 20, 20], jump: [15, 40, 15], missing: [200], reset: [25], deleted: [10] };
+const buzz = (k) => navigator.vibrate?.(BUZZ[k] ?? [10]);
+const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k) ?? "null") ?? d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let state = /** @type {any} */ ({ windows: [], viewpoints: [], stage: {} });
+let pointerOn = store.get("pointer", true);
+
+// ---------- Transport: one WebSocket, latest-state gesture frames, auto-reconnect
+let ws = /** @type {WebSocket|null} */ (null), lastPong = 0, retry = 300;
+const send = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
+function connect() {
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onopen = () => { retry = 300; ping(); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.kind === "pong") { lastPong = performance.now(); $("#rtt").textContent = `${Math.round(lastPong - m.t)} ms`; band(); }
+    else if (m.kind === "state") { state = m; render(); }
+    else if (m.kind === "event") { buzz(m.event); toast(m.event === "error" ? m.text : ["end", "locked", "missing", "none"].includes(m.event) ? m.event : ""); }
+  };
+  ws.onclose = () => { band(); setTimeout(connect, retry); retry = Math.min(retry * 2, 3000); };
+}
+const ping = () => send({ kind: "ping", t: performance.now() });
+const band = () => $("#band").classList.toggle("up", ws?.readyState === 1 && performance.now() - lastPong < 3000);
+setInterval(() => { ping(); band(); }, 1000);
+connect();
+
+let frame = null, raf = 0;
+const gesture = (f) => { frame = { kind: "g", ...f }; raf ||= requestAnimationFrame(() => { raf = 0; frame && send(frame); frame = null; }); };
+const flush = () => { if (frame) send(frame); frame = null; };
+
+function toast(text) {
+  if (!text) return;
+  const t = $("#toast"); t.textContent = text; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 900);
+}
+
+// ---------- Wake lock + full screen (both need HTTPS / a user gesture)
+let wake = null;
+const keepAwake = async () => { try { if (!wake || wake.released) wake = await navigator.wakeLock?.request("screen"); } catch {} };
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && keepAwake());
+// Full screen is opt-in (Settings). Exit: the same button, or Android Back.
+const toggleFull = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {});
+document.addEventListener("fullscreenchange", () => $("#full").setAttribute("aria-pressed", String(!!document.fullscreenElement)));
+
+// ---------- Present: gesture recognition
+const HOLD_MS = 350, SLOP = 10, TAP_MS = 250, DOUBLE_MS = 320, PINCH_START = 0.08, PAN_START = 0.04;
+let g = /** @type {any} */ ({ mode: "idle" }), gid = 0, lastTap = { t: 0, x: 0, y: 0 };
+const frac = (t) => [t.clientX / innerWidth, t.clientY / innerHeight];
+const corner = (x, y) => y > 0.84 && (x < 0.26 ? "prev" : x > 0.74 ? "next" : null);
+const inHeader = (py) => py >= 28 && py <= 112;
+const two = (ts) => { const [a, b] = [frac(ts[0]), frac(ts[1])];
+  return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, d: Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY) }; };
+
+pad.addEventListener("touchstart", (e) => {
+  e.preventDefault(); keepAwake();
+  const ts = e.touches;
+  if (ts.length === 1) {
+    const [x, y] = frac(ts[0]);
+    g = { mode: inHeader(ts[0].clientY) ? "header" : "pending", id: ++gid, x0: x, y0: y, x, y, t0: performance.now(), py0: ts[0].clientY };
+    if (g.mode === "pending" && pointerOn) g.hold = setTimeout(() => {
+      if (g.mode !== "pending") return;
+      g.mode = "pointer"; buzz("pointer"); gesture({ type: "pointer", id: g.id, x: g.x, y: g.y });
+    }, HOLD_MS);
+  } else if (ts.length === 2) {
+    clearTimeout(g.hold);
+    if (g.mode === "scroll" || g.mode === "pointer") { flush(); send({ kind: "g", type: "end", id: g.id }); }
+    const m = two(ts);
+    g = { mode: "aim", id: ++gid, x0: m.x, y0: m.y, d0: m.d };
+    gesture({ type: "aim", id: g.id, x: m.x, y: m.y });
+  }
+}, { passive: false });
+
+pad.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  const ts = e.touches;
+  if (ts.length === 1 && ["pending", "scroll", "pointer", "header"].includes(g.mode)) {
+    const [x, y] = frac(ts[0]); g.x = x; g.y = y;
+    const moved = Math.hypot((x - g.x0) * innerWidth, (y - g.y0) * innerHeight) > SLOP;
+    if (g.mode === "header") {
+      if (ts[0].clientY - g.py0 > 70) { g.mode = "done"; showSelect(); }
+      return;
+    }
+    if (g.mode === "pending" && moved) { clearTimeout(g.hold); g.mode = "scroll"; }
+    if (g.mode === "scroll") gesture({ type: "scroll", id: g.id, x0: g.x0, y0: g.y0, dx: x - g.x0, dy: y - g.y0 });
+    if (g.mode === "pointer") gesture({ type: "pointer", id: g.id, x, y });
+  } else if (ts.length === 2 && (g.mode === "aim" || g.mode === "pinch")) {
+    const m = two(ts);
+    if (g.mode === "aim") {
+      if (Math.abs(m.d / g.d0 - 1) < PINCH_START && Math.hypot(m.x - g.x0, m.y - g.y0) < PAN_START) return;
+      // Scale relative to the spread when the threshold was crossed, so aiming never zooms
+      g.mode = "pinch"; g.d1 = m.d; buzz("pinch");
+    }
+    gesture({ type: "pinch", id: g.id, x0: g.x0, y0: g.y0, x: m.x, y: m.y, ratio: m.d / g.d1 });
+  }
+}, { passive: false });
+
+const lift = (e) => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    // One finger left after a 2-finger gesture: end it and ignore the rest
+    if (g.mode === "aim" || g.mode === "pinch") { flush(); send({ kind: "g", type: "end", id: g.id }); g.mode = "done"; }
+    return;
+  }
+  clearTimeout(g.hold);
+  const now = performance.now();
+  if (g.mode === "pending" && now - g.t0 < TAP_MS) {
+    const c = corner(g.x0, g.y0);
+    if (c) { send({ kind: c }); flashCorner(c); }
+    else if (now - lastTap.t < DOUBLE_MS && Math.hypot(g.x0 - lastTap.x, g.y0 - lastTap.y) < 0.12) { send({ kind: "back" }); lastTap.t = 0; }
+    else lastTap = { t: now, x: g.x0, y: g.y0 };
+  } else if (["scroll", "pointer", "aim", "pinch"].includes(g.mode)) { flush(); send({ kind: "g", type: "end", id: g.id }); }
+  g = { mode: "idle" };
+};
+pad.addEventListener("touchend", lift, { passive: false });
+pad.addEventListener("touchcancel", lift, { passive: false });
+
+function flashCorner(c) {
+  const el = $(`.corner.${c === "prev" ? "left" : "right"}`);
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+
+// ---------- Select
+const h = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter((k) => k != null)); return e; };
+const icon = (name) => h("i", { className: `bi bi-${name}` });
+
+function showSelect() { buzz("select"); pad.hidden = true; sel.hidden = false; history.replaceState(null, "", "#select"); }
+function showPresent() { sel.hidden = true; pad.hidden = false; history.replaceState(null, "", "#present"); }
+$("#present").onclick = showPresent;
+$("#lock").onclick = () => send({ kind: "lock", on: !state.locked });
+$("#reset").onclick = () => send({ kind: "reset" });
+$("#full").onclick = toggleFull;
+$("#pointer").onclick = () => { pointerOn = !pointerOn; store.set("pointer", pointerOn); render(); };
+$("#theme").onclick = () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; document.documentElement.dataset.theme = t; store.set("theme", t); };
+document.documentElement.dataset.theme = store.get("theme", "dark");
+$("#vp-form").onsubmit = (e) => { e.preventDefault(); const n = /** @type {HTMLInputElement} */ ($("#vp-name")); send({ kind: "viewpoint.save", name: n.value.trim() }); n.value = ""; };
+
+const openWins = new Set(store.get("open-windows", []));
+function render() {
+  const { stage = {}, windows = [], viewpoints = [], locked } = state;
+  $("#stage-title").firstChild.textContent = stage.title ?? "No stage tab";
+  $("#scale").textContent = stage.scale > 1.01 ? `${stage.scale.toFixed(2)}×` : "";
+  $("#lock").setAttribute("aria-pressed", String(!!locked));
+  $("#pointer").setAttribute("aria-pressed", String(pointerOn));
+  $("#windows").replaceChildren(...windows.map((w) => {
+    const d = h("details", { className: w.stage ? "stage" : "", open: w.stage || openWins.has(w.id) },
+      h("summary", {}, h("span", { className: "stage-dot", title: w.stage ? "Stage window" : "" }), h("span", { className: "t", textContent: w.title }), h("span", { className: "n", textContent: `${w.count} tab${w.count === 1 ? "" : "s"}` })),
+      w.stage ? null : h("div", { className: "win-actions" }, h("button", { className: "chip", onclick: () => send({ kind: "lock", window: w.id, on: !!locked }) }, icon("display"), "Make stage")),
+      ...w.tabs.map((t) => h("div", { className: `tab${t.active ? " active" : ""}` },
+        h("label", { title: "Include in prev/next" }, h("input", { type: "checkbox", checked: t.playlist, onchange: (e) => send({ kind: "playlist", url: t.url, on: e.target.checked }) })),
+        h("button", { textContent: t.title, title: t.url, onclick: () => { send({ kind: "activate", tab: t.id }); showPresent(); } }))));
+    d.ontoggle = () => { d.open ? openWins.add(w.id) : openWins.delete(w.id); store.set("open-windows", [...openWins]); };
+    return d;
+  }));
+  $("#viewpoints").replaceChildren(...(viewpoints.length ? viewpoints.map((v) => h("div", { className: "vp" },
+    h("button", { className: "go-vp", onclick: () => { send({ kind: "viewpoint.go", id: v.id }); showPresent(); } }, v.name, h("small", { textContent: v.title })),
+    h("button", { className: "del", title: "Delete viewpoint", onclick: () => send({ kind: "viewpoint.delete", id: v.id }) }, icon("x-lg")))) : [h("p", { className: "hint", textContent: "Save the current stage view to jump back to it later." })]));
+}
+if (location.hash === "#select") showSelect();
+</script>
+</body>
+</html>

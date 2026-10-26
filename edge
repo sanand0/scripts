@@ -20,6 +20,7 @@ Examples:
   edge open --window mail.google https://chatgpt.com/
   edge js 'WhatsApp' 'document.title'
   edge cdp 'WhatsApp' Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
+  edge serve --help
 """
 
 from __future__ import annotations
@@ -912,6 +913,11 @@ def add_session_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["serve"]:
+        import os
+
+        edgeserver = str(Path(__file__).resolve().with_name("edgeserver"))
+        os.execv(edgeserver, [edgeserver, *sys.argv[2:]])
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="command", required=True)
     tabs_parser = subparsers.add_parser("tabs", help="Print tabs grouped by Edge window")
@@ -954,6 +960,7 @@ def main() -> None:
     js_parser.add_argument("expression", help="JavaScript expression to evaluate")
     js_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
 
+    subparsers.add_parser("serve", help="Run edgeserver, the phone remote for presenting tabs (args pass through)")
     cdp_parser = subparsers.add_parser("cdp", help="Send a raw CDP command directly to one live tab")
     cdp_parser.add_argument("query", help="Exact/partial page title or URL, or exact CDP page target ID")
     cdp_parser.add_argument("method", help="CDP method, e.g. Runtime.evaluate")
