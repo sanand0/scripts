@@ -3,6 +3,37 @@
 - Originally created by ~/code/private-research/edge-tabs/
 - Then migrated to ~/code/scripts/edge_tabs.py
 
+## Import command, 26 Oct 2026
+
+<!--
+cd ~/code/scripts
+dev.sh -- codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Modify `edge` to support an `edge import file.md` command that reads all links in `file` and opens them as tabs in a new Edge window.
+If the links are grouped under a heading or a parent list item, use that as the group name. For example, all three blocks below should open the same two links under the same tab group name ("Section").
+
+```markdown
+- Section
+  - [Link 1](https://example.com/1)
+  - [Link 2](https://example.com/2)
+```
+
+```markdown
+# Section
+
+- [Link 1](https://example.com/1)
+- [Link 2](https://example.com/2)
+```
+
+```markdown
+## Section
+
+https://example.com/1 | https://example.com/2
+```
+
+Infer my intent - which is to be practical and flexible about the way the links may be organized in Markdown - and implement in as simple and concise a form as possible.
+
 ## Revisions, 05 Oct 2026
 
 <!--
@@ -15,6 +46,7 @@ I get these errors:
 ❯ /home/sanand/code/scripts/edge js 'Music · Your files, your listening' 'music.control({\"action\":\"toggle\"}).then(state=>{if(state.error)throw new Error(state.error);retu
 rn state})'
 Multiple live CDP pages match: Music · Your files, your listening
+
 - Music · Your files, your listening — https://tools.s-anand.net/music/
 - Music · Your files, your listening — http://127.0.0.1:8000/music/
 

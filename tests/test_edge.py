@@ -64,6 +64,91 @@ def snss(*commands):
 
 
 class EdgeTest(unittest.TestCase):
+    def test_import_examples_have_identical_groups(self):
+        examples = [
+            "- Section\n  - [Link 1](https://example.com/1)\n  - [Link 2](https://example.com/2)",
+            "# Section\n\n- [Link 1](https://example.com/1)\n- [Link 2](https://example.com/2)",
+            "## Section\n\nhttps://example.com/1 | https://example.com/2",
+        ]
+        for markdown in examples:
+            with self.subTest(markdown=markdown):
+                self.assertEqual(edge.markdown_links(markdown), [
+                    ("Section", "https://example.com/1"), ("Section", "https://example.com/2"),
+                ])
+
+    def test_import_nested_groups_references_and_heading_reset(self):
+        markdown = """https://example.com/plain
+
+Top
+===
+
+1. **Parent**
+   - [One][ref]
+   - Child
+     - <https://example.com/two>
+2. [Three](https://example.com/three)
+
+## Next
+
+| Link | Other |
+| --- | --- |
+| https://example.com/four | [Five](https://example.com/a_(b)) |
+
+[ref]: https://example.com/one "Title"
+"""
+        self.assertEqual(edge.markdown_links(markdown), [
+            (None, "https://example.com/plain"),
+            ("Parent", "https://example.com/one"),
+            ("Child", "https://example.com/two"),
+            ("Top", "https://example.com/three"),
+            ("Next", "https://example.com/four"),
+            ("Next", "https://example.com/a_(b)"),
+        ])
+
+    def test_import_ignores_code_images_and_non_web_links(self):
+        self.assertEqual(edge.markdown_links(
+            "`https://example.com/code`\n\n```md\nhttps://example.com/fenced\n```\n"
+            "![Image](https://example.com/image) [Local](other.md) [Mail](mailto:a@b.com)\n"
+            "https://example.com/real."
+        ), [(None, "https://example.com/real")])
+
+    def test_import_dry_run_routes_file_without_browser_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "links with spaces.md"
+            path.write_text("# Section\nhttps://example.com/1", encoding="utf-8")
+            output = StringIO()
+            with patch.object(sys, "argv", ["edge", "import", str(path), "--dry-run"]), patch.object(
+                edge, "cdp_browser_url"
+            ) as browser, redirect_stdout(output), self.assertRaises(SystemExit) as result:
+                edge.main()
+            self.assertEqual(result.exception.code, 0)
+            self.assertEqual(output.getvalue(), "Section\thttps://example.com/1\n")
+            browser.assert_not_called()
+
+    def test_import_empty_input_fails_before_browser_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "empty.md"
+            path.write_text("No links")
+            with patch.object(edge, "cdp_browser_url") as browser, redirect_stderr(StringIO()):
+                self.assertEqual(edge.import_command(path, "http://localhost:9222"), 1)
+            browser.assert_not_called()
+
+    def test_import_browser_failure_closes_helper_and_reports_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "links.md"
+            path.write_text("https://example.com/one")
+            websocket = MagicMock()
+            with patch.dict(sys.modules, {"websocket": websocket}), patch.object(
+                edge, "cdp_browser_url", return_value="ws://browser"
+            ), patch.object(edge, "cdp_command", return_value={"targetId": "helper"}) as command, patch.object(
+                edge, "resolve_cdp_page", return_value={"id": "helper"}
+            ), patch.object(edge, "page_cdp_command", return_value={"exceptionDetails": {"text": "API failure"}}), redirect_stderr(
+                StringIO()
+            ) as error:
+                self.assertEqual(edge.import_command(path, "http://localhost:9222"), 1)
+            self.assertIn("API failure", error.getvalue())
+            self.assertEqual(command.call_args.args[1:], (2, "Target.closeTarget", {"targetId": "helper"}))
+
     def test_cookie_domain_normalizes_urls_and_www(self):
         self.assertEqual(edge.cookie_domain("google.com"), "google.com")
         self.assertEqual(edge.cookie_domain("www.linkedin.com"), "linkedin.com")

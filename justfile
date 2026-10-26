@@ -66,7 +66,7 @@ context-rebuild:
 
 # Run the Edge CLI tests.
 test-edge:
-    {{ pytest }} --with beautifulsoup4 --with httpx --with markdownify --with websocket-client pytest -q tests/test_edge.py
+    {{ pytest }} --with beautifulsoup4 --with httpx --with markdownify --with markdown-it-py --with linkify-it-py --with websocket-client pytest -q tests/test_edge.py
 
 # Run the HTML email tests using their PEP 723 environment.
 test-htmlemail:

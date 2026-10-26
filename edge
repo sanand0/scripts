@@ -5,6 +5,8 @@
 #   "beautifulsoup4>=4.13",
 #   "httpx>=0.28",
 #   "markdownify>=1.2",
+#   "markdown-it-py>=3",
+#   "linkify-it-py>=2",
 #   "websocket-client>=1.8",
 # ]
 # ///
@@ -12,6 +14,7 @@
 
 Examples:
   edge tabs
+  edge import links.md
   edge tabs --json | jaq '.tab_count'
   edge md 'article title' | moor
   edge md docs.example.com | xclip -selection clipboard
@@ -447,14 +450,14 @@ def cdp_command(connection: object, request_id: int, method: str, params: dict |
     return result["result"]
 
 
-def page_cdp_command(target: dict[str, object], method: str, params: dict | None = None) -> dict:
+def page_cdp_command(target: dict[str, object], method: str, params: dict | None = None, *, timeout: float = 10) -> dict:
     """Send one CDP command directly to a page target without activating its tab."""
     import websocket
 
     websocket_url = target.get("webSocketDebuggerUrl")
     if not isinstance(websocket_url, str):
         raise RuntimeError("CDP page target has no WebSocket URL")
-    with closing(websocket.create_connection(websocket_url, timeout=10, suppress_origin=True)) as connection:
+    with closing(websocket.create_connection(websocket_url, timeout=timeout, suppress_origin=True)) as connection:
         return cdp_command(connection, 1, method, params)
 
 
@@ -640,6 +643,83 @@ def active_cdp_tab_for_window_url(window_query: str, cdp_url: str) -> dict[str, 
     if len(active) != 1:
         raise RuntimeError(f"Expected one active tab in Edge window {window_id}, found {len(active)}")
     return active[0]
+
+
+def markdown_links(markdown: str) -> list[tuple[str | None, str]]:
+    """Extract web links in order, using the nearest heading or parent list label."""
+    from bs4 import BeautifulSoup, Tag
+    from markdown_it import MarkdownIt
+
+    parser = MarkdownIt("commonmark", {"linkify": True}).enable(["linkify", "table", "strikethrough"])
+    document = BeautifulSoup(parser.render(markdown), "html.parser")
+    links = []
+
+    def walk(node: Tag, group: str | None = None) -> None:
+        # A list label applies to its child lists; its own links inherit the outer group.
+        label = " ".join(
+            child.get_text(" ", strip=True) if isinstance(child, Tag) else str(child).strip()
+            for child in node.children if getattr(child, "name", None) not in {"ul", "ol"}
+        ).strip().removeprefix("[ ] ").removeprefix("[x] ").rstrip(":").strip() if node.name == "li" else ""
+        for child in node.children:
+            if not isinstance(child, Tag):
+                continue
+            if child.name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                group = child.get_text(" ", strip=True)
+            if child.name == "a" and urlsplit(child.get("href", "")).scheme in {"http", "https"}:
+                links.append((group, child["href"]))
+            walk(child, label or group if node.name == "li" and child.name in {"ul", "ol"} else group)
+
+    walk(document)
+    return links
+
+
+def import_command(path: Path, cdp_url: str, *, dry_run: bool = False) -> int:
+    """Open Markdown web links in one new window, grouping through Edge's favorites APIs."""
+    try:
+        links = markdown_links(path.read_text(encoding="utf-8"))
+        if not links:
+            raise ValueError(f"No web links found in {path}")
+        if dry_run:
+            for group, url in links:
+                print(f"{group or ''}\t{url}")
+            return 0
+        import websocket
+
+        print(f"Opening {len(links)} links in a new Edge window", file=sys.stderr, flush=True)
+        with closing(websocket.create_connection(cdp_browser_url(cdp_url), timeout=30, suppress_origin=True)) as connection:
+            # Favorites exposes tabs, windows AND tabGroups without installing an extension.
+            target_id = cdp_command(connection, 1, "Target.createTarget", {
+                "url": "edge://favorites/", "newWindow": True,
+            })["targetId"]
+            try:
+                target = resolve_cdp_page(target_id, cdp_url)
+                response = page_cdp_command(target, "Runtime.evaluate", {
+                    "expression": """(async () => {
+                        if (!chrome.tabGroups) throw new Error('Edge favorites tab-group API is unavailable');
+                        const {id: windowId} = await chrome.windows.getCurrent();
+                        const groups = new Map();
+                        for (const [name, url] of LINKS) {
+                            const tab = await chrome.tabs.create({windowId, url, active: false});
+                            if (name) {
+                                const groupId = await chrome.tabs.group(groups.has(name)
+                                    ? {tabIds: [tab.id], groupId: groups.get(name)}
+                                    : {tabIds: [tab.id], createProperties: {windowId}});
+                                if (!groups.has(name)) await chrome.tabGroups.update(groupId, {title: name});
+                                groups.set(name, groupId);
+                            }
+                        }
+                        return true;
+                    })()""".replace("LINKS", json.dumps(links)),
+                    "awaitPromise": True, "returnByValue": True,
+                }, timeout=max(30, len(links) * 2))
+                if "exceptionDetails" in response:
+                    raise RuntimeError(str(response["exceptionDetails"]))
+            finally:
+                cdp_command(connection, 2, "Target.closeTarget", {"targetId": target_id})
+        return 0
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def open_command(url: str, window_query: str, cdp_url: str, *, reuse: bool = False) -> int:
@@ -955,6 +1035,11 @@ def main() -> None:
     )
     open_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
 
+    import_parser = subparsers.add_parser("import", help="Open Markdown web links in a new window with named tab groups")
+    import_parser.add_argument("path", type=Path, help="Markdown file; nearest heading or parent list label names each group")
+    import_parser.add_argument("--dry-run", action="store_true", help="Print group and URL as TSV without opening tabs")
+    import_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
+
     js_parser = subparsers.add_parser("js", help="Evaluate JavaScript in one live tab without activating it")
     js_parser.add_argument("query", help="Exact/partial page title or URL, or exact CDP page target ID")
     js_parser.add_argument("expression", help="JavaScript expression to evaluate")
@@ -968,6 +1053,8 @@ def main() -> None:
     cdp_parser.add_argument("--cdp-url", default="http://localhost:9222", help="CDP HTTP endpoint, default: %(default)s")
     args = parser.parse_args()
 
+    if args.command == "import":
+        raise SystemExit(import_command(args.path, args.cdp_url, dry_run=args.dry_run))
     if args.command == "cookies":
         cookies_command(args.domain, args.cdp_url, args.json)
         return
