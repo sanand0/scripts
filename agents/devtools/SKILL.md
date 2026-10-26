@@ -9,7 +9,8 @@ Playwright browsers are under `${HOME}/.local/share/playwright-browsers`; set `P
 
 - For background work in the user's browser, prefer `edge md|contents|js`; or `webSocketDebuggerUrl` from `/json/list` and Runtime/DOM actions, then direct CDP Input if needed; activate a tab only when needed.
 - For state-changing actions, verify the target and current state first, act once, then verify the observable postcondition before continuing or retrying; never blindly repeat a possibly committed action.
+- Long-lived requests can prevent `networkidle`. Prefer waiting for the specific observable UI state, selector, response, or event the task actually needs.
 - For repeated structured reads, inspect fetch/XHR before building browser automation. Replay a stable request when it returns the required data; verify representative results against the browser.
-- Match representation to problem: AX for semantic targeting; DOM/JS for exact extraction; Network/CDP for APIs/protocol state; screenshots/geometry for visual, canvas, SVG, drag/brush issues.
+- Match representation to problem: AX accessibility tree for semantic targeting; DOM/JS for exact extraction; Network/CDP for APIs/protocol state; screenshots/geometry for visual, canvas, SVG, drag/brush issues.
 - On CSP-heavy sites such as WhatsApp or Google apps, inline script injection may fail. A `blob:` script URL created in page context is a useful fallback.
 - Do not persist credentials or session headers.

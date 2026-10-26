@@ -5,7 +5,6 @@ This directory lists has an [AGENTS.md](AGENTS.md), custom prompts, and a bunch 
 - [AGENTS.md](AGENTS.md) is the entry point.
 - [prompts/](prompts/) has custom prompts for various agents.
 - Directories with a SKILL.md are skills.
-- [agents_gen.sh](agents_gen.sh) updates external skills.
 
 ## Usage
 
