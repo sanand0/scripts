@@ -4,6 +4,11 @@
 
 Prefer these defaults to new scripts unless overridden.
 
+## Verification
+
+Run `just verify` before shipping; it runs the existing test suite with each test's dependencies.
+During iteration, start with the relevant `just test-<name>` recipe (`just --list`).
+
 ## Conventions (always)
 
 - Single file. For Python scripts: `#!/usr/bin/env -S uv run --script` shebang, deps in PEP 723 `# /// script` header.
