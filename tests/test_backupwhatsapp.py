@@ -4,6 +4,10 @@ import asyncio
 import base64
 import datetime as dt
 import json
+import shutil
+import subprocess
+from contextlib import nullcontext
+from unittest.mock import AsyncMock, MagicMock
 import sys
 from pathlib import Path
 
@@ -299,3 +303,240 @@ def test_merge_rejects_cross_chat_records_without_deleting_sources(tmp_path: Pat
         backup.merge_jsonl_files(target, [source])
     assert {p: p.read_bytes() for p in (target, source)} == before
     assert not backup.history_path(target).exists()
+
+
+@pytest.mark.parametrize("earlier_button", [False, True])
+def test_history_scroll_captures_virtualized_messages_between_endpoints(earlier_button: bool) -> None:
+    """A jump to the top renders endpoints but skips the messages in between."""
+    harness = r'''
+const scrape = SCROLL_SOURCE;
+const scroller = {
+  position: 2000, scrollHeight: 3000, clientHeight: 1000,
+  get scrollTop() { return this.position; },
+  set scrollTop(value) { this.position = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); },
+  dispatchEvent() {},
+};
+const main = { querySelectorAll: () => [] };
+globalThis.document = {
+  querySelector: (selector) => selector === 'div#main' ? main : EARLIER_BUTTON && selector.includes('Load earlier') ? { click() { if(scroller.scrollTop > 4) throw new Error('loaded earlier without traversing current messages'); } } : null,
+  querySelectorAll: (selector) => selector === 'div#main div' ? [scroller] : [],
+};
+globalThis.setTimeout = (done) => { done(); };
+globalThis.whatsappscraper = { whatsappMessages: () =>
+  Array.from({length: 30}, (_, i) => ({
+    messageId: String(i), text: `message ${i}`,
+    time: new Date(Date.UTC(2026, 9, 20, 0, i)).toISOString(),
+  })).filter((_, i) => i * 100 >= scroller.scrollTop && i * 100 < scroller.scrollTop + 1000)
+};
+const result = await scrape({cutoff: '2026-10-20T00:00:00.000Z', maxRounds: 20, settleMs: 0, images: false});
+console.log(JSON.stringify(result));
+'''.replace('SCROLL_SOURCE', backup.SCROLL_HISTORY_JS).replace('EARLIER_BUTTON', json.dumps(earlier_button))
+    result = subprocess.run(['node', '--input-type=module'], input=harness, text=True, capture_output=True, check=True)
+    data = json.loads(result.stdout)
+    assert data['reason'] == 'cutoff-reached'
+    assert {row['messageId'] for row in data['messages']} == {str(i) for i in range(30)}
+
+
+def _install_run_backup_mocks(monkeypatch, out_dir: Path, cache_dir: Path, *, incremental: bool, reason: str):
+    conversation_id = "120363430988346355@g.us"
+    title = "TDS"
+    monkeypatch.setattr(backup, "OUT_DIR", out_dir)
+    monkeypatch.setattr(backup, "CACHE_DIR", cache_dir)
+    out_dir.mkdir(parents=True)
+    cache_dir.mkdir(parents=True)
+
+    path = backup.filename_for(title, conversation_id)
+    old = {
+        "messageId": "old-message",
+        "conversationId": conversation_id,
+        "time": "2026-10-26T10:00:00+00:00",
+        "mediaPath": "media/120363430988346355@g.us/old.jpg",
+    }
+    original_jsonl = json.dumps(old, separators=(",", ":")) + "\n"
+    path.write_text(original_jsonl)
+    history_path = backup.history_path(path)
+    history_path.parent.mkdir(parents=True)
+    original_history = '{"archivedAt":"2026-10-01T00:00:00+00:00","reason":"prior"}\n'
+    history_path.write_text(original_history)
+    media_path = path.parent / old["mediaPath"]
+    media_path.parent.mkdir(parents=True)
+    media_path.write_bytes(b"keep existing media")
+    original_media = {p.relative_to(path.parent): p.read_bytes() for p in (path.parent / "media").rglob("*") if p.is_file()}
+
+    checked_path = backup.state_path()
+    original_checked = '{"unrelated":{"sentinel":"keep"}}\n'
+    checked_path.write_text(original_checked)
+
+    chat = {
+        "title": title,
+        "conversationId": conversation_id,
+        "lastActiveText": "10:10",
+        "lastActiveTime": "2026-10-27T10:10:00+00:00",
+        "lastActiveDay": "2026-10-27",
+        "browserTimeZone": "UTC",
+        "unreadCount": 0,
+    }
+    page = MagicMock()
+    page.title = AsyncMock(return_value="WhatsApp")
+    page.evaluate = AsyncMock(return_value={"chat_list": 1, "main_data_id": 1, "main_present": True, "pane_present": True})
+    page.close = AsyncMock()
+    trace = MagicMock()
+    trace.span.return_value = nullcontext()
+    trace.stamp = "2026-10-27T10-20-00Z-test"
+
+    async def fake_connect(_cdp_url):
+        return page
+
+    async def fake_iter_chats(_page, _max_scan, _stop_at=None, _checked_state=None):
+        return [chat]
+
+    async def fake_open_chat(_page, _title, _conversation_id, _max_scan):
+        return True, "visible"
+
+    image = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xffmock-image").decode()
+
+    async def fake_scrape(_page, _cutoff, _fallback_time, _max_messages, _max_rounds, _settle_ms, **_kwargs):
+        return ([{
+            "messageId": "new-message",
+            "conversationId": conversation_id,
+            "time": "2026-10-27T10:05:00+00:00",
+            "text": "new message",
+            "_imageData": image,
+        }], {
+            "reason": reason,
+            "rounds": 200 if reason == "max-rounds" else 3,
+            "conversation_id": conversation_id,
+            "history_scroller_found": True,
+        })
+
+    monkeypatch.setattr(backup.obs, "new_run", MagicMock(return_value=trace))
+    monkeypatch.setattr(backup.obs, "attach_page_observers", MagicMock())
+    monkeypatch.setattr(backup.obs, "capture_dom_outline", AsyncMock(return_value={"outline": []}))
+    monkeypatch.setattr(backup.obs, "classify_whatsapp_anomalies", MagicMock(return_value=[]))
+    monkeypatch.setattr(backup.obs, "monthly_baseline_exists", MagicMock(return_value=True))
+    monkeypatch.setattr(backup, "connect_whatsapp_page", fake_connect)
+    monkeypatch.setattr(backup, "iter_chats", fake_iter_chats)
+    monkeypatch.setattr(backup, "open_chat", fake_open_chat)
+    monkeypatch.setattr(backup, "scrape_open_chat", fake_scrape)
+    monkeypatch.setattr(backup, "inject_scraper", AsyncMock())
+    monkeypatch.setattr(backup, "incremental_stop_time", lambda: None)
+
+    return {
+        "title": title,
+        "conversation_id": conversation_id,
+        "path": path,
+        "original_jsonl": original_jsonl,
+        "history_path": history_path,
+        "original_history": original_history,
+        "media_path": path.parent / "media",
+        "original_media": original_media,
+        "checked_path": checked_path,
+        "original_checked": original_checked,
+        "trace": trace,
+        "incremental": incremental,
+    }
+
+
+async def _run_test_backup(incremental: bool) -> None:
+    since = None if incremental else dt.datetime(2026, 10, 26, 10, 0, tzinfo=dt.UTC)
+    await backup.run_backup(
+        "http://localhost:9222",
+        set() if incremental else {"TDS"},
+        "",
+        since,
+        None,
+        None,
+        None,
+        0,
+        0,
+        1,
+        200,
+        0,
+        False,
+        "text",
+        True,
+    )
+
+
+@pytest.mark.parametrize("incremental", [True, False], ids=["incremental", "explicit-range"])
+def test_max_rounds_fails_before_any_per_chat_write(tmp_path: Path, monkeypatch, incremental: bool) -> None:
+    paths = _install_run_backup_mocks(monkeypatch, tmp_path / "out", tmp_path / "cache", incremental=incremental, reason="max-rounds")
+
+    with pytest.raises(RuntimeError, match="History scan incomplete"):
+        asyncio.run(_run_test_backup(incremental))
+
+    assert paths["path"].read_text() == paths["original_jsonl"]
+    assert paths["history_path"].read_text() == paths["original_history"]
+    assert {p.relative_to(paths["path"].parent): p.read_bytes() for p in paths["media_path"].rglob("*") if p.is_file()} == paths["original_media"]
+    assert paths["checked_path"].read_text() == paths["original_checked"]
+    paths["trace"].finish.assert_called_once()
+    assert paths["trace"].finish.call_args.args[0]["status"] == "failed"
+
+
+@pytest.mark.parametrize("incremental", [True, False], ids=["incremental", "explicit-range"])
+def test_cutoff_reached_still_persists_messages_and_media(tmp_path: Path, monkeypatch, incremental: bool) -> None:
+    paths = _install_run_backup_mocks(monkeypatch, tmp_path / "out", tmp_path / "cache", incremental=incremental, reason="cutoff-reached")
+
+    asyncio.run(_run_test_backup(incremental))
+
+    rows = backup.load_jsonl(paths["path"])
+    assert {row["messageId"] for row in rows} == {"old-message", "new-message"}
+    new_row = next(row for row in rows if row["messageId"] == "new-message")
+    image_path = paths["path"].parent / new_row["mediaPath"]
+    assert image_path.is_file()
+    checked = json.loads(paths["checked_path"].read_text())
+    if incremental:
+        assert backup.chat_key(paths["title"], paths["conversation_id"]) in checked
+    else:
+        assert checked == {"unrelated": {"sentinel": "keep"}}
+
+
+def test_explicit_message_date_overrides_stale_date_chip() -> None:
+    if not shutil.which("node"):
+        pytest.skip("Node.js is required for this JavaScript regression check")
+    start = backup.SCROLL_HISTORY_JS.index("  const rowsFromDateChips = () => {")
+    end = backup.SCROLL_HISTORY_JS.index("  const mediaFiles = [];", start)
+    timestamp_parser = backup.SCROLL_HISTORY_JS[start:end]
+    node_test = f"""
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const timestampParser = {json.dumps(timestamp_parser)};
+const dataId = {{ getAttribute: () => 'm1' }};
+const row = {{
+  matches: (selector) => selector === '[role="row"]',
+  querySelector: (selector) => selector === '[data-id]' ? dataId
+    : selector === '[data-pre-plain-text]' ? {{ getAttribute: () => '[2:30 pm, 27/10/2026]' }}
+    : null,
+  querySelectorAll: () => [],
+  closest: () => null,
+}};
+const staleDateChip = {{
+  matches: () => false,
+  closest: () => null,
+  querySelector: () => null,
+  innerText: '20/10/2026',
+}};
+const context = {{
+  fallbackTime: '',
+  document: {{ querySelector: () => ({{ querySelectorAll: () => [staleDateChip, row] }}) }},
+  parseClock: (value) => {{
+    const match = String(value || '').match(/^(\\d{{1,2}}):(\\d{{2}})\\s*([ap]m)$/i);
+    if (!match) return null;
+    let hours = Number(match[1]) % 12;
+    if (match[3].toLowerCase() === 'pm') hours += 12;
+    return {{ hours, minutes: Number(match[2]) }};
+  }},
+  parseDateLabel: (value) => {{
+    const match = String(value || '').match(/^(\\d{{1,2}})\\/(\\d{{1,2}})\\/(\\d{{4}})$/);
+    return match ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])) : null;
+  }},
+  visibleTimeForRow: () => '2:30 pm',
+  messageIdFromDataId: (value) => value,
+  fallbackText: () => ({{}}),
+  additionalFields: () => ({{}}),
+}};
+const result = vm.runInNewContext(`${{timestampParser}}\\nrowsFromDateChips()`, context);
+assert.equal(result.rows.m1.time, new Date(2026, 9, 27, 14, 30).toISOString());
+"""
+    result = subprocess.run(["node", "-e", node_test], text=True, capture_output=True, timeout=5)
+    assert result.returncode == 0, result.stderr

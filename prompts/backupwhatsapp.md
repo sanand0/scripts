@@ -1,5 +1,14 @@
 # backupwhatsapp.py
 
+## Review large groups, 27 Oct 2026
+
+<!--
+cd ~/code/scripts/
+dev.sh -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+I'm not convinced the TDS WhatsApp group is backed up properly by backupwhatsapp.py. Review the history, explore why this might have happened, ensure that the last 1 week's worth of messages (or as much as is possible) is properly backed up, and see if you can fix the issue for the future.
+
 ## Back up images, 24 Oct 2026
 
 <!-- TDS Summarise Funny Exchanges: https://chatgpt.com/c/6adc4a9a-fe8c-83ec-b4fd-d53fae19603d?src=history_search (2026-10-25T12:30:11+08:00) -->
@@ -13,6 +22,8 @@ What would it take to modify ~/code/scripts/backupwhatsapp.py to export the imag
 ---
 
 Make downloading images a default with an option to turn it off. Run and test. Update tests as required. Make the docs changes MINIMAL, like a few words.
+
+<!-- codex resume 01a17c82-0934-7f83-b68a-d1bfe7b2c6f5 -->
 
 ## Fix errors and log, 27 Sep 2026
 

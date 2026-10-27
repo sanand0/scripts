@@ -7,6 +7,8 @@
 
 Daily run logs are in ~/.cache/sanand-scripts/backupwhatsapp/:
   monthly YYYY-MM-runs.jsonl event logs, latest.json, and diagnostic ZIPs.
+History scans traverse overlapping viewports so virtualized messages render.
+A scan that exhausts --max-scroll-rounds leaves that conversation unchanged.
 Invalid backup JSONL stops the run with its file and line number; repair or
 restore the file before retrying. Malformed records are never silently skipped.
 All top-level backups are checked before connecting to CDP. Keep search results
@@ -427,6 +429,10 @@ async ({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs, images, knownMe
       const row = node.matches?.('[role="row"]') ? node : null;
       if (row) {
         const dataId = row.querySelector("[data-id]")?.getAttribute("data-id");
+        // A virtualized date separator may be absent; explicit row dates are authoritative.
+        const explicit = row.querySelector("[data-pre-plain-text]")?.getAttribute("data-pre-plain-text")
+          ?.match(/^\[\d{1,2}:\d{2}(?:\s?[ap]m)?,\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\]/i);
+        if (explicit) currentDate = new Date(Number(explicit[3]), Number(explicit[2]) - 1, Number(explicit[1]));
         const clock = visibleTimeForRow(row);
         const parsed = parseClock(clock);
         if (dataId && currentDate && parsed) {
@@ -535,9 +541,10 @@ async ({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs, images, knownMe
     }
     previous = signature;
     const earlier = document.querySelector('div#main [title^="Load earlier messages"]');
-    if (earlier) earlier.click();
+    // Traverse hydrated viewports before prepending more history.
+    if (earlier && scroller.scrollTop <= 4) earlier.click();
     else {
-      scroller.scrollTop = 0;
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - scroller.clientHeight * 0.8);
       scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
     }
     await sleep(settleMs);
@@ -1210,7 +1217,7 @@ async def scrape_open_chat(
             "images": images,
             "knownMedia": known_media or [],
         },
-        timeout=600 if images else 120,
+        timeout=max(600, int((max_rounds + 100) * settle_ms / 1000) + 120),
     )
     media_files = {item["messageId"]: item["data"] for item in scroll.pop("mediaFiles", [])}
     messages = scroll.pop("messages", [])
@@ -1376,6 +1383,11 @@ async def run_backup(
                     reason = f"opened-different-conversation:{opened_conversation_id}" if opened_conversation_id else "opened-conversation-id-missing"
                     emit({**summary, "event": "skipped", "reason": reason, "messages_seen": 0, "messages_kept": 0, "rows_changed": 0, "scroll": scroll}, format)
                     continue
+                if scroll.get("reason") == "max-rounds":
+                    raise RuntimeError(
+                        f"History scan incomplete for {title} after {max_scroll_rounds} rounds; "
+                        "backup unchanged. Retry with a larger --max-scroll-rounds."
+                    )
                 path = migrate_path(title, conversation_id) if conversation_id else path
                 summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
                 with trace.span("validation"):
@@ -1458,7 +1470,7 @@ def main(
     out_dir: Path = typer.Option(OUT_DIR, "--out-dir", help="Directory for per-conversation JSONL files."),
     scraper: Path = typer.Option(SCRAPER, "--scraper", help="Built whatsappscraper.min.js bundle."),
     max_scan: int = typer.Option(120, "--max-scan", help="Maximum chat-list scroll pages to scan."),
-    max_scroll_rounds: int = typer.Option(200, "--max-scroll-rounds", help="Maximum upward history scrolls per conversation."),
+    max_scroll_rounds: int = typer.Option(2000, "--max-scroll-rounds", help="Maximum upward history scrolls per conversation."),
     settle_ms: int = typer.Option(900, "--settle-ms", help="Delay after each history scroll in milliseconds."),
     dry_run: bool = typer.Option(False, "--dry-run", help="List conversations that would be backed up."),
     images: bool = typer.Option(True, "--images/--no-images", help="Export available images (default: on)."),
