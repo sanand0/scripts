@@ -9,6 +9,12 @@ dev.sh -- codex --yolo --model gpt-6.1-sol --config model_reasoning_effort=mediu
 
 I'm not convinced the TDS WhatsApp group is backed up properly by backupwhatsapp.py. Review the history, explore why this might have happened, ensure that the last 1 week's worth of messages (or as much as is possible) is properly backed up, and see if you can fix the issue for the future.
 
+---
+
+There aren't enough messages on 26 Oct, and perhaps other messages were missed out, too. Fix this - if required, via a one-time update.
+
+<!-- codex resume 01a17c82-0934-7f83-b68a-d1bfe7b2c6f5 -->
+
 ## Back up images, 24 Oct 2026
 
 <!-- TDS Summarise Funny Exchanges: https://chatgpt.com/c/6adc4a9a-fe8c-83ec-b4fd-d53fae19603d?src=history_search (2026-10-25T12:30:11+08:00) -->

@@ -24,14 +24,16 @@ import backupwhatsapp as backup
     (["--no-images"], False),
     (["--images"], True),
 ])
-def test_image_download_cli_defaults(monkeypatch, flags: list[str], enabled: bool) -> None:
+def test_image_download_cli_defaults(monkeypatch, tmp_path: Path, flags: list[str], enabled: bool) -> None:
     received = []
 
     async def fake_run_backup(*args):
         received.append(args[-1])
 
     monkeypatch.setattr(backup, "run_backup", fake_run_backup)
-    result = CliRunner().invoke(backup.app, flags)
+    scraper = tmp_path / 'scraper.js'
+    scraper.write_text('')
+    result = CliRunner().invoke(backup.app, [*flags, '--scraper', str(scraper)])
     assert result.exit_code == 0, result.output
     assert received == [enabled]
 
@@ -148,6 +150,15 @@ def test_open_chat_fails_closed_when_identity_does_not_change() -> None:
     opened, _ = asyncio.run(backup.open_chat(FakePage(), "Chat", "expected@g.us", 0))
 
     assert not opened
+
+
+def test_open_chat_reuses_already_open_exact_conversation(monkeypatch) -> None:
+    page = MagicMock()
+    page.wait_for_timeout = AsyncMock()
+    monkeypatch.setattr(backup, 'current_chat_id', AsyncMock(return_value='expected@g.us'))
+    monkeypatch.setattr(backup, 'list_chats', AsyncMock(side_effect=AssertionError('chat list must not be scanned')))
+    assert asyncio.run(backup.open_chat(page, 'Chat', 'expected@g.us', 0)) == (True, 'already-open')
+    page.wait_for_timeout.assert_awaited_once_with(1200)
 
 
 def test_chat_list_scans_overlap_virtualized_rows() -> None:
@@ -433,6 +444,7 @@ def _install_run_backup_mocks(monkeypatch, out_dir: Path, cache_dir: Path, *, in
         "checked_path": checked_path,
         "original_checked": original_checked,
         "trace": trace,
+        "page": page,
         "incremental": incremental,
     }
 
@@ -458,9 +470,29 @@ async def _run_test_backup(incremental: bool) -> None:
     )
 
 
+@pytest.mark.parametrize('open_title,open_id,found', [('TDS', 'expected', True), ('TDS', '', False), ('Other chat', 'expected', False)])
+def test_explicit_request_can_use_matching_open_chat_when_sidebar_misses_it(tmp_path: Path, monkeypatch, open_title: str, open_id: str, found: bool) -> None:
+    paths = _install_run_backup_mocks(monkeypatch, tmp_path / 'out', tmp_path / 'cache', incremental=False, reason='cutoff-reached')
+    monkeypatch.setattr(backup, 'iter_chats', AsyncMock(return_value=[]))
+    monkeypatch.setattr(backup, 'current_chat_id', AsyncMock(return_value=paths['conversation_id'] if open_id else ''))
+    async def evaluate(expression, *args, **kwargs):
+        if 'chat_list:' in expression:
+            return {'chat_list': 0, 'main_data_id': 1, 'main_present': True, 'pane_present': True}
+        return open_title
+    paths['page'].evaluate = AsyncMock(side_effect=evaluate)
+    if found:
+        asyncio.run(_run_test_backup(False))
+        assert {r['messageId'] for r in backup.load_jsonl(paths['path'])} == {'old-message', 'new-message'}
+    else:
+        with pytest.raises(RuntimeError, match='not found'):
+            asyncio.run(_run_test_backup(False))
+        assert paths['path'].read_text() == paths['original_jsonl']
+
+
 @pytest.mark.parametrize("incremental", [True, False], ids=["incremental", "explicit-range"])
-def test_max_rounds_fails_before_any_per_chat_write(tmp_path: Path, monkeypatch, incremental: bool) -> None:
-    paths = _install_run_backup_mocks(monkeypatch, tmp_path / "out", tmp_path / "cache", incremental=incremental, reason="max-rounds")
+@pytest.mark.parametrize("reason", ["max-rounds", "history-unavailable"])
+def test_incomplete_history_fails_before_any_per_chat_write(tmp_path: Path, monkeypatch, incremental: bool, reason: str) -> None:
+    paths = _install_run_backup_mocks(monkeypatch, tmp_path / "out", tmp_path / "cache", incremental=incremental, reason=reason)
 
     with pytest.raises(RuntimeError, match="History scan incomplete"):
         asyncio.run(_run_test_backup(incremental))
@@ -471,6 +503,25 @@ def test_max_rounds_fails_before_any_per_chat_write(tmp_path: Path, monkeypatch,
     assert paths["checked_path"].read_text() == paths["original_checked"]
     paths["trace"].finish.assert_called_once()
     assert paths["trace"].finish.call_args.args[0]["status"] == "failed"
+
+
+def test_stalled_load_earlier_does_not_claim_history_complete() -> None:
+    harness = r'''
+const scrape = SCROLL_SOURCE;
+const scroller = {scrollTop: 0, scrollHeight: 1500, clientHeight: 1000, dispatchEvent() {}};
+const main = {querySelectorAll: () => []};
+const earlier = {click() {}};
+globalThis.document = {
+  querySelector: selector => selector === 'div#main' ? main : selector.includes('Load earlier') ? earlier : null,
+  querySelectorAll: selector => selector === 'div#main div' ? [scroller] : [],
+};
+globalThis.setTimeout = done => done();
+globalThis.whatsappscraper = {whatsappMessages: () => [{messageId: 'new', text: 'new', time: '2026-10-29T00:00:00.000Z'}]};
+const result = await scrape({cutoff: '2026-10-26T00:00:00.000Z', maxRounds: 20, settleMs: 0, images: false});
+console.log(JSON.stringify(result));
+'''.replace('SCROLL_SOURCE', backup.SCROLL_HISTORY_JS)
+    result = subprocess.run(['node', '--input-type=module'], input=harness, text=True, capture_output=True, check=True)
+    assert json.loads(result.stdout)['reason'] == 'history-unavailable'
 
 
 @pytest.mark.parametrize("incremental", [True, False], ids=["incremental", "explicit-range"])

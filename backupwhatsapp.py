@@ -8,7 +8,8 @@
 Daily run logs are in ~/.cache/sanand-scripts/backupwhatsapp/:
   monthly YYYY-MM-runs.jsonl event logs, latest.json, and diagnostic ZIPs.
 History scans traverse overlapping viewports so virtualized messages render.
-A scan that exhausts --max-scroll-rounds leaves that conversation unchanged.
+Incomplete scans leave that conversation unchanged when history cannot load or
+the --max-scroll-rounds limit is reached.
 Invalid backup JSONL stops the run with its file and line number; repair or
 restore the file before retrying. Malformed records are never silently skipped.
 All top-level backups are checked before connecting to CDP. Keep search results
@@ -536,7 +537,7 @@ async ({ cutoff, fallbackTime, maxMessages, maxRounds, settleMs, images, knownMe
     if (signature === previous) stale += 1;
     else stale = 0;
     if (stale >= 4) {
-      reason = "plateau";
+      reason = document.querySelector('div#main [title^="Load earlier messages"]') ? "history-unavailable" : "plateau";
       break;
     }
     previous = signature;
@@ -1150,6 +1151,10 @@ async def iter_chats(page: CDPPage, max_scan: int, stop_at: dt.datetime | None =
 
 
 async def open_chat(page: CDPPage, title: str, conversation_id: str, max_scan: int) -> tuple[bool, str]:
+    if conversation_id and await current_chat_id(page) == conversation_id:
+        await page.wait_for_timeout(1200)
+        return True, "already-open"
+
     async def click_if_visible() -> bool | None:
         data = await list_chats(page)
         for chat in data["chats"]:
@@ -1312,6 +1317,11 @@ async def run_backup(
             with trace.span("scanning", {"incremental": incremental_run, "stop_at": stop_at.isoformat() if stop_at else ""}):
                 chats = await iter_chats(page, max_scan, stop_at, checked_state if incremental_run else None)
                 trace.event("chat_list_stats", {"chats": len(chats), "sorted_time_violations": len(sorted_time_violations(chats))})
+            if conversations - {chat["title"] for chat in chats}:
+                open_title = await page.evaluate("() => document.querySelector('div#main header')?.innerText.split('\\n')[0].trim() || ''")
+                if open_title in conversations and open_title not in {chat["title"] for chat in chats}:
+                    if open_id := await current_chat_id(page):
+                        chats.append({"title": open_title, "conversationId": open_id})
             selected = []
             for chat in chats:
                 title = chat["title"]
@@ -1387,6 +1397,11 @@ async def run_backup(
                     raise RuntimeError(
                         f"History scan incomplete for {title} after {max_scroll_rounds} rounds; "
                         "backup unchanged. Retry with a larger --max-scroll-rounds."
+                    )
+                if scroll.get("reason") == "history-unavailable":
+                    raise RuntimeError(
+                        f"History scan incomplete for {title}: WhatsApp could not load earlier messages; "
+                        "backup unchanged. Check WhatsApp Web and retry."
                     )
                 path = migrate_path(title, conversation_id) if conversation_id else path
                 summary = {**summary, "conversation_id": conversation_id, "path": str(path)}
