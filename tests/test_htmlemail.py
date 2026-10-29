@@ -81,6 +81,7 @@ def test_video_embed(tmp_path: Path) -> None:
     assert "<video" not in html
     assert "<strong>Video:</strong>" in html and "Watch video" in html
     assert "https://example.com/blog/clip.webm" in html
+    assert '<img src="https://example.com/blog/poster.webp"' in html
     assert "<strong>Captions:</strong>" in html
     assert "https://example.com/blog/clip.en.vtt" in html
 

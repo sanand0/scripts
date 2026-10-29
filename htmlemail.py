@@ -360,11 +360,17 @@ def replace_media_embeds(html: str) -> str:
         source = first_source(open_tag, inner_html)
         title = media_kind.capitalize()
         action = "Watch video" if media_kind == "video" else "Listen to audio"
-        parts = (
-            [f'<p><strong>{title}:</strong> <a href="{source}">{action}</a></p>']
-            if source
-            else [f"<p><strong>{title}:</strong> Media unavailable in email</p>"]
-        )
+        poster = get_html_attr(open_tag, "poster") if media_kind == "video" else None
+        if source and poster:
+            parts = [
+                f'<p><a href="{source}"><img src="{poster}" alt="{action}" '
+                f'style="max-width: 100%; height: auto;"></a><br>'
+                f'<strong>{title}:</strong> <a href="{source}">{action}</a></p>'
+            ]
+        elif source:
+            parts = [f'<p><strong>{title}:</strong> <a href="{source}">{action}</a></p>']
+        else:
+            parts = [f"<p><strong>{title}:</strong> Media unavailable in email</p>"]
 
         caption_links: list[str] = []
         for track_tag in re.findall(r"<track\b[^>]*>", inner_html, flags=re.IGNORECASE):
