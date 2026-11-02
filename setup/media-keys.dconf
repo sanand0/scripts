@@ -35,10 +35,10 @@ binding='Print'
 command='flameshot gui'
 name='Flameshot'
 
-# Ctrl+Alt+F opens rofi file picker
+# Ctrl+Alt+F searches files, projects, windows, and browser tabs
 [custom-keybindings/picker]
 binding='<Control><Alt>f'
-command='rofi -show-icons -show combi -modes combi -combi-modes "window,🌍:/home/sanand/code/scripts/rofi-chrome-tabs.sh,📝:/home/sanand/code/scripts/rofi-files.sh" -kb-accept-alt "" -kb-accept-custom "" -kb-accept-custom-alt "" -kb-custom-1 "Shift+Return" -kb-custom-2 "Control+Return" -kb-custom-3 "Control+Shift+Return"'
+command='rofi -show-icons -show combi -modes combi -combi-modes "window,🌍:/home/sanand/code/scripts/rofi-chrome-tabs.sh,📝:/home/sanand/code/scripts/rofi-files.sh" -kb-accept-alt "" -kb-accept-custom "" -kb-accept-custom-alt "" -kb-custom-1 "Shift+Return" -kb-custom-2 "Control+Return" -kb-custom-3 "Control+Shift+Return" -kb-custom-4 "Alt+Return" -kb-custom-5 "Control+Alt+Return" -kb-custom-6 "Alt+Shift+Return" -kb-custom-7 "Control+Alt+Shift+Return"'
 name='Picker'
 
 # Ctrl+Alt+P opens rofi prompts picker
