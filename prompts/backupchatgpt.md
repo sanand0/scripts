@@ -19,6 +19,25 @@ Revise based on these learnings and test.
 
 Run backupchatgpt.py on 2 more batches and see if there are any issues you need to fix and if so, fix them.
 
+---
+
+For the chats that needed review, here are my thoughts. Take a look. Is there anything we can do to improve backupchatgpt.py?
+
+https://chatgpt.com/c/6ae2e4fe-a388-83ec-8125-e7b8bf168ad1 - agent was interrupted and it stopped thinking
+https://chatgpt.com/c/6a9f61d5-6fb4-83ec-85b7-a03e2ad4fd92 - first agent response was interrupted
+https://chatgpt.com/c/6a9fdd2d-74c4-83ec-8a66-20bfcd949e24 - I told it not to reply
+https://chatgpt.com/c/6aa2873f-5228-83ec-ac29-0902b8d9d628 - I told it not to reply
+https://chatgpt.com/g/g-p-6aa28cfe35c88191af9a995cb0e2ded7-chatgpt-workshop/c/6aa28be8-6aac-83ec-83e1-e693a13a9542 - scheduled messages, agent keeps adding new ones without user
+https://chatgpt.com/c/6a364e7f-0494-83ee-9dcc-22e584767cbe - scheduled messages, agent keeps adding new ones without user
+https://chatgpt.com/c/6abaee4f-95e4-83ec-92a3-7048223c2e82 - looks normal, not sure why this has an issue
+https://chatgpt.com/c/6ae41598-0df8-83ec-8451-f1f784a34dac - looks normal, not sure why this has an issue, maybe it was generating while you were testing
+https://chatgpt.com/c/6ae6ffc2-c370-83ec-bead-043538475819 - looks normal, not sure why this has an issue, maybe it was generating while you were testing
+https://chatgpt.com/c/6ae80192-ef34-83ec-bfbc-b33a81cb645a - looks normal, not sure why this has an issue, maybe it was generating while you were testing
+
+--- <!-- steering -->
+
+I'd rather interrupted replies and any others that we know are handled properly don't need to be flagged and reviewed every time.
+
 <!-- codex resume 01a19a3b-2531-79a2-92b4-05d48a53ec7d -->
 
 ## Handle ChatGPT Work, 30 Oct 2026

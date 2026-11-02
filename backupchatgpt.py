@@ -10,6 +10,8 @@ Sidebar discovery is partial: archived/project/older chats may never appear.
 Use --conversation URL to add known omissions. See README.md for export reconciliation.
 Full scans check both rendered history boundaries, not all branches. Incremental
 updates trust the saved prefix before an unchanged message anchor; --rescan checks it.
+Interrupted Work activity without a message ID uses a labelled local prompt-based ID.
+Full scans retain a hidden saved prefix only when the entire saved suffix is observed.
 Chat-local extraction failures and active generation stay pending while the batch
 continues, including isolated load timeouts. Two consecutive load failures stop
 further requests; authentication, rate limiting, CDP and write errors stop immediately.
@@ -52,6 +54,8 @@ import sanand_observability as obs
 app = typer.Typer(add_completion=False, help=__doc__)
 SCRAPERS = Path(__file__).resolve().parent.parent / "tools" / "aiscrapers"
 SOURCES = ("chatgptscraper.js", "chatgpt-sidebar-scraper.js")
+UUID_PATTERN = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
+LOCAL_ACTIVITY_PATTERN = rf"local-activity:({UUID_PATTERN}):(0|[1-9][0-9]*)"
 
 
 class IncompleteChat(ValueError):
@@ -98,6 +102,8 @@ def unchanged_anchor(messages: list[dict], previous: list[dict]) -> str | None:
     if not messages:
         return None
     first = messages[0]
+    if first["id"].startswith("local-activity:"):
+        return None  # A locally derived position is not an immutable message ID.
     old = next((m for m in previous if m["id"] == first["id"]), None)
     if old and all(first.get(k) == old.get(k) for k in ("id", "role", "content", "parts")):
         return first["id"]
@@ -109,6 +115,16 @@ def merge_tail(previous: list[dict], messages: list[dict], anchor: str) -> list[
         raise IncompleteChat("Incremental anchor changed; prior backup retained")
     index = next(i for i,m in enumerate(previous) if m["id"] == anchor)
     return previous[:index] + messages
+
+
+def full_scan_prefix(previous: list[dict], messages: list[dict]) -> int:
+    """Reuse a hidden prefix only when the entire saved suffix is still visible."""
+    anchor = unchanged_anchor(messages, previous)
+    if not anchor:
+        return 0
+    index = next(i for i, row in enumerate(previous) if row['id'] == anchor)
+    suffix = [row['id'] for row in previous[index:]]
+    return index if [row['id'] for row in messages[:len(suffix)]] == suffix else 0
 
 
 def result_line(summary: dict) -> str:
@@ -238,26 +254,38 @@ def records(messages: list[dict], cid: str, metadata: dict | None = None) -> lis
     return result
 
 
-def validate(rows: list[dict], previous: list[dict]) -> None:
+def validate(rows: list[dict], previous: list[dict], activity_previous: list[dict] | None = None) -> None:
     if not rows:
         raise IncompleteChat("Empty extraction; previous backup retained")
     ids = [r["id"] for r in rows]
     if len(ids) != len(set(ids)):
         raise IncompleteChat("Duplicate message IDs")
+    earlier_users = set()
+    old_by_id = {row['id']: row for row in (previous if activity_previous is None else activity_previous)}
+    if {mid for mid in old_by_id if mid.startswith('local-activity:')} - set(ids):
+        raise IncompleteChat("Previously saved local activity missing; prior backup retained")
     for row in rows:
-        try:
-            UUID(row["id"])
-        except ValueError as exc:
-            raise IncompleteChat("Unstable/positional message ID; full immutable UUID required") from exc
+        local = re.fullmatch(LOCAL_ACTIVITY_PATTERN, row["id"])
+        if local:
+            if row.get("idSource") != "local-activity" or row["role"] != "assistant" or local.group(1) not in earlier_users:
+                raise IncompleteChat("Local activity is missing its preceding prompt or provenance")
+            old = old_by_id.get(row['id'])
+            if old and any(row.get(k) != old.get(k) for k in ('role', 'content', 'parts', 'idSource')):
+                raise IncompleteChat("Previously saved local activity changed; prior backup retained")
+        else:
+            try:
+                UUID(row["id"])
+            except ValueError as exc:
+                raise IncompleteChat("Unstable/positional message ID; full immutable UUID required") from exc
         if row["role"] not in {"user", "assistant"} or not row["content"].strip():
             raise IncompleteChat("Invalid message role/content")
+        if row['role'] == 'user':
+            earlier_users.add(row['id'])
     previous_ids = {r["id"] for r in previous}
     if previous_ids - set(ids):
         raise IncompleteChat("Extraction missing previously saved IDs (incomplete history or changed branch); backup retained")
     if [i for i in ids if i in previous_ids] != [r["id"] for r in previous]:
         raise IncompleteChat("Previously saved messages reordered; backup retained")
-    if rows[0]["role"] != "user" or rows[-1]["role"] != "assistant" or any(a["role"] == b["role"] == "user" for a,b in zip(rows, rows[1:])):
-        raise IncompleteChat(f'Suspiciously incomplete roles/history: prompts={message_stats(rows)["prompts"]} replies={message_stats(rows)["replies"]} first={rows[0]["role"]} last={rows[-1]["role"]}; prior backup retained')
 
 
 def read_rows(path: Path, cid: str) -> list[dict]:
@@ -407,6 +435,13 @@ async def navigate(page: CDPPage, url: str, conversation: bool = False) -> None:
                 await inject(page)
             page_event(page, "navigation_ready", dict(duration_ms=round((time.monotonic() - started) * 1000)))
             return
+    # A deliberately unanswered prompt is valid, but give replies the full load
+    # window to hydrate before treating a user-only page as ready.
+    if (conversation and injected and status.get("users") and not status.get("assistants")
+            and status.get("readyState") in {"interactive", "complete"}
+            and "/c/" in urlsplit(status["url"]).path and identity(status["url"]) == identity(url)):
+        page_event(page, "navigation_ready", dict(duration_ms=round((time.monotonic() - started) * 1000), prompt_only=True))
+        return
     page_event(page, "navigation_failed", dict(status, duration_ms=round((time.monotonic() - started) * 1000)))
     error = ChatLoadTimeout if conversation else RuntimeError
     raise error(f'ChatGPT load timeout after 60s: users={status.get("users", 0)} assistants={status.get("assistants", 0)} challenge={status.get("challenge", False)}; inspect navigation_state events')
@@ -472,7 +507,7 @@ async def sweep(page, sidebar: bool, direction: int, max_steps: int, checkpoint=
         if checkpoint:
             checkpoint(captured)
         visible = set(snapshot["visible"])
-        unstable = [mid for mid in visible if not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", mid)]
+        unstable = [mid for mid in visible if not re.fullmatch(rf"(?:{UUID_PATTERN}|{LOCAL_ACTIVITY_PATTERN})", mid)]
         if unstable:
             page_event(page, "capture_anomaly", dict(step=step, reason="unstable_ids", unstable_ids=unstable[:10]))
             raise IncompleteChat("Unstable/positional message IDs in rendered history; scan incomplete")
@@ -719,6 +754,12 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
                         expected_prefix = previous[:reused+1]
                         trace.event("prefix_reused", dict(context, anchor_id=anchor, reused_messages=reused, captured_messages=up["count"], prefix_assumption=True))
                         print(f"  anchor={anchor} reused={reused:03} captured={up['count']:03}", file=sys.stderr, flush=True)
+                    elif up.get("boundary") and down.get("boundary"):
+                        reused = full_scan_prefix(previous, result["messages"])
+                        if reused:
+                            result["messages"] = previous[:reused] + result["messages"]
+                            trace.event("prefix_reused", dict(context, anchor_id=result["messages"][reused]["id"], reused_messages=reused, captured_messages=len(result["messages"])-reused, prefix_assumption=True, full_scan=True))
+                            print(f"  retained_saved_prefix={reused:03}", file=sys.stderr, flush=True)
                     timestamps = {r["id"]: r["timestamp"] for r in previous if "timestamp" in r}
                     for message in result["messages"]:
                         if message["id"] in timestamps:
@@ -730,7 +771,7 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
                     missing_ids = {r["id"] for r in previous}-{r["id"] for r in rows}
                     validation = dict(context, **message_stats(rows), previous_messages=len(previous), missing_previous_ids=len(missing_ids), missing_id_sample=sorted(missing_ids)[:5], order_valid=result["orderValid"], content_hash=digest(rows), previous_content_hash=digest(previous))
                     trace.event("validation_start", validation)
-                    validate(rows, expected_prefix)
+                    validate(rows, expected_prefix, previous)
                     trace.event("validation", validation)
                     markdown = await page.evaluate("({rows,metadata}) => chatgptscraper.messagesToMarkdown(rows,metadata)", dict(rows=rows, metadata=metadata))
                     if await page.evaluate(f"() => ({GENERATION_ACTIVE})"):
@@ -740,12 +781,12 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
                     changed = False if dry_run else save(path, rows, markdown, title)
                     context["stage"] = "publication"
                     publication = publish(out_dir / filename(title, cid), cid, title, rows, chat_started)
-                    coverage = "matched-prefix+rendered-tail" if anchor else "rendered-boundaries"
+                    coverage = "matched-prefix+rendered-tail" if anchor or reused else "rendered-boundaries"
                     chat.update(title=title, url=metadata["source"], checked=today, changed=False, pending=False, error=None, date=metadata["date"], coverage=coverage, prompt_expansion_checked=True, messages=len(rows), contentHash=digest(rows))
                     chat.pop("error_context", None)
                     persist()  # Commit each chat, so interruption resumes from remaining/oldest chats.
                     completed += 1
-                    summary = dict(conversationId=cid, position=position, total=len(selected), status="validated", coverage=coverage, expanded_prompts=up.get("expanded_prompts", 0)+down.get("expanded_prompts", 0), reused_messages=reused, captured_messages=up["count"] if anchor else len(rows), **message_stats(rows), changed=changed, shared_status="disabled" if markdown_dir is None else "dry-run" if dry_run else "updated" if publication["changed"] else "unchanged", dry_run=dry_run, duration_ms=round((time.monotonic()-chat_started)*1000), markdown_bytes=len(markdown.encode()), jsonl_bytes=sum(len((encoded(r)+"\n").encode()) for r in rows), timestamps=sum("timestamp" in r for r in rows), up=up, down=down)
+                    summary = dict(conversationId=cid, position=position, total=len(selected), status="validated", coverage=coverage, expanded_prompts=up.get("expanded_prompts", 0)+down.get("expanded_prompts", 0), reused_messages=reused, captured_messages=up["count"] if anchor else len(rows)-reused, **message_stats(rows), changed=changed, shared_status="disabled" if markdown_dir is None else "dry-run" if dry_run else "updated" if publication["changed"] else "unchanged", dry_run=dry_run, duration_ms=round((time.monotonic()-chat_started)*1000), markdown_bytes=len(markdown.encode()), jsonl_bytes=sum(len((encoded(r)+"\n").encode()) for r in rows), timestamps=sum("timestamp" in r for r in rows), up=up, down=down)
                     trace.event("conversation", summary)
                     print(encoded(summary) if output_format == "jsonl" else result_line(summary), flush=True)
                 except IncompleteChat as exc:

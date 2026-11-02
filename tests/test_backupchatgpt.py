@@ -45,6 +45,45 @@ def test_ids_hashes_and_corruption(tmp_path):
         b.read_rows(path, "chat")
 
 
+@pytest.mark.parametrize('roles', [
+    ('user', 'user', 'assistant'),  # An interrupted response.
+    ('user', 'assistant', 'user'),  # A request not to respond.
+    ('assistant', 'assistant'),  # Scheduled messages.
+    ('user',),
+])
+def test_valid_role_sequences_survive_save_and_reload(tmp_path, roles):
+    cid = str(uuid4())
+    rows = b.records([dict(id=str(uuid4()), role=role, content=role) for role in roles], cid)
+    path = tmp_path / b.filename('chat', cid)
+    b.validate(rows, [])
+    b.save(path, rows, 'markdown')
+    assert b.read_rows(path, cid) == rows
+    replacement = b.records([dict(id=str(uuid4()), role='assistant', content='new')], cid)
+    with pytest.raises(b.IncompleteChat, match='missing previously'):
+        b.validate(replacement, rows)
+
+
+def test_interrupted_activity_has_explicit_local_identity_and_prompt(tmp_path):
+    cid = str(uuid4())
+    prompt = dict(id=str(uuid4()), role='user', content='Question')
+    activity = dict(id=f"local-activity:{prompt['id']}:0", idSource='local-activity', role='assistant', content='Interrupted progress')
+    rows = b.records([prompt, activity], cid)
+    path = tmp_path / b.filename('chat', cid)
+    b.validate(rows, [])
+    b.save(path, rows, 'markdown')
+    assert b.read_rows(path, cid) == rows
+    assert b.unchanged_anchor([activity], rows) is None
+    for broken in ([activity], [prompt, dict(activity, idSource='')], [prompt, dict(activity, role='user')]):
+        with pytest.raises(b.IncompleteChat):
+            b.validate(broken, [])
+    with pytest.raises(b.IncompleteChat, match='local activity changed'):
+        b.validate(b.records([prompt, dict(activity, content='different')], cid), rows)
+    with pytest.raises(b.IncompleteChat, match='local activity changed'):
+        b.validate(b.records([prompt, dict(activity, content='different')], cid), rows[:1], rows)
+    with pytest.raises(b.IncompleteChat, match='local activity missing'):
+        b.validate(b.records([prompt], cid), rows[:1], rows)
+
+
 def test_selection_rotates_oldest_and_retries_incomplete():
     ids = [str(uuid4()) for _ in range(4)]
     catalog = {ids[i]: {"title": str(i), "checked": checked} for i, checked in enumerate(["", "2026-10-18", "2026-10-01", "2026-10-19"])}
@@ -475,6 +514,15 @@ def test_incremental_anchor_and_edited_tail_keep_old_snapshot(tmp_path):
     assert any(b.read_rows(p, 'chat')==b.records(original, 'chat') for p in (tmp_path/'.revisions/chat').glob('*.jsonl'))
 
 
+def test_full_scan_reuses_prefix_only_when_saved_suffix_is_complete():
+    previous = [dict(id=str(uuid4()), role='assistant', content=str(i)) for i in range(5)]
+    previous[1]['role'] = 'user'
+    captured = [dict(m) for m in previous[1:]] + [dict(id=str(uuid4()), role='assistant', content='new')]
+    captured[2]['content'] = 'updated rendering'
+    assert b.full_scan_prefix(previous, captured) == 1
+    assert b.full_scan_prefix(previous, captured[:2] + captured[3:]) == 0
+    assert b.full_scan_prefix(previous, [dict(captured[0], content='changed'), *captured[1:]]) == 0
+    assert b.full_scan_prefix(previous, [captured[0], captured[2], captured[1], *captured[3:]]) == 0
 def test_fixed_width_duration_and_priority_for_bumped_old_chats():
     assert b.duration(30) == '00:00:30'
     assert b.duration(150) == '00:02:30'
@@ -616,6 +664,42 @@ def test_incremental_run_saves_edits_and_archives_replaced_suffix(tmp_path, monk
     monkeypatch.setattr(b,'sweep',empty_tail)
     assert asyncio.run(b.run('http://localhost',out,[cid],'',False,1,False,'jsonl',10)) == 1
     assert path.read_bytes()==snapshot
+
+
+def test_full_scan_retains_missing_prefix_and_archives_prior_snapshot(tmp_path, monkeypatch, capsys):
+    from contextlib import asynccontextmanager
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    cid = str(uuid4())
+    metadata = dict(title='Scheduled chat', date='2026-10-19', source=f'https://chatgpt.com/c/{cid}')
+    original = messages() + messages() + messages()
+    observed = [dict(m) for m in original[2:]] + messages()
+    observed[1]['content'] = 'reformatted answer'
+    out = tmp_path / 'data'
+    path = out / b.filename(metadata['title'], cid)
+    before = b.records(original, cid, metadata)
+    b.save(path, before, 'original markdown')
+    class Page:
+        async def evaluate(self, source, arg=None):
+            if 'orderValid' in source:
+                return dict(messages=observed, metadata=metadata, orderValid=True)
+            if 'messagesToMarkdown' in source:
+                return 'updated markdown'
+    @asynccontextmanager
+    async def owned(url):
+        yield Page()
+    async def navigate(*args): pass
+    async def sweep(page, sidebar, direction, steps, checkpoint, anchor_previous=None):
+        checkpoint(observed)
+        return dict(count=len(observed), boundary=True)
+    monkeypatch.setattr(b, 'owned_page', owned)
+    monkeypatch.setattr(b, 'navigate', navigate)
+    monkeypatch.setattr(b, 'sweep', sweep)
+    assert not asyncio.run(b.run('http://localhost', out, [cid], '', True, 1, False, 'jsonl', 10))
+    saved = b.read_rows(path, cid)
+    assert [r['id'] for r in saved] == [m['id'] for m in original[:2] + observed]
+    assert any(b.read_rows(p, cid) == before for p in (out / '.revisions' / cid).glob('*.jsonl'))
+    result = next(json.loads(line) for line in capsys.readouterr().out.splitlines() if '"conversationId"' in line)
+    assert (result['reused_messages'], result['captured_messages']) == (2, 6)
 
 
 def test_selection_counts_distinguish_limit_cooldown_and_finished(monkeypatch):
@@ -785,7 +869,8 @@ def test_navigation_uses_scraper_counts_for_image_only_readiness(monkeypatch):
     assert sources.count('injected')==1
 
 
-def test_prompt_only_navigation_remains_pending_after_timeout(monkeypatch):
+@pytest.mark.parametrize('users', [0, 1])
+def test_prompt_only_navigation_waits_for_hydration(monkeypatch, users):
     cid=str(uuid4())
     async def no_sleep(*args): pass
     async def inject(*args): pass
@@ -793,17 +878,22 @@ def test_prompt_only_navigation_remains_pending_after_timeout(monkeypatch):
     monkeypatch.setattr(b,'inject',inject)
     class Page:
         navigations=0
+        polls=0
         async def command(self,*args,**kwargs):
             self.navigations+=1
             return {}
         async def evaluate(self,source):
             if 'const messages=chatgptscraper.extractMessages' in source:
-                return dict(users=1,assistants=0)
+                self.polls += 1
+                return dict(users=users,assistants=0)
             return dict(url=f'https://chatgpt.com/c/{cid}',readyState='complete',login=False,error=False,assistant=False,history=True,users=1,assistants=0)
     page=Page()
-    with pytest.raises(b.ChatLoadTimeout,match='users=1 assistants=0'):
+    if users:
         asyncio.run(b.navigate(page,f'https://chatgpt.com/c/{cid}',True))
-    assert page.navigations==1
+    else:
+        with pytest.raises(b.ChatLoadTimeout, match='users=0 assistants=0'):
+            asyncio.run(b.navigate(page,f'https://chatgpt.com/c/{cid}',True))
+    assert page.navigations==1 and page.polls==60
 
 
 @pytest.mark.parametrize('sequence,stops', [
