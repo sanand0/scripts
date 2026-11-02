@@ -177,6 +177,7 @@ mise use -g github:junegunn/fzf       # fzf - Fuzzy finder for command-line | Ct
 mise use -g github:kenn-io/agentsview # agentsview serve for UI for local agent sessions
 mise use -g github:kovidgoyal/kitty   # kitty - GPU-based terminal emulator
 mise use -g github:mithrandie/csvq    # csvq - SQL-like query tool for CSV
+mise use -g github:openclaw/wacli     # wacli - WhatsApp CLI client
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g github:pnpm/pnpm          # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, encrypt)
