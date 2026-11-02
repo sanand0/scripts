@@ -613,16 +613,18 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
         if not conversations and not discovery_due(discovery, rescan) and not select(catalog, [], name, False, limit, today):
             waiting = [cid for cid,c in catalog.items() if c.get("pending")]
             counts = selection_counts(catalog, [], name, False, limit, today)
-            trace.finish(dict(status="no-eligible-conversations", discovery_partial=True, pending=waiting, **counts))
-            print(encoded(dict(type="run", status="no-eligible-conversations", skipped=len(catalog), pending=waiting, **counts, discovery_error=discovery.get("error"))) if output_format == "jsonl" else f"Run status=no-eligible-conversations known={len(catalog)} due={counts['due']} cooldown={counts['cooldown']} pending={len(waiting)} elapsed={duration(time.monotonic()-trace.started)} logs={trace.events_path}", flush=True)
-            return
+            discovery_error = discovery.get("error")
+            status = "incomplete" if discovery_error else "no-eligible-conversations"
+            trace.finish(dict(status=status, discovery_partial=True, discovery_error=discovery_error, pending=waiting, **counts))
+            print(encoded(dict(type="run", status=status, skipped=len(catalog), pending=waiting, **counts, discovery_error=discovery_error)) if output_format == "jsonl" else f"Run status={status} known={len(catalog)} due={counts['due']} cooldown={counts['cooldown']} pending={len(waiting)} discovery_error={discovery_error or 'none'} elapsed={duration(time.monotonic()-trace.started)} logs={trace.events_path}", flush=True)
+            return bool(discovery_error)
         async with AsyncExitStack() as pages:
             page = await pages.enter_async_context(owned_page(cdp_url))
             page.backup_trace = trace
             page.backup_context = context
             trace.event("browser", dict(browser_version=getattr(page, "browser_version", "")))
             print("Using automation-owned background tab", file=sys.stderr, flush=True)
-            discovery_error = discovery.get("error")
+            discovery_error = None if conversations else discovery.get("error")
             discovery_source = "cached"
             if not conversations and discovery_due(discovery, rescan):
                 discovery_source = "live"
@@ -764,11 +766,12 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
             context["stage"] = "closing-tab"
         flagged = [cid for cid,c in catalog.items() if c.get("pending")]
         due_remaining = selection_counts(catalog, [], "", False, len(catalog), today)["due"]
-        trace.finish(dict(status="incomplete" if failed else "partial", conversations=completed, completed=completed, failures=failures, failed=failed, unattempted=0, due_remaining=due_remaining, pending_count=len(selected)-completed, flagged_pending_count=len(flagged), selected=len(selected), discovery_partial=True, discovery_error=discovery_error))
+        status = "incomplete" if failed or discovery_error else "partial"
+        trace.finish(dict(status=status, conversations=completed, completed=completed, failures=failures, failed=failed, unattempted=0, due_remaining=due_remaining, pending_count=len(selected)-completed, flagged_pending_count=len(flagged), selected=len(selected), discovery_partial=True, discovery_error=discovery_error))
         if output_format == "jsonl":
-            print(encoded(dict(type="run", status="incomplete" if failed else "partial", failures=failures, failed=failed, unattempted=0, due_remaining=due_remaining, sidebar_exhaustive=False, discovery_error=discovery_error, selected=len(selected), completed=completed, pending_count=len(selected)-completed, flagged_pending_count=len(flagged), duration_ms=round((time.monotonic()-trace.started)*1000), skipped=len(catalog)-len(selected), pending=flagged)), flush=True)
+            print(encoded(dict(type="run", status=status, failures=failures, failed=failed, unattempted=0, due_remaining=due_remaining, sidebar_exhaustive=False, discovery_error=discovery_error, selected=len(selected), completed=completed, pending_count=len(selected)-completed, flagged_pending_count=len(flagged), duration_ms=round((time.monotonic()-trace.started)*1000), skipped=len(catalog)-len(selected), pending=flagged)), flush=True)
         else:
-            print(f"Run status={'incomplete' if failed else 'partial'} completed={completed}/{len(selected)} failed={failed} unattempted=0 due_remaining={due_remaining} pending={len(selected)-completed} flagged_pending={len(flagged)} elapsed={duration(time.monotonic()-trace.started)} logs={trace.events_path}", flush=True)
+            print(f"Run status={status} completed={completed}/{len(selected)} failed={failed} unattempted=0 due_remaining={due_remaining} pending={len(selected)-completed} flagged_pending={len(flagged)} discovery_error={discovery_error or 'none'} elapsed={duration(time.monotonic()-trace.started)} logs={trace.events_path}", flush=True)
     except BaseException as exc:
         incomplete(exc)
         failure = dict(context, completed=completed, failed=failed, failures=failures, consecutive_load_failures=consecutive_load_failures, due_remaining=selection_counts(catalog, [], "", False, len(catalog), today)["due"], selected=len(selected), pending_count=len(selected)-completed, flagged_pending_count=sum(bool(c.get("pending")) for c in catalog.values()), unattempted=len(selected)-attempted, observed_messages=len(candidate), conversation_duration_ms=round((time.monotonic()-chat_started)*1000))
@@ -779,7 +782,7 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
             print(encoded(dict(type="run", status="incomplete", error=str(exc) or type(exc).__name__, pending=[cid for cid,c in catalog.items() if c.get("pending")], **failure)), flush=True)
         raise
 
-    return failed
+    return failed or bool(discovery_error)
 
 
 @app.command(help=__doc__)

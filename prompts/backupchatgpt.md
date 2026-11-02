@@ -1,5 +1,48 @@
 # backupchatgpt.py
 
+## Handle issues, 02 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.1-terra --config model_reasoning_effort=high
+-->
+
+Look at the latest run logs for backupchatgpt.py in ~/.cache/sanand-scripts/backupchatgpt/
+These tabs are (probably) still open and you can inspect them. Any improvements that can be made based on these?
+
+Also, there are ChatGPT history tools like https://github.com/planetaryescape/chatgpt-cli or https://github.com/benthamite/chatgpt-sync etc.
+Any learnings from these that are low effort, high importance & frequency?
+
+Revise based on these learnings and test.
+
+---
+
+Run backupchatgpt.py on 2 more batches and see if there are any issues you need to fix and if so, fix them.
+
+<!-- codex resume 01a19a3b-2531-79a2-92b4-05d48a53ec7d -->
+
+## Handle ChatGPT Work, 30 Oct 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+-->
+
+backupchatgpt.py reported:
+
+Incomplete ID=6abaee4f-95e4-83ec-92a3-7048223c2e82 (20/20) stage=validation reason=Suspiciously incomplete roles/history: prompts=3 replies=2 first=user last=assistant; prior backup retained completed=17 failed=3 unattempted=0; batch finished with pending chats
+Inspection tab kept open target=18A306F436D7BE013698A510D233A6BF url=https://chatgpt.com/c/6abaee4f-95e4-83ec-92a3-7048223c2e82; close it manually after inspecting
+
+That is perhaps because it's a ChatGPT Work (not Chat) conversation.
+
+Update the script to detect Work conversations and extract meaningful information similar to Chat, and ensure that ~/code/tools/aiscrapers/ handles this in the same way.
+
+---
+
+To be fair, the check might well be a valid one, based on past discussions. No need to remove it if it's valid.
+
+<!-- codex resume 01a18d5b-2ed7-7500-aa24-1d74278977e0 -->
+
 ## Revisions, 23 Oct 2026
 
 A few changes:

@@ -906,3 +906,34 @@ def test_existing_prefix_requires_prompt_expansion_baseline(tmp_path,monkeypatch
     asyncio.run(b.run('http://localhost',out,[cid],'',False,1,False,'jsonl',10))
     assert directions==[1,-1]
     assert b.read_rows(out/b.filename(cid,cid),cid)[0]['content']==data[0]['content']
+
+
+def test_discovery_failure_is_reported_and_explicit_run_ignores_old_error(tmp_path, monkeypatch, capsys):
+    from contextlib import asynccontextmanager
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    class Page:
+        async def evaluate(self, *args):
+            return False
+    @asynccontextmanager
+    async def owned(url):
+        yield Page()
+    async def navigate(*args):
+        pass
+    async def sweep(*args):
+        raise b.IncompleteChat('Scroll budget exhausted after 5 steps; scan incomplete')
+    monkeypatch.setattr(b, 'owned_page', owned)
+    monkeypatch.setattr(b, 'navigate', navigate)
+    monkeypatch.setattr(b, 'sweep', sweep)
+    out = tmp_path / 'output'
+    assert asyncio.run(b.run('http://localhost', out, [], '', False, 1, False, 'jsonl', 5))
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result['status'] == 'incomplete' and 'Scroll budget' in result['discovery_error']
+    # Cached failed discovery must also signal failure when there is no work to select.
+    assert asyncio.run(b.run('http://localhost', out, [], '', False, 1, False, 'jsonl', 5))
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result['status'] == 'incomplete'
+    # Explicit URLs intentionally bypass discovery, so a stale error is irrelevant.
+    cid = str(uuid4())
+    assert not asyncio.run(b.run('http://localhost', out, [cid], 'no-match', False, 1, False, 'jsonl', 5))
+    result = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert result['status'] == 'partial' and result['discovery_error'] is None
