@@ -133,7 +133,7 @@ Here are the setup details for my laptops.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [rgb](rgb) converts RGB to hex and vice versa.
-- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
+- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) power Ctrl+Alt+F (projects, files, windows, browser tabs). `Enter` opens a file/tab/window or shows project actions; any modified `Enter` on a file/project shows an action menu. Project actions include browsing its files, terminal, VS Code, Git status/diff, just tasks, and agent resume. Files can be opened, revealed, copied, or inspected. Project results prioritize zoxide frecency; file results use the existing recent/file caches.
 - [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
