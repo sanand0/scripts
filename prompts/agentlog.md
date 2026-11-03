@@ -1,5 +1,34 @@
 # Prompts
 
+## Prompts sub-command, 03 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+-->
+
+Minimally modify `agentlog.py` to add a `prompts` sub-command that extracts just the prompts as Markdown. It's just like the `md` sub-command, but returns the prompts in this format:
+
+<OUTPUT-FORMAT>
+First user prompt
+
+---
+
+Second user prompt
+
+---
+
+...
+
+<!-- codex resume $ID -->
+</OUTPUT-FORMAT>
+
+If a user prompt contain `---` or Markdown headings, wrap that user prompt block inside a Markdown code block.
+For `agentlog.py codex md` the last line contains the codex resume command. For Claude, use `<!-- claude --resume $ID -->` and similarly for GitHub Copilot, etc.
+Replace $ID with the actual session ID.
+
+<!-- codex resume 01a1a1f7-fc47-74d1-b275-f08f97b31bb5 -->
+
 ## Find missing Codex sessions, 24 Sep 2026
 
 <!-- Assess pstack insights: https://chatgpt.com/c/6adc1f35-504c-83ec-a88b-b1bd264fb8e2?src=history_search (2026-10-25T12:33:54+08:00) -->

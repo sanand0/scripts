@@ -1985,6 +1985,36 @@ BACKENDS: dict[str, Backend] = {
 }
 
 
+def render_prompts(backend: Backend, events: list[SessionEvent], kind_filter: frozenset[str]) -> str:
+    legacy_user = any(e.raw.get("type") == "event_msg" and _event_kind(e.raw) == "user" for e in events)
+    prompts = []
+    for event in events:
+        if not _matches_kind(event, kind_filter):
+            continue
+        raw = event.raw
+        text = ""
+        if isinstance(backend, ClaudeBackend):
+            text = backend._first_prompt(raw, allow_warmup=True, allow_local_commands=True)
+        elif isinstance(backend, CopilotBackend) and raw.get("type") == "user.message":
+            data = raw.get("data")
+            text = data.get("content", "") if isinstance(data, dict) else ""
+        elif isinstance(backend, CodexBackend):
+            payload = raw.get("payload")
+            if isinstance(payload, dict):
+                if raw.get("type") == "event_msg" and payload.get("type") == "user_message":
+                    text = payload.get("message", "")
+                elif raw.get("type") == "response_item" and not legacy_user:
+                    text = backend._response_message_text(payload, "user")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        text = text.strip()
+        if "---" in text or re.search(r"(?m)^ {0,3}(?:#{1,6}(?:\s|$)|=+\s*$)", text):
+            fence = "`" * max(3, max((len(m) for m in re.findall(r"`+", text)), default=0) + 1)
+            text = f"{fence}\n{text}\n{fence}"
+        prompts.append(text)
+    return "\n\n---\n\n".join(prompts)
+
+
 def build_app(backend: Backend) -> typer.Typer:
     app = typer.Typer(add_completion=False)
 
@@ -2076,8 +2106,10 @@ def build_app(backend: Backend) -> typer.Typer:
         if stats:
             print(json_pretty(dataclasses.asdict(resolve_stats)), file=sys.stderr)
 
-    @app.command()
+    @app.command("prompts")
+    @app.command("md")
     def md(
+        ctx: typer.Context,
         session_ids: list[str] = typer.Argument(..., help="Session IDs to render."),
         root: Path = typer.Option(
             backend.default_root, help=f"Log root (default: {backend.default_root})."
@@ -2108,8 +2140,8 @@ def build_app(backend: Backend) -> typer.Typer:
                 if stats:
                     print(json_pretty(dataclasses.asdict(total_stats)), file=sys.stderr)
                 raise typer.Exit(code=3)
-            markdowns.append(
-                backend.render_markdown(
+            content = (
+                render_prompts(backend, events, _parse_kind_filters(kind)) if ctx.command.name == "prompts" else backend.render_markdown(
                     session_id=session_id,
                     events=events,
                     include_meta=include_meta,
@@ -2117,6 +2149,10 @@ def build_app(backend: Backend) -> typer.Typer:
                     kind_filter=_parse_kind_filters(kind),
                 ).rstrip()
             )
+            commands = {"codex": "codex resume", "claude": "claude --resume", "copilot": "copilot --resume"}
+            if backend.name in commands:
+                content = "\n\n".join(filter(None, [content, f"<!-- {commands[backend.name]} {events[0].session_id} -->"]))
+            markdowns.append(content)
         markdown = "\n\n".join(part for part in markdowns if part)
         if out == "-" or not out:
             sys.stdout.write(markdown)

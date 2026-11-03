@@ -225,6 +225,34 @@ def test_md_accepts_multiple_session_ids() -> None:
     assert "# session-2" in result.stdout
 
 
+@pytest.mark.parametrize("backend,events,command", [
+    (ClaudeBackend(), [
+        {"type": "user", "message": {"content": "First"}},
+        {"type": "user", "isMeta": True, "message": {"content": "Hidden"}},
+        {"type": "user", "message": {"content": "# Heading\n```\n---\n```"}},
+    ], "claude --resume"),
+    (CopilotBackend(), [
+        {"type": "user.message", "data": {"content": "First"}},
+        {"type": "assistant.message", "data": {"content": "Hidden"}},
+        {"type": "user.message", "data": {"content": "# Heading\n```\n---\n```"}},
+    ], "copilot --resume"),
+    (CodexBackend(), [
+        {"type": "event_msg", "payload": {"type": "user_message", "message": "First"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hidden"}]}},
+        {"type": "event_msg", "payload": {"type": "user_message", "message": "# Heading\n```\n---\n```"}},
+    ], "codex resume"),
+])
+def test_prompts_and_md_resume(backend, events, command, tmp_path: Path) -> None:
+    session_events = [SessionEvent("actual-id", "", SourcePos("log", i), raw) for i, raw in enumerate(events)]
+    backend.collect_events = lambda **_: (session_events, Stats())
+    result = RUNNER.invoke(build_app(backend), ["prompts", "id", "--out", str(tmp_path / "out.md")])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "out.md").read_text() == f"First\n\n---\n\n````\n# Heading\n```\n---\n```\n````\n\n<!-- {command} actual-id -->"
+    result = RUNNER.invoke(build_app(backend), ["md", "id"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.endswith(f"<!-- {command} actual-id -->")
+
+
 def test_claude_md_preserves_semantic_roles_thinking_and_artifacts() -> None:
     backend = ClaudeBackend()
 
