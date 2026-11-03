@@ -6,6 +6,7 @@ import hashlib
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -1214,8 +1215,10 @@ def test_tool_console_formats_file_info_for_rapid_scanning() -> None:
     )
 
     assert request == ["~/code/demo/report.md"]
+    modified = time.localtime(1790390232)  # 2026-09-26T02:37:12+00:00
     assert response == [
-        "file_info 12.3 ms • 1.2 MB • 6,146 lines • modified 26 Sep 2026 10:37"
+        f"file_info 12.3 ms • 1.2 MB • 6,146 lines • modified {modified.tm_mday} "
+        f"{time.strftime('%b %Y %H:%M', modified)}"
     ]
 
 

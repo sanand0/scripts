@@ -1,5 +1,20 @@
 # MCP Server
 
+## Fix tests, 03 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+-->
+
+Fix test_mcpserver.py. I think it's because I'm in India while the tests were written in Singapore. Make sure they'll run in any time zone.
+
+tests/test_mcpserver.py:1217: AssertionError
+FAILED tests/test_mcpserver.py::test_tool_console_formats_file_info_for_rapid_scanning - AssertionError: assert ['file_info 1...p 2026 08:07'] == ['file_info 1...p 2026 10:37']
+1 failed, 66 passed in 2.13s
+
+<!-- codex resume 01a1a032-27b7-7c53-820a-5c45567903f5 -->
+
 ## Fix tests, 03 Oct 2026
 
 <!--
