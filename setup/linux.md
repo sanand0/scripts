@@ -503,6 +503,13 @@ gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
 # New windows open centered, so you don’t hunt for them on ultrawide screens
 # (GNOME Tweaks > Windows > Center New Windows)
 gsettings set org.gnome.mutter center-new-windows true
+# Tiling Assistant
+gsettings set org.gnome.shell.extensions.tiling-assistant tile-top-half "['<Super><Shift>Up']"
+gsettings set org.gnome.shell.extensions.tiling-assistant tile-bottom-half "['<Super><Shift>Down']"
+gsettings set org.gnome.shell.extensions.tiling-assistant enable-tiling-popup false
+gsettings set org.gnome.shell.extensions.tiling-assistant tiling-popup-all-workspace false
+# Dynamic Keybinding Behaviour 2 = TilingState. Tiling to top / bottom will preserve the left / right tiling as well. Default (0) will not.
+gsettings set org.gnome.shell.extensions.tiling-assistant dynamic-keybinding-behavior 2
 # Disable PrintScreen key to avoid conflicts with Flameshot
 gsettings set org.gnome.shell.keybindings screenshot "[]"
 gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
@@ -716,9 +723,10 @@ systemctl --user restart espanso
   Remove if WiFi hotspots fail to connect.
 
 - Install Gnome extensions via Extension Manager:
-  - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Clipboard History](https://extensions.gnome.org/extension/4839/clipboard-history/) - Win+Shift+V
+  - [Dash to Panel](https://extensions.gnome.org/extension/1160/dash-to-panel/)
   - [Emoji Copy](https://extensions.gnome.org/extension/6242/emoji-copy/) - Win+.
+  - [Tiling Assistant](https://extensions.gnome.org/extension/3733/tiling-assistant/)
   - [Vitals](https://extensions.gnome.org/extension/1460/vitals/) - System monitoring
 - Install [AI Usage](./ai-usage/install.sh)
 
