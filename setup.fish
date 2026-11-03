@@ -831,8 +831,9 @@ function webm-compress --description "webm-compress input.webm 500 (width) 8 (sa
         $out
 end
 
-# Background AV1 NVENC compression: pause at 79°C, resume below 65°C.
-# Default CQ 55 (lower = better quality); keep original -readrate 3 and codec options.
+# https://chatgpt.com/c/6ad6a7f9-15d8-83ec-b648-3656df59bc14
+# Background AV1 NVENC compression: pause at 79°C, resume below 70°C.
+# Default CQ 55 (lower = better quality); encode at full speed, monitor GPU temperature.
 # Usage: videocompress [-q|--quality 45] "/path/to/File Name.mp4" -> file-name.webm
 function videocompress --description "Background AV1 compression with GPU thermal protection"
     argparse 'q/quality=!_validate_int' 'h/help' -- $argv; or return 2
@@ -874,7 +875,7 @@ function videocompress --description "Background AV1 compression with GPU therma
     nohup bash -c '
         input=$1 output=$2 cq=$3
         tmp="$output.partial-$$.webm"
-        ffmpeg -nostdin -n -readrate 3 -i "$input" \
+        ffmpeg -nostdin -n -hide_banner -loglevel error -stats -i "$input" \
             -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq "$cq" -b:v 0 -spatial-aq 1 \
             -c:a libopus -b:a 24k -vbr on -compression_level 10 "$tmp" &
         pid=$!
@@ -885,7 +886,7 @@ function videocompress --description "Background AV1 compression with GPU therma
             if [[ $temp =~ ^[0-9]+$ ]]; then
                 if (( temp >= 79 && !paused )); then
                     kill -STOP "$pid" && paused=1 && echo "Paused at $temp°C"
-                elif (( temp < 65 && paused )); then
+                elif (( temp < 70 && paused )); then
                     kill -CONT "$pid" && paused=0 && echo "Resumed at $temp°C"
                 fi
             elif (( !paused )); then
@@ -899,7 +900,9 @@ function videocompress --description "Background AV1 compression with GPU therma
     set -l pid $last_pid
     disown $pid
     echo "Started videocompress (PID $pid): $output"
-    echo "Log: $log"
+    echo "Stop encoding: kill -TERM $pid"
+    echo "Ctrl+C stops viewing progress, not encoding. Log: $log"
+    tail --pid=$pid -n +1 -f -- "$log"
 end
 
 # https://yazi-rs.github.io/docs/quick-start
