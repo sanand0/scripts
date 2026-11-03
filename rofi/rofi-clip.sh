@@ -420,7 +420,7 @@ PYEOF
 
 transform_md_clean() {
     # Clean Markdown only (no dprint, no temp files).
-    printf '%s' "$INPUT" | uv run "$SCRIPT_DIR/clean_markdown.py" /dev/stdin
+    printf '%s' "$INPUT" | uv run "$SCRIPT_DIR/../clean_markdown.py" /dev/stdin
 }
 
 clipboard_get_html() {

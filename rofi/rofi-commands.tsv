@@ -1,0 +1,7 @@
+# Label<TAB>terminal|background<TAB>working directory<TAB>shell command
+# Add a line and it immediately appears under Ctrl+Alt+F, c.
+# terminal: run in the existing VS Code integrated terminal, recorded in fish history.
+# background: run detached; output is appended to ~/.cache/sanand-scripts/rofi-commands.log.
+Backup WhatsApp	terminal	~/code/scripts	./backupwhatsapp.py
+Refresh Rofi file index	background	~/code/scripts	./update-files
+Open scripts in VS Code	background	~/code/scripts	code --reuse-window .

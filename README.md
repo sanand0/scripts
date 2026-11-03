@@ -133,7 +133,7 @@ Here are the setup details for my laptops.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
 - [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [rgb](rgb) converts RGB to hex and vice versa.
-- [rofi-files.sh](rofi-files.sh) and [rofi-chrome-tabs.sh](rofi-chrome-tabs.sh) are used by rofi to get recent files. Triggered by Ctrl + Alt + F.
+- [rofi-picker](rofi-picker) powers **Ctrl+Alt+F**. Type one key: [F]iles, [W]indows, [D]irectories, [B]rowser [T]abs, [P]rompts (`Ctrl+Alt+P`), [M]ap clipboard (`Ctrl+Alt+M`), [C]ommands. **Enter** runs, **Ctrl/Alt+Enter** opens contextual actions. Directories use zoxide frecency (plus Git repositories); Git actions appear only inside repositories. [File](rofi-files.sh), [directory](rofi-directories.sh), [tab](rofi-chrome-tabs.sh), and [window](rofi-window-actions.sh) handlers stay independent. VS Code terminal actions use the existing [terminal-focus binding](setup/linux.md) and type the actual command into an idle shell so fish records it.
 - [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
@@ -150,7 +150,7 @@ Here are the setup details for my laptops.
   - Plan: `call "Meeting" --dry-run`; list pending/incomplete notes: `call --list-changes | moor`. Both save logs.
   - Logs in `~/.cache/sanand-scripts/transcribe_calls/run.jsonl`
 - [timestamp.py](timestamp.py) repairs timestamps in older/ambiguous transcripts; new `call` output already uses cumulative timestamps. It idempotently makes timestamps cumulative across legacy chunks. Bare names resolve to the latest descending filename match under `~/Dropbox/notes/transcripts`; use `--chunk-starts 0,25,50` for ambiguous chunk boundaries. Examples: `timestamp.py Naveen`, `timestamp.py Naveen Ankor --dry-run`, `timestamp.py "2026-09-01 GIPCL" --chunk-starts 0,30,60,90,120`, `timestamp.py --describe | jaq .`.
-- [update-files](update-files) caches directory listings so `rofi-files.sh` can stay fast even on large mounts.
+- [update-files](update-files) caches directory listings for `rofi-files.sh`. It excludes bulky generated/archive trees (e.g. HostGator backup, Go modules, MCP temp files, old GitLab copies, Hugo output), but not file types. Previously selected paths remain available through `frecent.txt`; to find a different file in an excluded tree, browse or search that directory explicitly.
 
 ## AI coding agent scripts
 

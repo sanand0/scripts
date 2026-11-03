@@ -1,0 +1,129 @@
+# rofi-picker
+
+## Refactor, 03 Nov 2026
+
+<!-- Rofi keyboard shortcuts refactor: https://chatgpt.com/c/6ae8995b-0ac0-83ec-8b96-972d8dcb7e99 (2026-11-03T12:13:23+05:30) -->
+
+I saw how Omarchy Linux uses keyboard shortcuts for most OS actions. That's pretty interesting!
+
+I run a lot of commands on the terminal (see my fish history on @LocalMCP2 if you can), and would love to have the relevant ones available via keyboard shortcuts.
+
+Some ideas:
+
+- Ctrl+Alt+F binds to ~/code/scripts/rofi-files.sh. Maybe Ctrl + Enter on a file opens a second menu that lets me copy the file, open the directory, open in VS code, ... actually, what would be a good set of options for Ctrl + Enter given my usage of Ctrl + Alt + F? Check the logs and explore.
+- I'd love to activate some of the Gnome Panels items - like open the popup that shows the system commands, open the box that shows the time and notifications, click on other items on my gnome taskbar
+
+But that apart, Omarchy Linux - and perhaps other tools out there - have better ideas, and I'd like you to research these!
+
+Suggest what would be most impactful x frequent x easy to implement for me.
+Use  and relevant skills. I'm keen to test out possibility-scan too.
+
+---
+
+FYI: I haven't really used the Ctrl, Alt, or Ctrl+Alt modifiers on rofi-files.sh because I can't remember what they're for, so I'd rather bind them all to the same - which opens a secondary menu that lets me do different things with the selected file.
+
+Ctrl+Alt+G is not bound to anything globally. But I'd rather modify Ctrl+Alt+F if possible, i.e. the project palette and file picker can all be folded into one. Do you think that's a bad idea?
+
+~/.local/share/fish/ is now available. Use this to revise your recommendations.
+
+---
+
+So, in my existing setup, is there something in fish that I can type after `cd ` so that it will show me a rofi-style searchable interface? It doesn't have to be a popup, but I should be able to type any part of the path, and it should show me the options that I can move up and down with, and change to that directory. I suspect I have one or more things already that do this - ~/code/scripts/setup/linux.md might have some hints. Tell me how I can do this.
+
+Similarly, I'd love to have a fuzzy-searchable list that I can pick from after typing git or code. Again, I suspect something already exists - and perhaps even frecency sorted.
+
+This apart, implement your recommendations in rofi-files.sh (and related files) as per the revised priorities.
+
+---
+
+When I press Ctrl+Enter I see the browser windows and tabs first, before I see the project controls.
+
+For the project commands, rather than use a new terminal, I'd rather use the current VS Code terminal. Is that possible? If so, implement it.
+
+[![Image](https://files.openai.com/content?id=file_00000000fb9881f99f77ad57947232ae&cdn=1&cp=pi&ma=31190400&ts=0&p=pi&cid=8&sig=b9da986568361f3300fc047ef19ef27b2e275443189ff9886f609f394642bbde&v=0)Remote Desktop Commander](/plugins/plugin_asdk_app_6a057d268ebc81919918d37eec718425) - graphene - is now available, so you should be able to apply the changes directly in ~/code/scripts. I already applied the 4 relevant file changes.
+
+---
+
+A few suggestions. One, instead of "Terminal: Focus Terminal" I changed it to "Terminal: Focus on Terminal View" since sometimes the former goes to "Terminal: Focus Next Terminal Group". Second, right now, here's what happens. If I select "Project: scripts" and ask it to open a Terminal in VS code, it opens the terminal but types into the editor - even if I increase the sleep 0.25 to sleep 1, that's what happens. We need a fix there. Also, if it's possible to reduce the timing and STILL be more robust, that's ideal. What is possible? Any alternate approaches or options?
+
+---
+
+Currently, the command that gets pasted is "source ~/.cache/sanand-scripts/rofi-vscode-command.fish" - could we paste the actual command instead so that it gets logged in the fish history?
+
+What other similar improvements can be made so that the workflow behaves more canonically?
+
+Is there an opportunity to shorten and simplify the code to be more elegant in the process?
+
+---
+
+What would it take to remove the 200 ms Rofi action menu transition delay? Is that really necessary? Does that also apply to Ctrl+Alt+P and Ctrl+Alt+M or any other rofi menus I currently use? I would like all of them to be as fast as possible while still remaining robust.
+
+---
+
+Based on my actual usage, see where the best opportunity to reduce the Ctrl+Alt+F startup time is. Are there large classes or subsets of files (or other things) we can remove to speed this up much more without missing any of the kinds of uses I have in the past? If there are obvious improvements, make them.
+
+---
+
+Could we restructure it this way:
+
+Ctrl+Alt+F opens something. I just type 1 character, e.g. w for windows, f for files, b or t for browser tabs, p for project, and as soon as I type that character, it sub-selects the relevant list and shows it? Then I can press enter to execute it or Ctrl/Alt + Enter to open the relevant context menu.
+
+Does rofi natively have this functionality? Is it possible to do this in a clean, elegant way?
+
+---
+
+OK, let's go with Option 2. Graphene is back online. Implement and test.
+
+I might request Option 1 because Option 2 requires two extra keystrokes - the ! and the space, I think. So plan for that.
+
+---
+
+The current approach still takes some time to load the list - maybe because it still pings Chrome, lists, windows, etc. every time, which might be slow.
+
+I think Option 1 will eliminate that delay. I don't need a single picker across all of these.
+
+This could give me an opportunity to integrate the Ctrl+Alt+P and Ctrl+Alt+M functionality into a single one. So, here's what I'd like.
+
+Ctrl+Alt+F shows a list of options:
+
+f for files
+w for windows
+d for directories (let's rename them from projects - right across the scripts)
+b for browser tabs
+t also for browser tabs - an alias
+p for prompts (what Ctrl+Alt+P does)
+m for transforMations (what Ctrl+Alt+M does)
+
+Ctrl+Alt+P is the equivalent of pressing Ctrl+Alt+F and then p.
+Ctrl+Alt+M is the equivalent of pressing Ctrl+Alt+F and then m.
+
+Use this as an opportunity to simplify, shorten code, canonicalize.
+
+---
+
+Currently, Alt+Enter opens windows actions. But these are contextual actions too. I always want Ctrl+Enter or Alt+Enter to do the same thing, and that is to open contextual actions. Unify these.
+
+I would also like to add a c for Commands at the top level. This should include selecting (i.e. the equivalent of clicking) on any of the Gnome Taskbar items. Currently, I have (from the right)
+The power, volume and network indicator.
+The date and time indicator.
+Individual app icons, like system restart required, Dropbox, Flameshot, Claude (and these may change), my Claude / Codex usage plugin, Emoji picker, Vitals, ...
+Show Apps
+Show Desktops
+
+The list may change - so is there an easy way to get this dynamically and list them for rofi to use? Also, in the future, I might add other commands that might not be just on this taskbar list. Commands of any kind - workflow automations, even CLI scripts that I might way to run, e.g. ~/code/scripts/backupwhatsapp.py to run in VS code, etc. (Do you have any suggestions?) Make sure it's easy to add such commands as well.
+
+Don't update the README.md - I've done that to suit my taste already.
+
+---
+
+Currently, the list of directories via Ctrl+Alt+F - d doesn't show non code/ directories even though on my shell, zoxide query -ls lists lots of directories and so does ROFI_PROVIDER=directories exec "$(dirname "$0")/rofi-files.sh"
+
+Also, when I pres Ctrl+Alt+F, now I just see the letters f, w, ... and not the explanation (Files, Windows, etc.) which was really useful.
+
+Why does that happen? Are there any other bugs like this that you weren't able to spot earlier?
+
+---
+
+There are several rofi related files. Reorganize them to move what won't be directly invoked and won't need to be in the PATH into ~/code/scripts/rofi/
+
+My guess is only rofi-picker might be needed - or maybe even THAT won't be needed in the PATH. That might be an opportunity to remove the rofi- prefix for the files - but it might be better to leave it for clarity.

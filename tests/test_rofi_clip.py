@@ -5,7 +5,7 @@ import subprocess
 import textwrap
 
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "rofi-clip.sh"
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "rofi" / "rofi-clip.sh"
 
 
 def run_transform(transform_name: str, text: str) -> subprocess.CompletedProcess[str]:

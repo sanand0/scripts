@@ -1,0 +1,56 @@
+#!/bin/bash
+# Fast first menu: do not enumerate files, windows, or browser tabs until selected.
+set -euo pipefail
+dir="$(dirname "$0")"
+rofi_dir="$dir/rofi"
+export ROFI_SOURCE_WINDOW="$(xdotool getactivewindow 2>/dev/null || true)"
+
+mode="${1:-}"
+if [[ -z "$mode" ]]; then
+    # Bind letters directly: full descriptions stay visible, with no ambiguous
+    # fuzzy matches (e.g. 't' matching both Tabs and Transformations).
+    status=0
+    selected="$(printf '%s\n' \
+        'f Files' 'w Windows' 'd Directories' 'b Browser tabs' \
+        't Tabs (alias)' 'p Prompts' 'm Transformations' 'c Commands' |
+        rofi -dmenu -no-custom -p 'Open' \
+            -kb-custom-1 f -kb-custom-2 w -kb-custom-3 d -kb-custom-4 b \
+            -kb-custom-5 t -kb-custom-6 p -kb-custom-7 m -kb-custom-8 c)" || status=$?
+    if ((status >= 10 && status <= 17)); then
+        keys=fwdbtpmc
+        mode="${keys:$((status - 10)):1}"
+    elif ((status == 0)); then
+        mode="${selected:0:1}"
+    else
+        exit 0
+    fi
+fi
+
+case "$mode" in
+    p) exec "$dir/prompt" ;;
+    m) exec "$rofi_dir/rofi-clip.sh" ;;
+    w) exec rofi -show window -window-command "$rofi_dir/rofi-window-actions.sh {window}" \
+            -kb-accept-custom "" -kb-accept-custom-alt "" \
+            -kb-accept-alt "Control+Return,Alt+Return" ;;
+    f) script="$rofi_dir/rofi-files.sh" ;;
+    d) script="$rofi_dir/rofi-directories.sh" ;;
+    b|t) script="$rofi_dir/rofi-chrome-tabs.sh" ;;
+    c) script="$rofi_dir/rofi-commands.py" ;;
+    *) printf 'Unknown picker: %s\n' "$mode" >&2; exit 2 ;;
+esac
+
+# GNOME's shortcut environment lacks mise's zoxide/fd binaries. Initialise
+# after choosing a mode so the first menu and direct P/M shortcuts stay fast.
+if [[ "$mode" == f || "$mode" == d || "$mode" == c ]]; then
+    eval "$(mise env -s bash)"
+fi
+
+# Script modes share exactly the same Enter and context-menu keys.
+export ROFI_PICKER_PIDFILE="$(mktemp)"
+trap 'rm -f "$ROFI_PICKER_PIDFILE"' EXIT
+rofi -show "$mode" -modes "$mode:$script" -show-icons \
+    -kb-accept-alt "" -kb-accept-custom "" -kb-accept-custom-alt "" \
+    -kb-custom-1 "Control+Return,Alt+Return" &
+pid=$!
+printf '%s\n' "$pid" > "$ROFI_PICKER_PIDFILE"
+wait "$pid"

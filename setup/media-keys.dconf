@@ -35,23 +35,23 @@ binding='Print'
 command='flameshot gui'
 name='Flameshot'
 
-# Ctrl+Alt+F opens rofi file picker
+# Ctrl+Alt+F selects a picker with one key before loading its entries
 [custom-keybindings/picker]
 binding='<Control><Alt>f'
-command='rofi -show-icons -show combi -modes combi -combi-modes "window,🌍:/home/sanand/code/scripts/rofi-chrome-tabs.sh,📝:/home/sanand/code/scripts/rofi-files.sh" -kb-accept-alt "" -kb-accept-custom "" -kb-accept-custom-alt "" -kb-custom-1 "Shift+Return" -kb-custom-2 "Control+Return" -kb-custom-3 "Control+Shift+Return"'
+command='/home/sanand/code/scripts/rofi-picker'
 name='Picker'
 
-# Ctrl+Alt+P opens rofi prompts picker
+# Ctrl+Alt+P is Ctrl+Alt+F, then p (direct prompt picker)
 [custom-keybindings/prompts]
 binding='<Control><Alt>p'
-command='/home/sanand/code/scripts/prompt'
+command='/home/sanand/code/scripts/rofi-picker p'
 name='Prompts'
 
-# Ctrl+Alt+M opens rofi clipboard transformer
+# Ctrl+Alt+M is Ctrl+Alt+F, then m (direct clipboard transformations)
 [custom-keybindings/rofi-clip]
 binding='<Control><Alt>m'
-command='/home/sanand/code/scripts/rofi-clip.sh'
-name='Rofi Clip'
+command='/home/sanand/code/scripts/rofi-picker m'
+name='Transformations'
 
 # Ctrl+Alt+C to convert clipboard rich text to markdown
 [custom-keybindings/copy-to-markdown]

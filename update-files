@@ -18,6 +18,26 @@ mkdir -p "$OUTDIR"
 FD_WARNINGS="$OUTDIR/files.fd-warnings.log"
 FIND_WARNINGS="$OUTDIR/files.find-warnings.log"
 
+# Generated caches and old archives dominate the picker but have almost no
+# selections. Exclude whole trees, not file types; frecent.txt retains picks.
+EXCLUDE_DIRS=(
+    Downloads/hostgator_backup
+    Downloads/mcpserver-tmp
+    Downloads/freelancer-database-index
+    Documents/gitlab
+    gitlab
+    Documents/Codex
+    go/pkg
+    code/blog/public
+    code/blog/content
+)
+FD_EXCLUDES=()
+FIND_EXCLUDES=()
+for dir in "${EXCLUDE_DIRS[@]}"; do
+    FD_EXCLUDES+=(--exclude "/$dir")
+    FIND_EXCLUDES+=(-o -path "$HOME/$dir")
+done
+
 if [ -z "$TARGET" ]; then
     # No argument: search under $HOME
     OUT="$OUTDIR/files._home.txt"
@@ -28,6 +48,7 @@ if [ -z "$TARGET" ]; then
         --exclude ImageCache \
         --exclude google-cloud-sdk \
         --exclude seek-ode-exam-programming-assignments-prod \
+        "${FD_EXCLUDES[@]}" \
         2> "$FD_WARNINGS" || true
     } \
       | sponge "$OUT"
@@ -38,7 +59,8 @@ if [ -z "$TARGET" ]; then
           -o -name node_modules \
           -o -name ImageCache \
           -o -name google-cloud-sdk \
-          -o -path "$HOME/Downloads/seek-ode-exam-programming-assignments-prod" \) -prune -o \
+          -o -path "$HOME/Downloads/seek-ode-exam-programming-assignments-prod" \
+          "${FIND_EXCLUDES[@]}" \) -prune -o \
         -type f -mtime -7 -printf '%T@ %P\0' \
         2> "$FIND_WARNINGS" || true
     } \

@@ -561,6 +561,11 @@ xdg-settings set default-web-browser microsoft-edge.desktop
 gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
 dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/
 dconf load /org/gnome/settings-daemon/plugins/media-keys/ < ~/code/scripts/setup/media-keys.dconf
+# Rofi project/file terminal actions need one VS Code *user* keybinding
+# in ~/.config/Code/User/keybindings.json (inside the JSON array).
+# {"key":"ctrl+alt+shift+f12","command":"workbench.action.terminal.focus"}
+# Rofi focuses the terminal, types the actual command, and presses Enter.
+# Fish history records the command. No clipboard, temporary script, or sleeps.
 # dconf dump /org/gnome/settings-daemon/plugins/media-keys/  # to show current config
 systemctl --user restart org.gnome.SettingsDaemon.MediaKeys.target
 # See status via systemctl --user status org.gnome.SettingsDaemon.MediaKeys.service
