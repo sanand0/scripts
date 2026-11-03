@@ -126,7 +126,8 @@ class RofiPickerTests(unittest.TestCase):
         for kind, path, letter in (("directory", self.directory, "d"),
                                    ("file", self.file, "f")):
             self.log.unlink(missing_ok=True)
-            self.picker("--menu", kind, path, env={"TEST_PICK": "11"})
+            self.picker("--menu", kind, path,
+                        env={"TEST_PICK": "11" if kind == "directory" else "9"})
             expected = f"/rofi/../rofi-picker {letter}"
             for _ in range(50):
                 if expected in self.log_text():
@@ -181,9 +182,68 @@ class RofiPickerTests(unittest.TestCase):
         self.picker("--menu", "directory", directory, env={"TEST_PICK": "5"})
         self.assertIn("a\\ b && git status", self.log_text())
 
-    def test_file_menu_copies_file_contents(self):
+    def test_file_menu_order_and_applicable_actions(self):
+        self.picker("--menu", "file", self.file, env={"TEST_PICK": "-1"})
+        self.assertEqual([
+            "Open file", "Open directory", "Open file in VS Code",
+            "Open terminal in VS Code", "Copy filename", "Copy absolute path",
+            "Copy Git-relative path", "Copy file contents",
+            "Copy Markdown link", "← Back to search",
+        ], self.menu.read_text().splitlines())
+
+    def test_file_menu_hides_inapplicable_actions(self):
+        outside = self.home / "Documents" / "notes.txt"
+        outside.parent.mkdir()
+        outside.write_text("Notes\n")
+        self.picker("--menu", "file", outside, env={"TEST_PICK": "-1"})
+        self.assertNotIn("Copy Git-relative path", self.menu.read_text())
+        self.assertIn("Copy file contents", self.menu.read_text())
+        binary = self.directory / "raw.bin"
+        binary.write_bytes(b"\x00\x01\x02")
+        self.picker("--menu", "file", binary, env={"TEST_PICK": "-1"})
+        self.assertNotIn("Copy file contents", self.menu.read_text())
+        self.assertIn("Copy Git-relative path", self.menu.read_text())
+
+    def test_file_menu_opens_containing_directory(self):
+        self.picker("--menu", "file", self.file, env={"TEST_PICK": "1"})
+        expected = f"xdg-open {self.directory}"
+        for _ in range(50):
+            if expected in self.log_text():
+                break
+            time.sleep(.01)
+        self.assertIn(expected, self.log_text())
+        self.assertNotIn(f"xdg-open {self.file}", self.log_text())
+
+    def test_file_menu_opens_vscode_and_terminal(self):
+        self.picker("--menu", "file", self.file, env={"TEST_PICK": "2"})
+        expected = f"code {self.file}"
+        for _ in range(50):
+            if expected in self.log_text():
+                break
+            time.sleep(.01)
+        self.assertIn(expected, self.log_text())
+        self.log.unlink()
+        self.picker("--menu", "file", self.file, env={"TEST_PICK": "3"})
+        self.assertIn(f"cd -- {self.directory}", self.log_text())
+        self.assertIn("ctrl+alt+shift+F12", self.log_text())
+
+    def test_file_menu_copy_name_absolute_and_git_relative(self):
+        for index, expected in ((4, "README.md"), (5, str(self.file)),
+                                (6, "README.md")):
+            self.picker("--menu", "file", self.file, env={"TEST_PICK": str(index)})
+            self.assertEqual(expected, self.clip.read_text())
+        nested = self.directory / "nested folder"
+        nested.mkdir()
+        target = nested / "file with spaces.md"
+        target.write_text("example")
+        self.picker("--menu", "file", target, env={"TEST_PICK": "6"})
+        self.assertEqual("nested folder/file with spaces.md", self.clip.read_text())
+
+    def test_file_menu_copies_file_contents_and_markdown_link(self):
         self.picker("--menu", "file", self.file, env={"TEST_PICK": "7"})
         self.assertEqual("Hello exam\n", self.clip.read_text())
+        self.picker("--menu", "file", self.file, env={"TEST_PICK": "8"})
+        self.assertEqual(f"[README.md]({self.file.as_uri()})", self.clip.read_text())
 
     def test_menu_open_matches_direct_open_for_music(self):
         music = self.home / "Music" / "song.mp3"

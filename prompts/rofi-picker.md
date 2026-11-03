@@ -127,3 +127,39 @@ Why does that happen? Are there any other bugs like this that you weren't able t
 There are several rofi related files. Reorganize them to move what won't be directly invoked and won't need to be in the PATH into ~/code/scripts/rofi/
 
 My guess is only rofi-picker might be needed - or maybe even THAT won't be needed in the PATH. That might be an opportunity to remove the rofi- prefix for the files - but it might be better to leave it for clarity.
+
+---
+
+File actions should include the following in order (as applicable)
+
+- Open file
+- Open directory (even if it's a file)
+- Open file in VS Code
+- Open terminal in VS Code
+- Copy filename (new)
+- Copy absolute path
+- Copy Git-relative path
+- Copy file contents
+- Copy Markdown link
+
+Drop:
+
+- Open containing directory in VS Code
+- Copy file for pasting in Files
+- Show Git diff in VS Code terminal
+
+
+That apart, what does Omarchy Linux (or other tools) offer keyboard shortcuts for that I ought to incorporate into my rofi-picker mechanism?
+
+---
+
+Add these commands:
+
+Tile Bottom: Reduce size of currently focused window to half the screen size (minus taskbar, etc.) aligned to the bottom.
+Tile Top: Same but aligned to the top. A window that's "Tile bottom" should sit JUST above "Tile top" and fill the vertical height. I plan to Win + Right/Left and then Tile Top / Bottom to occupy a quarter of the screen.
+
+Also add a just test-... command appropriate for testing the rofi commands.
+
+---
+
+On second thought, I used the Gnome Tiling Assistant extension for this. Sorry. Please remove all tiling related changes (code, tests, docs). Let the justfile and any other changes / fixes stay.

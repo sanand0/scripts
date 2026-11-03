@@ -10,7 +10,7 @@ fastmcp := "3.4.7"
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-chatgpt test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi-clip test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
+test: test-agentlog test-backup-chatgpt test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
 
 # Run the agentlog tests.
 test-agentlog:
@@ -88,7 +88,11 @@ test-musictag:
 test-podcast:
     {{ pytest }} --with httpx --with python-dotenv --with pyyaml --with tenacity --with typer pytest -q tests/test_podcast.py
 
-# Run the Rofi clipboard tests.
+# Run the complete Rofi picker, clipboard, and command tests.
+test-rofi:
+    {{ pytest }} pytest -q tests/test_rofi_*.py
+
+# Run only the Rofi clipboard tests.
 test-rofi-clip:
     {{ pytest }} pytest -q tests/test_rofi_clip.py
 

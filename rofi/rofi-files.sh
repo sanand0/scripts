@@ -63,6 +63,21 @@ clipboard() {
     fi
 }
 
+git_relative_path() {
+    local root
+    root="$(git -C "$(dirname "$1")" rev-parse --show-toplevel 2>/dev/null)" || return 1
+    [[ "$1" == "$root/"* ]] || return 1
+    printf '%s' "${1#"$root"/}"
+}
+
+is_text_file() {
+    [[ -f "$1" ]] || return 1
+    case "$(file -b --mime-type -- "$1")" in
+        text/*|application/json|application/xml|application/javascript) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 code_window() {
     local win="${ROFI_SOURCE_WINDOW:-}"
     if [[ "$win" =~ ^[0-9]+$ ]] &&
@@ -104,16 +119,15 @@ github_url() {
 }
 
 do_action() {
-    local kind="$1" path="$2" action="$3" dir root uri link
+    local kind="$1" path="$2" action="$3" dir uri link
     dir="$path"
     [[ "$kind" == directory ]] || dir="$(dirname "$path")"
     case "$action" in
         open) open_file "$path" ;;
-        open-directory) detached xdg-open "$path" ;;
+        open-directory) detached xdg-open "$dir" ;;
         code) detached code "$path" ;;
-        folder-code) detached code "$dir" ;;
-        reveal) detached nautilus --select -- "$path" ;;
         terminal) terminal_in "$dir" ;;
+        copy-filename) printf '%s' "${path##*/}" | clipboard ;;
         status) terminal_in "$dir" "git status" ;;
         diff)
             if [[ "$kind" == directory ]]; then
@@ -129,25 +143,8 @@ do_action() {
             link="$(github_url "$dir")" && detached xdg-open "$link"
             ;;
         copy-path) printf '%s' "$path" | clipboard ;;
-        copy-relative)
-            root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || root=""
-            if [[ "$path" == "$root/"* ]]; then
-                printf '%s' "${path#"$root"/}" | clipboard
-            else
-                printf '%s' "$path" | clipboard
-            fi
-            ;;
-        copy-text)
-            if [[ -f "$path" ]]; then
-                case "$(file -b --mime-type -- "$path")" in
-                    text/*|application/json|application/xml|application/javascript) cat "$path" | clipboard ;;
-                esac
-            fi
-            ;;
-        copy-file)
-            uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).as_uri())' "$path")"
-            printf 'copy\n%s\n' "$uri" | xclip -selection clipboard -t x-special/gnome-copied-files -in
-            ;;
+        copy-relative) git_relative_path "$path" | clipboard ;;
+        copy-text) is_text_file "$path" && clipboard < "$path" ;;
         copy-link)
             uri="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).as_uri())' "$path")"
             printf '[%s](%s)' "${path##*/}" "$uri" | clipboard
@@ -185,8 +182,18 @@ action_menu() {
         labels+=("← Back to directories")
         actions+=(back)
     else
-        labels=("Open file" "Open file in VS Code" "Reveal in Files" "Open terminal in VS Code" "Open containing directory in VS Code" "Copy absolute path" "Copy Git-relative path" "Copy file contents" "Copy file for pasting in Files" "Copy Markdown link" "Show Git diff in VS Code terminal" "← Back to search")
-        actions=(open code reveal terminal folder-code copy-path copy-relative copy-text copy-file copy-link diff back)
+        labels=("Open file" "Open directory" "Open file in VS Code" "Open terminal in VS Code" "Copy filename" "Copy absolute path")
+        actions=(open open-directory code terminal copy-filename copy-path)
+        if git_relative_path "$path" >/dev/null; then
+            labels+=("Copy Git-relative path")
+            actions+=(copy-relative)
+        fi
+        if is_text_file "$path"; then
+            labels+=("Copy file contents")
+            actions+=(copy-text)
+        fi
+        labels+=("Copy Markdown link" "← Back to search")
+        actions+=(copy-link back)
     fi
     index="$(printf '%s\n' "${labels[@]}" | rofi -dmenu -no-custom -i -format i -p "${kind^}: ${path##*/}")" || return 0
     [[ "$index" =~ ^[0-9]+$ ]] && ((index < "${#actions[@]}")) || return 0
