@@ -71,7 +71,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      dev.sh -- codex --yolo --model gpt-6-luna --config model_reasoning_effort=high
+      codex --model gpt-6.1-terra --config model_reasoning_effort=medium
       -->
 
   - trigger: "-claude "
@@ -79,7 +79,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      dev.sh -- claude --dangerously-skip-permissions --model opus --effort medium
+      claude --model opus --effort medium
       -->
 
   - trigger: "-copilot"
