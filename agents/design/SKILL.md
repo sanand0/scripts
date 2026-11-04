@@ -5,9 +5,9 @@ description: ALWAYS follow this design guide for any front-end work
 
 Design principles:
 
-- Dark mode. Enable a dark-mode toggle. Text should contrast background on both modes.
-- Responsive. It should be readable on mobile and at any device size.
-- Accessible. Allow extensive keyboard navigation. For example, popups on tables should allow keyboard navigation. Arrow keys act as if the popup on the adjacent cell is activated.
+- Dark mode. Add a toggle. Text should contrast background on both modes in ALL elements / states.
+- Responsive. Be mobile-friendly at any device size.
+- Accessible. Allow extensive keyboard navigation, e.g. for popups on tables, shortcuts for selections, etc.
 - Bookmarkable. Capture state in the URL `#path?key=value`. Sharing the URL reproduces the view, with tabs, filters, slider positions, etc. captured. Prefer replaceState()
 
 Prefer creative, distinctive frontends that surprise and delight, not generic, "on distribution" outputs.
@@ -27,21 +27,27 @@ Use tooltips and popups as informative and engaging aids.
 - Use **popups** for:
   - Quotes / citations with links
   - File links. Render Markdown as HTML (syntax-highlighted), tabular data as sortable tables (with gradient-colored numbers)
-  - Context for data points on table cells, chart elements, etc. These popups can be extensive, e.g. narratives, cards, tables, charts, or even entire dashboards if required
+  - Rich context on table cells, chart elements, etc. with narratives, cards, tables, charts, or even entire dashboards if required
+  - Always allow arrow keys to navigate between popups on adjacent table cells, chart elements, etc.
 
-Use icon libraries rather than unicode/emoji icons.
-
-Use SVG favicons e.g.
+Use icon libraries. Use SVG favicons e.g.
 
 ```html
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns ... %3C%2Fsvg%3E"/>
 ```
 
-You can use Unicode and rich typography in the SVG.
+Build interactions with the platform, not JS. Syntax/fallbacks: `npx -y modern-web-guidance@latest retrieve <id>`.
 
-```html
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128">
-  <rect fill="#2563eb" width="64" height="64" rx="10"/>
-  <text x="32" y="35" text-anchor="middle" dominant-baseline="middle" font-size="40">🌈</text>
-</svg>
-```
+- Tooltip: `popover="hint"` + `interestfor` + `position-area`, `position-try-fallbacks: flip-block` → interest-triggered-tooltips, position-aware-tooltips
+- Hover preview (citation, file link): `interestfor` → `popover` card → hovercard
+- Drill-down popup: `<dialog closedby="any">` via `commandfor`/`command="show-modal"`; `@starting-style` + `allow-discrete` → dialog, animate-to-from-top-layer
+- State change (filter, sort, tab, expand small multiple): `document.startViewTransition(render)`; `view-transition-name: match-element` → same-document-transitions, group-element-transitions
+- Scroll-linked visuals: `animation-timeline: view()|scroll()`; play-once via `timeline-trigger`; JS only to swap chart data per step → scrollytelling, scroll-entry-exit-effects
+- Expand/collapse: `<details name>` + `::details-content` + `interpolate-size: allow-keywords` → animate-to-intrinsic-sizes
+- Sticky header stuck / scroll-edge shade: `@container scroll-state(...)` → state-aware-sticky-headers, scrollability-affordance-hints
+- Stagger: `animation-delay: calc(sibling-index() * 40ms)`
+- Text on coloured cells: `color: contrast-color(var(--bg))`
+- Dark mode: one token set with `light-dark()`; the toggle sets `color-scheme`
+
+Chromium-only bits (interestfor, timeline-trigger, scroll-state, interpolate-size) are enhancements; the fallback is the plain, unanimated state.
+JS that positions, shows/hides, dismisses, traps focus or animates on scroll needs a one-line comment saying why the native route fails.
