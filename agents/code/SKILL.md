@@ -18,6 +18,7 @@ description: ALWAYS follow this style when writing Python / JavaScript / HTML / 
 - DRY: Use helpers for logic repeated 3+ times, precompute shared intermediates
 - Keep happy path linear and obvious. Write flow first, then fill in code
 - Early returns fail fast and reduce nesting. Skip defensive fallbacks, existence checks, ... unless essential
+- Never skip: validation at trust boundaries (user input, files, APIs), error handling that prevents data loss, security, accessibility
 - Change existing code minimally. Retain existing comments. Follow existing style.
   Preserve behavior outside requested changes. Ask before materially expanding scope or touching unrelated files/config
 - Make scripts re-startable if interrupted. Inspect state first for unexpected changes
@@ -26,6 +27,7 @@ Docs:
 
 - Use type hints and docstrings (document contracts and surprises, not mechanics)
 - Comment non-obvious stuff that'll trip future maintainers: why, why not alternatives, pitfalls, invariants, input/output shape, ...
+- Mark deliberate shortcuts with a known limit: `shortcut: <limit>; <upgrade path>` (e.g. `# shortcut: O(n²) scan; index by id past ~10k rows`)
 
 Tests:
 
