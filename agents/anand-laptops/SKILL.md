@@ -51,6 +51,12 @@ Read `~/code/scripts/agents/AGENTS.md` for coding, shell, or filesystem-modifica
 - **Setup, personal CLIs:** `~/code/scripts/README.md`, `~/code/scripts/setup/{linux,windows}.md`, `~/Dropbox/scripts/`.
 - **Browser control (graphene):** the `devtools` skill.
 
+# Workflows
+
+- Transcribe meeting recordings on graphene:
+  - Compress video to speech quality opus via `~/code/scripts/setup.fish` opus function. Save in `~/Documents/calls/` with consistent filenames.
+  - Transcribe meetings via `~/code/scripts/call`. If Meet/Teams/... transcripts are available, use `## Meeting transcript context` from `~/code/blog/pages/prompts/fragments.md` to provide the `--prompt` to `call`.
+
 # Answering
 
 Label each source as one of:

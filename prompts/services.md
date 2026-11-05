@@ -1,8 +1,46 @@
 # services
 
-## Sync more files
+## Sync more files, 02 Nov 2026
 
+<!-- Sync Plutonium Graphene Agent Sessions and .env: https://chatgpt.com/c/6ae843eb-9774-83ec-9192-bac0a4d58897 (2026-11-04T16:26:49+05:30) -->
 
+I plan to update ~/code/scripts/services/sync-plutonium.sh on @LocalMCP2 to sync more files from Graphene to Plutonium. Specifically:
+
+- .env files
+- ~/.codex/ and ~/.claude/ session logs
+- working files from specific directories, like ~/code/tds-network-games/.private/
+
+A few questions:
+
+Q1. Where should the .codex and .claude session logs be stored on Plutonium? `~/.codex/` and `~/.claude/` already use the existing Codex and Claude sessions, but I think my scripts mostly just need the session logs in ~/.codex/sessions/ and ~/.claude/sessions/ and if I just copy these files, will it be OK? I don't need Codex / Claude to resume from these sessions. They're just there for backup. If it disrupts Codex / Claude in the future I can always move them elsewhere. As long as it doesn't disrupt them NOW I guess I should be fine. Do you think otherwise? Also, is there something else - based on ~/code/scripts/ or any other code I use that references these directories - that I should sync?
+
+Q2. What's an easy way to list a set of directories like ~/code/tds-network-games/.private/ that I should sync - so that they're present at the top of sync-plutonium.sh and I can edit them easily?
+
+Q3. What working directories from ~/code/ that have been updated in the last 2 months and I have .gitignored should be copied to Plutonium? I need things that an agent would need to work effectively on Plutonium (e.g. .env) and cannot recreate (e.g. node_modules, .venv, etc.) and is actually required for analysis or coding that I might (e.g. .private/ is required for exam evaluations while on the go.)
+
+---
+
+I prefer C:\graphene\ as the root instead of ~/graphene-backup/
+
+I agree with the .codex and .claude files you suggest I copy, as well as the GitHub Copilot archive.
+
+I would rename LOGS_DIRS to GRAPHENE_DIRS which are backed up in C:\graphene
+I would rename WORK_DIRS to SYNC_DIRS which are copied as-is
+I would rename WORK_FILES to SYNC_FILES
+
+Let's sync all of ~/code/tds-network-games/.private/ and ~/code/exam/{dumps,.private} as directories. Let's sync these files:
+
+exam/{.env,.dev.vars}
+tds-network-games/.dev.vars
+scripts/.env
+
+Update sync-plutonium.sh accordingly.
+
+---
+
+🟢 2026-11-02T14:21:14+05:30 START mode=dry-run targets=C:/Documents/,C:/graphene/,C:/code/ policy=update-no-delete
+🔴 2026-11-02T14:21:14+05:30 ERROR NTFS-compatibility Unsafe Windows name or case collision: /home/sanand/Documents/data/agents/post-mortem-2026-11-02T07:14:30+00:00.md
+🔴 2026-11-02T14:21:14+05:30 END status=failed mode=dry-run elapsed=0s source_files=0 would_transfer_files=0 would_transfer_data=0B sent=0B received=0B
 
 ## Change VLC history path, 05 Oct 2026
 
@@ -129,7 +167,7 @@ I'm running it in the host machine - @LocalMCP has access only to the container,
 
 What might be the problem? How can I debug it?
 
-----
+---
 
 ```
 $ systemctl --user stop vlc-history.service
