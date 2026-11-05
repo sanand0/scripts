@@ -53,9 +53,10 @@ Read `~/code/scripts/agents/AGENTS.md` for coding, shell, or filesystem-modifica
 
 # Workflows
 
-- Transcribe meeting recordings on graphene:
-  - Compress video to speech quality opus via `~/code/scripts/setup.fish` opus function. Save in `~/Documents/calls/` with consistent filenames.
-  - Transcribe meetings via `~/code/scripts/call`. If Meet/Teams/... transcripts are available, use `## Meeting transcript context` from `~/code/blog/pages/prompts/fragments.md` to provide the `--prompt` to `call`.
+- Transcribe meeting recordings on graphene
+  - Convert video to speech-quality Opus using the `opus` function in `~/code/scripts/setup.fish`. Save in `~/Documents/calls/` as `YYYY-MM-DD Meeting Title.opus`.
+  - Transcribe via `~/code/scripts/call` into `~/Dropbox/notes/transcripts/*.md`. If speaker-labeled captions exist (e.g. embedded subtitles), use `## Meeting transcript context` in `~/code/blog/pages/prompts/fragments.md` to generate speaker context for `call --prompt` - along with attendee names, meeting notes, ...
+  - Reuse existing files. Verify completion.
 
 # Answering
 
