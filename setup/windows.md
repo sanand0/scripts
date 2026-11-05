@@ -143,7 +143,11 @@ Set up Plutonium as an SSH server via Tailscale. After logging into Tailscale as
 
 ```powershell
 winget install --exact --id Tailscale.Tailscale --source winget
-# Run tailscale
+
+# Configure tailscale
+tailscale set --unattended=true
+tailscale serve --bg --set-path=/~ "$env:USERPROFILE"
+tailscale serve --bg --set-path=/~/Downloads "C:\Downloads"
 
 # This can be slow. Download from https://github.com/PowerShell/Win32-OpenSSH/releases into C:\Program Files\OpenSSH. Run install-sshd.ps1 as Admin PowerShell.
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
