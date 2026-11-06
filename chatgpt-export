@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+// https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9
+// Download a ChatGPT data export in resumable HTTP ranges through an authenticated Edge tab.
+// Usage: copy "Download data export" link from Gmail, then run: chatgpt-export
+import {execFileSync, spawn, spawnSync} from 'node:child_process';
+import {existsSync, mkdirSync, openSync, closeSync, readSync, writeSync, fsyncSync, renameSync, statSync, unlinkSync} from 'node:fs';
+import {join} from 'node:path';
+import {homedir} from 'node:os';
+const CHUNK = 4 * 1024 * 1024;
+const PORT = Number(process.env.CHATGPT_CDP_PORT || '9222');
+const log = (...a) => console.log(...a);
+
+function getLink() {
+  let arg = process.env.CHATGPT_EXPORT_URL || process.argv.slice(2).find(x => !x.startsWith('--'));
+  if (!arg) {
+    try { arg = execFileSync('xclip', ['-selection','clipboard','-o'], {encoding:'utf8',timeout:5000}).trim(); }
+    catch { throw new Error('Copy the export download link from Gmail, or pass it as an argument.'); }
+  }
+  let u = new URL(arg);
+  if (u.hostname === 'www.google.com' && u.pathname === '/url') {
+    u = new URL(u.searchParams.get('q') || u.searchParams.get('url'));
+  }
+  if (u.hostname !== 'chatgpt.com' || u.pathname !== '/backend-api/estuary/content')
+    throw new Error('Clipboard is not a ChatGPT export link. Right-click "Download data export" in the email and choose "Copy link address".');
+  return u.toString();
+}
+function cdp(ws) {
+  let nextId = 1;
+  const pending = new Map();
+  ws.addEventListener('message', event => {
+    const obj = JSON.parse(event.data);
+    const slot = pending.get(obj.id);
+    if (!slot) return;
+    clearTimeout(slot.timer);
+    pending.delete(obj.id);
+    if (obj.error || obj.result?.exceptionDetails) slot.reject(new Error(JSON.stringify(obj.error || obj.result.exceptionDetails).slice(0,500)));
+    else slot.resolve(obj.result?.result?.value);
+  });
+  ws.addEventListener('close', () => {
+    for (const slot of pending.values()) { clearTimeout(slot.timer); slot.reject(new Error('Browser CDP connection closed')); }
+    pending.clear();
+  });
+  return (expr, ms=60000) => new Promise((resolve,reject) => {
+    const id = nextId++;
+    const timer = setTimeout(() => {pending.delete(id);reject(new Error('Request timed out'));},ms);
+    pending.set(id,{resolve,reject,timer});
+    ws.send(JSON.stringify({id,method:'Runtime.evaluate',params:{expression:expr,awaitPromise:true,returnByValue:true}}));
+  });
+}
+async function connect() {
+  let targets;
+  try { targets = await (await fetch('http://127.0.0.1:'+PORT+'/json',{signal:AbortSignal.timeout(5000)})).json(); }
+  catch {
+    log('Starting the dedicated Edge browser...');
+    const edge=spawn('/opt/microsoft/msedge/msedge',[
+      '--user-data-dir='+join(homedir(),'.config/microsoft-edge-cdp'),
+      '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+PORT,
+      'https://chatgpt.com/'
+    ],{detached:true,stdio:'ignore'});
+    edge.unref();
+    for(let i=0;i<25;i++){
+      await new Promise(r=>setTimeout(r,800));
+      try { targets=await (await fetch('http://127.0.0.1:'+PORT+'/json',{signal:AbortSignal.timeout(2000)})).json();break; }
+      catch {}
+    }
+    if(!targets)throw new Error('Could not start Edge CDP browser on port '+PORT);
+  }
+  const tab = targets.find(x => x.type==='page' && x.url.startsWith('https://chatgpt.com/'));
+  if (!tab) throw new Error('Open https://chatgpt.com/ and sign in, in the Edge CDP browser.');
+  const ws = new WebSocket(tab.webSocketDebuggerUrl);
+  await new Promise((resolve,reject) => {
+    const timer = setTimeout(()=>reject(new Error('CDP websocket handshake timed out')),10000);
+    ws.addEventListener('open',()=>{clearTimeout(timer);resolve();},{once:true});
+    ws.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('Could not open browser CDP websocket'));},{once:true});
+  });
+  return {ws,evalCDP:cdp(ws)};
+}
+function requestExpr(url,start,end) {
+  const range = 'bytes='+start+'-'+end;
+  return `(async()=>{
+    try {
+      const r=await fetch(${JSON.stringify(url)}, {credentials:'include',cache:'no-store',
+        headers:{'Range':${JSON.stringify(range)},'Accept-Encoding':'identity'}});
+      const cr=r.headers.get('content-range')||'';
+      if(r.status!==206||cr!==${JSON.stringify('bytes '+start+'-'+end+'/')}+cr.split('/')[1])
+        return {error:'Unexpected response',status:r.status,contentRange:cr};
+      const bytes=await r.arrayBuffer();
+      const reader=new FileReader();
+      const data=await new Promise((resolve,reject)=>{
+        reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+        reader.onerror=()=>reject(reader.error);
+        reader.readAsDataURL(new Blob([bytes]));
+      });
+      return {data,contentRange:cr,size:bytes.byteLength};
+    }catch(e){return {error:String(e)};}
+  })()`;
+}
+async function getBytes(evalCDP,url,start,end,total) {
+  const response=await evalCDP(requestExpr(url,start,end),120000);
+  if (response?.error) throw new Error(JSON.stringify(response).slice(0,300));
+  if (response?.contentRange !== `bytes ${start}-${end}/${total}`) throw new Error('Wrong Content-Range: '+response?.contentRange);
+  if (!response?.data) throw new Error('No response bytes');
+  const bytes=Buffer.from(response.data,'base64');
+  if(bytes.length!==end-start+1 || bytes.length!==response.size) throw new Error('Wrong range length');
+  return bytes;
+}
+async function retry(f,n=5) {
+  for(let i=1;i<=n;i++){
+    try{return await f();}
+    catch(e){if(i===n)throw e;log('Retry',i+'/'+n,String(e).slice(0,150));await new Promise(r=>setTimeout(r,1200*i));}
+  }
+}
+async function main() {
+  const url=getLink(),{ws,evalCDP}=await connect();
+  try{
+    const metadata=await evalCDP(`(async()=>{try{
+      const r=await fetch(${JSON.stringify(url)}, {method:'HEAD',credentials:'include',cache:'no-store'});
+      return {status:r.status,size:r.headers.get('content-length'),ranges:r.headers.get('accept-ranges'),type:r.headers.get('content-type')};
+    }catch(e){return {error:String(e)};}})()`,45000);
+    if(metadata?.status!==200||metadata?.ranges!=='bytes') throw new Error('The export link did not return a resumable download: '+JSON.stringify(metadata)+'. Check that it has not expired.');
+    const total=Number(metadata.size);
+    if (!Number.isSafeInteger(total)||total<=0) throw new Error('Invalid archive size');
+    const folder=join(homedir(),'Downloads');
+    mkdirSync(folder,{recursive:true});
+    const date=process.env.CHATGPT_EXPORT_DATE || new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Singapore'});
+    const final=join(folder,`chatgpt-export-${date}.zip`);
+    const partial=final+'.part';
+    const candidate=existsSync(partial)?partial:final;
+    let current=existsSync(candidate)?statSync(candidate).size:0;
+    if(current>total) throw new Error('Local file larger than server export; rename '+candidate);
+    // Verify beginning and end before continuing, so we never mix different exports.
+    if(current>0){
+      const check=async(s,e)=>{
+        const expected=await retry(()=>getBytes(evalCDP,url,s,e,total));
+        const fd=openSync(candidate,'r'), actual=Buffer.alloc(e-s+1);
+        try{readSync(fd,actual,0,actual.length,s);}finally{closeSync(fd);}
+        if(!actual.equals(expected)) throw new Error('Existing file differs from this export. Rename '+candidate+' before retrying.');
+      };
+      await check(0,Math.min(current-1,65535));
+      if(current>65536) await check(Math.max(0,current-65536),current-1);
+    }
+    if(current===total){
+      log('Already fully downloaded:',candidate);
+      if(candidate===partial){renameSync(partial,final);}
+    }else{
+      log('Downloading',total.toLocaleString(),'bytes to',partial,'; resuming at',current.toLocaleString());
+      // Keep old partials intact; only a matching archive is resumed.
+      if(candidate===final) renameSync(final,partial);
+      const fd=openSync(partial,existsSync(partial)?'r+':'w+');
+      try{
+        while(current<total){
+          const start=current,end=Math.min(current+CHUNK,total)-1;
+          const bytes=await retry(()=>getBytes(evalCDP,url,start,end,total));
+          let offset=0;
+          while(offset<bytes.length){offset+=writeSync(fd,bytes,offset,bytes.length-offset,start+offset);}
+          current=end+1;
+          if(current%(CHUNK*8)===0||current===total){fsyncSync(fd);log((100*current/total).toFixed(1)+'% ('+current.toLocaleString()+'/'+total.toLocaleString()+')');}
+        }
+        fsyncSync(fd);
+      }finally{closeSync(fd);}
+      renameSync(partial,final);
+    }
+    log('Verifying ZIP CRC (all entries)...');
+    const check=spawnSync('python3',['-c',`import zipfile,sys;f=sys.argv[1];z=zipfile.ZipFile(f);bad=z.testzip();print('ZIP entries:',len(z.infolist()),'CRC:', 'OK' if bad is None else bad);sys.exit(0 if bad is None else 1)`,final],{stdio:'inherit'});
+    if(check.status!==0)throw new Error('ZIP validation FAILED. Kept '+final);
+    log('SUCCESS:',final);
+  } finally {ws.close();}
+}
+main().catch(e=>{console.error('ERROR:',e.message);process.exitCode=1;});
