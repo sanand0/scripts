@@ -1,5 +1,21 @@
 # Transcribe Calls
 
+##
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+-->
+
+Fix `call` to avoid errors / warnings from ~/.cache/sanand-scripts/transcribe_calls/runs/20261106T084724.703100Z-146e782e/
+Maybe there's no fix to be made in `call` and the warning / error is external - and if so, just let me know.
+
+---
+
+Retranscribe as you suggested.
+
+<!-- codex resume 01a1b00e-b0dc-7e22-aae0-a4a9855f4c44 -->
+
 ## Current contract, 01 Oct 2026
 
 The sections below record design history. The active interface is documented in

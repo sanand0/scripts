@@ -500,16 +500,24 @@ gsettings set org.gnome.desktop.wm.keybindings maximize "['<Super>Up']"
 gsettings set org.gnome.desktop.wm.keybindings unmaximize "['<Super>Down']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-left "['<Super>Left']"
 gsettings set org.gnome.mutter.keybindings toggle-tiled-right "['<Super>Right']"
+# <Super>H hides / minimizes the current window natively.
 # New windows open centered, so you don’t hunt for them on ultrawide screens
 # (GNOME Tweaks > Windows > Center New Windows)
 gsettings set org.gnome.mutter center-new-windows true
+
 # Tiling Assistant
-gsettings set org.gnome.shell.extensions.tiling-assistant tile-top-half "['<Super><Shift>Up']"
+# <Super>Up works directly when tiling-assistant is enabled. Not sure why. Mapping <Super><Shift>Up doesn't seem to be required nor does it work (sometimes).
+gsettings set org.gnome.shell.extensions.tiling-assistant tile-top-half "[]"
+# Since <Super>Down is already mapped to unmaximize, we need to use <Super><Shift>Down for tiling-assistant.
 gsettings set org.gnome.shell.extensions.tiling-assistant tile-bottom-half "['<Super><Shift>Down']"
+# Don't show a popup to pick the other window after you tile (on any workspace)
 gsettings set org.gnome.shell.extensions.tiling-assistant enable-tiling-popup false
 gsettings set org.gnome.shell.extensions.tiling-assistant tiling-popup-all-workspace false
+# <Super><Shift>Period centers window. Useful sometimes
+gsettings set org.gnome.shell.extensions.tiling-assistant center-window "['<Super><Shift>Period']"
 # Dynamic Keybinding Behaviour 2 = TilingState. Tiling to top / bottom will preserve the left / right tiling as well. Default (0) will not.
 gsettings set org.gnome.shell.extensions.tiling-assistant dynamic-keybinding-behavior 2
+
 # Disable PrintScreen key to avoid conflicts with Flameshot
 gsettings set org.gnome.shell.keybindings screenshot "[]"
 gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"

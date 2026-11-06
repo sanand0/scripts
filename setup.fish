@@ -250,6 +250,8 @@ abbr --add hetznerbackup rsync -avzP \
 
 # Copy to clipboard. Typical usage: command | clip
 abbr --add clip 'xclip -selection clipboard'
+# Copy the current directory to the clipboard
+abbr --add pwdclip 'pwd | sd \'/home/sanand/\' \'~/\' | xclip -selection clipboard'
 
 # LLM Utilities
 # -----------------------------------------------
