@@ -2008,6 +2008,15 @@ def test_revision_known_local_timestamp_shift_ignores_inference_guard():
     assert module.render_chunk_timestamps('**A**: [00:02 - 00:04] Range', 59) == '**A**: [01:01 - 01:03] Range'
 
 
+def test_revision_atomic_save_replaces_existing_note_on_windows(tmp_path):
+    module = load_module()
+    note = tmp_path / 'note.md'
+    note.write_text('Original notes', encoding='utf-8')
+    module.atomic_write(note, 'Replaced：🌍')
+    assert note.read_text(encoding='utf-8') == 'Replaced：🌍'
+    assert list(tmp_path.iterdir()) == [note]
+
+
 def test_revision_atomic_save_failure_preserves_existing_note(tmp_path, monkeypatch):
     module = load_module()
     note = tmp_path / 'note.md'

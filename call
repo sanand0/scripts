@@ -388,16 +388,19 @@ def atomic_write(path: Path, text: str) -> None:
     """Replace a document atomically, preserving permissions and the original on failure."""
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
-        temp_path = Path(handle.name)
-        try:
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
+            temp_path = Path(handle.name)
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-            if path.exists():
-                temp_path.chmod(path.stat().st_mode & 0o777)
-            os.replace(temp_path, path)
-        finally:
+        # Windows cannot replace an open NamedTemporaryFile. Close it first.
+        if path.exists():
+            temp_path.chmod(path.stat().st_mode & 0o777)
+        os.replace(temp_path, path)
+    finally:
+        if temp_path is not None:
             temp_path.unlink(missing_ok=True)
 
 
