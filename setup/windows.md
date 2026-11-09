@@ -144,10 +144,10 @@ Set up Plutonium as an SSH server via Tailscale. After logging into Tailscale as
 ```powershell
 winget install --exact --id Tailscale.Tailscale --source winget
 
-# Configure tailscale
+# Private HTTPS: keep file browsing separate from the Tailrun command API
 tailscale set --unattended=true
-tailscale serve --bg --set-path=/~ "$env:USERPROFILE"
-tailscale serve --bg --set-path=/~/Downloads "C:\Downloads"
+tailscale serve --bg --https=443 --set-path=/~/ "$env:USERPROFILE"
+tailscale serve --bg --https=443 --set-path=/tailrun http://127.0.0.1:8767
 
 # This can be slow. Download from https://github.com/PowerShell/Win32-OpenSSH/releases into C:\Program Files\OpenSSH. Run install-sshd.ps1 as Admin PowerShell.
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
@@ -269,6 +269,31 @@ Register-ScheduledTask -TaskName 'DesktopCommanderRemote' -Action $action `
 This uses the stable `C:\Apps\nodejs\npx.cmd` rather than mise's versioned Node path. S4U avoids the local account password (password-based registration failed). The task starts one minute after boot, runs elevated, and retries failures. Registration succeeded; connectivity **after a reboot is not yet verified**, and S4U's network restrictions may prevent the remote connection.
 
 After reboot, check `Get-ScheduledTaskInfo -TaskName DesktopCommanderRemote` and verify Plutonium is online at [Desktop Commander](https://mcp.desktopcommander.app/).
+
+## Tailrun
+
+Tailrun is a separate repo at `C:\code\tailrun`. One Python HTTP server handles static pages, `/run`, and `/upload`; Tailscale proxies `/tailrun/` to it and persists the route across reboots. In **Admin PowerShell**:
+
+```powershell
+git clone https://github.com/sanand0/tailrun.git C:\code\tailrun  # first install only
+[Environment]::SetEnvironmentVariable('TAILRUN_USERS', 'root.node@gmail.com', 'User')
+$python = "$env:APPDATA\uv\python\cpython-3.13.0-windows-x86_64-none\python.exe"
+$action = New-ScheduledTaskAction -Execute $python -Argument '-u "C:\code\tailrun\runner.py" --port 8767' -WorkingDirectory 'C:\code\tailrun'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$trigger.Delay = 'PT45S'
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$principal = New-ScheduledTaskPrincipal -UserId 'PLUTONIUM\Anand' -LogonType S4U -RunLevel Limited
+if (Get-ScheduledTask -TaskName Tailrun -ErrorAction SilentlyContinue) {
+    Set-ScheduledTask -TaskName Tailrun -Action $action
+} else {
+    Register-ScheduledTask -TaskName Tailrun -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+}
+```
+
+No restart is required when updating tasks - they are run as sub-processes. Only restart if runner.py changes.
+Stop any manually launched runner, then run `Start-ScheduledTask -TaskName Tailrun`.
+Check `Get-ScheduledTaskInfo -TaskName Tailrun`, `tailscale serve status`, and <https://plutonium.tail87dc61.ts.net/tailrun/> from another tailnet device.
+S4U runs without a password or admin privileges. The separate home-directory shares remain on HTTPS port **8443**.
 
 ## Google Workspace
 
