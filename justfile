@@ -6,6 +6,22 @@ playwright := "1.62.0"
 playwright_revision := "1234"
 fastmcp := "3.4.7"
 
+# Generate the Claude plugin marketplace from the canonical skills directory.
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .claude-plugin
+    cat > .claude-plugin/marketplace.json <<'JSON'
+    {
+      "name": "anand-coding",
+      "description": "Anand's coding and design skills",
+      "owner": {"name": "Anand Subramanian"},
+      "plugins": [
+        {"name": "coding-skills", "source": "./agents", "skills": ["."]}
+      ]
+    }
+    JSON
+
 # Verify the repository using its canonical test suite.
 verify: test
 
