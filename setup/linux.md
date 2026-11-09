@@ -509,7 +509,7 @@ gsettings set org.gnome.mutter center-new-windows true
 # <Super>Up works directly when tiling-assistant is enabled. Not sure why. Mapping <Super><Shift>Up doesn't seem to be required nor does it work (sometimes).
 gsettings set org.gnome.shell.extensions.tiling-assistant tile-top-half "[]"
 # Since <Super>Down is already mapped to unmaximize, we need to use <Super><Shift>Down for tiling-assistant.
-gsettings set org.gnome.shell.extensions.tiling-assistant tile-bottom-half "['<Super><Shift>Down']"
+# gsettings set org.gnome.shell.extensions.tiling-assistant tile-bottom-half "['<Super><Shift>Down']"
 # Don't show a popup to pick the other window after you tile (on any workspace)
 gsettings set org.gnome.shell.extensions.tiling-assistant enable-tiling-popup false
 gsettings set org.gnome.shell.extensions.tiling-assistant tiling-popup-all-workspace false
