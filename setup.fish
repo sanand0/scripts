@@ -177,6 +177,9 @@ abbr --add recentblogs 'rg -l "^[[:space:]]*- llms" -g ~/code/blog/posts/**/*.md
 # Summarize descriptions & keywords for blogs, transcripts, etc.
 abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > description.md"
 
+# Replace the archived LinkedIn backup command.
+abbr --add backuplinkedin.py 'linkedin backup me'
+
 # Replace previously used commands with a single agentlog.py
 abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
@@ -252,6 +255,7 @@ abbr --add hetznerbackup rsync -avzP \
 abbr --add clip 'xclip -selection clipboard'
 # Copy the current directory to the clipboard
 abbr --add pwdclip 'pwd | sd \'/home/sanand/\' \'~/\' | xclip -selection clipboard'
+# ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
 
 # LLM Utilities
 # -----------------------------------------------

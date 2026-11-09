@@ -26,7 +26,7 @@ build:
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-chatgpt test-backup-google test-backup-linkedin test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
+test: test-agentlog test-backup-chatgpt test-backup-google test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
 
 # Run the agentlog tests.
 test-agentlog:
@@ -43,10 +43,6 @@ test-backup-chatgpt:
 # Run the Google backup normalization and merge tests.
 test-backup-google:
     {{ pytest }} --with typer pytest -q tests/test_backupgoogle.py
-
-# Run the LinkedIn backup transport, timestamp, and merge tests.
-test-backup-linkedin: playwright-install
-    {{ pytest }} --with typer --with websockets --with 'playwright=={{ playwright }}' pytest -q tests/test_backuplinkedin.py
 
 # Run the WhatsApp backup parser, merge, and incremental-selection tests.
 test-backup-whatsapp:
@@ -91,6 +87,10 @@ test-htmlemail:
 # Run the LinkedIn CLI tests using their PEP 723 environment.
 test-linkedin:
     uv run --python {{ python }} tests/test_linkedin.py -q
+
+# Run the standalone LinkedIn API/cache/backup tests with isolated Chromium DOM fixtures.
+test-linkedin-api: playwright-install
+    node --test tests/test_linkedin.mjs
 
 # Run the MCP server tests against the ToolResult contract they require.
 test-mcpserver:

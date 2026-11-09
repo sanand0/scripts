@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "archive"))
 
 import backuplinkedin as backup
 
@@ -109,7 +110,7 @@ def test_page_cdp_url_preserves_direct_websocket() -> None:
 
 def test_default_output_path_follows_home(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "backuplinkedin.py"), run_name="test_default_home")
+    namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "archive" / "backuplinkedin.py"), run_name="test_default_home")
     expected = tmp_path / "Documents/data/linkedin-posts.jsonl"
     assert namespace["OUT_PATH"] == expected
     assert namespace["describe"]()["output"] == str(expected)

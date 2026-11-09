@@ -78,9 +78,6 @@ Here are the setup details for my laptops.
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
 - [backupgoogle.py](backupgoogle.py) archives Google Mail, Calendar, and Chat from currently logged in `gws` user into `~/Documents/data/$EMAIL/{source}-YYYY-MM.jsonl`. `backupgoogle.py --since YYYY-MM-DD --until YYYY-MM-DD`. Use `--config-dir ~/.config/gws-root.node@gmail.com` for the personal account or `--config-dir ~/.config/gws-anand@study.iitm.ac.in` for IITM. `daily-activities` backs up all three accounts. Account setup and service checks: `~/Dropbox/notes/gws-cli.md`.
 - [backupchatgpt.py](backupchatgpt.py) backs up rendered ChatGPT conversations via `../tools/aiscrapers/{chatgptscraper,chatgpt-sidebar-scraper}.js`. Daily: `uv run backupchatgpt.py --limit 20 --format jsonl`. Weekly: `uv run backupchatgpt.py --rescan --limit 5`. Retry: `uv run backupchatgpt.py --conversation 'https://chatgpt.com/c/UUID' --format jsonl`. Logs: `~/.cache/sanand-scripts/backupchatgpt/YYYY-MM-runs.jsonl`
-- [backuplinkedin.py](backuplinkedin.py) backs up LinkedIn posts and comments that the standard export misses via a logged-in CDP browser. Examples: `backuplinkedin.py posts --username sanand0 --limit 5`, `backuplinkedin.py posts --username sanand0 --no-comments --dry-run`, `backuplinkedin.py --describe | jaq .`.
-  - Weekly analytics refresh: `uv run backuplinkedin.py posts --username sanand0 --analytics --since 7d --limit 0`.
-  - Year refresh: `uv run backuplinkedin.py posts --username sanand0 --analytics --since 1y --limit 0`. Updates saved original posts in `--out`, preserving comments; `--until` is exclusive. Captures discovery, profile activity, engagements, video views/watch time, visible profile-viewer summaries, all six demographic tabs, and public repost details. Missing/withheld metrics stay null; `repostScrapeStats` reports incomplete lists (private shares are excluded by LinkedIn). Use `--dry-run` to inspect without writing.
 - [backupmeet.py](backupmeet.py) archives owned Google Meet recordings/transcripts from `root.node@gmail.com` Drive into `/home/sanand/Documents/Meet Recordings/`, renames files to start with the meeting date, converts `.mp4` files to `.opus` in `/home/sanand/Documents/calls/`, and deletes Drive originals older than `--older-than 7d` after a verified copy. It refuses to run against any other `gws` account.
   Set up the isolated login with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws auth login`, then run e.g. `backupmeet.py --dry-run`, `backupmeet.py --older-than 365d --type video --limit 3`, or `backupmeet.py --before "6 months ago" --type transcript`.
 - [backupwhatsapp.py](backupwhatsapp.py) backs up WhatsApp Web conversations through Chrome DevTools Protocol into `~/Documents/data/whatsapp/`. Examples: `backupwhatsapp.py --limit 5`, `backupwhatsapp.py --conversation "Family" --format jsonl`, `backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor`.
@@ -123,7 +120,7 @@ Here are the setup details for my laptops.
 - [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`.
 - [htmlemail.py](htmlemail.py) renders Markdown to HTML and sends as email via Gmail API. Usage: `uv run htmlemail.py --from EMAIL --email EMAIL body.md`.
   - Initialized via `htmlemail.py --init --client-secrets google-root.node-desktop_872568319651-7pde9a28vem61qfvon8pu0d9bgijv8lf.apps.googleusercontent.com.json` with Google OAuth desktop client secrets JSON.
-- [linkedin.py](linkedin.py) is a CLI for LinkedIn that uses CDP to fetch profiles, etc. `linkedin.py profile sanand0` fetches my profile.
+- [linkedin](linkedin) CLI. Sub-commands: `linkedin profile "Person"`, `linkedin activity "Person"`, `linkedin search people engineer --location Chennai --organization Tata --degree 2`, `linkedin scheduled --refresh`, `linkedin sync analytics me`, `linkedin backup me`, ...
 - [mailindex.py](mailindex.py) builds a compact, resumable SQLite FTS index for `~/Documents/Mail/*.mbox` at `~/Documents/Mail/mail-index.sqlite`.
 - [mcpserver](mcpserver) starts or reuses the LocalMCP2 OpenAI tunnel, then runs [mcpserver.py](mcpserver.py) in the development container. Pass `dev.sh` options directly, for example `mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro`; do not add `-- mcpserver.py`. See the [LocalMCP2 setup and operations guide](setup/localmcp.md).
 - [mcpserver.py](mcpserver.py) exposes an MCP server at `http://127.0.0.1:2428/mcp2428` that lets LLMs run Bash commands and transfer files. It runs through `dev.sh` for a consistent container environment, but this is not a hard security boundary: `dev.sh` has default host mounts, including the Docker socket, in addition to explicit `-p` mounts. See the setup guide before granting access.
@@ -185,11 +182,13 @@ Here are the setup details for my laptops.
 
 ## Archive
 
-- [asu](asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
-- [daydream](daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
-- [gmail.py](gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py). Archived in favor of `gws`.
-- [livetranscribe](livetranscribe) watches a growing `.opus` recording and streams timestamped transcription via the Gemini Live API. Examples: `livetranscribe ~/Documents/calls/meeting.opus`, `livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"`, `livetranscribe meeting.opus --dry-run`.
-- [recall](recall) shows a random note bullet. Example: `recall` or `recall talks`
-- [unbrace.js](unbrace.js) unwraps single-statement JavaScript blocks.
-- [viz.py](viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
+- [asu](archive/asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
+- [backuplinkedin.py](archive/backuplinkedin.py) is the archived backup implementation. Use `linkedin backup me`; the native CLI preserves the existing blog-compatible JSONL archive.
+- [daydream](archive/daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
+- [gmail.py](archive/gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py). Archived in favor of `gws`.
+- [linkedin.py](archive/linkedin.py) is a CLI for LinkedIn that uses CDP to fetch profiles, etc. `linkedin.py profile sanand0` fetches my profile. Replaced by `linkedin`.
+- [livetranscribe](archive/livetranscribe) watches a growing `.opus` recording and streams timestamped transcription via the Gemini Live API. Examples: `livetranscribe ~/Documents/calls/meeting.opus`, `livetranscribe meeting.opus --output notes.txt --prompt "Technical meeting"`, `livetranscribe meeting.opus --dry-run`.
+- [recall](archive/recall) shows a random note bullet. Example: `recall` or `recall talks`
+- [unbrace.js](archive/unbrace.js) unwraps single-statement JavaScript blocks.
+- [viz.py](archive/viz.py) embeds CSV files a HTML templates. This is the script that started [Gramener](http://gramener.com/) in 2011.
 - `rename_receipts.py` renames PDF receipts to `YYYY-MM-DD Service $0.00 Card-1234.pdf` by extracting date, vendor, amount, and last-4 card details from invoice text. Moved to receipts folder.

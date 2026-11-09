@@ -1,0 +1,2065 @@
+#!/usr/bin/env node
+// @ts-check
+/** LinkedIn reads, local SQLite cache and offline search. Node 24+; no npm dependencies. */
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync, chmodSync, existsSync, createReadStream, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { randomUUID, createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { readFile, rm, writeFile, mkdir, rename, open } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
+import { homedir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+
+// ---- cdp ----
+/** Minimal CDP connection; credentials and response bodies stay in memory. */
+export async function connect(url) {
+  const socket = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { socket.close(); reject(new Error('CDP connection timed out')); }, 10000);
+    socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
+    socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('CDP connection failed')); }, { once: true });
+  });
+  let nextId = 0;
+  const pending = new Map();
+  const listeners = new Set();
+  socket.addEventListener('close', () => {
+    for (const request of pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(new Error('CDP connection closed'));
+    }
+    pending.clear();
+  });
+  socket.addEventListener('message', event => {
+    const message = JSON.parse(String(event.data));
+    if (message.id) {
+      const request = pending.get(message.id);
+      if (!request) return;
+      clearTimeout(request.timer);
+      pending.delete(message.id);
+      message.error ? request.reject(new Error(message.error.message)) : request.resolve(message.result);
+    } else {
+      for (const listener of listeners) listener(message);
+    }
+  });
+  return {
+    call(method, params = {}) {
+      return new Promise((resolve, reject) => {
+        const id = ++nextId;
+        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, 30000);
+        pending.set(id, { resolve, reject, timer });
+        socket.send(JSON.stringify({ id, method, params }));
+      });
+    },
+    on(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    close() { socket.close(); },
+  };
+}
+
+export async function evaluate(client, expression) {
+  const response = await client.call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  if (response.exceptionDetails) throw new Error((response.exceptionDetails.exception?.description ?? response.exceptionDetails.text).split('\n')[0]);
+  return response.result.value;
+}
+
+// ---- core ----
+/** Validation and pure Voyager decoders. Never cache raw API envelopes. */
+export class Failure extends Error {
+  constructor(code, message, details = {}) { super(message); this.code = code; Object.assign(this, details); }
+}
+export const text = value => typeof value === 'string' ? value : text(value?.text ?? '');
+export const clean = value => Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined && v !== null));
+const scalar = value => encodeURIComponent(String(value)).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+export function variables(value) {
+  if (Array.isArray(value)) return `List(${value.map(variables).join(',')})`;
+  if (value && typeof value === 'object') return '(' + Object.entries(value).filter(([, v]) => v !== undefined).map(([key, v]) => `${key}:${variables(v)}`).join(',') + ')';
+  return scalar(value);
+}
+export function linkedinUrl(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Failure('INVALID_INPUT', 'Expected an HTTPS LinkedIn URL'); }
+  if (url.protocol !== 'https:' || !['www.linkedin.com', 'linkedin.com'].includes(url.hostname) || url.username || url.password || url.port) throw new Failure('INVALID_INPUT', 'Expected an HTTPS LinkedIn URL');
+  return url;
+}
+export function profileIdentifier(value) {
+  if (value.startsWith('urn:li:fsd_profile:')) value = value.slice('urn:li:fsd_profile:'.length);
+  if (value.includes('://')) { const url = linkedinUrl(value); if (!url.pathname.startsWith('/in/')) throw new Failure('INVALID_INPUT', 'Expected a profile URL /in/USERNAME/'); value = decodeURIComponent(url.pathname.split('/')[2]); }
+  if (!/^[\p{L}\p{N}_-]{1,150}$/u.test(value)) throw new Failure('INVALID_INPUT', 'Expected a profile identifier or https://www.linkedin.com/in/USERNAME/');
+  return value;
+}
+export function activityUrn(value) {
+  if (value.includes('://')) { const url = linkedinUrl(value); value = decodeURIComponent(url.pathname); }
+  const match = value.match(/urn:li:activity:(\d+)(?=[/\s]|$)/) ?? value.match(/(?:^|[-/])activity-(\d+)(?=-|\/|$)/);
+  if (/^\d{10,25}$/.test(value)) return 'urn:li:activity:' + value;
+  if (!match) throw new Failure('INVALID_INPUT', 'Expected an activity URN, ID or LinkedIn post URL');
+  return 'urn:li:activity:' + match[1];
+}
+export function checkResponse(response) {
+  const { status, body = '', url = '', contentType = '' } = response;
+  if (/checkpoint|challenge|captcha/i.test(url)) throw new Failure('CHALLENGE_REQUIRED', 'Complete the LinkedIn verification in your browser, then retry');
+  if (status === 401 || /\/login|\/authwall|\/uas\//.test(url)) throw new Failure('AUTH_REQUIRED', 'Sign into LinkedIn in the CDP browser, then retry');
+  if (status === 429) throw new Failure('RATE_LIMITED', 'LinkedIn rate limited this session; retry later', { retryAfter: Number(response.retryAfter) || null, retryable: true });
+  if (status === 403 || status === 999) throw new Failure('FORBIDDEN', `LinkedIn denied this read (HTTP ${status}); check visibility or browser verification`);
+  if (status === 404) throw new Failure('NOT_FOUND', 'LinkedIn did not find this resource');
+  if (status === 400 || status === 410) throw new Failure('ENDPOINT_CHANGED', `LinkedIn rejected this endpoint (HTTP ${status}); recapture the operation`);
+  if (status !== 200) throw new Failure('NETWORK_ERROR', `LinkedIn returned HTTP ${status}`, { retryable: status >= 500 });
+  if (contentType.includes('text/html') || /^\s*<!doctype|^\s*<html/i.test(body)) throw new Failure('AUTH_REQUIRED', 'Expected API JSON, received an HTML page; verify the browser login');
+  let payload;
+  try { payload = JSON.parse(body); } catch { throw new Failure('SCHEMA_CHANGED', 'Expected JSON from this Voyager operation'); }
+  if (payload.errors?.length || payload.data?.errors?.length || payload.status >= 400) throw new Failure('ENDPOINT_CHANGED', 'LinkedIn returned an API error inside HTTP 200');
+  return payload;
+}
+export function graph(payload) {
+  const index = new Map((payload.included ?? []).map(entity => [entity.entityUrn ?? entity.urn, entity]));
+  const resolve = ref => typeof ref === 'string' ? index.get(ref) : ref;
+  return { index, resolve, root: payload.data?.data ?? payload.data };
+}
+/** Walk only the selected root, following references, preserving order and cycle safety. */
+export function entities(root, resolve, predicate) {
+  const results = [], seen = new Set();
+  function visit(value) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (predicate(value)) { results.push(value); return; }
+    for (const [key, child] of Object.entries(value)) {
+      if (key.startsWith('*')) {
+        for (const ref of Array.isArray(child) ? child : [child]) {
+          const entity = resolve(ref);
+          if (!entity) throw new Failure('SCHEMA_CHANGED', `Missing referenced entity at ${key}`);
+          visit(entity);
+        }
+      } else if (!['metadata', 'paging'].includes(key)) visit(child);
+    }
+  }
+  visit(root);
+  return results;
+}
+const typeIs = (value, suffix) => value.$type === suffix || value.$type?.endsWith('.' + suffix);
+function required(value, message) { if (!value) throw new Failure('SCHEMA_CHANGED', message); return value; }
+export function profileRecord(entity, resolve = x => x) {
+  const name = [entity.firstName, entity.lastName].filter(Boolean).join(' ') || text(entity.name);
+  return clean({ id: entity.entityUrn ?? entity.urn, kind: 'profile', name,
+    username: entity.publicIdentifier, url: entity.publicIdentifier ? `https://www.linkedin.com/in/${entity.publicIdentifier}/` : undefined,
+    headline: entity.headline ?? entity.occupation, text: entity.summary,
+    location: entity.locationName ?? resolve(entity.geoLocation?.['*geo'])?.defaultLocalizedName ?? text(entity.location),
+    industry: resolve(entity['*industry'])?.name, source: 'voyager',
+  });
+}
+export function decodeProfile(payload) {
+  const { root, resolve } = graph(payload);
+  const candidates = root?.['*elements']?.map(resolve) ?? entities(root, resolve, value => typeIs(value, 'Profile'));
+  return profileRecord(required(candidates?.find(value => value && (typeIs(value, 'Profile') || value.firstName)), 'Profile root is missing'), resolve);
+}
+export function sectionText(payload) {
+  const { root, resolve } = graph(payload);
+  const section = required(root?.identityDashProfileComponentsBySectionType, 'Profile-section root is missing');
+  const texts = [], seen = new Set();
+  function visit(value) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (typeof value.text === 'string' && value.text.trim()) texts.push(value.text.trim());
+    for (const [key, child] of Object.entries(value)) {
+      if (/metadata|action|image|tracking|accessibility|\$|entityUrn/i.test(key)) continue;
+      if (key.startsWith('*')) { for (const ref of Array.isArray(child) ? child : [child]) visit(resolve(ref)); }
+      else visit(child);
+    }
+  }
+  visit(section.elements);
+  return [...new Set(texts)].join('\n');
+}
+export function actorRecord(actor = {}) {
+  const url = actor.navigationContext?.actionTarget;
+  return clean({ id: actor.backendUrn, name: text(actor.name), headline: text(actor.description), url: url ? url.split('?')[0] : undefined });
+}
+export function postRecord(update, resolve = x => x) {
+  const id = update.metadata?.backendUrn ?? update.backendUrn ?? update.urn ?? update.entityUrn;
+  const social = resolve(update['*socialDetail']) ?? update.socialDetail;
+  const counts = resolve(social?.['*totalSocialActivityCounts']) ?? social?.totalSocialActivityCounts ?? {};
+  const record = clean({ id, kind: 'post', url: /^urn:li:activity:\d+$/.test(id) ? `https://www.linkedin.com/feed/update/${id}/` : undefined,
+    author: actorRecord(update.actor), text: text(update.commentary?.text),
+    publishedAt:backupIdDate(id)??undefined,publishedAtConfidence:backupIdDate(id)?'id':undefined,
+    reactionCount: counts.numLikes, commentCount: counts.numComments, repostCount: counts.numShares, impressionCount: counts.numImpressions,
+    source: 'voyager',
+  });
+  if (update.resharedUpdate) {
+    const shared = resolve(update.resharedUpdate['*update']) ?? update.resharedUpdate.update;
+    if (shared) record.resharedPost = postRecord(shared, resolve);
+  }
+  // Preserve accessible media/links without retaining tracking/template payloads.
+  const links = new Set();
+  function scan(value) {
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      if (['navigationUrl', 'url', 'navigationTarget', 'actionTarget'].includes(key) && typeof child === 'string' && child.startsWith('https://')) links.add(child);
+      else if (child && typeof child === 'object' && !/tracking|metadata/.test(key)) scan(child);
+    }
+  }
+  scan(update.content);
+  if (links.size) record.links = [...links];
+  return record;
+}
+export function continuation(collection, records, cursor, token = false) {
+  const count = cursor.count;
+  const nextToken = collection.metadata?.paginationToken;
+  const nextStart = cursor.start + count;
+  const hasMore = records.length > 0 && (nextToken || (collection.paging?.total > nextStart) || (!token && records.length >= count));
+  return hasMore ? clean({ start: nextStart, token: nextToken }) : null;
+}
+export function decodeSearch(payload, kind, cursor) {
+  const { root, resolve } = graph(payload);
+  const collection = required(root?.searchDashClustersByAll, 'Search root is missing');
+  let records;
+  if (kind === 'posts') records = entities(collection.elements, resolve, value => typeIs(value, 'Update')).map(update => postRecord(update, resolve));
+  else records = entities(collection.elements, resolve, value => typeIs(value, 'EntityResultViewModel')).map(entity => {
+    const name = text(entity.title), url = entity.navigationUrl?.split('?')[0];
+    const id = entity.entityUrn;
+    return clean({ id, kind: kind === 'companies' ? 'company' : 'profile', name, url, headline: text(entity.primarySubtitle), location: text(entity.secondarySubtitle), text: text(entity.summary), source: 'voyager-search' });
+  });
+  if (!Array.isArray(collection.elements)) throw new Failure('SCHEMA_CHANGED', 'Search elements are missing');
+  return { records, next: continuation(collection, records, cursor), source: 'voyager', warnings: [] };
+}
+export function decodeUpdates(payload, kind, owner, cursor) {
+  const { root, resolve } = graph(payload);
+  const name = { posts: 'feedDashProfileUpdatesByMemberShareFeed', comments: 'feedDashProfileUpdatesByMemberComments', reactions: 'feedDashProfileUpdatesByMemberReactions' }[kind];
+  const collection = required(root?.[name], 'Activity root is missing');
+  if (!Array.isArray(collection['*elements'])) throw new Failure('SCHEMA_CHANGED', 'Activity root references are missing');
+  const updates = collection['*elements'].map(ref => required(resolve(ref), 'An activity root reference is unresolved'));
+  const records = updates.map(update => {
+    const post = postRecord(update, resolve);
+    if (kind === 'posts') return post;
+    return { id: `activity:${kind}:${owner.id}:${post.id}`, kind: 'activity', activityKind: kind, actor: owner,
+      post, name: `${owner.name ?? ''} ${kind}`, text: post.text, url: post.url, source: 'voyager',
+      warnings: ['Target post author differs from the activity actor; comment/reaction details may be incomplete'] };
+  });
+  return { records, next: continuation(collection, records, cursor, true), source: 'voyager', warnings: kind === 'posts' ? [] : ['Detailed activity attribution has not been validated against UI'] };
+}
+export function decodeNetwork(payload, kind, cursor) {
+  const { root, resolve } = graph(payload);
+  const refs = required(root?.['*elements'] ?? root?.elements, 'Network root references are missing');
+  const records = refs.map(ref => {
+    const item = required(resolve(ref), 'Network reference is unresolved');
+    if (kind === 'connections') {
+      const member=resolve(item['*connectedMemberResolutionResult'])??resolve(item.connectedMemberResolutionResult)??resolve(item.connectedMember);
+      if(!member){const id=required(item.connectedMember??item['*connectedMemberResolutionResult'],'Connection member identity is missing');if(typeof id!=='string'||!id.startsWith('urn:li:'))throw new Failure('SCHEMA_CHANGED','Connection member identity is invalid');return {id,kind:'profile',connectedAt:item.createdAt,unavailable:true,source:'voyager-connections'};}
+      return { ...profileRecord(member, resolve), connectedAt: item.createdAt, unavailable:false, source: 'voyager-connections' };
+    }
+    const invitation = required(resolve(item['*invitation']) ?? item.invitation, 'Invitation is missing');
+    const member = resolve(invitation['*fromMember']) ?? invitation.fromMember ?? {};
+    return { id: invitation.entityUrn, kind: 'invitation', name: [member.firstName, member.lastName].filter(Boolean).join(' '),
+      headline: member.occupation, url: member.publicIdentifier ? `https://www.linkedin.com/in/${member.publicIdentifier}/` : undefined,
+      text: invitation.message ?? invitation.customMessage, sentAt: invitation.sentTime, source: 'voyager' };
+  });
+  const unavailable=records.filter(record=>record.unavailable).length;
+  return { records, next: continuation(root, records, cursor), source:'voyager',warnings:unavailable?[`${unavailable} connection profile(s) were unavailable; identities and connection dates were retained`]:[] };
+}
+
+// ---- dom ----
+/** Explicit DOM fallback for SDUI surfaces. Selectors come from the existing backup workflow. */
+export function feedCards() {
+  const cards = [...document.querySelectorAll('[componentkey^="update-card-focus"][role="listitem"], [data-urn][role="article"], .feed-shared-update-v2[data-urn]')];
+  const records = [], missing = [];
+  const text = el => (el?.innerText ?? el?.textContent ?? '').trim();
+  for (const card of cards) {
+    const permalink = card.querySelector('a[href*="/analytics/post-summary/"],a[href*="/feed/update/urn:li:activity:"]');
+    let id = card.getAttribute('data-linkedin-cli-urn') ?? card.getAttribute('data-urn') ?? permalink?.href.match(/urn:li:activity:\d+/)?.[0];
+    // SDUI card keys are session-local. The action menu is never clicked to obtain an id.
+    if (!id) {
+      const reaction = card.querySelector('button[aria-label^="Reaction button state:"]');
+      let fiber = reaction && reaction[Object.keys(reaction).find(key => key.startsWith('__reactFiber'))];
+      const seen = new WeakSet(), ids = new Set(); let visited = 0;
+      function scan(value, depth = 0) {
+        if (typeof value === 'string') { const match = value.match(/^reactionState-(urn:li:activity:\d+)$/); if (match) ids.add(match[1]); }
+        else if (value && typeof value === 'object' && depth < 12 && visited++ < 3000 && !seen.has(value)) {
+          seen.add(value); for (const [key, child] of Object.entries(value)) if (!['children', '_owner', 'return', 'stateNode'].includes(key)) scan(child, depth + 1);
+        }
+      }
+      for (let i = 0; fiber && i < 25; i++, fiber = fiber.return) { scan(fiber.memoizedProps); if (fiber.stateNode === card) break; }
+      if (ids.size === 1) id = [...ids][0];
+    }
+    if (!id) { missing.push('Card has no stable activity id'); continue; }
+    const link = [...card.querySelectorAll('a[href*="/in/"],a[href*="/company/"]')].find(el => el.querySelector('p') && !el.closest('[data-sdui-anchor-id^="feed-header-"]'));
+    const content = card.querySelector('[data-testid="expandable-text-box"], .update-components-update-v2__commentary, .feed-shared-update-v2__description-wrapper');
+    const clone = content?.cloneNode(true);
+    clone?.querySelectorAll('button').forEach(button => button.remove());
+    clone?.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+    const body = text(clone);
+    const name = text(link?.querySelector('p [aria-hidden="true"],p') ?? card.querySelector('.update-components-actor__name')).replace(/\s*•.*$/s, '');
+    records.push({ id, kind: 'post', url: `https://www.linkedin.com/feed/update/${id}/`, text: body,
+      author: { name, url: link?.href.split('?')[0] }, source: 'dom-feed',
+      textTruncated: Boolean(content?.querySelector('button')), media: [...card.querySelectorAll('img[src]')].filter(img => !/profile-|static\.licdn\.com/.test(img.src)).map(img => ({ kind: 'image', url: img.currentSrc || img.src, alt: img.alt })),
+    });
+  }
+  return { records, cardCount: cards.length, missing };
+}
+
+export function analyticsSnapshot() {
+  const main = document.querySelector('main');
+  return {title:document.title,text:main?.innerText??'',url:location.href,loading:Boolean(main?.querySelector('[aria-busy=true], [role=progressbar]:not([aria-valuenow])'))};
+}
+export function parseAnalytics(snapshot, id) {
+  const lines = snapshot.text.split('\n').map(line => line.trim()).filter(Boolean);
+  const start = lines.lastIndexOf('Discovery');
+  if (start < 0) return null;
+  const section = lines.slice(start + 1);
+  const number = value => {
+    const match = String(value ?? '').match(/^(\d[\d,]*(?:\.\d+)?)\s*([kmb])?$/i);
+    return match ? Number(match[1].replaceAll(',', '')) * ({ k: 1e3, m: 1e6, b: 1e9 }[match[2]?.toLowerCase()] ?? 1) : null;
+  };
+  const fields = { Impressions: ['impressionCount', -1], 'Members reached': ['membersReached', -1], Reactions: ['reactionCount', 1], Comments: ['commentCount', 1], Reposts: ['repostCount', 1], Saves: ['saveCount', 1], 'Sends on LinkedIn': ['sendCount', 1], 'Followers gained from this post': ['followersGained', -1], 'Profile viewers from this post': ['profileViewers', -1], 'Social engagements': ['socialEngagements', -1], 'In-network (followers and connections)': ['inNetworkPercent', 1], 'Out-of-network': ['outOfNetworkPercent', 1] };
+  const analytics = {};
+  for (const [label, [key, offset]] of Object.entries(fields)) {
+    const index = section.indexOf(label), value = section[index + offset];
+    analytics[key] = index < 0 ? null : key.endsWith('Percent') ? (/^\d+(?:\.\d+)?%$/.test(value ?? '') ? Number(value.slice(0, -1)) : null) : number(value);
+  }
+  if (analytics.impressionCount === null) return null;
+  return { id: `analytics:${id}`, kind: 'analytics', postId: id, name: 'Post analytics', text: snapshot.text, analytics, url: snapshot.url.split('?')[0], source: 'dom-analytics', warnings: ['Visible summary only; use backup --analytics for demographics and public repost expansion'] };
+}
+
+/** Read missing permalinks without touching the user's clipboard; used only in an owned tab. */
+export async function resolveFeedLinks(maximum) {
+  const selector = '[componentkey^="update-card-focus"][role="listitem"], [data-urn][role="article"], .feed-shared-update-v2[data-urn]';
+  let resolved = 0, attempted = 0;
+  for (const card of document.querySelectorAll(selector)) {
+    if (attempted >= maximum) break;
+    if (card.getAttribute('data-linkedin-cli-urn') || card.getAttribute('data-urn') || card.querySelector('a[href*="urn:li:activity:"]')) continue;
+    const menu = card.querySelector('button[aria-label^="Open control menu"],button[aria-label^="More actions"]');
+    if (!menu) continue;
+    attempted++;
+    card.scrollIntoView({ block: 'center' });
+    menu.click();
+    let label;
+    for (let i = 0; i < 20 && !label; i++) {
+      label = [...document.querySelectorAll('[role="menuitem"],p')].find(el => /^Copy link to post$/i.test(el.innerText?.trim()));
+      if (!label) await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    if (!label) { menu.click(); continue; }
+    const clipboard = navigator.clipboard;
+    const previous = Object.getOwnPropertyDescriptor(clipboard, 'writeText');
+    let copied = '';
+    Object.defineProperty(clipboard, 'writeText', { configurable: true, value: async value => { copied = value; } });
+    try {
+      label.click();
+      for (let i = 0; i < 20 && !copied; i++) await new Promise(resolve => setTimeout(resolve, 50));
+    } finally {
+      if (previous) Object.defineProperty(clipboard, 'writeText', previous);
+      else delete clipboard.writeText;
+    }
+    let url; try { url = new URL(copied); } catch { continue; }
+    if (!['www.linkedin.com', 'linkedin.com'].includes(url.hostname)) continue;
+    const id = decodeURIComponent(url.href).match(/urn:li:activity:\d+/)?.[0] ?? (url.pathname.match(/activity-(\d+)/)?.[1] ? 'urn:li:activity:' + url.pathname.match(/activity-(\d+)/)[1] : null);
+    if (id) { card.setAttribute('data-linkedin-cli-urn', id); resolved++; }
+  }
+  return { attempted, resolved };
+}
+
+// ---- operations ----
+/** One registry for discovery/docs. Each read shares the same cache and sync engine. */
+export const queryIds = {
+  search: 'voyagerSearchDashClusters.e438ab99259203e9c1cd3f358e217282',
+  sections: 'voyagerIdentityDashProfileComponents.8903e7f7b15f1c12a050c55d48ca2835',
+  posts: 'voyagerFeedDashProfileUpdates.be2623b61657a92a693eb8d9c67aeec0',
+  comments: 'voyagerFeedDashProfileUpdates.8f05a4e5ad12d9cb2b56eaa22afbcab9',
+  reactions: 'voyagerFeedDashProfileUpdates.3a42619bc23360ce8c29e737277e2ea9',
+};
+export const operations = {
+  whoami: { description: 'Verify the current browser account', args: [], source: 'voyager' },
+  profile: { description: 'Read a profile; --sections experience,education,skills adds sections', args: ['profile'], source: 'voyager' },
+  people: { description: 'Search people by keywords', args: ['query'], source: 'voyager', paged: true },
+  posts: { description: 'Search posts by keywords', args: ['query'], source: 'voyager', paged: true },
+  companies: { description: 'Search companies by keywords', args: ['query'], source: 'voyager', paged: true },
+  activity: { description: 'Read a member activity category; --kind posts|comments|reactions', args: ['profile'], source: 'voyager', paged: true },
+  post: { description: 'Read a post by URL, activity URN or numeric ID', args: ['post'], source: 'voyager' },
+  connections: { description: 'Read your connections, most recently added first', args: [], source: 'voyager', paged: true },
+  invitations: { description: 'Read received connection invitations; no accept/send actions', args: [], source: 'voyager', paged: true },
+  feed: { description: 'Read the current home feed in a background tab', args: [], source: 'dom', paged: true, resumable: false },
+  scheduled: {description:'Read your scheduled posts with exact scheduled times and contents',args:[],source:'sdui',many:true},
+  analytics: { description: 'Read/update own post metrics; use analytics me for a bounded batch', args: ['post-or-me'], source: 'dom' },
+};
+export const manifest = { schema_version: 1, captured_at: '2026-11-09', queryIds, operations };
+
+/** Explicit search facets; free text is never silently substituted for a filter. */
+export function searchFacets(values) {
+  const facets = [];
+  for (const [flag, key, namespace] of [['location', 'geoUrn', 'geo'], ['organization', 'currentCompany', 'organization'], ['past-organization', 'pastCompany', 'organization']]) {
+    if (!values[flag]) continue;
+    const ids = values[flag].split(',').map(value => value.trim().replace(namespace==='geo'?/^urn:li:geo:/:/^urn:li:(?:fsd_company|company|organization):/,''));
+    if(ids.some(value=>!value||value.length>200||/[\x00-\x1f]/.test(value)||value.startsWith('urn:')))throw new Failure('INVALID_INPUT',`--${flag} requires comma-separated names, numeric IDs or supported URNs`);
+    facets.push({ key, value: [...new Set(ids)].sort() });
+  }
+  if (values.degree) {
+    const codes = values.degree.split(',').map(value => ({ '1': 'F', '2': 'S', '3': 'O', '3+': 'O', F: 'F', S: 'S', O: 'O' })[value.trim()]);
+    if (codes.some(value => !value)) throw new Failure('INVALID_INPUT', '--degree must be 1,2,3 (first, second, third-or-more degree)');
+    facets.push({ key: 'network', value: [...new Set(codes)].sort() });
+  }
+  return facets;
+}
+
+/** Read Flight data rows and length-prefixed UTF-8 text without executing components. */
+export function readRscRows(body){
+  const bytes=Buffer.from(body),rows=Object.assign(new Map(),{literalTextRows:new Set()});let offset=0;
+  while(offset<bytes.length){
+    if(bytes[offset]===10||bytes[offset]===13){offset++;continue;}
+    const colon=bytes.indexOf(58,offset);if(colon<0)break;const key=bytes.subarray(offset,colon).toString();if(!/^[\da-f]+$/.test(key))throw new Failure('SCHEMA_CHANGED','Invalid SDUI row identity');let start=colon+1;
+    if(bytes[start]===84){const comma=bytes.indexOf(44,start);if(comma<0)throw new Failure('SCHEMA_CHANGED','Incomplete SDUI text row');const size=Number.parseInt(bytes.subarray(start+1,comma).toString(),16),end=comma+1+size;if(!Number.isFinite(size)||end>bytes.length)throw new Failure('SCHEMA_CHANGED','Incomplete SDUI text payload');rows.set(key,bytes.subarray(comma+1,end).toString());rows.literalTextRows.add(key);offset=end;continue;}
+    const newline=bytes.indexOf(10,start),end=newline<0?bytes.length:newline,value=bytes.subarray(start,end).toString();
+    if(value[0]==='E')throw new Failure('ENDPOINT_CHANGED','LinkedIn returned an SDUI component error');
+    if(value[0]!=='I'){try{rows.set(key,JSON.parse(value));}catch{throw new Failure('SCHEMA_CHANGED','Unrecognized SDUI data row');}}
+    offset=end+1;
+  }
+  if(!rows.has('0'))throw new Failure('SCHEMA_CHANGED','SDUI response has no root');return rows;
+}
+const scheduledComponentPrefix='com.linkedin.sdui.generated.sharing.dsl.impl.';
+export function scheduledRequest(row){
+  const actor='ShareBoxselectedActor',generation='schedulePostNameSpaceschedulePostContainerScheduledPostsListGeneration';
+  const state=(key,value,originalProtoCase)=>({key,namespace:'MemoryNamespace',value,originalProtoCase,protoKey:{$type:'proto.sdui.Key',value:{$case:'id',id:key}}});
+  if(row&&(!/^urn:li:(?:ugcPost|share):\d+$/.test(row.feedUpdateUrn)||!/^\d{13}$/.test(String(row.scheduledAtEpochMillis))))throw new Failure('INVALID_INPUT','Expected a returned scheduled-post identity and epoch time');
+  const payload=row?{feedUpdateUrn:row.feedUpdateUrn,scheduledAtEpochMillis:String(row.scheduledAtEpochMillis)}:{listGenerationField:{key:generation,namespace:'MemoryNamespace'},selectedActorField:{key:actor,namespace:'MemoryNamespace'}};
+  return {componentId:scheduledComponentPrefix+(row?'scheduledPostFullRow':'scheduledPostsList'),clientArguments:{payload,states:[...(row?[]:[state(generation,1,'expression')]),state(actor,'Self','stringValue')],requestMetadata:{$type:'proto.sdui.common.RequestMetadata',currentActor:{$type:'proto.sdui.bindings.core.Bindable',key:{key:{value:{$case:'id',id:actor}},namespace:''},content:{$case:'stringBinding',stringBinding:{}}}},screenId:'',knownTemplateIds:[]}};
+}
+export function decodeScheduledList(body){
+  const rows=readRscRows(body),found=new Map();let recognized=false;
+  function visit(value){if(!value||typeof value!=='object')return;if(Array.isArray(value.items))recognized=true;if(value.feedUpdateUrn&&value.scheduledAtEpochMillis){recognized=true;const request=scheduledRequest(value);found.set(value.feedUpdateUrn,request.clientArguments.payload);return;}for(const child of Object.values(value))visit(child);}
+  for(const row of rows.values())visit(row);if(!recognized&&!/no scheduled posts|haven.t scheduled|don.t have any scheduled/i.test(body))throw new Failure('SCHEMA_CHANGED','Scheduled-post list component is missing');return [...found.values()].sort((a,b)=>Number(a.scheduledAtEpochMillis)-Number(b.scheduledAtEpochMillis));
+}
+
+/** Extract commentary through data references; skip metadata, callbacks and action payloads. */
+export function decodeScheduledPost(body,descriptor){
+  const rows=readRscRows(body),texts=[];let identity=false;
+  function visible(value,seen=new Set()){
+    if(value==null||typeof value==='boolean')return '';
+    if(typeof value==='number')return String(value);
+    if(typeof value==='string'){
+      if(value.startsWith('$$'))return value.slice(1);
+      const match=value.match(/^\$(?:L)?([\da-f]+)$/);if(match){if(!rows.has(match[1]))return '';if(rows.literalTextRows.has(match[1]))return rows.get(match[1]);if(seen.has(match[1]))return '';const next=new Set(seen);next.add(match[1]);return visible(rows.get(match[1]),next);}return value.startsWith('$')?'':value;
+    }
+    if(Array.isArray(value)){if(value[0]==='$'){if(value[1]==='br')return '\n';const props=value[3]??{},content=visible(props.textProps?.children??props.children??props.initialContent,seen);return content+(['p','div','li'].includes(value[1])?'\n':'');}return value.map(child=>visible(child,seen)).join('');}
+    return visible(value.textProps?.children??value.children??value.initialContent,seen);
+  }
+  function visit(value){if(!value||typeof value!=='object')return;if(value.componentKey?.includes(descriptor.feedUpdateUrn)||value.componentkey?.includes(descriptor.feedUpdateUrn)||value.feedUpdateUrn===descriptor.feedUpdateUrn||value.stringValue===descriptor.feedUpdateUrn)identity=true;if(value.viewTrackingSpecs?.viewName==='feed-commentary')texts.push(visible(value).trim());for(const child of Object.values(value))visit(child);}
+  for(const row of rows.values())visit(row);
+  if(!identity)throw new Failure('SCHEMA_CHANGED','Scheduled post identity is missing from its full-row response');
+  const warnings=texts.length?[]:['LinkedIn did not expose text for this scheduled post (it may contain only media)'];
+  return {id:'scheduled:'+descriptor.feedUpdateUrn,kind:'scheduled',postId:descriptor.feedUpdateUrn,scheduledAt:new Date(Number(descriptor.scheduledAtEpochMillis)).toISOString(),text:texts.length?texts.sort((a,b)=>b.length-a.length)[0]:undefined,warnings,source:'sdui-scheduled',observedAt:new Date().toISOString()};
+}
+
+/** Decode checkbox components, keeping each identity scoped to its own label/component. */
+export function decodeFacetTypeahead(body,kind){
+  const rows=readRscRows(body);
+  const root=rows.get('0');if(!root?.response)throw new Failure('SCHEMA_CHANGED','Typeahead stream has no server-response root');
+  if(root.response.errors?.length)throw new Failure('ENDPOINT_CHANGED','LinkedIn rejected the typeahead action');
+  const found=new Map(),group=kind==='geo'?'geoUrn':'currentCompany';
+  function component(value){
+    if(!value||typeof value!=='object')return;
+    if(Array.isArray(value)&&value[0]==='$'&&value[3]?.componentkey){
+      const ids=new Set(),labels=[];
+      function inspect(node){
+        if(typeof node==='string'){const match=node.match(new RegExp('FILTER_ITEM_'+group+'_(\\d+)_CHECKED$'));if(match)ids.add(match[1]);return;}
+        if(!node||typeof node!=='object')return;
+        if(node.textProps?.children){const textNodes=node.textProps.children;labels.push((Array.isArray(textNodes)?textNodes:[textNodes]).filter(s=>typeof s==='string'&&!s.startsWith('$')).join(''));}
+        for(const[childKey,child]of Object.entries(node))inspect(child);
+      }
+      inspect(value);if(ids.size===1&&labels.some(Boolean)){const id=[...ids][0];found.set(id,{id,name:labels.filter(Boolean).join(' ')});return;}
+    }
+    for(const child of Object.values(value))component(child);
+  }
+  for(const row of rows.values())component(row);return [...found.values()];
+}
+export function typeaheadRequest(kind,query){
+  if(!['geo','company'].includes(kind)||typeof query!=='string'||!query.trim()||query.length>200)throw new Failure('INVALID_INPUT','Expected a geo/company typeahead query (1..200 characters)');
+  const group=kind==='geo'?'geoUrn':'currentCompany',requestId='com.linkedin.sdui.search.filters.requests.Filters'+(kind==='geo'?'Location':'Company')+'TypeaheadRequest';
+  const binding='linkedin-cli-keywords',selected='SEARCH_FILTER_'+group;
+  const protoKey=id=>({$type:'proto.sdui.Key',value:{$case:'id',id}});
+  const states=[{key:binding,namespace:'MemoryNamespace',value:query,originalProtoCase:'stringValue',protoKey:protoKey(binding)},{key:selected,namespace:'MemoryNamespace',value:[],originalProtoCase:'stringListValue',protoKey:protoKey(selected)}];
+  const args={$type:'proto.sdui.actions.requests.RequestedArguments',requestedStateKeys:[binding,selected].map(id=>({key:{value:{$case:'id',id}}})),payload:{keywordsField:{key:binding,namespace:'MemoryNamespace'},resultsContainerRef:'SearchResults_linkedin-cli-results',collectionRef:'linkedin-cli-collection',selectedItemsField:{key:selected,namespace:'MemoryNamespace'},itemRenderType:'CheckBox',filterGroupKey:group,namespace:'SearchResults_linkedin-cli',shouldResultsContainerMatchInputWidth:true,limitGeoTypes:kind==='geo',marketAreaOnly:false,geoHierarchyEnabled:false},requestMetadata:{$type:'proto.sdui.common.RequestMetadata'}};
+  return {requestId,serverRequest:{requestId,requestedArguments:args,isApfcEnabled:false,isStreaming:false,rumPageKey:''},states,requestedArguments:{...args,states,screenId:'com.linkedin.sdui.flagshipnav.search.SearchResults',knownTemplateIds:[]}};
+}
+
+const lookupText=value=>String(value).normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase('en-US').replace(/\s+/g,' ').trim();
+/** URLs/URNs are explicit identities. Quoted full names use personalized people search. */
+export function profileTarget(value) {
+  if(value==='me')return {identifier:'me'};
+  if(value.includes('://')||value.startsWith('urn:'))return {identifier:profileIdentifier(value)};
+  if(/^[\p{L}\p{N}_-]{1,150}$/u.test(value)&&!value.startsWith('name:'))return {identifier:profileIdentifier(value)};
+  const query=value.replace(/^name:/,'').trim();
+  if(!query||query.length>200||/[\x00-\x1f]/.test(query))throw new Failure('INVALID_INPUT','Expected a profile URL, identifier or name (1..200 characters)');
+  return {query};
+}
+/** Preserve OR within each facet and AND across facets; numeric identities require no lookup. */
+export async function resolveSearchFacets(facets,lookup) {
+  const resolved=[],selections=[];
+  for(const facet of facets){
+    if(facet.key==='network'){resolved.push(facet);continue;}
+    const ids=[];
+    for(const value of facet.value){
+      if(/^\d+$/.test(value)){ids.push(value);continue;}
+      const kind=facet.key==='geoUrn'?'geo':'company';
+      const matches=[...new Map((await lookup(kind,value)).filter(row=>/^\d+$/.test(row.id)&&typeof row.name==='string'&&row.name).map(row=>[row.id,row])).values()];
+      if(!matches.length)throw new Failure('NOT_FOUND',`No ${kind==='geo'?'location':'organization'} suggestions match “${value}”; use a more specific name or numeric ID`);
+      ids.push(...matches.map(row=>row.id));selections.push({filter:facet.key,query:value,matches});
+    }
+    resolved.push({key:facet.key,value:[...new Set(ids)].sort()});
+  }
+  return {facets:resolved,selections};
+}
+export async function resolveProfileTarget(value,lookup) {
+  const target=profileTarget(value);if(target.identifier)return {identifier:target.identifier};
+  const candidates=await lookup('profile',target.query);
+  for(const candidate of candidates){try{const identifier=profileIdentifier(candidate.url??candidate.username??candidate.id);return {identifier,query:target.query,name:candidate.name??identifier,url:candidate.url??`https://www.linkedin.com/in/${identifier}/`};}catch{}}
+  throw new Failure('NOT_FOUND',`No accessible profile matches “${target.query}” in your personalized people search`);
+}
+
+export function sinceDate(value, now = new Date()) {
+  if (!value) return undefined;
+  const period = value.trim().match(/^(\d+)\s*(d|days?|w|weeks?|mo|months?|y|years?)(?:\s+ago)?$/i);
+  const date = period ? new Date(now.getTime() - Number(period[1]) * ({ d:1,day:1,days:1,w:7,week:7,weeks:7,mo:30,month:30,months:30,y:365,year:365,years:365 }[period[2].toLowerCase()]) * 86400000) : /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value) ? new Date(value) : new Date(NaN);
+  if (!Number.isFinite(date.getTime())) throw new Failure('INVALID_INPUT', '--since/--until requires an ISO date or relative period such as 7d, 2w, 3mo, 1y');
+  return date.toISOString();
+}
+
+export function saveAnalytics(cache, account, key, record, post = {}) {
+  const observedAt = record.observedAt ?? new Date().toISOString();
+  const metrics = { ...record.analytics, likes: record.analytics?.reactionCount, scrapedAt: observedAt };
+  const updated = { ...post, id: record.postId, kind: 'post', observedAt, source: post.source ?? record.source, analytics: metrics };
+  for (const field of ['reactionCount', 'commentCount', 'repostCount', 'impressionCount']) if (metrics[field] !== undefined && metrics[field] !== null) updated[field] = metrics[field];
+  const result = { ...record, observedAt, analytics: metrics };
+  cache.commit(account, key, [result, updated], null);
+  return result;
+}
+
+/** Discover own posts and save each analytics update before moving the page checkpoint. */
+export async function syncAnalytics(cache, account, key, client, owner, options) {
+  const { limit = 20, pageSize = 10, resume = false, log = () => {} } = options;
+  const prior = resume ? cache.state(account, key)?.cursor : null;
+  const since = prior?.since ?? options.since, until = prior?.until ?? options.until;
+  let updated = 0, selected = 0, initialized = resume;
+  try {
+    return await sync(cache, account, key, async cursor => {
+      // sync owns the lease before this callback; competing batches cannot reset state.
+      if (!initialized) { cache.commit(account, key, [], clean({ start: 0, since, until })); initialized = true; }
+      const page = await client.activity(owner, 'posts', cursor, Math.min(pageSize, Math.max(1, limit - selected)));
+      const records = []; let reachedSince = false;
+      for (const post of page.records) {
+        const author = post.author?.url;
+        if (!author || profileIdentifier(author) !== owner.username) continue;
+        const match = post.id.match(/^urn:li:activity:(\d+)$/);
+        const estimate = post.publishedAt ?? (match && new Date(Number(BigInt(match[1]) >> 22n)).toISOString());
+        if (since && estimate && estimate < since) { reachedSince = true; continue; }
+        if (until && estimate && estimate >= until) continue;
+        if (selected >= limit) break;
+        log(`Refreshing own post analytics ${selected + 1}/${limit}`);
+        const record = await client.analytics(post.id);
+        records.push(saveAnalytics(cache, account, `analytics-record:${post.id}`, record, post));
+        updated++; selected++;
+      }
+      // Activity may contain pinned/out-of-order posts. An old item alone is not a safe end signal.
+      const next = reachedSince && page.records.every(post => {
+        const id = post.id.match(/^urn:li:activity:(\d+)$/)?.[1];
+        const time = post.publishedAt ?? (id && new Date(Number(BigInt(id) >> 22n)).toISOString());
+        return time && time < since;
+      }) ? null : page.next ? clean({ ...page.next, since, until }) : null;
+      return { records, next, source: 'dom-analytics', warnings: ['Own accessible posts only; date selection may use an activity-ID time estimate'] };
+    }, { ...options, resume, allowEmpty: true });
+  } catch (error) {
+    error.partial = { ...error.partial, analytics_updated: updated };
+    throw error;
+  }
+}
+
+// ---- cache ----
+/** Merge partial observations without erasing richer archive fields or known values. */
+export function merge(old, incoming) {
+  const result = { ...old };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value === undefined || value === null || value === '' || (Array.isArray(value) && !value.length)) continue;
+    result[key] = value && typeof value === 'object' && !Array.isArray(value) ? merge(old?.[key] ?? {}, value) : value;
+  }
+  return result;
+}
+const searchable = record => JSON.stringify(record, (key, value) => ['id', 'url', 'source', 'observedAt', 'lastSeenAt', 'firstSeenAt', 'backupRow'].includes(key) ? undefined : value);
+
+/** Normalized cache; each committed page and its checkpoint share a transaction. */
+export class Cache {
+  constructor(path) {
+    this.path = path;
+    if (path !== ':memory:') { const dir = dirname(path); if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 }); }
+    this.db = new DatabaseSync(path);
+    if (this.db.prepare('PRAGMA user_version').get().user_version > 2) {
+      this.db.close(); throw new Failure('CACHE_VERSION', 'This cache was created by a newer CLI; use a compatible version');
+    }
+    if (path !== ':memory:') chmodSync(path, 0o600);
+    this.db.exec(`PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
+      CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, username TEXT, last_used TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS records(account TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,url TEXT,name TEXT NOT NULL,text TEXT NOT NULL,json TEXT NOT NULL,observed_at TEXT NOT NULL,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,UNIQUE(account,id));
+      CREATE INDEX IF NOT EXISTS records_kind ON records(account,kind,last_seen DESC);
+      CREATE INDEX IF NOT EXISTS records_url ON records(account,url);
+      CREATE INDEX IF NOT EXISTS records_parent ON records(account,kind,json_extract(json,'$.postId'));
+      CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(name,text,content='records',content_rowid='rowid',tokenize='unicode61 remove_diacritics 2',prefix='2 3 4');
+      CREATE TRIGGER IF NOT EXISTS records_insert AFTER INSERT ON records BEGIN INSERT INTO search(rowid,name,text) VALUES(new.rowid,new.name,new.text); END;
+      CREATE TRIGGER IF NOT EXISTS records_delete AFTER DELETE ON records BEGIN INSERT INTO search(search,rowid,name,text) VALUES('delete',old.rowid,old.name,old.text); END;
+      CREATE TRIGGER IF NOT EXISTS records_update AFTER UPDATE ON records BEGIN INSERT INTO search(search,rowid,name,text) VALUES('delete',old.rowid,old.name,old.text); INSERT INTO search(rowid,name,text) VALUES(new.rowid,new.name,new.text); END;
+      CREATE TABLE IF NOT EXISTS collections(account TEXT NOT NULL,key TEXT NOT NULL,cursor TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(account,key));
+      CREATE TABLE IF NOT EXISTS membership(account TEXT NOT NULL,collection TEXT NOT NULL,id TEXT NOT NULL,position INTEGER NOT NULL,seen_at TEXT NOT NULL,PRIMARY KEY(account,collection,id));
+      CREATE INDEX IF NOT EXISTS membership_order ON membership(account,collection,position);
+      CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY,account TEXT NOT NULL,collection TEXT NOT NULL,started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,pages INTEGER NOT NULL DEFAULT 0,records INTEGER NOT NULL DEFAULT 0,reason TEXT);
+      CREATE TABLE IF NOT EXISTS leases(account TEXT NOT NULL,collection TEXT NOT NULL,owner TEXT NOT NULL,expires_at INTEGER NOT NULL,PRIMARY KEY(account,collection));
+      CREATE TABLE IF NOT EXISTS lookups(account TEXT NOT NULL,kind TEXT NOT NULL,query TEXT NOT NULL,json TEXT NOT NULL,observed_at TEXT NOT NULL,PRIMARY KEY(account,kind,query));
+      PRAGMA user_version=2;`);
+  }
+  close() { this.db.close(); }
+  useAccount(id, username = id) { this.db.prepare('INSERT INTO accounts VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,last_used=excluded.last_used').run(id, username, new Date().toISOString()); }
+  account(name) {
+    const row = name ? this.db.prepare('SELECT * FROM accounts WHERE id=? OR username=? ORDER BY last_used DESC LIMIT 1').get(name, name) : this.db.prepare('SELECT * FROM accounts ORDER BY last_used DESC LIMIT 1').get();
+    if (!row) throw new Failure('CACHE_MISS', 'No cached account; run whoami online first, or pass --account for an offline import');
+    return row.id;
+  }
+  get(account, id) {
+    const row = this.db.prepare('SELECT json,first_seen,last_seen FROM records WHERE account=? AND (id=? OR url=?) ORDER BY observed_at DESC LIMIT 1').get(account, id, id);
+    return row ? { ...JSON.parse(row.json), firstSeenAt: row.first_seen, lastSeenAt: row.last_seen } : null;
+  }
+  list(account, { kind, collection, limit = 100, offset = 0, since } = {}) {
+    const where = ['r.account=?'], params = [account];
+    if (kind) { where.push('r.kind=?'); params.push(kind); }
+    if (since) { where.push('r.observed_at>=?'); params.push(since); }
+    if (collection) { where.push('m.collection=?'); params.push(collection); }
+    const join = collection ? 'JOIN membership m ON m.account=r.account AND m.id=r.id' : '';
+    return this.db.prepare(`SELECT r.json,r.first_seen,r.last_seen FROM records r ${join} WHERE ${where.join(' AND ')} ORDER BY ${collection ? 'm.position ASC,m.seen_at DESC' : 'r.last_seen DESC,r.id'} LIMIT ? OFFSET ?`).all(...params, limit, offset).map(row => ({ ...JSON.parse(row.json), firstSeenAt: row.first_seen, lastSeenAt: row.last_seen }));
+  }
+  search(account, query, { kind, limit = 20, prefix = false, since } = {}) {
+    const terms = query.match(/[\p{L}\p{N}_]+(?:[-'][\p{L}\p{N}_]+)*/gu) ?? [];
+    if (!terms.length) return [];
+    const match = terms.map(term => '"' + term.replaceAll('"', '""') + '"' + (prefix ? '*' : '')).join(' AND ');
+    const rows = this.db.prepare(`SELECT r.json,r.first_seen,r.last_seen,bm25(search) score FROM search JOIN records r ON r.rowid=search.rowid WHERE search MATCH ? AND r.account=? ${kind ? 'AND r.kind=?' : ''} ${since ? 'AND r.observed_at>=?' : ''} ORDER BY score,r.last_seen DESC LIMIT ?`).all(...[match, account, ...(kind ? [kind] : []), ...(since ? [since] : []), limit]);
+    return rows.map(row => ({ ...JSON.parse(row.json), firstSeenAt: row.first_seen, lastSeenAt: row.last_seen, score: row.score }));
+  }
+  lookup(account,kind,query){const row=this.db.prepare('SELECT json,observed_at FROM lookups WHERE account=? AND kind=? AND query=?').get(account,kind,lookupText(query));return row?{data:JSON.parse(row.json),observedAt:row.observed_at}:null;}
+  saveLookup(account,kind,query,data){this.db.prepare('INSERT INTO lookups VALUES(?,?,?,?,?) ON CONFLICT(account,kind,query) DO UPDATE SET json=excluded.json,observed_at=excluded.observed_at').run(account,kind,lookupText(query),JSON.stringify(data),new Date().toISOString());}
+  state(account, key) { const row = this.db.prepare('SELECT cursor,updated_at FROM collections WHERE account=? AND key=?').get(account, key); return row ? { cursor: JSON.parse(row.cursor), updatedAt: row.updated_at } : null; }
+  commit(account, key, records, cursor, { position = 0, replace = false } = {}) {
+    const now = new Date().toISOString(); let changed = 0;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if(replace)this.db.prepare('DELETE FROM membership WHERE account=? AND collection=?').run(account,key);
+      for (const incoming of records) {
+        if (!incoming.id || !incoming.kind) throw new Failure('SCHEMA_CHANGED', 'A decoded record is missing its id/kind; page was not committed');
+        const previous = this.db.prepare('SELECT json,observed_at FROM records WHERE account=? AND id=?').get(account, incoming.id);
+        const observedAt = incoming.observedAt ?? now;
+        const old = previous ? JSON.parse(previous.json) : {};
+        const record = previous && previous.observed_at > observedAt ? merge(incoming, old) : merge(old, incoming);
+        record.observedAt = previous && previous.observed_at > observedAt ? previous.observed_at : observedAt;
+        if(incoming.kind==='scheduled'&&Object.hasOwn(incoming,'text')&&incoming.text!==undefined)record.text=incoming.text;
+        if(incoming.backupRow)record.backupRow=previous&&previous.observed_at>observedAt?mergeBackupRow(incoming.backupRow,old.backupRow??{}):mergeBackupRow(old.backupRow??{},incoming.backupRow);
+        const json = JSON.stringify(record);
+        if (json !== previous?.json) changed++;
+        this.db.prepare(`INSERT INTO records(account,id,kind,url,name,text,json,observed_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(account,id) DO UPDATE SET kind=excluded.kind,url=excluded.url,name=excluded.name,text=excluded.text,json=excluded.json,observed_at=excluded.observed_at,last_seen=excluded.last_seen`).run(account, record.id, record.kind, record.url ?? null, record.name ?? record.author?.name ?? '', searchable(record), json, record.observedAt, now, now);
+        this.db.prepare('INSERT INTO membership VALUES(?,?,?,?,?) ON CONFLICT(account,collection,id) DO UPDATE SET position=excluded.position,seen_at=excluded.seen_at').run(account, key, record.id, position++, now);
+      }
+      this.db.prepare('INSERT INTO collections VALUES(?,?,?,?) ON CONFLICT(account,key) DO UPDATE SET cursor=excluded.cursor,updated_at=excluded.updated_at').run(account, key, JSON.stringify(cursor), now);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return { changed };
+  }
+  startRun(account, key) {
+    const id = `pid=${process.pid};${randomUUID()}`, now = Date.now();
+    for (const lease of this.db.prepare('SELECT * FROM leases WHERE (account=? AND collection=?) OR expires_at<?').all(account, key, now)) {
+      const pid = lease.owner.match(/^pid=(\d+);/)?.[1];
+      let dead = false;
+      if (pid) { try { process.kill(Number(pid), 0); } catch (error) { dead = error.code === 'ESRCH'; } }
+      if (dead || lease.expires_at < now) {
+        this.db.prepare('DELETE FROM leases WHERE owner=?').run(lease.owner);
+        this.db.prepare("UPDATE runs SET status='interrupted',finished_at=?,reason='process_exit_or_expired_lease' WHERE id=? AND status='running'").run(new Date().toISOString(), lease.owner);
+      }
+    }
+    try { this.db.prepare('INSERT INTO leases VALUES(?,?,?,?)').run(account, key, id, now + 120000); }
+    catch { throw new Failure('SYNC_BUSY', 'Another sync owns this collection; wait for it to finish or its two-minute lease to expire'); }
+    this.db.prepare('INSERT INTO runs(id,account,collection,started_at,status) VALUES(?,?,?,?,?)').run(id, account, key, new Date().toISOString(), 'running');
+    return id;
+  }
+  progress(id, pages, count) {
+    this.db.prepare('UPDATE runs SET pages=?,records=? WHERE id=?').run(pages, count, id);
+    this.db.prepare('UPDATE leases SET expires_at=? WHERE owner=?').run(Date.now() + 120000, id);
+  }
+  finishRun(id, status, reason) {
+    this.db.prepare('UPDATE runs SET finished_at=?,status=?,reason=? WHERE id=?').run(new Date().toISOString(), status, reason, id);
+    this.db.prepare('DELETE FROM leases WHERE owner=?').run(id);
+  }
+  status(account) {
+    return { account, counts: this.db.prepare('SELECT kind,count(*) records FROM records WHERE account=? GROUP BY kind').all(account), collections: this.db.prepare('SELECT key,updated_at,cursor IS NOT NULL AND cursor != ? resumable FROM collections WHERE account=? ORDER BY updated_at DESC').all('null', account), runs: this.db.prepare('SELECT * FROM runs WHERE account=? ORDER BY started_at DESC LIMIT 10').all(account) };
+  }
+}
+
+// ---- sync ----
+/** Bounded traversal. Save whole pages before truncating output; no record is lost at a limit. */
+export async function sync(cache, account, key, fetchPage, { limit = 20, maxPages = 2, resume = false, allowEmpty = false, log = () => {} } = {}) {
+  const saved = cache.state(account, key);
+  if (resume && !saved) throw new Failure('CURSOR_MISSING', 'No checkpoint for this collection; start without --resume');
+  if (resume && saved.cursor === null) return { data: [], page: { next: null }, coverage: { complete: false, reason: 'previous_traversal_exhausted' }, warnings: [] };
+  let cursor = resume ? saved.cursor : null;
+  const run = cache.startRun(account, key), data = [], warnings = new Set(), seen = new Set(), recordIds = new Set();
+  let pages = 0, changed = 0, source;
+  try {
+    while (pages < maxPages && data.length < limit) {
+      const fingerprint = JSON.stringify(cursor ?? { start: 0 });
+      if (seen.has(fingerprint)) throw new Failure('PAGINATION_STALLED', 'LinkedIn repeated a continuation; committed pages are retained');
+      seen.add(fingerprint);
+      log(`Reading page ${pages + 1}; ${data.length}/${limit} records`);
+      const page = await fetchPage(cursor);
+      if (!Array.isArray(page.records) || page.records.some(row => !row.id)) throw new Failure('SCHEMA_CHANGED', 'Invalid decoded page; checkpoint was not advanced');
+      if (pages > 0 && page.records.length && page.records.every(record => recordIds.has(record.id))) throw new Failure('PAGINATION_STALLED', 'LinkedIn repeated a whole page; the checkpoint was not advanced');
+      const committed = cache.commit(account, key, page.records, page.next, { position: cursor?.start ?? 0 });
+      changed += committed.changed;
+      for (const warning of page.warnings ?? []) warnings.add(warning);
+      data.push(...page.records); pages++; source = page.source;
+      page.records.forEach(record => recordIds.add(record.id));
+      cache.progress(run, pages, data.length);
+      if (!page.next) { cursor = null; break; }
+      if (!page.records.length && !allowEmpty) throw new Failure('PAGINATION_STALLED', 'An empty page carried a continuation; committed pages are retained');
+      cursor = page.next;
+    }
+    const reason = !cursor ? 'traversal_exhausted' : data.length >= limit ? 'item_limit' : 'page_limit';
+    cache.finishRun(run, 'ok', reason);
+    return { data: data.slice(0, limit), page: { next: cursor, fetched: data.length, returned: Math.min(data.length, limit), pages }, coverage: { complete: false, reason }, meta: { source, changed, run_id: run }, warnings: [...warnings] };
+  } catch (error) {
+    cache.finishRun(run, 'partial', error.code ?? 'ERROR');
+    const checkpoint = cache.state(account, key)?.cursor;
+    error.partial = { run_id: run, collection: key, pages, cached_records: data.length, resumable: Boolean(checkpoint && !checkpoint.volatile) };
+    throw error;
+  }
+}
+
+// ---- import ----
+/** Convert existing backup rows to the common record contract, retaining typed detail fields. */
+export function archiveRecords(row) {
+  if (!row || typeof row !== 'object') throw new Failure('INVALID_ARCHIVE', 'Expected an object');
+  if (!row.type && row.profileUrl) return [clean({ id: 'invitation:' + row.profileUrl.split('?')[0], kind: 'invitation', url: row.profileUrl.split('?')[0], name: row.name, headline: row.description, invitationMonth: row.invitationMonth, connectionsCount: row.connectionsCount, badges: row.badges, source: 'archive-invitations' })];
+  if (!['post', 'comment'].includes(row.type) || !row.id) throw new Failure('INVALID_ARCHIVE', 'Expected a post/comment with a stable id, or an invitation with profileUrl');
+  const isPost = row.type === 'post';
+  const record = clean({ id: row.id, kind: row.type, text: row.content, url: row.url,
+    author: clean({ name: isPost ? row.authorName : row.commenterName, url: isPost ? row.authorProfile : row.commenterProfile, headline: isPost ? row.authorDescription : row.commenterDescription, id: isPost ? row.authorMiniProfileUrn : row.commenterMiniProfileUrn }),
+    postId: isPost ? undefined : row.parentId, parentId: isPost ? undefined : row.parentCommentId || row.parentId,
+    publishedAt: isPost ? row.postedAt : row.commentedAt, publishedAtConfidence: isPost ? row.postedAtConfidence : row.commentedAtConfidence,
+    relativeTime: isPost ? row.postedText : row.commentedText, observedAt: row.scrapedAt, edited: row.edited,
+    source: 'archive', backupRow: structuredClone(row),
+  });
+  for (const key of ['media', 'links', 'analytics', 'analyticsUrl', 'reactionCount', 'commentCount', 'repostCount', 'impressionCount', 'replyCount', 'reactionTypesVisible', 'premiumVerifiedBadges', 'repostedBy', 'repostedByProfile', 'reposts', 'repostScrapeStats', 'commentScrapeStats', 'visibility', 'commenterDegree']) if (row[key] !== undefined) record[key] = row[key];
+  return [record];
+}
+
+export async function importArchive(cache, account, path, { log = () => {} } = {}) {
+  let rows = 0, changed = 0, batch = [], lineNumber = 0;
+  const key = `import:archive:${path}`;
+  const flush = () => { if (batch.length) { changed += cache.commit(account, key, batch, null, { position: rows - batch.length }).changed; batch = []; } };
+  const add = row => { batch.push(...archiveRecords(row)); rows++; if (batch.length >= 100) flush(); };
+  log('Importing archive into SQLite');
+  if (path.endsWith('.json')) {
+    const values = JSON.parse(await readFile(path, 'utf8'));
+    if (!Array.isArray(values)) throw new Failure('INVALID_ARCHIVE', 'Expected a JSON array');
+    for (const row of values) add(row);
+  } else {
+    const input = createReadStream(path, { encoding: 'utf8' });
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        lineNumber++;
+        if (!line.trim()) continue;
+        let row;
+        try { row = JSON.parse(line); } catch { throw new Failure('INVALID_ARCHIVE', `Invalid JSON at line ${lineNumber}; previously committed batches are retained`); }
+        add(row);
+      }
+    } finally { lines.close(); input.destroy(); }
+  }
+  flush();
+  return { imported: rows, changed, collection: key };
+}
+
+export async function importHistory(cache, account, path, { limit = 10000, since, log = () => {} } = {}) {
+  log('Reading browsing-history snapshot (SQLite read-only)');
+  const db = new DatabaseSync(path, { readOnly: true });
+  const records = new Map();
+  try {
+    const rows = db.prepare(`SELECT url,title,timestamp FROM activity WHERE activity_source='history' AND url LIKE '%linkedin.com/%' ${since ? 'AND timestamp>=?' : ''} ORDER BY timestamp DESC LIMIT ?`).iterate(...[...(since ? [since] : []), limit]);
+    for (const row of rows) {
+      let url; try { url = new URL(row.url); } catch { continue; }
+      if (!['www.linkedin.com', 'linkedin.com'].includes(url.hostname)) continue;
+      if (!['/in/', '/feed/update/', '/posts/', '/company/', '/search/results/'].some(prefix => url.pathname.startsWith(prefix))) continue;
+      const kept = ['keywords', 'origin', 'currentCompany', 'geoUrn'];
+      for (const name of [...url.searchParams.keys()]) if (!kept.includes(name)) url.searchParams.delete(name);
+      url.hash = ''; url.hostname = 'www.linkedin.com';
+      const canonical = url.href;
+      const id = 'history:' + createHash('sha256').update(canonical).digest('hex');
+      if (!records.has(id)) records.set(id, { id, kind: 'history', name: row.title ?? '', text: row.title ?? '', url: canonical, visitedAt: row.timestamp, observedAt: row.timestamp, source: 'browsing-history' });
+    }
+  } finally { db.close(); }
+  let changed = 0; const values = [...records.values()];
+  for (let start = 0; start < values.length; start += 100) changed += cache.commit(account, 'import:history', values.slice(start, start + 100), null, { position: start }).changed;
+  return { imported: values.length, changed, collection: 'import:history', complete: false, reason: 'bounded_history_snapshot' };
+}
+
+// ---- native backup and compatible JSONL ----
+export const extractBackupPost = (post, { scrapedAt }) => {
+  const text = (el) => (el?.innerText || el?.textContent || "").replace(/\s+\n/g, "\n").replace(/[ \t]+/g, " ").trim();
+  const cleanUrl = (url) => {
+    try {
+      const value = new URL(url, location.href);
+      value.hash = "";
+      return value.href;
+    } catch {
+      return url || "";
+    }
+  };
+  const number = (value) => {
+    const match = String(value || "").match(/^\s*(\d[\d,]*(?:\.\d+)?)(?:[ \t]*([kmb]))?(?=\s|$)/i);
+    if (!match) return null;
+    const scale = { k: 1e3, m: 1e6, b: 1e9 }[(match[2] || "").toLowerCase()] || 1;
+    return Math.round(Number(match[1].replace(/,/g, "")) * scale);
+  };
+  const miniProfileUrn = (link) => {
+    if (!link?.href) return "";
+    try {
+      return new URL(link.href, location.href).searchParams.get("miniProfileUrn") || "";
+    } catch {
+      return "";
+    }
+  };
+  const badgesFrom = (value) => {
+    const badges = [];
+    if (/\bverified\b/i.test(value || "")) badges.push("verified");
+    if (/\bpremium\b/i.test(value || "")) badges.push("premium");
+    return [...new Set(badges)];
+  };
+  const degreeFrom = (value) => {
+    const match = String(value || "").match(/\b(1st|2nd|3rd\+?)\b/i);
+    return match ? match[1] : "";
+  };
+  const first = (root, selectors) => selectors.map((s) => root.querySelector(s)).find(Boolean) || null;
+  const all = (root, selectors) => [...new Set(selectors.flatMap((s) => [...root.querySelectorAll(s)]))];
+  const ariaText = (root) => all(root, ['[aria-label]']).map((el) => el.getAttribute("aria-label") || "").join(" ");
+  const visibleText = (root, selectors) => text(first(root, selectors.map((s) => `${s} [aria-hidden="true"]`)) || first(root, selectors));
+  const urn = post.getAttribute("data-urn") || "";
+  const lines = text(post).split("\n").map((line) => line.trim()).filter(Boolean);
+  const profile = first(post, ['a[href*="/in/"]']);
+  const authorName = visibleText(post, ['.update-components-actor__name', '.feed-shared-actor__name', 'span.update-components-actor__title']) || lines[1] || "";
+  const headline = visibleText(post, ['.update-components-actor__description', '.feed-shared-actor__description']);
+  const commentary = text(first(post, ['.update-components-update-v2__commentary', '.feed-shared-update-v2__description-wrapper', '.feed-shared-inline-show-more-text']));
+  const ageEl = first(post, ['.update-components-actor__sub-description span[aria-hidden="true"]', '.feed-shared-actor__sub-description span[aria-hidden="true"]']);
+  const ageText = text(ageEl) || (lines.find((line) => /^\d+\s*(m|min|h|hr|d|w|mo|y|yr)\b/i.test(line)) || "");
+  const socialText = text(first(post, ['.social-details-social-counts', '.feed-shared-social-counts']));
+  const reactionText = text(first(post, ['.social-details-social-counts__reactions-count', '[aria-label*="reactions"], [aria-label*="others"]']));
+  const commentText = (socialText.match(/[\d,.]+\s*[kmb]?\s+comments?/i) || [""])[0];
+  const repostText = (socialText.match(/[\d,.]+\s*[kmb]?\s+reposts?/i) || [""])[0];
+  const impressionText = (text(post).match(/[\d,.]+\s*[kmb]?\s+impressions?/i) || [""])[0];
+  const hasSocialCounts = Boolean(first(post, ['.social-details-social-counts', '.feed-shared-social-counts']));
+  const reactionCount = number(socialText.split("\n")[0]) ?? number(reactionText);
+  const analytics = first(post, ['a.analytics-entry-point[href]', 'a[href*="/analytics/post-summary/"]']);
+  const actor = first(post, ['.update-components-actor', '.feed-shared-actor']);
+  const actorText = `${text(actor)} ${ariaText(actor || post)}`;
+  const reactionTypesVisible = [...new Set(all(post, [
+    '.social-details-social-counts img[alt]',
+    '.feed-shared-social-counts img[alt]',
+    '.social-detail-social-counts__count-icon[alt]',
+    '.reactions-icon[alt]',
+  ]).map((img) => (img.alt || "").trim().toLowerCase()).filter((alt) => alt && !/profile|photo|graphic/i.test(alt)))];
+  const links = all(post, ['.update-components-update-v2__commentary a[href]', '.feed-shared-update-v2__description-wrapper a[href]', '.update-components-article a[href]'])
+    .map((a) => cleanUrl(a.href))
+    .filter((href) => href && !href.includes('/feed/update/') && !href.startsWith('javascript:'));
+  const mediaMap = new Map();
+  const addMedia = (item) => {
+    if (!item.url || item.url.startsWith("data:")) return;
+    mediaMap.set(`${item.kind}:${item.url}`, item);
+  };
+  all(post, ['img[src]']).forEach((img) => {
+    if (img.closest('.update-components-actor, .feed-shared-actor, .comments-comment-meta__container')) return;
+    if (/profile photo/i.test(img.alt || "")) return;
+    const url = cleanUrl(img.src);
+    if (/static\.licdn\.com\/aero-v1\/sc\//.test(url) || /profile-displayphoto/.test(url)) return;
+    addMedia({ kind: "image", url, alt: img.alt || "" });
+  });
+  all(post, ['video[src]']).forEach((video) => addMedia({ kind: "video", url: cleanUrl(video.src), poster: cleanUrl(video.poster || "") }));
+  all(post, ['iframe[src], object[data], embed[src]']).forEach((el) => addMedia({ kind: "document", url: cleanUrl(el.src || el.data || "") }));
+  const media = [...mediaMap.values()];
+  const rows = [{
+    type: "post",
+    id: urn,
+    postId: (urn.match(/activity:(\d+)/) || [])[1] || "",
+    url: urn ? `https://www.linkedin.com/feed/update/${urn}/` : cleanUrl(location.href),
+    authorName,
+    authorProfile: profile ? cleanUrl(profile.href).split("?")[0] : "",
+    authorMiniProfileUrn: miniProfileUrn(profile),
+    authorDescription: headline,
+    authorBadges: text(actor).split("\n").filter((line) => /verified|premium|you/i.test(line)).slice(0, 6),
+    premiumVerifiedBadges: badgesFrom(actorText),
+    postedText: ageText,
+    edited: /edited/i.test(text(first(post, ['.update-components-actor__sub-description', '.feed-shared-actor__sub-description']))),
+    visibility: (lines.find((line) => /visible to/i.test(line)) || ""),
+    content: commentary,
+    links: [...new Set(links)],
+    linkCount: new Set(links).size,
+    media,
+    mediaCount: media.length,
+    analyticsUrl: analytics ? cleanUrl(analytics.href).split("?")[0] : "",
+    reactionCount: reactionCount ?? (hasSocialCounts ? 0 : null),
+    reactionTypesVisible,
+    commentCount: number(commentText) ?? (hasSocialCounts ? 0 : null),
+    repostCount: number(repostText) ?? (hasSocialCounts ? 0 : null),
+    impressionCount: number(impressionText),
+    socialText,
+    rawText: text(post).slice(0, 20000),
+    scrapedAt,
+  }];
+  const commentArticles = all(post, ['article.comments-comment-entity[data-id]']);
+  for (const article of commentArticles) {
+    const id = article.getAttribute("data-id") || "";
+    const meta = first(article, ['.comments-comment-meta__container']);
+    const name = text(first(article, ['.comments-comment-meta__description-title']));
+    const profileLink = first(article, ['a.comments-comment-meta__description-container[href*="/in/"], a[href*="/in/"]']);
+    const description = text(first(article, ['.comments-comment-meta__description-subtitle']));
+    const relation = text(first(article, ['.comments-comment-meta__data']));
+    const timeText = text(first(article, ['time.comments-comment-meta__data', 'time', '.comments-comment-meta__info']));
+    const content = text(first(article, ['.comments-comment-item__main-content', '.comments-comment-entity__content']));
+    const social = text(first(article, ['.comments-comment-social-bar--cr', '.comment-social-activity']));
+    const reactionButton = first(article, ['button[aria-label*="Reaction"], .comments-comment-social-bar__reactions-count--cr']);
+    const replyButton = first(article, ['button[aria-label^="Reply to"]']);
+    const parentArticle = article.parentElement?.closest('article.comments-comment-entity[data-id]');
+    const metaText = `${text(meta)} ${ariaText(meta || article)}`;
+    const commentReactionTypes = [...new Set(all(article, [
+      '.comments-comment-social-bar--cr img[alt]',
+      '.comment-social-activity img[alt]',
+      '.reactions-icon[alt]',
+    ]).map((img) => (img.alt || "").trim().toLowerCase()).filter((alt) => alt && !/profile|photo|graphic/i.test(alt)))];
+    rows.push({
+      type: "comment",
+      id,
+      commentId: (id.match(/,(\d+)\)/) || [])[1] || "",
+      parentId: urn,
+      parentCommentId: parentArticle ? parentArticle.getAttribute("data-id") : "",
+      commenterName: name,
+      commenterProfile: profileLink ? cleanUrl(profileLink.href).split("?")[0] : "",
+      commenterMiniProfileUrn: miniProfileUrn(profileLink),
+      commenterDescription: description,
+      commenterType: relation,
+      commenterDegree: degreeFrom(relation || metaText),
+      commenterBadges: metaText.split("\n").filter((line) => /verified|premium/i.test(line)),
+      premiumVerifiedBadges: badgesFrom(metaText),
+      commentedText: timeText,
+      edited: /edited/i.test(text(meta) + " " + text(article)),
+      content,
+      reactionCount: number(text(reactionButton) || reactionButton?.getAttribute("aria-label")),
+      reactionText: reactionButton?.getAttribute("aria-label") || "",
+      reactionTypesVisible: commentReactionTypes,
+      replyCount: number(text(replyButton) || ""),
+      impressionCount: number((text(article).match(/[\d,.]+\s*[kmb]?\s+impressions?/i) || [""])[0]),
+      socialText: social,
+      rawText: text(article).slice(0, 10000),
+      scrapedAt,
+    });
+  }
+  return rows;
+};
+
+export const extractBackupSduiPost = (post, { scrapedAt, postUrn }) => {
+  const commentSelector = '[componentkey^="CommentComponentReference_urn:li:comment:"]';
+  const text = el => (el?.innerText || el?.textContent || '').replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+  const own = (root, selector) => [...root.querySelectorAll(selector)].filter(el => el.closest(commentSelector) === root.closest(commentSelector));
+  const number = value => {
+    const m = String(value || '').match(/^\s*(\d[\d,]*(?:\.\d+)?)(?:[ \t]*([kmb]))?(?=\s|$)/i);
+    return m ? Math.round(Number(m[1].replace(/,/g, '')) * ({k:1e3,m:1e6,b:1e9}[m[2]?.toLowerCase()] || 1)) : null;
+  };
+  const badges = value => ['premium', 'verified'].filter(b => new RegExp(`\\b${b}\\b`, 'i').test(value));
+  const types = root => [...new Set(own(root, 'li svg[id*="-consumption-"]').map(el => {
+    const token = el.id.split('-consumption-')[0];
+    return ({empathy:'love', entertainment:'funny', praise:'celebrate', appreciation:'support', interest:'insightful'})[token] || token;
+  }))];
+  const content = root => {
+    const el = own(root, '[data-testid="expandable-text-box"]')[0];
+    if (!el) return '';
+    const copy = el.cloneNode(true);
+    copy.querySelectorAll('button').forEach(b => b.remove());
+    // textContent drops BR newlines; innerText on a detached clone drops layout too.
+    copy.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+    return text(copy);
+  };
+  const identity = (root, comment = false) => {
+    const menu = own(root, comment ? 'button[aria-label^="View more options"]' : 'button[aria-label^="Open control menu"]')[0];
+    let header = menu?.parentElement;
+    const profileSelector = 'a[href*="/in/"], a[href*="/company/"]';
+    let link = own(header || root, profileSelector).find(a => a.querySelector('p'));
+    if (!link && !comment) {
+      link = own(root, profileSelector).find(a => a.querySelector('p') && !a.closest('[data-sdui-anchor-id^="feed-header-"]'));
+      header = link?.parentElement;
+      while (header && header !== root && !header.querySelector('[aria-label^="Visibility:"]')) header = header.parentElement;
+    }
+    const paras = [...(link?.querySelectorAll('p') || [])];
+    const other = [...(header?.querySelectorAll('p') || [])].filter(p => !link?.contains(p) && !p.closest('button, [role="button"]'));
+    const badgeText = `${text(paras[0])} ${[...(header?.querySelectorAll('[aria-label]') || [])].map(el => el.getAttribute('aria-label')).join(' ')}`;
+    return {
+      name: text(paras[0]?.querySelector('[aria-hidden="true"]') || paras[0]).replace(/\s*•.*$/s, '').trim(),
+      profile: link?.href.split('?')[0] || '',
+      miniProfileUrn: link ? new URL(link.href, location.href).searchParams.get('miniProfileUrn') || '' : '',
+      description: text(comment ? paras.slice(1).find(p => text(p) !== 'Author') : other[0]),
+      relation: paras.some(p => text(p) === 'Author') ? 'Author' : '',
+      time: text(other.at(-1)).replace(/\s*•\s*$/, ''),
+      badges: badges(badgeText),
+      degree: (text(paras[0]).match(/\b(1st|2nd|3rd\+?)/i) || [''])[0],
+      edited: /\bedited\b/i.test(text(other.at(-1))),
+    };
+  };
+  const analytics = own(post, 'a[href*="/analytics/post-summary/"]')[0];
+  const permalink = own(post, 'a[href*="/feed/update/urn:li:activity:"]')[0];
+  const urn = ((analytics?.href || permalink?.href || '').match(/urn:li:activity:\d+/) || [''])[0] || postUrn || '';
+  if (!urn) throw new Error('SDUI post has no stable activity URN');
+  const actor = identity(post);
+  const count = label => {
+    const button = own(post, `button[aria-label="${label}"]`)[0];
+    return button ? number(text(button)) ?? 0 : null;
+  };
+  const reaction = own(post, '[aria-labelledby]').map(el => document.getElementById(el.getAttribute('aria-labelledby'))).find(el => /reactions?$/i.test(text(el)));
+  const reactionCount = number(text(reaction)) ?? count('Reaction button state: no reaction');
+  const commentCount = count('Comment'), repostCount = count('Repost');
+  const socialText = `${reactionCount ?? ''} reactions\n${commentCount ?? ''} comments\n${repostCount ?? ''} reposts`;
+  const links = [...new Set(own(post, '[data-testid="expandable-text-box"] a[href]').map(a => {
+    const url = new URL(a.href, location.href);
+    return url.pathname === '/safety/go/' ? url.searchParams.get('url') || a.href : a.href;
+  }))];
+  const media = own(post, 'img[src]').filter(img => !/profile-|static\.licdn\.com/.test(img.src) && !/profile/i.test(img.alt)).map(img => ({
+    kind:'image', url:img.currentSrc || img.src, alt:img.alt || '',
+    // SDUI img.src is often a 160px thumbnail; preserve the actual displayed source and available variants.
+    sources:img.srcset ? img.srcset.split(/,\s*/).map(s => s.trim().split(/\s+/)[0]) : [],
+  }));
+  for (const video of own(post, 'video')) {
+    const player = video.closest('[data-vjs-player]')?.player;
+    const sources = (player?.currentSources?.() || [...video.querySelectorAll('source')].map(s => ({src:s.src,type:s.type})))
+      .filter(s => /^https?:/.test(s.src || '')).map(s => ({url:s.src, type:s.type || ''}));
+    const direct = video.currentSrc || video.src;
+    const url = sources.find(s => s.type === 'video/mp4')?.url || sources[0]?.url || (/^https?:/.test(direct) ? direct : '');
+    if (url) media.push({kind:'video', url, sources, poster:player?.poster?.() || video.poster || '',
+      duration:Number.isFinite(player?.duration?.() ?? video.duration) ? player?.duration?.() ?? video.duration : null});
+  }
+  const repostHeader = own(post, '[data-sdui-anchor-id^="feed-header-"]')[0];
+  const reposter = repostHeader && (repostHeader.closest('a[href*="/in/"]') || [...repostHeader.querySelectorAll('a[href*="/in/"]')].find(a => text(a)));
+  const rows = [{
+    type:'post', id:urn, postId:urn.split(':').at(-1), url:`https://www.linkedin.com/feed/update/${urn}/`,
+    authorName:actor.name, authorProfile:actor.profile, authorMiniProfileUrn:actor.miniProfileUrn, authorDescription:actor.description,
+    authorBadges:actor.badges, premiumVerifiedBadges:actor.badges, postedText:actor.time, edited:actor.edited,
+    repostedBy:reposter ? text(reposter) : '', repostedByProfile:reposter?.href.split('?')[0] || '',
+    visibility:own(post, '[aria-label^="Visibility:"]')[0]?.getAttribute('aria-label')?.replace('Visibility: ', '') || '',
+    content:content(post), links, linkCount:links.length, media, mediaCount:media.length,
+    analyticsUrl:analytics?.href.split('?')[0] || '', reactionCount, reactionTypesVisible:types(post),
+    commentCount, repostCount, impressionCount:number(text(analytics)), socialText, rawText:text(post).slice(0,20000), scrapedAt,
+  }];
+  for (const article of post.querySelectorAll(commentSelector)) {
+    const id = article.getAttribute('componentkey').replace('CommentComponentReference_', '');
+    const actor = identity(article, true);
+    const reactionText = own(article, 'button, [role="button"]').map(text).find(t => /^\d[\d,]*(?:\s|$)/.test(t)) || '';
+    const parent = article.parentElement.closest(commentSelector);
+    rows.push({
+      type:'comment', id, commentId:(id.match(/,(\d+)\)/) || [,''])[1], parentId:urn,
+      parentCommentId:parent?.getAttribute('componentkey').replace('CommentComponentReference_', '') || '',
+      commenterName:actor.name, commenterProfile:actor.profile, commenterMiniProfileUrn:actor.miniProfileUrn, commenterDescription:actor.description,
+      commenterType:actor.relation || actor.degree, commenterDegree:actor.degree, commenterBadges:actor.badges, premiumVerifiedBadges:actor.badges,
+      commentedText:actor.time, edited:actor.edited, content:content(article),
+      reactionCount:number(reactionText), reactionText, reactionTypesVisible:types(article),
+      reactedByAuthor:own(article, '[aria-label="Reacted to by the author"]').length > 0,
+      replyCount:number(text(own(article, 'p').find(p => !p.closest('button, [role="button"], a[href*="/in/"]') && /^\d[\d,]*(?:\s+\d[\d,]*)?$/.test(text(p))))),
+      impressionCount:number(text(own(article, 'p').find(p => /^\d[\d,]* impressions?\b/.test(text(p))))),
+      socialText:'', rawText:text(article).slice(0,10000), scrapedAt,
+    });
+  }
+  return rows;
+};
+
+export const backupUgcId = post => {
+  const button = post.querySelector('button[aria-label^="Reaction button state:"]');
+  let fiber = button && button[Object.keys(button).find(k => k.startsWith('__reactFiber'))];
+  const ids = new Set(), seen = new WeakSet();
+  let visited = 0;
+  const scan = (value, depth=0) => {
+    if (typeof value === 'string') {
+      const m = value.match(/^reactionState-(urn:li:ugcPost:\d+)$/);
+      if (m) ids.add(m[1]);
+    } else if (value && typeof value === 'object' && depth < 14 && visited++ < 5000 && !seen.has(value)) {
+      seen.add(value);
+      for (const [key, child] of Object.entries(value))
+        if (!['children', '_owner', 'return', 'stateNode'].includes(key)) scan(child, depth+1);
+    }
+  };
+  for (let i=0; fiber && i<30; i++, fiber=fiber.return) {
+    scan(fiber.memoizedProps); scan(fiber.pendingProps);
+    if (fiber.stateNode === post) break;
+  }
+  return ids.size === 1 ? [...ids][0] : '';
+};
+
+export const backupRepostsSnapshot = () => {
+  const text = el => (el?.innerText || el?.textContent || '').trim();
+  const number = el => {const m = text(el).match(/^[\d,]+/); return m ? Number(m[0].replaceAll(',', '')) : null;};
+  const rows = [...document.querySelectorAll('.member-analytics-addon-entity-list__item')].map(el => {
+    const actor = el.querySelector('a[href*="/in/"], a[href*="/company/"]');
+    const link = el.querySelector('a[href*="/feed/update/"]');
+    const id = (link?.href.match(/urn:li:activity:\d+/) || [])[0] || '';
+    const body = [...el.querySelectorAll('a[aria-label^="View full post."]')].map(a => a.getAttribute('aria-label').replace('View full post. ', '')).sort((a,b) => b.length-a.length)[0] || '';
+    return {id, url:link?.href.split('?')[0] || '',
+      name:text(el.querySelector('.feed-mini-update-actor__name [aria-hidden="true"]')) || text(el.querySelector('.feed-mini-update-actor__name')),
+      profile:actor?.href.split('?')[0] || '', description:text(el.querySelector('.feed-mini-update-actor__description')),
+      degree:text(el.querySelector('.artdeco-entity-lockup__degree')).replace(/^[\s•]+/, ''),
+      postedText:text(el.querySelector('.feed-mini-update-contextual-description__text [aria-hidden="true"]')) || text(el.querySelector('.feed-mini-update-contextual-description__text')),
+      content:body, reactionCount:number(el.querySelector('[data-reaction-details]')),
+      commentCount:number(el.querySelector('.social-details-social-counts__comments button'))};
+  });
+  return rows.filter((r,i) => r.id && rows.findIndex(other => other.id === r.id) === i);
+};
+
+const BACKUP_POST_SELECTOR='[data-urn][role="article"], .feed-shared-update-v2[data-urn], [componentkey^="update-card-focus"][role="listitem"]';
+const BACKUP_COMMENT_SELECTOR='article.comments-comment-entity[data-id], [componentkey^="CommentComponentReference_urn:li:comment:"]';
+const BACKUP_LATEST=new Set('analytics reposts repostScrapeStats commentCount commentScrapeStats commentedText edited impressionCount postedText rawText reactionCount reactionText replyCount repostCount scrapedAt socialText visibility reactedByAuthor'.split(' '));
+export const defaultBackupArchive=()=>join(homedir(),'Documents/data/linkedin-posts.jsonl');
+const backupKey=row=>row.type+':'+row.id;
+const backupRichness=value=>value==null||value===false?0:typeof value==='object'?Object.keys(value).length:typeof value==='string'?value.length:Number(Boolean(value));
+/** Preserve unknown archive fields and rich identity; snapshot counts can decrease to zero. */
+export function mergeBackupRow(old,incoming) {
+  if(!Object.keys(old).length)return structuredClone(incoming);
+  const row={...old};
+  for(const[key,value]of Object.entries(incoming)){
+    if(['postedAt','postedAtConfidence','commentedAt','commentedAtConfidence'].includes(key))continue;
+    if(BACKUP_LATEST.has(key)){
+      if(value==null)continue;
+      if(key==='analytics')row[key]={...row[key],...value,...(value.demographics?{demographics:{...row[key]?.demographics,...value.demographics}}:{})};
+      else if(key==='reposts'&&incoming.repostScrapeStats?.complete===false){const rows=new Map((row.reposts??[]).map(r=>[r.id,r]));for(const r of value)rows.set(r.id,{...rows.get(r.id),...r});row[key]=[...rows.values()];}
+      else row[key]=value;
+    }else if(backupRichness(value)>=backupRichness(row[key]))row[key]=value;
+  }
+  for(const prefix of ['postedAt','commentedAt'])if(incoming[prefix]&&(incoming[prefix+'Confidence']==='id'||row[prefix+'Confidence']!=='id')){row[prefix]=incoming[prefix];row[prefix+'Confidence']=incoming[prefix+'Confidence'];}
+  return row;
+}
+export function backupIdDate(value){const id=String(value??'').match(/\d{16,}/)?.[0];if(!id)return null;const ms=Number(BigInt(id)>>22n);return Number.isFinite(ms)&&ms<=8640000000000000?new Date(ms).toISOString():null;}
+export function backupTimeFields(row,now=new Date().toISOString()) {
+  const isPost=row.type==='post',prefix=isPost?'postedAt':'commentedAt';
+  const exact=backupIdDate(isPost?row.postId||row.id:row.commentId||row.id);
+  const value=String(row[isPost?'postedText':'commentedText']??'').toLowerCase();
+  const match=value.match(/\b(\d+)\s*(mo|month|yr|year|min|hour|hr|day|week|m|h|d|w|y)s?\b/);
+  const factors={m:60000,min:60000,h:3600000,hr:3600000,hour:3600000,d:86400000,day:86400000,w:604800000,week:604800000,mo:2592000000,month:2592000000,y:31536000000,yr:31536000000,year:31536000000};
+  const delta=match?Number(match[1])*factors[match[2]]:value.includes('yesterday')?86400000:null;
+  return {...row,[prefix]:exact??(delta!==null?new Date(Date.parse(now)-delta).toISOString():''),[prefix+'Confidence']:exact?'id':delta!==null?'relative':value?'unparsed':'missing',scrapedAt:now};
+}
+/** A lossless backup row is retained separately from the fields used for search. */
+export function toBackupRow(record) {
+  if(!record.backupRow)return null;
+  const row=structuredClone(record.backupRow),post=record.kind==='post';
+  const fields={text:'content',url:'url',publishedAt:post?'postedAt':'commentedAt',publishedAtConfidence:post?'postedAtConfidence':'commentedAtConfidence',relativeTime:post?'postedText':'commentedText',observedAt:'scrapedAt'};
+  for(const [from,to]of Object.entries(fields))if(record[from]!==undefined&&(from!=='text'||!record.textTruncated&&String(record[from]).length>=String(row.content??'').length))row[to]=record[from];
+  if(!post){if(record.postId!==undefined)row.parentId=record.postId;if('parentCommentId'in row||record.parentId!==record.postId)row.parentCommentId=record.parentId===record.postId?'':record.parentId??row.parentCommentId;}
+  const author=record.author??{};for(const[from,to]of Object.entries({name:post?'authorName':'commenterName',url:post?'authorProfile':'commenterProfile',headline:post?'authorDescription':'commenterDescription',id:post?'authorMiniProfileUrn':'commenterMiniProfileUrn'}))if(author[from]!==undefined)row[to]=author[from];
+  for(const key of ['media','links','analytics','analyticsUrl','reactionCount','commentCount','repostCount','impressionCount','replyCount','reactionTypesVisible','premiumVerifiedBadges','repostedBy','repostedByProfile','reposts','repostScrapeStats','commentScrapeStats','visibility','commenterDegree','edited'])if(record[key]!==undefined)row[key]=key==='analytics'?merge(row[key]??{},record[key]):record[key];
+  return row;
+}
+const sortBackupRows=rows=>rows.sort((a,b)=>String(b.postedAt??b.commentedAt??'').localeCompare(String(a.postedAt??a.commentedAt??''))||String(b.type).localeCompare(String(a.type))||String(b.id).localeCompare(String(a.id)));
+export async function readBackupArchive(path) {
+  let content;try{content=await readFile(path,'utf8');}catch(error){if(error.code==='ENOENT')return [];throw error;}
+  return content.split('\n').flatMap((line,i)=>{if(!line.trim())return [];let row;try{row=JSON.parse(line);}catch{throw new Failure('INVALID_ARCHIVE',`Invalid JSON at ${path}:${i+1}`);}if(!row||!['post','comment'].includes(row.type)||typeof row.id!=='string'||!row.id)throw new Failure('INVALID_ARCHIVE',`Invalid post/comment identity at ${path}:${i+1}`);return [row];});
+}
+async function atomicBackupWrite(path,rows) {
+  await mkdir(dirname(path),{recursive:true,mode:0o700});const temporary=path+'.'+randomUUID()+'.tmp';
+  try{await writeFile(temporary,rows.map(row=>JSON.stringify(row)).join('\n')+(rows.length?'\n':''),{mode:0o600,flag:'wx'});await rename(temporary,path);}finally{await rm(temporary,{force:true});}
+}
+/** Cross-process file lock also protects archives shared by different cache accounts. */
+export async function lockBackupArchive(path) {
+  await mkdir(dirname(path),{recursive:true,mode:0o700});const lock=path+'.lock',owner=randomUUID();
+  for(let attempt=0;attempt<2;attempt++){
+    try{const handle=await open(lock,'wx',0o600);await handle.writeFile(JSON.stringify({pid:process.pid,owner}));await handle.close();return async()=>{const saved=JSON.parse(await readFile(lock,'utf8'));if(saved.owner===owner)await rm(lock);};}
+    catch(error){if(error.code!=='EEXIST')throw error;let saved;try{saved=JSON.parse(await readFile(lock,'utf8'));}catch{throw new Failure('ARCHIVE_BUSY','Archive lock is being initialized or is invalid: '+lock);}try{process.kill(saved.pid,0);throw new Failure('ARCHIVE_BUSY','Another process is updating '+path);}catch(error){if(error.code!=='ESRCH')throw error;}await rm(lock);}
+  }
+  throw new Failure('ARCHIVE_BUSY','Archive lock changed; retry '+path);
+}
+export async function writeBackupArchive(path,rows) {
+  const unlock=await lockBackupArchive(path);
+  try{const previous=await readBackupArchive(path),merged=new Map(previous.map(row=>[backupKey(row),row]));let changed=0;
+    for(const incoming of rows){const key=backupKey(incoming),old=merged.get(key),row=mergeBackupRow(old??{},incoming);if(JSON.stringify(row)!==JSON.stringify(old)){changed++;merged.set(key,row);}}
+    if(changed)await atomicBackupWrite(path,sortBackupRows([...merged.values()]));
+    return {changed,rows:merged.size};
+  }finally{await unlock();}
+}
+export function exportBackupRows(cache,account,{kind,since,limit=0}={}) {
+  const rows=cache.db.prepare("SELECT json FROM records WHERE account=? AND kind IN ('post','comment') AND json_type(json,'$.backupRow')='object' ORDER BY id").all(account).map(r=>toBackupRow(JSON.parse(r.json))).filter(row=>(!kind||row.type===kind)&&(!since||(row.scrapedAt??'')>=since));
+  const sorted=sortBackupRows(rows);return limit?sorted.slice(0,limit):sorted;
+}
+export function selectBackupPosts(rows,username,{since,until,limit=0}={}) {
+  return rows.filter(row=>{if(row.type!=='post'||row.repostedBy)return false;try{if(profileIdentifier(row.authorProfile)!==username)return false;}catch{return false;}const when=backupIdDate(row.id)||row.postedAt;return when&&(!since||when>=since)&&(!until||when<until);}).sort((a,b)=>(backupIdDate(b.id)||b.postedAt).localeCompare(backupIdDate(a.id)||a.postedAt)).slice(0,limit||undefined);
+}
+export function parseBackupDemographics(value,category='') {
+  if(!value.includes('Top demographics'))return [];
+  let lines=value.split('Top demographics').at(-1).split('Analytics & tools')[0].split('\n').map(s=>s.trim()).filter(Boolean);
+  const start=lines.indexOf('Company size');if(start>=0)lines=lines.slice(start+1);
+  return lines.flatMap((line,i)=>/^\d+(?:\.\d+)?%$/.test(line)&&i?[{category:category||lines[i-2]||'',value:lines[i-1],percent:Number(line.slice(0,-1))}]:[]);
+}
+/** A tiny keyed DOM wrapper: browser nodes survive sibling insertion without index drift. */
+export function backupQuery(root,selector) {
+  if(!root)return [];const found=[];
+  for(const part of selector.split(/,\s*/)){const label=part.match(/:has-text\("([^"]*)"\)/)?.[1],css=part.replace(/:has-text\("[^"]*"\)/g,'');for(const node of root.querySelectorAll(css))if(!label||(node.innerText||node.textContent||'').includes(label))found.push(node);}
+  return [...new Set(found)];
+}
+export class BackupNode {
+  constructor(page,locator='document',settleMs=800){this.page=page;this.locator=locator||'document';this.settleMs=settleMs;}
+  expression(){return this.locator;}
+  value(fn,arg=null){return evaluate(this.page,`((node,arg)=>node?(${fn.toString()})(node,arg):null)(${this.expression()},${JSON.stringify(arg)})`);}
+  async all(selector){
+    const expression=`(${backupQuery.toString()})(${this.expression()},${JSON.stringify(selector)})`;
+    const identities=await evaluate(this.page,`(${expression}).map(node=>{const attr=['data-urn','data-id','componentkey','id'].find(a=>node.getAttribute(a));return attr?[attr,node.getAttribute(attr)]:null;})`);
+    return identities.map((identity,index)=>new BackupNode(this.page,identity?`(${expression}).find(node=>node.getAttribute(${JSON.stringify(identity[0])})===${JSON.stringify(identity[1])})`:`(${expression})[${index}]`,this.settleMs));
+  }
+  // Read-only controls accept DOM clicks offscreen; scrolling can reset SDUI expansion state.
+  async click(){const clicked=await this.value(el=>{if(!el?.isConnected)return false;el.click();return true;});if(clicked)await delay(this.settleMs);return Number(clicked);}
+}
+async function clickBackupNodes(nodes){let clicked=0;for(const node of nodes)clicked+=await node.click();return clicked;}
+async function expandBackupText(post){await clickBackupNodes((await post.all('button[aria-label^="see more"], button[aria-label*="visually reveals content"], button.see-more, button:has-text("… more"), button:has-text("... more"), button[data-testid="expandable-text-button"]:has-text("more"), .feed-shared-inline-show-more-text__see-more-less-toggle')).slice(0,12));}
+export async function loadBackupComments(post,{maxRounds=30}={}) {
+  const stats={loadMoreClicks:0,replyClicks:0,staleRounds:0,replyParents:{},expectedComments:0,commentsLoaded:0,remainingLoaders:0};
+  const count=await post.value(el=>el?.querySelector('button[aria-label="Comment"]')?.innerText||el?.querySelector('.social-details-social-counts__comments')?.innerText||'');stats.expectedComments=backupCount(count)??0;
+  stats.initialContainers=(await post.all('[componentkey^="commentsSectionContainer"]')).length;
+  stats.openClicks=stats.initialContainers?0:await clickBackupNodes((await post.all('button[aria-label="Comment"], button.comment-button, [aria-label*="comments on"]')).slice(0,1));
+  let sorted=false,previous=-1;
+  for(let round=0;round<maxRounds;round++){
+    // SSR controls may precede their event handlers. Retry only while the comment panel is still closed.
+    if([2,5].includes(round)&&!(await post.all('[componentkey^="commentsSectionContainer"], .comments-comments-list, '+BACKUP_COMMENT_SELECTOR)).length)stats.openClicks+=await clickBackupNodes((await post.all('button[aria-label="Comment"], button.comment-button, [aria-label*="comments on"]')).slice(0,1));
+    if(!sorted){const sorters=await post.all('button:has-text("Most relevant"), [role="button"]:has-text("Most relevant")');if(sorters.length){sorted=true;await clickBackupNodes(sorters.slice(0,1));await clickBackupNodes((await new BackupNode(post.page,null,post.settleMs).all('[role="menuitem"]:has-text("Most recent")')).slice(0,1));}}
+    await expandBackupText(post);
+    const loads=await post.all('button:has-text("Load more comments"), button:has-text("Show more comments"), button:has-text("See previous comments"), button:has-text("Load previous comments"), [role="button"]:has-text("Load more comments"), [role="button"]:has-text("Show more comments"), [role="button"]:has-text("See previous comments"), [role="button"]:has-text("Load previous comments"), [componentkey*="-replaceableLoadMoreComments"] [role="button"]');
+    const replies=await post.all('button:has-text("See previous replies"), button:has-text("Load more replies"), button:has-text("Show replies"), button:has-text("See more replies"), [role="button"]:has-text("See previous replies"), [role="button"]:has-text("Load more replies"), [role="button"]:has-text("Show replies"), [role="button"]:has-text("See more replies"), [componentkey*="-replaceableLoadMoreReplies"] [role="button"]');
+    stats.loadMoreClicks+=await clickBackupNodes(loads.slice(0,3));
+    if(!loads.length)for(const button of replies.slice(0,5)){
+      const parent=await button.value(el=>{const selector='[componentkey^="CommentComponentReference_urn:li:comment:"]';const card=el?.closest('[componentkey^="update-card-focus"]');const article=el?.closest(selector)||[...(card?.querySelectorAll(selector)||[])].filter(c=>c.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING).at(-1);return article?.getAttribute('componentkey').replace('CommentComponentReference_','')||'';});
+      const ids=()=>post.value((el,selector)=>[...(el?.querySelectorAll(selector)||[])].map(c=>(c.getAttribute('componentkey')||c.getAttribute('data-id')||'').replace('CommentComponentReference_','')),BACKUP_COMMENT_SELECTOR);
+      const before=new Set(await ids());stats.replyClicks+=await button.click();
+      if(parent)for(let wait=0;wait<5;wait++){await delay(post.settleMs);for(const id of await ids())if(!before.has(id))stats.replyParents[id]=stats.replyParents[parent]||parent;}
+    }
+    const count=(await post.all(BACKUP_COMMENT_SELECTOR)).length;stats.staleRounds=count===previous?stats.staleRounds+1:0;previous=count;
+    if(!loads.length&&!replies.length&&stats.staleRounds>=(count<stats.expectedComments?10:3))break;
+    if((loads.length||replies.length)&&stats.staleRounds>=3)break;
+    await delay(post.settleMs);
+  }
+  stats.commentsLoaded=(await post.all(BACKUP_COMMENT_SELECTOR)).length;
+  stats.remainingLoaders=await post.value(el=>[...(el?.querySelectorAll('button,[role="button"]')||[])].filter(b=>/^(Load|Show|See).*?(comments|replies)$/i.test(b.innerText.trim())).length);
+  stats.complete=stats.commentsLoaded>=stats.expectedComments&&!stats.remainingLoaders;return stats;
+}
+export function applyBackupReplyParents(rows,parents) {
+  const comments=rows.filter(row=>row.type==='comment');for(const row of comments)if(parents[row.id])row.parentCommentId=parents[row.id];
+  for(const[index,parent]of comments.entries()){const count=parent.replyCount||0;if(!count||!Object.values(parents).includes(parent.id))continue;const group=comments.slice(index+1,index+1+count);if(group.length===count&&group.some(row=>row.parentCommentId===parent.id))for(const row of group)row.parentCommentId=parent.id;}
+}
+function backupCount(value){const m=String(value??'').match(/^\s*(\d[\d,]*(?:\.\d+)?)(?:\s*([kmb]))?(?=\s|$)/i);return m?Math.round(Number(m[1].replaceAll(',',''))*({k:1e3,m:1e6,b:1e9}[m[2]?.toLowerCase()]||1)):null;}
+async function scrollBackupPage(page,settleMs){const data=await evaluate(page,`(()=>{const main=document.querySelector('main'),s=main&&main.scrollHeight>main.clientHeight+100?main:document.scrollingElement;const result={top:s.scrollTop,height:s.scrollHeight,client:s.clientHeight};s.scrollTop+=Math.max(600,s.clientHeight*.85);window.dispatchEvent(new Event('scroll'));return result;})()`);await delay(settleMs);return data;}
+export async function resolveBackupPostUrn(post,known={}) {
+  const direct=await post.value(el=>el?.getAttribute('data-urn')||(el?.querySelector('a[href*="/analytics/post-summary/"],a[href*="/feed/update/urn:li:activity:"]')?.href.match(/urn:li:activity:\d+/)||[])[0]||'');
+  if(/^urn:li:activity:\d+$/.test(direct))return direct;
+  const ugc=await post.value(backupUgcId);if(known[ugc])return known[ugc];
+  await post.value(el=>el?.scrollIntoView({block:'center',behavior:'instant'}));await delay(post.settleMs);
+  let url=await post.value(async el=>{
+    const menu=el?.querySelector('button[aria-label^="Open control menu"]');if(!menu)return '';if(menu.getAttribute('aria-expanded')!=='true')menu.click();
+    let label;for(let i=0;i<40&&!label;i++){label=[...document.querySelectorAll('p')].find(p=>p.innerText==='Copy link to post');if(!label)await new Promise(r=>setTimeout(r,50));}if(!label)return '';
+    const clipboard=navigator.clipboard,prior=Object.getOwnPropertyDescriptor(clipboard,'writeText');let copied='';
+    Object.defineProperty(clipboard,'writeText',{configurable:true,value:async value=>{copied=value;}});
+    try{label.click();for(let i=0;i<400&&!copied;i++)await new Promise(r=>setTimeout(r,50));return copied;}finally{if(prior)Object.defineProperty(clipboard,'writeText',prior);else delete clipboard.writeText;}
+  });
+  if(url?.startsWith('https://lnkd.in/'))url=(await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(10000)})).url;
+  try{return activityUrn(url);}catch{throw new Failure('SCHEMA_CHANGED','Post card has no verified activity identity; completed posts are retained');}
+}
+export function parseDetailedBackupAnalytics(snapshot,id) {
+  const record=parseAnalytics(snapshot,id);if(!record)return null;
+  const all=snapshot.text.split('\n').map(s=>s.trim()).filter(Boolean),begin=all.lastIndexOf('Discovery');let lines=all.slice(begin+1);const end=lines.indexOf('Top demographics');if(end>=0)lines=lines.slice(0,end);
+  for(const[label,offset,key]of [['Impressions',-1,'impressionCount'],['Members reached',-1,'membersReached'],['Reactions',1,'reactionCount'],['Comments',1,'commentCount'],['Reposts',1,'repostCount'],['Saves',1,'saveCount'],['Sends on LinkedIn',1,'sendCount'],['Profile viewers from this post',-1,'profileViewers'],['Followers gained from this post',-1,'followersGained'],['Social engagements',-1,'socialEngagements']]){const i=lines.indexOf(label);if(i>=0&&record.analytics[key]===null&&!['—','–','-','N/A'].includes(lines[i+offset]))return null;}
+  if(lines.includes('Video performance')){const value=(label,offset)=>{const i=lines.indexOf(label);return i<0?'':lines[i+offset]??'';};record.analytics.videoPerformance={views:backupCount(value('Video views',-1)),watchTime:value('Watch time',1),averageWatchTime:value('Average watch time',1)};}
+  const i=lines.indexOf('Who’s viewed your profile since this post');record.analytics.profileViewerSummary=i<0?[]:lines.slice(i+1).filter((line,index,rows)=>line!=='View'&&!rows.slice(0,index+1).some(s=>/^(Don’t miss out|Restart Premium|Try Premium)/.test(s)));
+  record.analytics.topDemographics=parseBackupDemographics(snapshot.text);return record;
+}
+export async function waitBackupAnalytics(client,page,id,reposts=false) {
+  const deadline=Date.now()+client.timeout;let previous='',stableSince=Date.now();
+  while(Date.now()<deadline){const snapshot=await evaluate(page,`(${analyticsSnapshot.toString()})()`);
+    if(/\/login|\/authwall|\/checkpoint/.test(snapshot.url))throw new Failure('AUTH_REQUIRED','Sign in to LinkedIn in the CDP browser');
+    const value=reposts?snapshot.text.includes('Reposts')?snapshot.text:null:decodeURIComponent(snapshot.url).includes(id)?parseDetailedBackupAnalytics(snapshot,id):null;
+    if(previous!==snapshot.text)stableSince=Date.now();
+    if(value&&!snapshot.loading&&!/\bLoading\b/i.test(snapshot.text)&&Date.now()-stableSince>=1000)return value;previous=snapshot.text;await delay(250);
+  }
+  throw new Failure('PAGE_NOT_READY','Detailed analytics did not finish hydrating; existing archive is preserved');
+}
+/** Native replacement for the detailed Python backup; JSONL remains the durable public contract. */
+export async function backup(client,cache,account,username,{file=defaultBackupArchive(),analytics=false,comments=true,since,until,limit=100,maxPages=240,maxCommentRounds=30,settleMs=800,log=()=>{}}={}) {
+  username=profileIdentifier(username);const unlock=await lockBackupArchive(file);
+  const key=JSON.stringify({operation:'backup',args:[username],archive:file,analytics});let run,posts=0,changed=0,updated=0,recordCount=0,incompleteComments=0,incompleteReposts=0;
+  try{
+    const existing=await readBackupArchive(file),rows=new Map(existing.map(row=>[backupKey(row),row]));
+    run=cache.startRun(account,key);
+    for(let offset=0;offset<existing.length;offset+=100)cache.commit(account,key,existing.slice(offset,offset+100).flatMap(archiveRecords),null,{position:offset});
+    const selected=analytics?selectBackupPosts(existing,username,{since,until,limit}):null;
+    if(analytics&&username!==(await client.whoami()).username)throw new Failure('FORBIDDEN','Detailed analytics requires the logged-in author');
+    log(analytics?`Updating detailed analytics for ${selected.length} saved posts`:`Backing up ${username}; completed posts are saved incrementally`);
+    const updates=analytics?(async function*(){for(const row of selected)yield [await client.backupAnalytics(row,{maxScrolls:maxPages,settleMs})];})():client.backupPosts(username,{limit,maxScrolls:maxPages,maxCommentRounds,settleMs,comments,existing});
+    for await(const incoming of updates){
+      if(!Array.isArray(incoming)||!incoming.length||incoming[0].type!=='post'||!incoming[0].id)throw new Failure('SCHEMA_CHANGED','Backup returned no identified post');
+      const batch=[];let delta=0;
+      for(const value of incoming){if(!['post','comment'].includes(value.type)||!value.id)throw new Failure('SCHEMA_CHANGED','Backup row has no type/id');const k=backupKey(value),previous=rows.get(k),row=mergeBackupRow(previous??{},value);if(JSON.stringify(row)!==JSON.stringify(previous)){delta++;rows.set(k,row);}batch.push(row);}
+      // Publish the archive first: a cache failure is recoverable by reimporting this intact file.
+      if(delta)await atomicBackupWrite(file,sortBackupRows([...rows.values()]));
+      changed+=delta;posts++;
+      updated+=cache.commit(account,key,batch.flatMap(archiveRecords),{posts,analytics},{position:posts}).changed;
+      recordCount+=batch.length;cache.progress(run,posts,recordCount);
+      if(incoming[0].commentScrapeStats?.complete===false)incompleteComments++;
+      if(incoming[0].repostScrapeStats?.complete===false)incompleteReposts++;
+      log(`Saved ${posts} posts; ${changed} archive rows updated`);
+    }
+    cache.finishRun(run,'ok',incompleteComments||incompleteReposts?'incomplete_detail':'bounded_backup');
+    return {imported:rows.size,changed:updated,path:file,archiveRowsChanged:changed,summary:{status:'ok',posts,rows_changed:changed,incomplete_comments:incompleteComments,incomplete_reposts:incompleteReposts},coverage:{complete:false,reason:'bounded_backup'}};
+  }catch(error){if(run)cache.finishRun(run,'partial',error.code??'ERROR');error.partial={posts,rows_changed:changed,archive:file,restart:'Rerun the same command; completed posts and historical rows are retained'};throw error;}
+  finally{await unlock();}
+}
+
+// ---- client ----
+export class Client {
+  constructor({ cdp = 'http://localhost:9222', timeout = 30000, log = () => {}, delayMs = 400 } = {}) {
+    const url = new URL(cdp);
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.protocol !== 'http:') throw new Failure('INVALID_INPUT', '--cdp must be a loopback HTTP endpoint');
+    this.cdp = cdp; this.timeout = timeout; this.log = log; this.delayMs = delayMs; this.owned = []; this.lastRequest = 0;
+  }
+  async json(path) {
+    try { const response = await fetch(new URL(path, this.cdp), { signal: AbortSignal.timeout(5000) }); if (!response.ok) throw new Error(); return await response.json(); }
+    catch { throw new Failure('BROWSER_UNAVAILABLE', `Cannot reach CDP at ${this.cdp}; start the authenticated browser with remote debugging`); }
+  }
+  async open() {
+    const tabs = await this.json('/json/list');
+    const tab = tabs.find(item => item.type === 'page' && item.url.startsWith('https://www.linkedin.com/'));
+    this.page = tab ? await connect(tab.webSocketDebuggerUrl) : await this.background('https://www.linkedin.com/feed/');
+    return this;
+  }
+  async browserConnection() { if (!this.browser) this.browser = await connect((await this.json('/json/version')).webSocketDebuggerUrl); return this.browser; }
+  async background(url) {
+    const browser = await this.browserConnection();
+    const target = await browser.call('Target.createTarget', { url: 'about:blank', background: true });
+    const item = { id: target.targetId }; this.owned.push(item);
+    const tab = (await this.json('/json/list')).find(tab => tab.id === item.id);
+    item.ws = tab.webSocketDebuggerUrl; item.page = await connect(item.ws);
+    await item.page.call('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await item.page.call('Page.navigate', { url });
+    await this.wait(item.page, `location.hostname === 'www.linkedin.com' && document.readyState !== 'loading'`, 'LinkedIn page did not load');
+    return item.page;
+  }
+  async wait(page, expression, message) {
+    const deadline = Date.now() + this.timeout;
+    while (Date.now() < deadline) {
+      const state = await evaluate(page, `({url:location.href,ready:Boolean(${expression})})`);
+      if (/\/login|\/authwall|\/checkpoint|\/uas\//.test(state.url)) throw new Failure(/checkpoint/.test(state.url) ? 'CHALLENGE_REQUIRED' : 'AUTH_REQUIRED', 'Complete the LinkedIn login/verification in your browser');
+      if (state.ready) return;
+      await delay(250);
+    }
+    throw new Failure('PAGE_NOT_READY', message);
+  }
+  async close() {
+    let failure;
+    try{
+      if(this.page&&!this.owned.some(item=>item.page===this.page))this.page.close();
+      for(const item of this.owned.splice(0).reverse()){
+        try{await this.browser.call('Target.closeTarget',{targetId:item.id});}catch(error){failure??=error;}finally{item.page?.close();}
+      }
+    }finally{this.browser?.close();}
+    if(failure)throw failure;
+  }
+  async api(path) {
+    if (!path.startsWith('/voyager/api/')) throw new Failure('INVALID_INPUT', 'Only registered Voyager read paths are allowed');
+    await delay(Math.max(0, this.lastRequest + this.delayMs - Date.now()));
+    this.log('GET ' + path.split('?')[0]);
+    const result = await evaluate(this.page, `(async () => {
+      const csrf = document.cookie.match(/(?:^|; )JSESSIONID=([^;]+)/)?.[1]?.replace(/^"|"$/g, '');
+      if (!csrf) return {status:401,body:''};
+      const response = await fetch(${JSON.stringify(path)}, { credentials:'include', signal:AbortSignal.timeout(${this.timeout - 1000}), headers:{'csrf-token':csrf,'x-restli-protocol-version':'2.0.0',accept:'application/vnd.linkedin.normalized+json+2.1'}});
+      return {status:response.status,url:response.url,contentType:response.headers.get('content-type') ?? '',retryAfter:response.headers.get('retry-after'),body:await response.text()};
+    })()`);
+    this.lastRequest = Date.now();
+    return checkResponse(result);
+  }
+  gql(id, args, metadata = false) { return this.api(`/voyager/api/graphql?${metadata ? 'includeWebMetadata=true&' : ''}variables=${variables(args)}&queryId=${id}`); }
+  async whoami() {
+    if (this.self) return this.self;
+    const payload = await this.api('/voyager/api/me');
+    const { resolve } = graph(payload);
+    const mini = resolve(payload.data?.['*miniProfile']) ?? payload.included?.find(item => item.$type?.endsWith('.MiniProfile'));
+    if (!mini?.entityUrn) throw new Failure('SCHEMA_CHANGED', 'Identity root/MiniProfile is missing');
+    this.self = profileRecord({ ...mini, entityUrn: 'urn:li:fsd_profile:' + mini.entityUrn.split(':').at(-1) });
+    return this.self;
+  }
+  async profile(value, sections = []) {
+    if (value === 'me') value = (await this.whoami()).username;
+    const username = profileIdentifier(value);
+    const record = decodeProfile(await this.api('/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=' + encodeURIComponent(username) + '&decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-76'));
+    for (const section of sections) {
+      if (!['experience', 'education', 'skills'].includes(section)) throw new Failure('INVALID_INPUT', 'Supported sections: experience,education,skills');
+      const payload = await this.gql(queryIds.sections, { profileUrn: record.id, sectionType: section, locale: 'en_US' });
+      record.sections = { ...record.sections, [section]: sectionText(payload) };
+    }
+    return record;
+  }
+  async sduiRead(body){
+    const readActions=['com.linkedin.sdui.search.filters.requests.FiltersLocationTypeaheadRequest','com.linkedin.sdui.search.filters.requests.FiltersCompanyTypeaheadRequest'];
+    const components=[scheduledComponentPrefix+'scheduledPostsList',scheduledComponentPrefix+'scheduledPostFullRow'];
+    let path;if(readActions.includes(body.requestId))path='/flagship-web/rsc-action/actions/server-request?sduiid='+encodeURIComponent(body.requestId);
+    else if(components.includes(body.componentId))path='/flagship-web/rsc-action/actions/component?componentId='+encodeURIComponent(body.componentId)+'&sduiid='+encodeURIComponent(body.componentId);
+    else throw new Failure('INVALID_INPUT','Only registered typeahead and scheduled-post read components are allowed');
+    await delay(Math.max(0,this.lastRequest+this.delayMs-Date.now()));
+    const response=await evaluate(this.page,`(async()=>{const csrf=document.cookie.match(/(?:^|; )JSESSIONID=([^;]+)/)?.[1]?.replace(/^"|"$/g,'');if(!csrf)return{status:401,body:''};const response=await fetch(${JSON.stringify(path)},{method:'POST',credentials:'include',signal:AbortSignal.timeout(${this.timeout-1000}),headers:{'csrf-token':csrf,'content-type':'application/json','x-li-rsc-stream':'true',accept:'text/x-component'},body:JSON.stringify(${JSON.stringify(body)})});return{status:response.status,url:response.url,contentType:response.headers.get('content-type')??'',body:await response.text()};})()`);
+    this.lastRequest=Date.now();if(response.status!==200||response.contentType.includes('text/html'))checkResponse(response);return response.body;
+  }
+  async scheduled({limit=20}={}){
+    const listed=decodeScheduledList(await this.sduiRead(scheduledRequest())),records=[];
+    for(const row of listed.slice(0,limit))records.push(decodeScheduledPost(await this.sduiRead(scheduledRequest(row)),row));
+    return {records,total:listed.length};
+  }
+  async typeahead(kind,query){return decodeFacetTypeahead(await this.sduiRead(typeaheadRequest(kind,query)),kind);}
+  async search(kind, query, cursor = {}, pageSize = 10, facets = []) {
+    const input = { start: cursor?.start ?? 0, count: pageSize };
+    const payload = await this.gql(queryIds.search, { ...input, origin: 'GLOBAL_SEARCH_HEADER', query: { keywords: query, flagshipSearchIntent: 'SEARCH_SRP', queryParameters: [{ key: 'resultType', value: [{ people: 'PEOPLE', posts: 'CONTENT', companies: 'COMPANIES' }[kind]] }, ...facets], includeFiltersInResponse: false } });
+    return decodeSearch(payload, kind, input);
+  }
+  async activity(owner, kind, cursor = {}, pageSize = 10) {
+    const input = { start: cursor?.start ?? 0, count: pageSize };
+    let payload;
+    try { payload = await this.gql(queryIds[kind], { ...input, profileUrn: owner.id, paginationToken: cursor?.token }, true); }
+    catch (error) { if (cursor?.token && error.code === 'ENDPOINT_CHANGED') throw new Failure('CURSOR_EXPIRED', 'This continuation is no longer accepted; restart without --resume to refresh from the head'); throw error; }
+    return decodeUpdates(payload, kind, owner, input);
+  }
+  async network(kind, cursor = {}, pageSize = 10) {
+    const input = { start: cursor?.start ?? 0, count: pageSize };
+    const path = kind === 'connections' ? '/relationships/dash/connections?decorationId=com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-16&q=search&sortType=RECENTLY_ADDED' : '/relationships/invitationViews?invitationType=CONNECTION&q=receivedInvitation';
+    const payload = await this.api(`/voyager/api${path}&start=${input.start}&count=${input.count}`);
+    return decodeNetwork(payload, kind, input);
+  }
+  async post(value) {
+    const id = activityUrn(value);
+    const payload = await this.api('/voyager/api/feed/updates/' + encodeURIComponent(id));
+    const { root, resolve } = graph(payload);
+    const update = resolve(root?.['*value']);
+    if (!update?.actor || !update.commentary) throw new Failure('SCHEMA_CHANGED', 'Post root content is missing');
+    return postRecord({ ...update, metadata: { ...update.updateMetadata, backendUrn: id } }, resolve);
+  }
+  async feed(cursor, pageSize = 10) {
+    if (!this.feedPage) { this.log('Opening home feed in a background tab (DOM fallback)'); this.feedPage = await this.background('https://www.linkedin.com/feed/foryou/'); }
+    await this.wait(this.feedPage, `document.querySelector('[componentkey^="update-card-focus"], [data-urn][role="article"]')`, 'Home feed cards did not render');
+    for (let round = 0; round < 5; round++) {
+      await evaluate(this.feedPage, `(() => { for (const button of document.querySelectorAll('[data-testid="expandable-text-box"] button')) if (/more/i.test(button.innerText)) button.click(); return true; })()`);
+      let result = await evaluate(this.feedPage, `(${feedCards.toString()})()`);
+      if (result.records.length < Math.min(result.cardCount, pageSize)) {
+        await evaluate(this.feedPage, `(${resolveFeedLinks.toString()})(${Math.min(pageSize, 10)})`);
+        result = await evaluate(this.feedPage, `(${feedCards.toString()})()`);
+      }
+      const seen = this.feedSeen ??= new Set();
+      const records = result.records.filter(record => !seen.has(record.id));
+      if (records.length) {
+        records.forEach(record => seen.add(record.id));
+        return { records, next: { start: seen.size, volatile: true }, source: 'dom-feed', warnings: ['Feed is a visible ranked snapshot; continuation requires this process', ...result.missing] };
+      }
+      await this.feedPage.call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 700, y: 650, deltaY: 1600, deltaX: 0 });
+      await delay(600);
+    }
+    throw new Failure('PAGE_NOT_READY', 'No additional identifiable feed records loaded; existing cache is preserved');
+  }
+  async *backupPosts(username,{limit=100,maxScrolls=240,maxCommentRounds=30,settleMs=800,comments=true,existing=[]}={}) {
+    const page=await this.background(`https://www.linkedin.com/in/${username}/recent-activity/all/`);
+    await this.wait(page,`document.querySelector(${JSON.stringify(BACKUP_POST_SELECTOR)})`,'Profile activity exposed no identifiable post cards');
+    const documentNode=new BackupNode(page,null,settleMs),processed=new Set(),ugc=new Map();
+    for(const row of existing){const id=row.type==='comment'&&row.id.match(/\(ugcPost:(\d+),/)?.[1];if(id){const key='urn:li:ugcPost:'+id;if(!ugc.has(key))ugc.set(key,new Set());ugc.get(key).add(row.parentId);}}
+    const known=Object.fromEntries([...ugc].filter(([,values])=>values.size===1).map(([id,values])=>[id,[...values][0]]));let stale=0;
+    for(let round=0;round<maxScrolls;round++){
+      const before=processed.size;
+      for(const post of await documentNode.all(BACKUP_POST_SELECTOR)){
+        const urn=await resolveBackupPostUrn(post,known);if(processed.has(urn))continue;
+        await post.value(el=>el?.scrollIntoView({block:'center',behavior:'instant'}));await delay(settleMs);await expandBackupText(post);
+        const stats=comments?await loadBackupComments(post,{maxRounds:maxCommentRounds}):null;
+        const legacy=await post.value(el=>Boolean(el?.getAttribute('data-urn')));
+        const extracted=await post.value(legacy?extractBackupPost:extractBackupSduiPost,{scrapedAt:new Date().toISOString(),postUrn:urn});
+        if(!extracted?.length||extracted[0].id!==urn)throw new Failure('SCHEMA_CHANGED','Post identity changed during extraction; refusing mismatched rows');
+        applyBackupReplyParents(extracted,stats?.replyParents??{});if(stats)extracted[0].commentScrapeStats=stats;
+        processed.add(urn);yield extracted.filter(row=>row.id).map(row=>backupTimeFields(row));
+        if(limit&&processed.size>=limit)return;
+      }
+      stale=processed.size===before?stale+1:0;await scrollBackupPage(page,settleMs*2);
+      if(stale>=6){const clicked=await clickBackupNodes((await documentNode.all('button:has-text("Show more results"),button:has-text("Show more posts")')).slice(0,2));if(!clicked)return;}
+    }
+  }
+  async backupAnalytics(row,{maxScrolls=240,settleMs=800}={}) {
+    const id=activityUrn(row.id),self=await this.whoami();
+    if(profileIdentifier(row.authorProfile)!==self.username||row.repostedBy)throw new Failure('FORBIDDEN','Detailed analytics requires an original post by the logged-in author');
+    await this.analytics(id);const page=this.analyticsPage;
+    // Discovery and demographics hydrate independently. Stable early metrics do not mean the full page is ready.
+    await this.wait(page,`(() => {const main=document.querySelector('main'),text=main?.innerText||'',buttons=[...(main?.querySelectorAll('button')||[])].map(b=>b.innerText.trim());return ['Job title','Location','Seniority','Company','Industry','Company size'].every(label=>buttons.includes(label))||/not enough data|no demographic/i.test(text);})()`,'Detailed analytics did not expose demographics or an explicit unavailable state');
+    const record=await waitBackupAnalytics(this,page,id),metrics=record.analytics;
+    metrics.url=`https://www.linkedin.com/analytics/post-summary/${id}/`;metrics.scrapedAt=new Date().toISOString();metrics.demographics={};
+    const root=new BackupNode(page,null,settleMs);
+    for(const category of ['Job title','Location','Seniority','Company','Industry','Company size']){
+      const buttons=await root.all(`main button:has-text("${category}")`);let selected;
+      for(const button of buttons)if(await button.value((el,name)=>el?.innerText.trim()===name,category)){selected=button;break;}
+      if(selected){
+        let active=false;for(let attempt=0;attempt<3&&!active;attempt++){await selected.click();active=await selected.value(el=>['aria-current','aria-selected','aria-pressed'].some(key=>el.getAttribute(key)==='true'));}
+        if(!active)throw new Failure('PAGE_NOT_READY','Demographic tab did not activate: '+category);
+        const current=await waitBackupAnalytics(this,page,id);metrics.demographics[category]=parseBackupDemographics(current.text,category);
+      }
+    }
+    const reposts=new Map(),stats={expected:metrics.repostCount,loaded:0,complete:metrics.repostCount===0,excludesPrivate:true};
+    if(metrics.repostCount){
+      const link=await evaluate(page,`[...document.querySelectorAll('main a[href]')].find(a=>a.href.includes('resultType=RESHARES'))?.href`);
+      if(!link||!decodeURIComponent(link).includes(id))throw new Failure('SCHEMA_CHANGED','Detailed analytics has no matching public Reposts link');
+      const target=this.backupRepostsPage??=await this.background(link);if(this.backupRepostsUrl&&this.backupRepostsUrl!==link)await target.call('Page.navigate',{url:link});this.backupRepostsUrl=link;
+      await waitBackupAnalytics(this,target,id,true);let stale=0;
+      for(let round=0;round<maxScrolls;round++){
+        const before=reposts.size;for(const current of await evaluate(target,`(${backupRepostsSnapshot.toString()})()`)){const old=reposts.get(current.id);reposts.set(current.id,old?mergeBackupRow({...old,type:'post'},{...current,type:'post'}):current);}
+        stale=reposts.size===before?stale+1:0;if(reposts.size>=metrics.repostCount||stale>=3)break;
+        await clickBackupNodes((await new BackupNode(target,null,settleMs).all('main button:has-text("Show more results")')).slice(0,1));await scrollBackupPage(target,settleMs);
+      }
+      stats.loaded=reposts.size;stats.complete=stats.loaded>=metrics.repostCount;
+    }
+    return {type:'post',id,scrapedAt:metrics.scrapedAt,analyticsUrl:metrics.url,analytics:metrics,reposts:[...reposts.values()],repostScrapeStats:stats,...Object.fromEntries(['impressionCount','reactionCount','commentCount','repostCount'].map(key=>[key,metrics[key]]))};
+  }
+  async analytics(value) {
+    const id = activityUrn(value);
+    const self = await this.whoami(), post = await this.post(id);
+    if (!post.author?.url || profileIdentifier(post.author.url) !== self.username) throw new Failure('FORBIDDEN', 'Analytics can only be refreshed for posts authored by the logged-in user');
+    this.log('Opening visible post analytics in a background tab');
+    const url = `https://www.linkedin.com/analytics/post-summary/${id}/`;
+    const page = this.analyticsPage ??= await this.background(url);
+    if (this.lastAnalyticsId && this.lastAnalyticsId !== id) await page.call('Page.navigate', { url });
+    this.lastAnalyticsId = id;
+    let record;
+    const deadline = Date.now() + this.timeout;
+    while (Date.now() < deadline) {
+      const snapshot = await evaluate(page, `(${analyticsSnapshot.toString()})()`);
+      if (!snapshot.url.includes(`/analytics/post-summary/${id}/`)) { await delay(250); continue; }
+      record = parseAnalytics(snapshot, id);
+      if (record&&!snapshot.loading) return record;
+      if (/not available|don't have access|not authorized/i.test(snapshot.text)) throw new Failure('FORBIDDEN', 'Analytics is available only for accessible own posts');
+      await delay(400);
+    }
+    throw new Failure('PAGE_NOT_READY', 'Post analytics did not expose readable Discovery/Impressions values');
+  }
+}
+
+// ---- linkedin ----
+const optionTypes = {
+  db: 'string', cdp: 'string', account: 'string', limit: 'string', 'page-size': 'string', 'max-pages': 'string', timeout: 'string',
+  kind: 'string', sections: 'string', fields: 'string', format: 'string', output: 'string', since: 'string', 'max-age': 'string',
+  params: 'string', file: 'string', archive: 'string', schema: 'string', 'max-scrolls':'string', 'max-comment-rounds':'string', 'settle-ms':'string', location: 'string', organization: 'string', 'past-organization': 'string', degree: 'string', until: 'string', offline: 'boolean', refresh: 'boolean', resume: 'boolean',
+  analytics: 'boolean', 'no-comments': 'boolean', prefix: 'boolean', 'dry-run': 'boolean', describe: 'boolean', help: 'boolean',
+};
+const kinds = ['scheduled','profile', 'post', 'comment', 'activity', 'invitation', 'company', 'analytics', 'history'];
+const numericOptions = new Set(['limit', 'page-size', 'max-pages', 'timeout', 'max-age', 'max-scrolls', 'max-comment-rounds', 'settle-ms']);
+const extras = {
+  paths: {description:'Show backup, cache, script and configuration paths without opening a browser or cache',args:[]},
+  find: { description: 'Offline full-text search of the local cache', args: ['query'] },
+  export: { description: 'Offline export; --schema backup emits compatible raw JSONL from saved backup rows', args: [] },
+  comments: { description: 'Read cached comments/replies for a post (import or backup first)', args: ['post'] },
+  reposts: { description: 'Read cached public repost details for a post (backup --analytics first)', args: ['post'] },
+  backup: { description: 'Back up posts/comments or detailed own analytics natively; atomically update compatible JSONL and cache', args: ['profile'] },
+  'cache status': { description: 'Inspect accounts, counts, collections and recent syncs', args: [] },
+  'cache get': { description: 'Read one cached record by id or canonical URL', args: ['id'] },
+  'cache list': { description: 'List cached records', args: [] },
+  'import archive': { description: 'Import existing posts JSONL or invitation JSON array', args: ['path'] },
+  'import history': { description: 'Import LinkedIn links from a read-only browsing-history SQLite snapshot', args: ['path'] },
+};
+export const schema = { ...manifest, name: 'linkedin', description: 'Read-only LinkedIn CLI with automatic local caching and offline FTS search', commands: { ...operations, ...extras }, options: optionTypes,
+  usage: ['linkedin profile USER --sections experience,education', 'linkedin search people engineer --location Chennai --organization Tata', 'linkedin sync activity USER --kind posts --limit 100', 'linkedin find "agents" --offline', 'linkedin import archive ~/Documents/data/linkedin-posts.jsonl'],
+  cache: 'LINKEDIN_DB or ~/.cache/sanand-scripts/linkedin-cli/cache.sqlite', output: ['markdown (default; md alias)', 'json', 'ndjson (jsonl alias)', 'text'],
+  profile_targets:'me, explicit URL/URN/identifier, or quoted full name; first personalized result. Use name:QUERY for single-word names. Account-scoped lookups last 1 hour; --refresh re-resolves.',
+  viewer:'Interactive Markdown uses glow -p, then PAGER, then raw Markdown; pipes/files and JSON/JSONL/text bypass viewers.',
+  record_kinds:kinds,
+  search_filters: {location:'Comma-separated partial location names (Chennai, Singapore, Boston), geo IDs or urn:li:geo:ID',organization:'Comma-separated partial organization names (IBM, Tata), current-employer company IDs/URNs','past-organization':'Same name/ID resolution for previous employers',degree:'1,2,3 or F,S,O; 3 includes third-degree and beyond. OR within a filter, AND across filters. All returned typeahead matches/aliases are included.'},
+  scheduled:{actor:'logged-in member (Self)',fields:'scheduledAt (UTC ISO timestamp), full contents where available',cache:'Read-only current-list snapshot; --refresh replaces membership, --offline reuses saved data'},
+  backup: {archive:'~/Documents/data/linkedin-posts.jsonl (override --archive; --file is an alias)',posts:'backup me --limit 100; --limit 0 removes the post limit but --max-scrolls still bounds traversal',analytics:'backup me --analytics --since 7d --until 1d --limit 0; saved original posts by the logged-in author only',details:'Comments/replies, media, six demographic tabs, video metrics and public reposts; incomplete/private details are reported',export:'export --schema backup emits raw compatible JSONL for saved backup rows only; --output atomically merges into an archive',restart:'Rerun after interruption: completed posts/history persist; stale process locks are reclaimed',dry_run:'Preview only; no browser/cache/archive writes'},
+  analytics: { single: 'analytics POST [--refresh]: refresh own visible metrics and cached post counters', batch: 'sync analytics me --since 7d --limit 20 --max-pages 5 [--resume]', metrics: 'likes (total reactions), reactionCount, commentCount, repostCount, impressionCount, saveCount, sendCount and accessible profile/discovery metrics', dates: 'ISO or Nd/Nw/Nmo/Ny; mo=30 days, y=365 days. Since inclusive, until exclusive. Selection can use an activity-ID time estimate.' },
+};
+const expand = path => path.startsWith('~/') ? join(homedir(), path.slice(2)) : resolve(path);
+export function appPaths(values={}){
+  const archive=expand(values.archive??values.file??defaultBackupArchive()),cache=expand(values.db??process.env.LINKEDIN_DB??join(process.env.XDG_CACHE_HOME??join(homedir(),'.cache'),'sanand-scripts/linkedin-cli/cache.sqlite'));
+  return {script:fileURLToPath(import.meta.url),backupArchive:archive,backupLock:archive+'.lock',backupTemporaryFiles:archive+'.*.tmp',cacheDatabase:cache,cacheWriteAheadLog:cache+'-wal',cacheSharedMemory:cache+'-shm',configFile:'None (CLI flags and environment only)',environment:'LINKEDIN_DB, LINKEDIN_CDP, LINKEDIN_ACCOUNT, XDG_CACHE_HOME, PAGER',tests:join(dirname(fileURLToPath(import.meta.url)),'tests/test_linkedin.mjs')};
+}
+const envelope = value => ({ ok: true, schema_version: 1, ...value });
+function numeric(value, fallback, min, max, flag) { const result = value === undefined ? fallback : Number(value); if (!Number.isInteger(result) || result < min || result > max) throw new Failure('INVALID_INPUT', `${flag} must be an integer ${min}..${max}`); return result; }
+function canonicalOperation(positionals) {
+  const args = [...positionals]; const syncing = args[0] === 'sync'; if (syncing) args.shift();
+  let operation = args.shift() ?? '';
+  if (operation === 'search') { operation = args.shift(); if (!['people', 'posts', 'companies'].includes(operation)) throw new Failure('INVALID_INPUT', 'Use search people|posts|companies QUERY'); }
+  else if (['cache', 'import'].includes(operation)) operation += ' ' + (args.shift() ?? '');
+  if (operation === 'cache search') operation = 'find';
+  return { operation, args, syncing };
+}
+export function parse(argv) {
+  let parsed;
+  try { parsed = parseArgs({ args: argv, allowPositionals: true, options: Object.fromEntries(Object.entries(optionTypes).map(([key, type]) => [key, { type }])) }); }
+  catch (error) { throw new Failure('INVALID_INPUT', error.message + '; run --help'); }
+  let { values, positionals } = parsed;
+  if (values.params) {
+    let input; try { input = JSON.parse(values.params); } catch { throw new Failure('INVALID_INPUT', '--params must be a JSON object'); }
+    if (!input || Array.isArray(input) || typeof input !== 'object') throw new Failure('INVALID_INPUT', '--params must be a JSON object');
+    for (const [key, value] of Object.entries(input)) {
+      if (key === 'args') { if (!Array.isArray(value) || value.some(item => typeof item !== 'string') || positionals.length) throw new Failure('INVALID_INPUT', 'params.args must be a string array used without positional arguments'); positionals = value; }
+      else if (numericOptions.has(key) && typeof value === 'number' && values[key] === undefined) values[key] = String(value);
+      else if (!(key in optionTypes) || key === 'params' || typeof value !== optionTypes[key]) throw new Failure('INVALID_INPUT', `Unknown or incorrectly typed params field: ${key}`);
+      else if (values[key] === undefined) values[key] = value;
+    }
+  }
+  const parsedOperation = canonicalOperation(positionals);
+  const descriptor = operations[parsedOperation.operation] ?? extras[parsedOperation.operation];
+  if (!positionals.length && !values.describe) values.help = true;
+  if (!values.help && !values.describe && (!descriptor || parsedOperation.args.length !== descriptor.args.length)) throw new Failure('INVALID_INPUT', 'Invalid command or arguments; run --help or --describe');
+  const archiveExport=parsedOperation.operation==='export'&&values.schema==='backup',isBackup=parsedOperation.operation==='backup';
+  const limit = numeric(values.limit, archiveExport?0:isBackup?100:parsedOperation.syncing?100:20, isBackup||archiveExport?0:1,10000,'--limit');
+  const pageSize = numeric(values['page-size'], Math.min(limit||10, 10), 1, 50, '--page-size');
+  const maxPages = numeric(values['max-scrolls']??values['max-pages'], isBackup?240:2, 1, 10000, '--max-pages/--max-scrolls');
+  const maxCommentRounds=numeric(values['max-comment-rounds'],30,1,1000,'--max-comment-rounds'),settleMs=numeric(values['settle-ms'],800,0,10000,'--settle-ms');
+  if(values.schema&&(!archiveExport||values.fields))throw new Failure('INVALID_INPUT','--schema backup is supported only for export, without --fields');
+  if(archiveExport&&values.kind&&!['post','comment'].includes(values.kind))throw new Failure('INVALID_INPUT','Backup export includes post/comment rows only');
+  if(((values.archive||values.file)&&!isBackup&&parsedOperation.operation!=='paths')||((values['max-scrolls']||values['max-comment-rounds']||values['settle-ms'])&&!isBackup))throw new Failure('INVALID_INPUT','Archive and scraping options apply only to backup');
+  if(values.archive&&values.file)throw new Failure('INVALID_INPUT','Use --archive or its --file alias, not both');
+  if(isBackup&&values.output&&expand(values.output)===expand(values.archive??values.file??defaultBackupArchive()))throw new Failure('INVALID_INPUT','--output saves the report and must differ from --archive (the durable JSONL data)');
+  const timeout = numeric(values.timeout, parsedOperation.operation === 'backup' ? 180 : 30, 5, 3600, '--timeout') * 1000;
+  const maxAge = numeric(values['max-age'], parsedOperation.operation === 'profile' ? 86400 : 300, 0, 31536000, '--max-age');
+  const format = ({ md: 'markdown', jsonl: 'ndjson' })[values.format] ?? values.format ?? 'markdown';
+  if (!['json', 'ndjson', 'markdown', 'text'].includes(format)) throw new Failure('INVALID_INPUT', '--format must be markdown|md|json|ndjson|jsonl|text');
+  const sections = values.sections ? values.sections.split(',') : [];
+  if (sections.some(section => !['experience', 'education', 'skills'].includes(section))) throw new Failure('INVALID_INPUT', '--sections supports experience,education,skills');
+  const since = values.since ? sinceDate(values.since) : undefined;
+  const until = values.until ? sinceDate(values.until) : undefined;
+  if (since && until && since >= until) throw new Failure('INVALID_INPUT', '--since must precede --until');
+  if (values.fields && values.fields.split(',').some(path => !/^[A-Za-z][\w]*(?:\.[A-Za-z][\w]*)*$/.test(path) || path.split('.').some(key => ['constructor', 'prototype', '__proto__'].includes(key)))) throw new Failure('INVALID_INPUT', '--fields must contain comma-separated field names or nested paths');
+  if (values.analytics && parsedOperation.operation !== 'backup') throw new Failure('INVALID_INPUT', '--analytics is a backup option; use analytics POST for a single summary');
+  if (values.sections && parsedOperation.operation !== 'profile') throw new Failure('INVALID_INPUT', '--sections is a profile option');
+  const batchAnalytics = parsedOperation.operation === 'analytics' && parsedOperation.args[0] === 'me';
+  if (((values.until&&!isBackup) || (values.since && !['backup', 'import history', 'find', 'export', 'cache list'].includes(parsedOperation.operation))) && !batchAnalytics) throw new Failure('INVALID_INPUT', '--since/--until is supported for analytics me; --since also filters cached reads, history import and backup');
+  const hasSearchFilters = ['location', 'organization', 'past-organization', 'degree'].some(key => values[key]);
+  if (hasSearchFilters && parsedOperation.operation !== 'people') throw new Failure('INVALID_INPUT', 'Location, organization and degree filters apply to search people');
+  const facets = hasSearchFilters ? searchFacets(values) : [];
+  if (values.kind && !['activity', 'find', 'export', 'cache list'].includes(parsedOperation.operation)) throw new Failure('INVALID_INPUT', '--kind filters activity categories or cached record types');
+  if (parsedOperation.operation === 'activity' && !['posts', 'comments', 'reactions'].includes(values.kind ?? 'posts')) throw new Failure('INVALID_INPUT', '--kind must be posts|comments|reactions for activity');
+  if (['find', 'export', 'cache list'].includes(parsedOperation.operation) && values.kind && !kinds.includes(values.kind)) throw new Failure('INVALID_INPUT', 'Unknown record kind');
+  if (values.offline && (values.refresh || values.resume || parsedOperation.syncing || parsedOperation.operation === 'backup')) throw new Failure('INVALID_INPUT', '--offline cannot be combined with live refresh, resume, sync or backup');
+  if (values.resume && !operations[parsedOperation.operation]?.paged && !batchAnalytics) throw new Failure('INVALID_INPUT', '--resume requires a paginated live command or analytics me');
+  if (parsedOperation.operation === 'feed' && values.resume) throw new Failure('CURSOR_EXPIRED', 'Feed snapshots restart each invocation; use cached offline reads or start a fresh feed sync');
+  if(isBackup&&(values.since||values.until)&&!values.analytics)throw new Failure('INVALID_INPUT','Backup --since/--until require --analytics');
+  return { ...parsedOperation, values, limit, pageSize, maxPages, maxCommentRounds, settleMs, timeout, maxAge, sections, format, facets, batchAnalytics, archiveExport, since, until };
+}
+export function mask(record, fields) {
+  if (!fields) return record;
+  const output = {};
+  for (const path of fields.split(',')) {
+    const keys = path.split('.'); let value = record;
+    for (const key of keys) value = value?.[key];
+    if (value !== undefined) {
+      let node = output;
+      for (const key of keys.slice(0, -1)) node = node[key] ??= {};
+      node[keys.at(-1)] = value;
+    }
+  }
+  return output;
+}
+// Markdown is a document view, independent of the machine-readable record contract.
+const mdLabels = { id:'ID', url:'Link', username:'Username', headline:'Headline', kind:'Type', postId:'Post', parentId:'Parent comment', observedAt:'Last observed', visitedAt:'Visited', sentAt:'Received', connectedAt:'Connected', publishedAt:'Published', scheduledAt:'Scheduled',impressionCount:'Impressions', membersReached:'Members reached', reactionCount:'Reactions', likes:'Reactions', commentCount:'Comments', repostCount:'Reposts', saveCount:'Saves', sendCount:'Sends on LinkedIn', followersGained:'Followers gained', profileViewers:'Profile views', socialEngagements:'Social engagements', inNetworkPercent:'In-network', outOfNetworkPercent:'Out-of-network', originalArchiveModified:'Original archive modified', imported:'Rows read', changed:'Cached records updated', maxPages:'Page limit', cacheWrites:'Cache updates', replyCount:'Replies', watchTime:'Watch time', averageWatchTime:'Average watch time' };
+const mdLabel = key => mdLabels[key] ?? String(key).replace(/([a-z\d])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/^./,letter=>letter.toUpperCase());
+const mdInline = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/([\\`*_[\]|])/g,'\\$1').replace(/\s*\n\s*/g,' ');
+const mdCount = value => typeof value === 'number' ? value.toLocaleString('en-US',{maximumFractionDigits:2}) : typeof value === 'boolean' ? value?'Yes':'No' : value === null || value === undefined ? '—' : mdInline(value);
+const mdPlural = kind => ({scheduled:'Scheduled posts',profile:'People',post:'Posts',comment:'Comments',activity:'Activity',invitation:'Invitations',company:'Companies',analytics:'Analytics',history:'Visited links'})[kind] ?? mdLabel(kind);
+const mdAmount = (count,plural) => `${mdCount(count)} ${count===1?({'Scheduled posts':'post',People:'person',Companies:'company',Posts:'post',Comments:'comment',Invitations:'invitation',Analytics:'post',Activity:'activity item','Visited links':'visited link',Records:'record'})[plural]??plural.toLowerCase():plural==='Activity'?'activity items':plural.toLowerCase()}`;
+function mdDate(value) {
+  if (!value && value !== 0) return '';
+  if (/^\d{4}-\d{2}$/.test(String(value))) return new Date(value+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'});
+  if (/^[A-Za-z]+\s+\d{4}$/.test(String(value))) return mdInline(value);
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return mdInline(value);
+  return date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}) + (/^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? '' : ', '+date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC');
+}
+function mdUrl(url) {
+  let parsed;try{parsed=new URL(url);}catch{return '—';}
+  return ['https:','http:'].includes(parsed.protocol)?parsed.href.replaceAll('<','%3C').replaceAll('>','%3E').replaceAll('|','%7C'):'—';
+}
+function mdLink(label,url) {
+  if(String(url??'').startsWith('#comment-'))return `[${mdInline(label)}](${url})`;
+  const href=mdUrl(url);
+  return href==='—'?mdInline(label):`[${mdInline(label)}](<${href}>)`;
+}
+const mdList = rows => rows.map(([label,value])=>'- '+label+': '+value).join('\n');
+const mdSection = (title,body,level=2) => body ? '#'.repeat(Math.min(6,level))+' '+mdInline(title)+'\n\n'+body : '';
+const mdTable = (headings,rows) => rows.length&&headings.length ? '| '+headings.join(' | ')+' |\n| '+headings.map(()=>'---').join(' | ')+' |\n'+rows.map(row=>'| '+row.map(value=>String(value??'—').replace(/\r?\n/g,'<br>')).join(' | ')+' |').join('\n') : '';
+function mdBody(value, level=3) {
+  let fence = null;
+  const body = String(value??'').trim().split('\n').map(line=>{
+    const marker=line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if(marker){if(!fence)fence=marker[1];else if(marker[1][0]===fence[0]&&marker[1].length>=fence.length)fence=null;return line;}
+    if(fence)return line;
+    const heading=line.match(/^#{1,6}\s+(.+)/);
+    if(heading)return '#'.repeat(Math.min(6,level))+' '+heading[1];
+    return line.replace(/</g,'&lt;') + (line.trim() && !/^\s*(?:[-*+]\s|\d+[.)]\s|>|\|| {4})/.test(line) ? '  ' : '');
+  }).join('\n').trimEnd();
+  return body+(fence?'\n'+fence:'');
+}
+function mdDetails(value, depth=0) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value !== 'object') return typeof value === 'boolean' ? value?'Yes':'No' : mdCount(value);
+  if (Array.isArray(value)) return value.length ? value.map(item=>'  '.repeat(depth)+'- '+mdDetails(item,depth+1)).join('\n') : 'None';
+  return Object.entries(value).filter(([,v])=>v!==undefined).map(([key,v])=>{
+    const formatted=key==='url'?mdUrl(v):/(?:At|_at)$/.test(key)&&v?mdDate(v):mdDetails(v,depth+1);
+    return '  '.repeat(depth)+`- ${mdLabel(key)}:`+(v&&typeof v==='object'?'\n':' ')+formatted;
+  }).join('\n');
+}
+const mdPostUrl = record => record.url?.includes('/analytics/') ? record.postId?`https://www.linkedin.com/feed/update/${record.postId}/`:undefined : record.url ?? (record.postId?`https://www.linkedin.com/feed/update/${record.postId}/`:undefined);
+const mdMetricValue = (key,value) => value === null || value === undefined ? '—' : mdCount(value)+(key.endsWith('Percent')&&!String(value).endsWith('%')?'%':'');
+function mdMetricRows(metrics) {
+  return Object.entries(metrics??{}).filter(([key,value])=>!['url','scrapedAt','observedAt'].includes(key)&&!(key==='likes'&&'reactionCount' in metrics)&&(value===null||typeof value!=='object')).map(([key,value])=>[mdLabel(key),mdMetricValue(key,value)]);
+}
+function mdAudience(metrics,level) {
+  const groups=Object.entries(metrics.demographics??{}).filter(([,rows])=>rows?.length);
+  if(!groups.length&&metrics.topDemographics?.length)groups.push(['Top demographics',metrics.topDemographics]);
+  return groups.map(([name,rows])=>mdSection(name,mdList(rows.map(row=>[mdInline(row.label??row.value??row.category??'Unknown'),mdMetricValue('sharePercent',row.percentage??row.percent)])),level)).join('\n\n');
+}
+function mdAnalytics(record,level=2) {
+  const metrics=record.analytics??{};
+  const links=[mdPostUrl(record),record.url].filter((url,i,urls)=>url&&urls.indexOf(url)===i).map(mdUrl).join(' · ');
+  const updated=metrics.scrapedAt??record.observedAt;
+  const groups={Reach:['impressionCount','membersReached','inNetworkPercent','outOfNetworkPercent'],Engagement:['reactionCount','likes','commentCount','repostCount','saveCount','sendCount','socialEngagements'],'Profile activity':['profileViewers','followersGained']};
+  const sections=Object.entries(groups).map(([title,keys])=>mdSection(title,mdList(mdMetricRows(Object.fromEntries(keys.filter(key=>key in metrics).map(key=>[key,metrics[key]])))),level));
+  const extra=Object.fromEntries(Object.entries(metrics).filter(([key])=>!Object.values(groups).flat().includes(key)));
+  sections.push(mdSection('Other metrics',mdList(mdMetricRows(extra)),level));
+  sections.push(mdSection('Video performance',metrics.videoPerformance?mdDetails(metrics.videoPerformance):'',level));
+  sections.push(mdAudience(metrics,level));
+  sections.push(mdSection('Profile viewers',metrics.profileViewerSummary?.length?metrics.profileViewerSummary.map(line=>'- '+mdInline(line)).join('\n'):'',level));
+  if(!record.analytics&&record.text)sections.push(mdSection('Captured text',mdBody(record.text,level+1),level));
+  return [[updated?'Updated: '+mdDate(updated):'',links].filter(Boolean).join(' · '),...sections,mdMetricRows(metrics).some(row=>row[1]==='—')?'_— means this metric was not available._':''].filter(Boolean).join('\n\n');
+}
+function mdPost(record,level=2) {
+  const author=record.author??{name:record.name,url:record.profile,headline:record.description};
+  const info=[mdInline(author.name),mdInline(author.headline)].filter(Boolean).join(' · ');
+  const published=record.publishedAt??record.postedAt,fromId=!published&&backupIdDate(record.id??record.postId??record.url);
+  const date=published?mdDate(published)+(['id','exact'].includes(record.publishedAtConfidence??record.postedAtConfidence)?'':record.publishedAtConfidence?' (estimated)':''):fromId?mdDate(fromId)+' (from activity ID)':mdInline(record.relativeTime??record.postedText??'');
+  const metrics={...(record.analytics??{}),...Object.fromEntries(['reactionCount','commentCount','repostCount','impressionCount','replyCount'].filter(key=>key in record).map(key=>[key,record[key]]))};
+  const counts=['impressionCount','reactionCount','commentCount','repostCount','replyCount'].filter(key=>key in metrics&&metrics[key]!==null).map(key=>mdCount(metrics[key])+' '+({impressionCount:'impressions',reactionCount:'reactions',commentCount:'comments',repostCount:'reposts',replyCount:'replies'})[key]).join(' · ');
+  const attachments=(record.media??[]).map((media,i)=>'- '+mdInline(mdLabel(media.kind??'attachment')+(media.alt?' — '+media.alt:' '+(i+1)))+': '+mdUrl(media.url));
+  const links=(record.links??[]).filter(url=>!(record.media??[]).some(media=>media.url===url)).map(url=>'- '+mdUrl(url));
+  const metadata=[date?'Published: '+date+(record.edited?' · Edited':''):'',info,author.url?'Profile: '+mdUrl(author.url):'',record.url?'Post: '+mdUrl(record.url):''].filter(Boolean).join(' · ');
+  return [metadata,mdBody(record.text??record.content,level+1),counts?'**'+counts+'**':'',record.repostedBy?'Reposted by '+mdInline(record.repostedBy)+(record.repostedByProfile?' · '+mdUrl(record.repostedByProfile):''):'',mdSection('Attachments',attachments.join('\n'),level),mdSection('Links',links.join('\n'),level),record.textTruncated?'_This saved post text is incomplete._':'',record.resharedPost?mdSection('Original post',mdPost(record.resharedPost,level+1),level):''].filter(Boolean).join('\n\n');
+}
+function mdCollection(key) {
+  let query;try{query=JSON.parse(key);}catch{}
+  if(query)return mdLabel(query.operation??'Collection')+(query.args?.length?' — '+query.args.join(', '):'')+(query.kind?' ('+query.kind+')':'');
+  if(String(key).startsWith('import:'))return 'Imported '+(String(key).includes('history')?'browsing history':'archive');
+  return mdLabel(key??'Collection');
+}
+function mdStatus(data) {
+  const reason=value=>({item_limit:'Record limit reached',page_limit:'Page limit reached',traversal_exhausted:'No more pages returned',process_exit_or_expired_lease:'Previous process ended',SCHEMA_CHANGED:'LinkedIn response changed',AUTH_REQUIRED:'Sign-in required'})[value]??(value?mdLabel(value):'—');
+  return [mdList((data.counts??[]).map(row=>[mdPlural(row.kind),mdCount(row.records)])),mdSection('Collections',mdTable(['Collection','Last updated','More to fetch'],(data.collections??[]).map(row=>[mdInline(mdCollection(row.key)),mdDate(row.updated_at),row.resumable?'Yes':'No']))),mdSection('Recent syncs',mdTable(['Started','Collection','Result','Pages','Records','Notes'],(data.runs??[]).map(row=>[mdDate(row.started_at),mdInline(mdCollection(row.collection)),({ok:'Completed',partial:'Partial',running:'Running',interrupted:'Interrupted'})[row.status]??mdLabel(row.status),mdCount(row.pages),mdCount(row.records),reason(row.reason)])))].filter(Boolean).join('\n\n');
+}
+function mdComments(records,context) {
+  const byId=new Map(records.filter(r=>r.id).map(r=>[r.id,r])),seen=new Set();
+  const anchor=id=>'comment-'+createHash('sha256').update(String(id)).digest('hex').slice(0,12);
+  const roots=records.filter(r=>!byId.has(r.parentId));
+  function comment(record,depth=0){
+    if(seen.has(record))return '';seen.add(record);
+    const parent=byId.get(record.parentId),name=record.author?.name??'Comment';
+    const reply=parent?'Reply to '+mdLink(parent.author?.name??'parent comment','#'+anchor(parent.id)):record.parentId&&record.parentId!==record.postId?'Reply; the parent comment is not in this export.':'';
+    const content=[record.id?`<a id="${anchor(record.id)}"></a>`:'','#'.repeat(Math.min(6,2+depth))+' '+mdInline(name),[reply,record.publishedAt?'Posted: '+mdDate(record.publishedAt)+(record.publishedAtConfidence&&record.publishedAtConfidence!=='exact'?' (estimated)':''):'',record.edited?'Edited':'',record.author?.url?mdUrl(record.author.url):''].filter(Boolean).join(' · '),mdBody(record.text,Math.min(6,3+depth))];
+    for(const child of records.filter(r=>r.parentId===record.id&&r!==record))content.push(comment(child,depth+1));
+    return content.filter(Boolean).join('\n\n');
+  }
+  return [...roots,...records].map(record=>comment(record)).filter(Boolean).join('\n\n');
+}
+function renderMarkdown(result,context={}) {
+  const op=context.operation??'',data=result.data,array=Array.isArray(data),records=(array?data:[data]).filter(Boolean);
+  const kind=record=>record.kind??({scheduled:'scheduled',profile:'profile',whoami:'profile',people:'profile',connections:'profile',companies:'company',invitations:'invitation',analytics:'analytics',post:'post',posts:'post',feed:'post',activity:'post',comments:'comment',reposts:'post'})[op]??(record.analytics?'analytics':undefined);
+  const query=context.args?.[0],plural=!records.length?mdPlural(kind({})??'records'):records.every(record=>kind(record)===kind(records[0]))?mdPlural(kind(records[0])??'records'):'Records';
+  let title=({scheduled:'Scheduled posts',people:'People',posts:'Posts',companies:'Companies',feed:'Home feed',connections:'Connections',invitations:'Received invitations',comments:'Comments',reposts:'Public reposts',find:'Search saved LinkedIn data',paths:'LinkedIn paths','cache status':'LinkedIn cache','cache list':'Saved LinkedIn records',export:'Saved LinkedIn records','import archive':'Archive import','import history':'Browsing history import',backup:'Backup summary',analytics:'Post analytics',activity:'Member activity'})[op];
+  if(['people','posts','companies','find'].includes(op)&&query)title+=' matching “'+query+'”';
+  const first=records[0]??{};
+  title??=array?plural:({profile:first.name??'LinkedIn profile',company:first.name??'Company',post:'Post'+(first.author?.name?' by '+first.author.name:''),analytics:'Post analytics',comment:'Comment',activity:'Member activity',invitation:'Connection invitation'+(first.name?' from '+first.name:''),history:first.name??'Saved link'})[kind(first)]??(data?.counts?'LinkedIn cache':first.name??'LinkedIn');
+  if(['profile','whoami'].includes(op)&&records[0]?.name)title=records[0].name;
+  const summary=[context.values?.since,context.values?.until?'before '+context.values.until:'',array?mdAmount(records.length,['Analytics','Scheduled posts'].includes(plural)?'Posts':plural):''].filter(Boolean);
+  const blocks=['# '+mdInline(title)+(summary.length?' ('+summary.map(mdInline).join(', ')+')':'')];
+  const selections=context.resolvedFilters??result.meta?.resolved_filters??[];
+  if(selections.length)blocks.push('**Resolved filters (OR within each):**\n\n'+selections.map(row=>'- '+mdInline(({geoUrn:'Location',currentCompany:'Organization',pastCompany:'Past organization'})[row.filter]+' “'+row.query+'”: '+row.matches.map(match=>match.name+' ['+match.id+']').join(', '))).join('\n'));
+  const selectedProfile=context.resolvedProfile??result.meta?.resolved_profile;
+  if(selectedProfile)blocks.push('**Resolved profile:** '+mdInline(selectedProfile.query+' → '+selectedProfile.name)+' · '+mdUrl(selectedProfile.url));
+  const facets=(context.facets??result.meta?.filters??[]).map(facet=>({...facet,value:facet.value.filter(value=>!selections.some(row=>row.filter===facet.key&&row.matches.some(match=>match.id===value)))})).filter(facet=>facet.value.length);
+  if(facets.length)blocks.push('**Filters:** '+facets.map(facet=>({geoUrn:'Location IDs',currentCompany:'Current organization IDs',pastCompany:'Past organization IDs',network:'Connections'})[facet.key]+': '+facet.value.map(value=>facet.key==='network'?({F:'1st degree',S:'2nd degree',O:'3rd degree and beyond'})[value]??mdInline(value):mdInline(value)).join(', ')).join(' · '));
+  if(result.meta?.dry_run){blocks[0]='# Preview: '+mdInline(mdLabel(data.operation));blocks.push('No changes were made.',mdDetails({target:data.args?.join(', '),browserAccess:data.network,cacheUpdates:data.cacheWrites,recordLimit:data.limit,pageLimit:data.maxPages}));}
+  else if(data?.counts&&data?.collections)blocks.push(mdStatus(data));
+  else if(data&&typeof data==='object'&&!array&&('imported'in data||'adapter'in data))blocks.push(mdList([['Rows read',mdCount(data.imported)],['Cached records updated',mdCount(data.changed)],...(data.summary?.posts!==undefined?[['Posts processed',mdCount(data.summary.posts)]]:[]),...(data.summary?.incomplete_comments!==undefined?[['Incomplete comment threads',mdCount(data.summary.incomplete_comments)]]:[]),...(data.path?[['Archive',mdInline(data.path)]]:[]),...(data.archiveRowsChanged!==undefined?[['Archive rows updated',mdCount(data.archiveRowsChanged)]]:[]),...(data.summary?.incomplete_reposts!==undefined?[['Incomplete public repost lists',mdCount(data.summary.incomplete_reposts)]]:[])]),data.originalArchiveModified===false?'The original archive was preserved.':'');
+  else if(!records.length)blocks.push(op==='find'?`No cached matches for “${mdInline(query??'this query')}”.`:`No ${plural.toLowerCase()} were found in this result.`);
+  else if(records.every(record=>typeof record==='object'&&!Object.keys(record).length))blocks.push('None of the selected fields were present in these records.');
+  else if(context.selectedFields){
+    const get=(record,path)=>path.split('.').reduce((value,key)=>value?.[key],record);
+    const isUrl=path=>/(?:^url$|\.url$|Url$)/.test(path);
+    const paths=context.selectedFields.split(',').filter(path=>records.some(record=>get(record,path)!==undefined)).sort((a,b)=>Number(isUrl(a))-Number(isUrl(b)));
+    const label=path=>path.startsWith('analytics.')?mdLabel(path.split('.').at(-1)):path.split('.').map(mdLabel).join(' ');
+    const value=(record,path)=>{const found=get(record,path);return isUrl(path)&&found?mdUrl(found):/(?:At|_at)$/.test(path)&&found?mdDate(found):found&&typeof found==='object'?mdDetails(found):mdMetricValue(path.split('.').at(-1),found);};
+    blocks.push(array?mdTable(paths.map(label),records.map(record=>paths.map(path=>value(record,path)))):mdList(paths.map(path=>[label(path),value(records[0],path)])));
+  }
+  else if(op==='comments'||records.every(record=>kind(record)==='comment'))blocks.push(query?'Post: '+mdUrl(`https://www.linkedin.com/feed/update/${query}/`):'',mdComments(records,context));
+  else if(array&&records.every(record=>kind(record)==='analytics')&&records.length>1){
+    const keys=['impressionCount','reactionCount','commentCount','repostCount','saveCount','sendCount'].filter(key=>records.some(r=>key in(r.analytics??{})));
+    blocks.push(mdTable(['Post',...keys.map(mdLabel),'Updated','Link'],records.map((record,i)=>['Post '+(i+1),...keys.map(key=>mdMetricValue(key,record.analytics?.[key])),mdDate(record.analytics?.scrapedAt??record.observedAt)||'—',mdUrl(mdPostUrl(record))])));
+    records.forEach((record,i)=>{const extra={...record.analytics};for(const key of keys)delete extra[key];delete extra.likes;if(mdMetricRows(extra).length||extra.demographics||extra.videoPerformance||extra.profileViewerSummary?.length)blocks.push(mdSection('Post '+(i+1)+' — details',mdAnalytics({...record,analytics:extra},3)));});
+  }
+  else if(array&&records.every(record=>['profile','company','invitation','history'].includes(kind(record)))){
+    const columns=[];
+    if(records.some(r=>r.name||r.username||r.url||r.unavailable))columns.push(['Name',r=>mdInline(r.name??r.username??(r.unavailable?'Unavailable member':'Saved record'))]);
+    if(records.some(r=>r.headline))columns.push(['Headline',r=>mdInline(r.headline)||'—']);
+    if(records.some(r=>r.location))columns.push(['Location',r=>mdInline(r.location)||'—']);
+    if(records.some(r=>r.unavailable))columns.push(['Status',r=>r.unavailable?'Profile unavailable':'Available']);
+    if(records.some(r=>r.connectedAt))columns.push(['Connected',r=>mdDate(r.connectedAt)||'—']);
+    if(records.some(r=>r.sentAt||r.invitationMonth))columns.push(['Received',r=>mdDate(r.sentAt??r.invitationMonth)||'—']);
+    if(records.some(r=>r.visitedAt))columns.push(['Visited',r=>mdDate(r.visitedAt)||'—']);
+    if(records.some(r=>r.id&&!r.name&&!r.url&&!r.username&&!r.unavailable))columns.push(['ID',r=>mdInline(r.id)||'—']);
+    if(records.some(r=>r.url))columns.push(['Link',r=>mdUrl(r.url)]);
+    blocks.push(mdTable(columns.map(([label])=>label),records.map(record=>columns.map(([,format])=>format(record)))));
+    if(!columns.length)blocks.push(records.map(record=>mdDetails(record)).join('\n\n'));
+    for(const record of records)if(record.text&&record.text!==record.name)blocks.push(mdSection(record.name??'Notes',mdBody(record.text)));
+  }
+  else{
+    for(const [i,record]of records.entries()){
+      const type=kind(record),level=array?3:2;
+      const heading=type==='scheduled'?'Scheduled for '+mdDate(record.scheduledAt):type==='activity'?`${record.actor?.name??'Member'} — ${record.activityKind==='comments'?'comment activity':'reaction activity'}`:type==='analytics'?'Post '+(i+1):record.name??(type==='post'?'Post by '+(record.author?.name??'a LinkedIn member'):mdLabel(type??'Record'));
+      if(array&&records.length>1)blocks.push('## '+mdInline(heading));
+      if(type==='profile'||type==='company'){
+        blocks.push([mdInline(record.headline),mdInline(record.location),mdInline(record.industry),record.url?mdUrl(record.url):''].filter(Boolean).join(' · '),mdSection('About',mdBody(record.text,level+1),level));
+        for(const [name,content]of Object.entries(record.sections??{})){const cleaned=String(content).replace(new RegExp('^'+name+'\\s*\\n','i'),'');blocks.push(mdSection(mdLabel(name),mdBody(cleaned,level+1),level));}
+        if(!record.name&&!record.headline&&!record.text&&!record.sections)blocks.push(mdDetails(record));
+      }else if(type==='invitation')blocks.push([mdInline(record.name??'Inviting member'),mdInline(record.headline),record.sentAt||record.invitationMonth?'Received: '+mdDate(record.sentAt??record.invitationMonth):'',record.url?mdUrl(record.url):''].filter(Boolean).join(' · '),mdSection('Message',mdBody(record.text,level+1),level));
+      else if(type==='history')blocks.push([record.visitedAt?'Visited: '+mdDate(record.visitedAt):'',mdUrl(record.url)].filter(Boolean).join(' · '),record.text&&record.text!==record.name?mdBody(record.text,level+1):'');
+      else if(type==='scheduled')blocks.push(!array||records.length===1?'**Scheduled:** '+mdDate(record.scheduledAt):'',mdBody(record.text,level+1));
+      else if(type==='analytics')blocks.push(mdAnalytics(record,level));
+      else if(type==='activity')blocks.push(`This is ${mdInline(record.actor?.name??'the member')}’s ${record.activityKind==='comments'?'comment':'reaction'} activity on a post by ${mdInline(record.post?.author?.name??'another member')}.`,mdSection('Target post',mdPost(record.post??{text:record.text},level+1),level));
+      else if(type==='post'){
+        blocks.push(mdPost(record,level));
+        if(!record.text&&!record.content&&!record.author&&!record.url&&!record.media)blocks.push(mdDetails(record));
+      }else blocks.push(mdDetails(record));
+    }
+  }
+  const notes=[];const meta=result.meta??{};
+  if(meta.source==='cache')notes.push('Read from your local cache'+(meta.observed_at?' (last fetched '+mdDate(meta.observed_at)+')':'')+'.');
+  if(meta.stale)notes.push('This saved data may be out of date; use `--refresh` to update it.');
+  if(meta.source&&meta.source!=='cache')notes.push('Data source: '+(({voyager:'LinkedIn API','dom-feed':'visible home feed','sdui-scheduled':'LinkedIn scheduled posts','dom-analytics':'visible post analytics',import:'local archive',archive:'saved archive','native-backup':'native detailed backup'})[meta.source]??mdLabel(meta.source))+'.');
+  const observed=meta.observed_at??(!array?records[0]?.observedAt:undefined);
+  if(observed&&meta.source!=='cache'&&kind(first)!=='analytics')notes.push('Last observed '+mdDate(observed)+'.');
+  if(result.page?.fetched>result.page?.returned)notes.push(`Showing ${mdCount(result.page.returned)} of ${mdCount(result.page.fetched)} fetched records; all fetched records were saved.`);
+  if(result.page?.next)notes.push(result.page.next.resumable?'More results are available. Use `--resume` to continue this traversal.':'This is a partial feed snapshot; run the command again for a fresh snapshot.');
+  const reasons={cached_observations:'Only previously saved observations are included.',returned_scheduled_snapshot:'This is the current scheduled-post list returned by LinkedIn.',cached_record:'This is a previously saved record.',traversal_exhausted:'No more pages were returned for this traversal; this is not a guarantee of complete LinkedIn history.',previous_traversal_exhausted:'The previous traversal has ended. Start again without `--resume` to check for new data.',page_limit:'Stopped at the page limit.',item_limit:'Stopped at the requested record limit.'};
+  if(result.coverage?.reason)notes.push(reasons[result.coverage.reason]??mdLabel(result.coverage.reason)+'.');
+  if(notes.length)blocks.push(notes.join(' '));
+  const warnings=[...new Set([...(result.warnings??[]),...records.flatMap(record=>record.warnings??[])])];
+  if(warnings.length)blocks.push(mdSection('Notes',warnings.map(warning=>'- '+mdInline(warning)).join('\n')));
+  return blocks.filter(Boolean).join('\n\n').trim()+'\n';
+}
+export function render(result, format = 'markdown', fields, context = {}) {
+  if (format === 'md') format = 'markdown';
+  if (Array.isArray(result.data)) result = { ...result, data: result.data.map(record => mask(record, fields)) };
+  else if (result.data && fields) result = { ...result, data: mask(result.data, fields) };
+  if (format === 'json') return JSON.stringify(result, null, 2) + '\n';
+  if (format === 'ndjson') return [...(Array.isArray(result.data) ? result.data : [result.data]).filter(Boolean).map(record => JSON.stringify({ type: 'record', data: record })), JSON.stringify({ type: 'summary', ...result, data: undefined })].join('\n') + '\n';
+  if(format==='text'){
+    const records=(Array.isArray(result.data)?result.data:[result.data]).filter(Boolean);
+    const warnings=[...new Set([...(result.warnings??[]),...records.flatMap(record=>record.warnings??[])])];
+    return records.map(record=>`${record.name??record.author?.name??record.kind??''}\t${record.text??''}\t${record.url??record.id??''}`).join('\n\n')+(result.meta?.source?`\n\n_Source: ${result.meta.source}._`:'')+(result.coverage?.reason?`\n\n_Coverage: ${result.coverage.reason}._`:'')+(warnings.length?'\n\n'+warnings.map(warning=>'- '+warning).join('\n'):'')+'\n';
+  }
+  return renderMarkdown(result,{...context,selectedFields:fields});
+}
+
+async function runCommand(argv, { clientFactory = options => new Client(options), log = message => console.error(message) } = {}) {
+  const options = parse(argv), { operation, args, values, limit, pageSize, maxPages, sections, maxAge } = options;
+  if (values.describe) return { result: schema, options };
+  if (values.help || !operation) return { result: schema, options };
+  if (['profile','activity','backup'].includes(operation)){const target=profileTarget(args[0]);args[0]=target.identifier??'name:'+target.query;}
+  if (['post', 'analytics', 'comments', 'reposts'].includes(operation) && !options.batchAnalytics) args[0] = activityUrn(args[0]);
+  if (['people', 'posts', 'companies', 'find'].includes(operation) && (!args[0].trim() || args[0].length > 1000)) throw new Failure('INVALID_INPUT', 'Query must contain 1..1000 characters');
+  if (values['dry-run']) return { result: envelope({ data: { operation, args, network: !values.offline && Boolean(operations[operation] || operation === 'backup'), limit, maxPages, cacheWrites: Boolean(operations[operation] || operation === 'backup' || operation.startsWith('import ')) }, meta: { dry_run: true } }), options };
+  if(operation==='paths')return {result:envelope({data:appPaths(values),meta:{source:'local settings',offline:true}}),options};
+  const cache = new Cache(appPaths(values).cacheDatabase);
+  let client,self,account;const lookupMemo=new Map();
+  async function authenticate(){
+    if(client)return;
+    client=clientFactory({cdp:values.cdp??process.env.LINKEDIN_CDP??'http://localhost:9222',timeout:options.timeout,log});await client.open();self=await client.whoami();
+    const expected=values.account??process.env.LINKEDIN_ACCOUNT;
+    if(expected&&![self.id,self.username].includes(expected))throw new Failure('ACCOUNT_MISMATCH','Browser account differs from --account; switch browser session or choose the matching cache account');
+    account=self.id;cache.useAccount(account,self.username);cache.commit(account,JSON.stringify({operation:'whoami',args:[],sections:[]}),[self],null);
+  }
+  async function lookup(kind,query){
+    const memoKey=JSON.stringify([kind,lookupText(query)]);if(lookupMemo.has(memoKey))return lookupMemo.get(memoKey);
+    const saved=account?cache.lookup(account,kind,query):null;
+    if(saved&&(values.offline||values.resume||!values.refresh&&Date.now()-Date.parse(saved.observedAt)<3600000)){lookupMemo.set(memoKey,saved.data);return saved.data;}
+    if(values.offline||values.resume)throw new Failure('CACHE_MISS',`No saved ${kind} resolution for “${query}”; run this lookup online before using --offline/--resume`);
+    await authenticate();log(`Resolving ${kind}: ${query}`);
+    const data=kind==='profile'?(await client.search('people',query,null,5)).records:await client.typeahead(kind,query);
+    cache.saveLookup(account,kind,query,data);lookupMemo.set(memoKey,data);return data;
+  }
+  try {
+    const localAccount = () => cache.account(values.account ?? process.env.LINKEDIN_ACCOUNT);
+    const filters = { kind: values.kind, limit, prefix: values.prefix, since: options.since };
+    if (['find', 'export', 'cache list', 'cache get', 'cache status', 'comments', 'reposts'].includes(operation)) {
+      const account = localAccount(); let data;
+      if (operation === 'find') data = cache.search(account, args[0], filters);
+      else if (operation === 'cache status') data = cache.status(account);
+      else if (operation === 'cache get') { data = cache.get(account, args[0]); if (!data) throw new Failure('CACHE_MISS', 'No cached record matches this id or canonical URL'); }
+      else if (operation === 'comments') data = cache.db.prepare("SELECT json FROM records WHERE account=? AND kind='comment' AND json_extract(json,'$.postId')=? ORDER BY observed_at DESC LIMIT ?").all(account, args[0], limit).map(row => JSON.parse(row.json));
+      else if (operation === 'reposts') { const post = cache.get(account, args[0]); if (!post?.reposts) throw new Failure('CACHE_MISS', 'No cached repost details; run backup USER --analytics --file ARCHIVE'); data = post.reposts.slice(0, limit); }
+      else if(options.archiveExport)data=exportBackupRows(cache,account,{...filters,limit});
+      else data = cache.list(account, filters);
+      return { result: envelope({ data, meta: { account, source: 'cache', offline: true }, coverage: { complete: false, reason: 'cached_observations' } }), options };
+    }
+    if (operation.startsWith('import ')) {
+      const account = localAccount();
+      const input = expand(args[0]);
+      const data = operation === 'import history' ? await importHistory(cache, account, input, { limit: values.limit ? limit : 10000, since: options.since, log }) : await importArchive(cache, account, input, { log });
+      return { result: envelope({ data, meta: { account, source: 'import', offline: true } }), options };
+    }
+    try{account=localAccount();}catch(error){if(values.offline)throw error;}
+    if(options.facets.some(facet=>facet.key!=='network'&&facet.value.some(value=>!/^\d+$/.test(value)))){const resolved=await resolveSearchFacets(options.facets,lookup);options.facets=resolved.facets;options.resolvedFilters=resolved.selections;}
+    if(['profile','activity','backup'].includes(operation)&&profileTarget(args[0]).query){const target=await resolveProfileTarget(args[0],lookup);args[0]=target.identifier;options.resolvedProfile=target;log(`Selected profile: ${target.name} — ${target.url}`);}
+    const key = JSON.stringify({ operation, args, kind: operation === 'activity' ? values.kind ?? 'posts' : undefined, sections: [...sections].sort(), ...(options.facets.length ? { facets: options.facets } : {}), ...(options.batchAnalytics ? { since: values.since, until: values.until } : {}) });
+    const saved = account ? cache.state(account, key) : null;
+    const fresh = saved && Date.now()-Date.parse(saved.updatedAt)<=maxAge*1000&&(operation!=='scheduled'||!saved.cursor||cache.list(account,{collection:key,limit}).length>=Math.min(limit,saved.cursor.total));
+    if (values.offline || (operation !== 'backup' && operation !== 'whoami' && !options.syncing && !values.refresh && !values.resume && fresh)) {
+      if (!saved) {
+        let record;
+        if (operation === 'post') record = cache.get(account, args[0]);
+        if (operation === 'analytics') {
+          record = cache.get(account, `analytics:${args[0]}`);
+          const post = cache.get(account, args[0]);
+          if (!record && post?.analytics) record = { id: `analytics:${args[0]}`, kind: 'analytics', postId: args[0], analytics: post.analytics, observedAt: post.analytics.scrapedAt ?? post.observedAt, source: 'archive' };
+        }
+        if (operation === 'profile') record = args[0] === 'me' ? cache.get(account, account) : cache.get(account, `https://www.linkedin.com/in/${args[0]}/`);
+        if (!record) throw new Failure('CACHE_MISS', 'This query is not cached; run it online first or import the corresponding archive');
+        return { result: envelope({ data: record, meta: { account, source: 'cache', offline: true, stale: true }, coverage: { complete: false, reason: 'cached_record' } }), options };
+      }
+      const data = cache.list(account, { collection: key, limit });
+      return { result: envelope({ data: operations[operation].paged || operations[operation].many || options.batchAnalytics ? data : data[0], meta: { account, source: 'cache', offline: true, observed_at: saved.updatedAt, stale: !fresh }, coverage: { complete: false, reason: 'cached_observations' },...(operation==='scheduled'&&saved.cursor?.total>data.length?{warnings:[`${data.length} of ${saved.cursor.total} scheduled posts are cached; run scheduled --refresh online to fetch the remaining contents`]}:{}) }), options };
+    }
+    await authenticate();
+    if(operation==='scheduled'){
+      const snapshot=await client.scheduled({limit});cache.commit(account,key,snapshot.records,snapshot.records.length<snapshot.total?{total:snapshot.total}:null,{replace:true});
+      return {result:envelope({data:snapshot.records,meta:{account,source:'sdui-scheduled',cached:true},page:{fetched:snapshot.total,returned:snapshot.records.length},coverage:{complete:snapshot.records.length===snapshot.total,reason:'returned_scheduled_snapshot'}}),options};
+    }
+    if (options.batchAnalytics) {
+      const result = await syncAnalytics(cache, account, key, client, self, { limit, maxPages, pageSize, since: options.since, until: options.until, resume: values.resume, log });
+      result.page = { ...result.page, next: result.page.next ? { resumable: true } : null };
+      return { result: envelope({ ...result, meta: { ...result.meta, account, cached: true } }), options };
+    }
+    if (operation === 'backup') {
+      const data = await backup(client, cache, account, args[0] === 'me' ? self.username : args[0], { file:values.archive||values.file?expand(values.archive??values.file):defaultBackupArchive(),analytics:values.analytics,comments:!values['no-comments'],since:options.since,until:options.until,limit,maxPages,maxCommentRounds:options.maxCommentRounds,settleMs:options.settleMs,log });
+      return { result: envelope({ data, meta: { account, source: 'native-backup' } }), options };
+    }
+    let data;
+    if (!operations[operation].paged) {
+      if (operation === 'whoami') data = self;
+      if (operation === 'profile') data = await client.profile(args[0], sections);
+      if (operation === 'post') data = await client.post(args[0]);
+      if (operation === 'analytics') data = saveAnalytics(cache, account, key, await client.analytics(args[0]), cache.get(account, args[0]) ?? {});
+      else cache.commit(account, key, [data], null);
+      return { result: envelope({ data: cache.get(account, data.id), meta: { account, source: data.source, cached: true }, warnings: data.warnings ?? [] }), options };
+    }
+    let fetchPage;
+    if (['people', 'posts', 'companies'].includes(operation)) fetchPage = cursor => client.search(operation, args[0], cursor, pageSize, options.facets);
+    if (operation === 'activity') {
+      const owner = args[0] === 'me' ? self : await client.profile(args[0]);
+      cache.commit(account, `profile:${args[0]}`, [owner], null);
+      fetchPage = cursor => client.activity(owner, values.kind ?? 'posts', cursor, pageSize);
+    }
+    if (['connections', 'invitations'].includes(operation)) fetchPage = cursor => client.network(operation, cursor, pageSize);
+    if (operation === 'feed') fetchPage = cursor => client.feed(cursor, pageSize);
+    const result = await sync(cache, account, key, fetchPage, { limit, maxPages, resume: values.resume, log });
+    // Tokens stay in SQLite. Resume is bound to this account and exact query key.
+    result.page = { ...result.page, next: result.page.next ? { resumable: operation !== 'feed' } : null };
+    return { result: envelope({ ...result, meta: { ...result.meta, account, cached: true, ...(options.facets.length ? { filters: options.facets } : {}) } }), options };
+  } finally { try { await client?.close(); } finally { cache.close(); } }
+}
+
+export async function run(argv,dependencies={}){
+  const response=await runCommand(argv,dependencies),{options}=response;
+  if(!options.values.help&&!options.values.describe&&(options.resolvedFilters?.length||options.resolvedProfile))response.result={...response.result,meta:{...response.result.meta,...(options.resolvedFilters?.length?{resolved_filters:options.resolvedFilters}:{}),...(options.resolvedProfile?{resolved_profile:options.resolvedProfile}:{})}};
+  return response;
+}
+/** Only interactive Markdown is paged. Data is passed on stdin, never interpolated into a command. */
+export function presentMarkdown(output,{stream=process.stdout,env=process.env}={}){
+  if(!stream.isTTY){stream.write(output);return;}
+  const config={input:output,stdio:['pipe','inherit','inherit'],env};
+  let viewer=spawnSync('glow',['-p'],config);
+  if(['ENOENT','EACCES'].includes(viewer.error?.code)){
+    if(!env.PAGER?.trim()){stream.write(output);return;}
+    viewer=spawnSync('/bin/sh',['-c','exec '+env.PAGER],config);
+    if([126,127].includes(viewer.status)||['ENOENT','EACCES'].includes(viewer.error?.code)){stream.write(output);return;}
+  }
+  if(viewer.error)throw viewer.error;
+  if(viewer.status&&viewer.status!==0)throw new Failure('PAGER_FAILED',`Markdown viewer exited with status ${viewer.status}`);
+}
+
+export function helpText(){return `LinkedIn CLI — live reads, automatic caching and offline search
+
+${schema.usage.join('\n')}
+
+Commands:
+${Object.entries(schema.commands).map(([name,entry])=>'  '+[name,...entry.args.map(arg=>arg.toUpperCase())].join(' ').padEnd(28)+' '+entry.description).join('\n')}
+
+Options: --db PATH --offline --refresh --limit N --page-size N --max-pages N
+         --resume --fields id,text --format markdown|md (default)|json|ndjson|text
+         --params JSON --since DATE_OR_PERIOD --until DATE_OR_PERIOD
+
+Profile targets:
+  Use me, a profile URL/URN/identifier, or a quoted name: linkedin activity "First Last"
+  Names select the first accessible result in your personalized people search; the selection is shown.
+  Bare single words remain identifiers; use name:Anand to search a single-word name.
+  Applies to profile, activity and backup. Offline/resume reuses saved account-scoped resolutions.
+
+People search filters (OR within a filter; AND across filters):
+${Object.entries(schema.search_filters).map(([key,description])=>'  --'+key+': '+description).join('\n')}
+  linkedin search people engineer --location "Chennai,Singapore" --organization Tata --degree 2
+  All matching suggestions returned by LinkedIn are included, including aliases; this is a bounded suggestion list.
+  Numeric IDs/URNs still work. --refresh updates name resolutions; offline/resume requires a saved lookup.
+
+Own post analytics:
+  linkedin analytics POST --refresh
+  linkedin sync analytics me --since 7d --limit 20 --max-pages 5 [--resume]
+  Metrics: likes (=all reactions), comments, reposts, impressions, saves, sends and accessible discovery metrics.
+  Since is inclusive; until exclusive. mo=30 days, y=365 days. Date selection may use activity-ID times.
+
+Scheduled posts and local paths:
+  linkedin scheduled [--refresh|--offline]   # exact scheduled times (UTC) and full post text
+  linkedin paths                          # script, backup/lock, SQLite/WAL/SHM, config and tests
+  Scheduled posts are read only; refreshing replaces the cached active-list snapshot.
+  No app config file is used: configuration comes from flags and environment variables.
+
+Native backup (updates the existing blog-compatible JSONL):
+  linkedin backup me --limit 100
+  linkedin backup me --analytics --since 7d --limit 0
+  linkedin export --schema backup --output archive.jsonl
+  --archive PATH: default ~/Documents/data/linkedin-posts.jsonl; --file is an alias
+  --no-comments: skip comment expansion; --limit 0: no explicit post limit
+  --max-scrolls N (240), --max-comment-rounds N (30), --settle-ms N (800)
+  --max-pages is an alias for the backup scroll limit. Rerun to retry incomplete work.
+  --schema backup emits raw JSONL; default export includes all saved backup rows.
+  --dry-run previews without browser access or cache/archive changes.
+
+Output:
+  Markdown is the default. In a terminal: glow -p, then $PAGER if glow is missing, otherwise raw Markdown.
+  Pipes, --output files and structured formats bypass viewers. Post timestamps appear near the top.
+
+Examples:
+  linkedin profile "First Last" --format md
+  linkedin find agents --offline --format json | jaq .data
+  linkedin scheduled --output scheduled.md
+Use --describe for the full machine-readable interface.
+`;}
+
+async function main() {
+  try {
+    const { result, options } = await run(process.argv.slice(2));
+    if (options.values.help && !options.values.describe) {
+      process.stdout.write(helpText());
+      return;
+    }
+    const output = options.values.describe ? JSON.stringify(result, null, 2) + '\n' : options.archiveExport&&!options.values['dry-run']?result.data.map(row=>JSON.stringify(row)).join('\n')+(result.data.length?'\n':''):render(result, options.format, options.values.fields, options);
+    if(options.archiveExport&&options.values['dry-run'])process.stdout.write(output);
+    else if(options.archiveExport&&options.values.output)await writeBackupArchive(expand(options.values.output),result.data);
+    else if (options.values.output) await writeFile(expand(options.values.output), output, { mode: 0o600 });
+    else if(options.format==='markdown'&&!options.values.describe&&!options.archiveExport)presentMarkdown(output);
+    else process.stdout.write(output);
+  } catch (error) {
+    const failure = envelope({ ok: false, error: { code: error.code ?? 'ERROR', message: error.message, retryable: error.retryable ?? false, retry_after: error.retryAfter, partial: error.partial } });
+    process.stdout.write(JSON.stringify(failure) + '\n'); process.exitCode = 1;
+  }
+}
+if (process.argv[1] && existsSync(process.argv[1]) && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) await main();
