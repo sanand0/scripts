@@ -136,8 +136,7 @@ RATE_TAGS = {
     "unsupported_conclusion",
 }
 MOUNTED_PATHS = [
-    ("~/code/scripts/agents/*/SKILL.md", "coding + thinking skills"),
-    ("~/code/blog/pages/skills/*/SKILL.md", "thinking skills"),
+    ("~/code/skills/*/SKILL.md", "coding + thinking skills"),
     (
         "~/Dropbox/notes/transcripts/YYYY-MM-DD*.md",
         "date-window by filename, then read narrow ranges",

@@ -1,8 +1,0 @@
-{
-  "name": "anand-coding",
-  "description": "Anand's coding and design skills",
-  "owner": {"name": "Anand Subramanian"},
-  "plugins": [
-    {"name": "coding-skills", "source": "./agents", "skills": ["."]}
-  ]
-}

@@ -15,7 +15,7 @@ This supersedes the older setup notes below.
 
 Each home contains:
 
-- `code/` → `C:\code`: GitHub repos, including `scripts/` (this repo: shared `.gitconfig`, `agents/AGENTS.md`, setup docs)
+- `code/` → `C:\code`: GitHub repos, including `scripts/` (this repo: shared `.gitconfig`, setup docs) and `skills/`
 - `Documents/` → `C:\Documents`: personal data copied from graphene
   - `data/`: mail, chat and calendar snapshots per account, WhatsApp, browsing history, the `context/` index
   - `Mail/`: older mail as mbox files plus a search index
@@ -29,7 +29,7 @@ Each home contains:
 
 The Windows home also contains:
 
-- `.codex/AGENTS.md` → `C:\code\scripts\agents\AGENTS.md`
+- `.codex/AGENTS.md` → `C:\code\skills\AGENTS.md`
 - `.config/gws*/`: one Google Workspace CLI config per account
 
 ## Folders
@@ -308,7 +308,7 @@ Encrypted credentials may not decrypt across machines, so run `gws auth login` l
 ## Agent instructions
 
 ```powershell
-cmd /c mklink "$env:USERPROFILE\.codex\AGENTS.md" C:\code\scripts\agents\AGENTS.md   # Codex reads global rules here; file symlinks need Admin PowerShell or Developer Mode
+cmd /c mklink "$env:USERPROFILE\.codex\AGENTS.md" C:\code\skills\AGENTS.md   # Codex reads global rules here; file symlinks need Admin PowerShell or Developer Mode
 ```
 
 ## GitHub repos

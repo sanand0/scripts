@@ -553,7 +553,7 @@ def build_app() -> typer.Typer:
         codex_root: Path = typer.Option(Path("~/.codex"), help="Codex log root."),
         claude_root: Path = typer.Option(Path("~/.claude/projects"), help="Claude log root."),
         copilot_root: Path = typer.Option(Path("~/.copilot/session-state"), help="Copilot session-state root."),
-        agents_root: Path = typer.Option(Path("~/code/scripts/agents"), help="Base directory used to relativize SKILL.md paths."),
+        agents_root: Path = typer.Option(Path("~/code/skills"), help="Base directory used to relativize SKILL.md paths."),
     ) -> None:
         if describe:
             payload = {

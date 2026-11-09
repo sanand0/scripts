@@ -16,7 +16,7 @@ echo 'source ~/code/scripts/setup.fish' >> ~/.config/fish/config.fish
 echo 'source ~/code/scripts/setup.bash' >> ~/.bashrc
 ```
 
-See [`agents/`](agents/README.md) for setting up AI code editors.
+See [sanand0/skills](https://github.com/sanand0/skills) for reusable agent skills and setup instructions.
 
 ## Tests
 
