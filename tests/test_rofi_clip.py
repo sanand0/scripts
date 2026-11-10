@@ -11,8 +11,7 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "rofi" / "rofi-clip.sh"
 
 
 @pytest.mark.parametrize("failed_tool", ["xclip", "mise"])
-def test_copy_to_markdown_preserves_clipboard_on_failure(tmp_path, monkeypatch, failed_tool):
-    script = SCRIPT_PATH.parents[1] / "copy-to-markdown.sh"
+def test_direct_html_conversion_preserves_clipboard_on_failure(tmp_path, monkeypatch, failed_tool):
     writes = tmp_path / "writes"
     for tool in ("xclip", "mise"):
         content = "#!/bin/bash\n"
@@ -23,11 +22,59 @@ def test_copy_to_markdown_preserves_clipboard_on_failure(tmp_path, monkeypatch, 
         target.write_text(content)
         target.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path) + ":/usr/bin:/bin")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("DISPLAY", ":test")
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setenv("ROFI_CLIP_DEBUG_LOG", str(tmp_path / "debug.log"))
 
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True)
+    result = subprocess.run(["bash", str(SCRIPT_PATH), "--html-to-markdown"], capture_output=True, text=True)
 
     assert result.returncode != 0
     assert not writes.exists()
+
+
+@pytest.mark.parametrize("backend", ["x11", "wayland"])
+@pytest.mark.parametrize("direct", [True, False])
+def test_html_conversion_updates_expected_selections(tmp_path, monkeypatch, backend, direct):
+    writes = tmp_path / "writes"
+    reader = "xclip" if backend == "x11" else "wl-paste"
+    writer = "xclip" if backend == "x11" else "wl-copy"
+    for tool in {reader, writer, "mise", "rofi"}:
+        if tool == "rofi":
+            body = "exit 99" if direct else "cat >/dev/null; printf 'HTML → Markdown                (from clipboard HTML)'"
+        elif tool == "mise":
+            body = "cat >/dev/null; printf '**Converted**'"
+        else:
+            body = f'if [[ "$0" == *wl-paste || " $* " == *" -o "* ]]; then printf "<p>HTML only</p>"; else printf "%s\\t%s\\n" "$*" "$(cat)" >> "{writes}"; fi'
+        target = tmp_path / tool
+        target.write_text("#!/bin/bash\n" + body + "\n")
+        target.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path) + ":/usr/bin:/bin")
+    monkeypatch.setenv("DISPLAY", ":test")
+    monkeypatch.setenv("ROFI_CLIP_DEBUG_LOG", str(tmp_path / "debug.log"))
+    if backend == "wayland":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "test")
+    else:
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    command = ["bash", str(SCRIPT_PATH)] + (["--html-to-markdown"] if direct else [])
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    rows = writes.read_text().splitlines()
+    assert len(rows) == (2 if direct else 1)
+    assert all(row.endswith("\t**Converted**") for row in rows)
+    assert "primary" not in rows[0]
+    if direct:
+        assert "primary" in rows[1]
+
+
+def test_media_key_uses_direct_rofi_html_conversion():
+    config = (SCRIPT_PATH.parents[1] / "setup" / "media-keys.dconf").read_text()
+    section = config.split("[custom-keybindings/copy-to-markdown]\n", 1)[1].split("\n\n", 1)[0]
+    assert "binding='<Control><Alt>c'" in section
+    assert "command='/home/sanand/code/scripts/rofi/rofi-clip.sh --html-to-markdown'" in section
 
 
 def run_transform(transform_name: str, text: str) -> subprocess.CompletedProcess[str]:

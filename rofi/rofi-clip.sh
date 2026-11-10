@@ -1,6 +1,7 @@
 #!/bin/bash
 # rofi-clip.sh — Clipboard transformation menu via rofi
 # Dependencies: rofi, xclip (X11) or wl-clipboard (Wayland), pandoc, uv, curl, jq
+# Usage: rofi-clip.sh [--html-to-markdown] (direct conversion without the menu)
 
 set -Eeuo pipefail
 
@@ -116,14 +117,17 @@ clipboard_get() {
 clipboard_set() {
     # $1 = mime type (optional, default text/plain)
     local mime="${1:-text/plain}"
+    local selection="${2:-clipboard}"
+    local selection_args=()
+    [[ "$selection" != primary ]] || selection_args+=(--primary)
     local payload
     payload=$(cat)
     log_debug "clipboard_set mime=$mime"
     log_data "clipboard_set_payload" "$payload"
     if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
-        printf '%s' "$payload" | wl-copy --type "$mime"
+        printf '%s' "$payload" | wl-copy "${selection_args[@]}" --type "$mime"
     elif [[ -n "${DISPLAY:-}" ]]; then
-        printf '%s' "$payload" | xclip -selection clipboard -t "$mime" -i
+        printf '%s' "$payload" | xclip -selection "$selection" -t "$mime" -i
     elif [[ "$(uname)" == "Darwin" ]]; then
         printf '%s' "$payload" | pbcopy
     else
@@ -461,7 +465,7 @@ transform_richtext_to_md() {
 }
 
 transform_richtext_to_html() {
-    # Reuse copy-to-markdown.sh capture logic: read HTML from clipboard and return it.
+    # Read HTML through the shared clipboard abstraction.
     local html_content
     html_content=$(clipboard_get_html)
     [[ -z "$html_content" ]] && die "No HTML content in clipboard. Copy rich text first."
@@ -497,21 +501,35 @@ transform_ask_google_ai() {
 # ─────────────────────────────────────────────
 
 main() {
+    local direct_html=0
+    if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+        printf 'Usage: rofi-clip.sh [--html-to-markdown]\nWithout arguments, opens the transform menu.\n--html-to-markdown converts clipboard HTML directly and updates both selections.\n'
+        return
+    fi
+    [[ $# -eq 0 || ( $# -eq 1 && "$1" == --html-to-markdown ) ]] || die "Usage: rofi-clip.sh [--html-to-markdown]"
     bootstrap_tool_paths
     log_debug "run_start cwd=$(pwd) user=${USER:-unknown} shell=${SHELL:-unknown} display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:-}"
     log_runtime_deps
 
-    INPUT=$(clipboard_get)
+    if [[ $# -eq 1 ]]; then
+        direct_html=1
+        INPUT=$(clipboard_get_html)
+        CHOICE="HTML → Markdown                (from clipboard HTML)"
+    else
+        INPUT=$(clipboard_get)
+    fi
     [[ -z "$INPUT" ]] && die "Clipboard is empty."
     log_data "clipboard_input" "$INPUT"
 
-    # Present menu
-    CHOICE=$(printf '%s\n' "${MENU_LABELS[@]}" \
-        | rofi -dmenu \
-               -p "Transform clipboard" \
-               -i \
-               -theme-str 'window {width: 60%;} listview {lines: 20;}' \
-        )
+    if [[ "$direct_html" -eq 0 ]]; then
+        # Present menu
+        CHOICE=$(printf '%s\n' "${MENU_LABELS[@]}" \
+            | rofi -dmenu \
+                   -p "Transform clipboard" \
+                   -i \
+                   -theme-str 'window {width: 60%;} listview {lines: 20;}' \
+            )
+    fi
     if [[ -z "$CHOICE" ]]; then
         log_debug "menu_dismissed"
         exit 0
@@ -557,6 +575,9 @@ main() {
     if [[ "$SKIP_WRITE" -eq 0 ]]; then
         log_debug "clipboard_write mode=text/plain"
         echo -n "$RESULT" | clipboard_set "text/plain"
+        if [[ "$direct_html" -eq 1 ]]; then
+            printf '%s' "$RESULT" | clipboard_set "text/plain" primary
+        fi
     else
         log_debug "clipboard_write skipped_by_handler=1"
     fi

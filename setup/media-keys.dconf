@@ -56,7 +56,7 @@ name='Transformations'
 # Ctrl+Alt+C to convert clipboard rich text to markdown
 [custom-keybindings/copy-to-markdown]
 binding='<Control><Alt>c'
-command='/home/sanand/code/scripts/copy-to-markdown.sh'
+command='/home/sanand/code/scripts/rofi/rofi-clip.sh --html-to-markdown'
 name='Copy to Markdown'
 
 # Ctrl+Win+C opens ChatGPT after the active tab in the Edge window containing Gmail

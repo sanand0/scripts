@@ -78,8 +78,6 @@ Here are the setup details for my laptops.
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
 - [backupgoogle.py](backupgoogle.py) archives Google Mail, Calendar, and Chat from currently logged in `gws` user into `~/Documents/data/$EMAIL/{source}-YYYY-MM.jsonl`. `backupgoogle.py --since YYYY-MM-DD --until YYYY-MM-DD`. Use `--config-dir ~/.config/gws-root.node@gmail.com` for the personal account or `--config-dir ~/.config/gws-anand@study.iitm.ac.in` for IITM. `daily-activities` backs up all three accounts. Account setup and service checks: `~/Dropbox/notes/gws-cli.md`.
 - [backupchatgpt.py](backupchatgpt.py) backs up rendered ChatGPT conversations via `../tools/aiscrapers/{chatgptscraper,chatgpt-sidebar-scraper}.js`. Daily: `uv run backupchatgpt.py --limit 20 --format jsonl`. Weekly: `uv run backupchatgpt.py --rescan --limit 5`. Retry: `uv run backupchatgpt.py --conversation 'https://chatgpt.com/c/UUID' --format jsonl`. Logs: `~/.cache/sanand-scripts/backupchatgpt/YYYY-MM-runs.jsonl`
-- [backupmeet.py](backupmeet.py) archives owned Google Meet recordings/transcripts from `root.node@gmail.com` Drive into `/home/sanand/Documents/Meet Recordings/`, renames files to start with the meeting date, converts `.mp4` files to `.opus` in `/home/sanand/Documents/calls/`, and deletes Drive originals older than `--older-than 7d` after a verified copy. It refuses to run against any other `gws` account.
-  Set up the isolated login with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$HOME/.config/gws-root.node@gmail.com" gws auth login`, then run e.g. `backupmeet.py --dry-run`, `backupmeet.py --older-than 365d --type video --limit 3`, or `backupmeet.py --before "6 months ago" --type transcript`.
 - [backupwhatsapp.py](backupwhatsapp.py) backs up WhatsApp Web conversations through Chrome DevTools Protocol into `~/Documents/data/whatsapp/`. Examples: `backupwhatsapp.py --limit 5`, `backupwhatsapp.py --conversation "Family" --format jsonl`, `backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor`.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
 - [ccusage](ccusage) reports Claude Code subscription quota and resets; `ccusage --json` for agents; uses the regular Claude Code login (restart Claude Code if its token expires).
@@ -89,7 +87,6 @@ Here are the setup details for my laptops.
 - [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --save "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
 - [chatgpt-export](chatgpt-export) exports ChatGPT data dumps avoiding the 3-minute OpenAI server timeout via HTTP ranges in an authenticated Edge tab. Copy the export link from email, then run: `chatgpt-export`. <!-- https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9 -->
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
-- [copy-to-markdown.sh](copy-to-markdown.sh) converts clipboard rich text (HTML) to Markdown in clipboard. Usage: Ctrl + C, then Ctrl + Alt + C
 - [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
@@ -110,13 +107,7 @@ Here are the setup details for my laptops.
 - [git-size](git-size) shows the size of changes that `git add <repo-root>` would stage in net lines and total bytes. <!-- https://chatgpt.com/c/6a237662-c664-83ec-9416-97eb1a4b82a1 -->
 - [git-stage-repo](git-stage-repo) stages committed files from a repo _under_ the current repo. Useful when experimenting in sub-folders with git, then squashing the changes in the parent. Same files are tracked by parent and child repos. <!-- https://chatgpt.com/c/6a1d25bf-49f4-83ec-8e02-5905a22f4fe0 -->
 - [git-uncommitted](git-uncommitted) lists directories not git-synced with remote.
-- [githubscore.py](githubscore.py) evaluates GitHub developer quality.
 - [googleconnections.py](googleconnections.py) lists apps connected to the Google Account in a CDP browser on port 9222, including URL, app name, access time, permissions, and connection ID. Defaults to TSV sorted by URL; use `googleconnections.py --format csv` for CSV or `googleconnections.py --format jsonl --limit 5` for a small structured sample.
-- [gwslog.py](gwslog.py) shows recent Google Drive changes through `gws`, with cached folder paths and shared-drive names.
-  - Recent Docs: `gwslog.py --since 7d --type doc`
-  - Path/user feed: `gwslog.py --path Innovation --user s.anand@gramener.com --since 30d --format jsonl`
-  - Copy a compact list: `gwslog.py --since 1d --columns "iso user title path link" | xclip -selection clipboard`
-  - Incremental feed from another account: `GOOGLE_WORKSPACE_CLI_CONFIG_DIR=~/.config/gws-root.node@gmail.com gwslog.py since`
 - [histfreq](histfreq) ranks the most common commands from a NUL-delimited shell history stream. `history --null | uv run histfreq.py -n 40`.
 - [htmlemail.py](htmlemail.py) renders Markdown to HTML and sends as email via Gmail API. Usage: `uv run htmlemail.py --from EMAIL --email EMAIL body.md`.
   - Initialized via `htmlemail.py --init --client-secrets google-root.node-desktop_872568319651-7pde9a28vem61qfvon8pu0d9bgijv8lf.apps.googleusercontent.com.json` with Google OAuth desktop client secrets JSON.
@@ -129,10 +120,9 @@ Here are the setup details for my laptops.
 - [play-music](play-music) plays a selected MP3 in VLC followed by 10 random MP3s from `~/Music`; `rofi-files.sh` uses it for MP3s opened from the file picker.
 - [phonemusic](phonemusic) syncs top-level MP3s, `musicdump.csv`, and merged `music-history.tsv` from `~/Music` to the first mounted Android MTP phone. Run `phonemusic path` to print the current Music folder mount, or `phonemusic sync` to copy; sync logs each MP3 and resumes completed copies from per-phone checkpoints in `~/.cache/sanand-scripts/phonemusic/`. Extra phone MP3s are warned about and kept unless you pass `phonemusic sync --delete`, which removes only those extra MP3s.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
-- [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?'` opens Google AI mode, asks the question, and prints the answer. `q -m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [rgb](rgb) converts RGB to hex and vice versa.
 - [rofi-picker](rofi-picker) powers **Ctrl+Alt+F**. Type one key: [F]iles, [W]indows, [D]irectories, [B]rowser [T]abs, [P]rompts (`Ctrl+Alt+P`), [M]ap clipboard (`Ctrl+Alt+M`), [C]ommands. **Enter** runs, **Ctrl/Alt+Enter** opens contextual actions. Directories use zoxide frecency (plus Git repositories); Git actions appear only inside repositories. [File](rofi/rofi-files.sh), [directory](rofi/rofi-directories.sh), [tab](rofi/rofi-chrome-tabs.sh), and [window](rofi/rofi-window-actions.sh) handlers stay independent. VS Code terminal actions use the existing [terminal-focus binding](setup/linux.md) and type the actual command into an idle shell so fish records it.
-- [rofi-clip.sh](rofi/rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
+- [rofi-clip.sh](rofi/rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related). Ctrl + Alt + C runs `rofi/rofi-clip.sh --html-to-markdown` directly, converting clipboard HTML to Markdown in both the clipboard and primary selection.
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
 - [skilluse.py](skilluse.py) scans Codex, Claude, and Copilot logs for agent skill usage. Examples: `skilluse.py --agent codex --skill "github:*"`, `skilluse.py --format json | jaq .`, `skilluse.py --describe | jaq .`.
@@ -180,7 +170,13 @@ Here are the setup details for my laptops.
 
 ## Archive
 
-- [asu](archive/asu) is a one-off ASU GSV calendar query helper for April 2026 events; the script itself says to delete it after 20 Apr 2026.
+- [backupmeet.py](archive/backupmeet.py): I use ChatGPT when required, including to automate bulk downloads. Removed from the daily jobs.
+- [emailai](archive/emailai): I use ChatGPT because it has more context.
+- [codexlist](archive/codexlist): I use [agentlog.py](agentlog.py).
+- [githubscore.py](archive/githubscore.py): I use ChatGPT because it evaluates developers on broader, evolving criteria.
+- [gwslog.py](archive/gwslog.py): I use ChatGPT weekly, when required, to summarize Drive activity rather than just list it.
+- [q](archive/q): I do not query ChatGPT, Claude, or other assistants from the CLI.
+
 - [backuplinkedin.py](archive/backuplinkedin.py) is the archived backup implementation. Use `linkedin backup me`; the native CLI preserves the existing blog-compatible JSONL archive.
 - [daydream](archive/daydream) fuses recalled concepts into radical ideas. Example: `daydream -c llm -c oblique-strategies "web app"`
 - [gmail.py](archive/gmail.py): Gmail search CLI. Uses OAuth tokens from [google_oauth.py](google_oauth.py). Archived in favor of `gws`.

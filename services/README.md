@@ -18,7 +18,6 @@ standalone services, and can run a health check.
     only on an unmetered connection.
   - `backupgoogle.py --config-dir /home/sanand/.config/gws-anand@study.iitm.ac.in`,
     only on an unmetered connection.
-  - `backupmeet.py --yes`, only on an unmetered connection.
   - `/home/sanand/code/summary.py`.
   - `summarize.py blog`.
   - `summarize.py transcript`.
