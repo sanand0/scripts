@@ -19,10 +19,12 @@ import re
 import subprocess
 import sys
 import time
+from datetime import date, datetime
 from email import policy
 from email.parser import BytesParser
 from email.utils import getaddresses
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 WORK = "s.anand@straive.com"
 ROOT = "root.node@gmail.com"
@@ -104,14 +106,24 @@ def patch_rsvp(account: str, event: dict, self_email: str, dry_run: bool) -> Non
         raise RuntimeError(f"{account}: RSVP did not persist for {event['id']}")
 
 
-def calendar_by_uid(account: str, uid: str, recipient: str) -> dict | None:
+def calendar_by_uid(account: str, uid: str, recipient: str, instance: date | datetime | None = None) -> dict | None:
     """Find an active recipient-calendar event by UID, regardless of organizer."""
     params = {"calendarId": "primary", "iCalUID": uid, "showDeleted": False, "maxResults": 250}
-    events = gws(account, "calendar", "events", "list", "--params", json.dumps(params))
+    events = paged(account, "calendar", "events", "list", "--params", json.dumps(params))
     matches = [
-        e for e in events.get("items", [])
+        e for e in events
         if e.get("status") != "cancelled" and recipient_status(e, recipient) is not None
     ]
+    if instance is not None:
+        def original(event: dict) -> date | datetime | None:
+            start = event.get("originalStartTime", {})
+            if "date" in start:
+                return date.fromisoformat(start["date"])
+            if "dateTime" in start:
+                value = datetime.fromisoformat(start["dateTime"])
+                return value.replace(tzinfo=None) if isinstance(instance, datetime) and instance.tzinfo is None else value
+            return None
+        matches = [event for event in matches if original(event) == instance]
     if len(matches) > 1:
         raise RuntimeError(f"{account}: UID {uid} matches multiple calendar events; refusing ambiguous RSVP")
     return matches[0] if matches else None
@@ -134,8 +146,8 @@ def addresses(*values: str) -> set[str]:
     return {addr.lower() for _, addr in getaddresses(list(values)) if addr}
 
 
-def event_uid(message) -> tuple[str | None, bool]:
-    """Return iCalendar UID and whether this is a single recurring instance.
+def event_uid(message) -> tuple[str | None, date | datetime | None]:
+    """Return the iCalendar UID and original start of a recurring instance.
 
     Never import a detached instance as a new event series.
     """
@@ -147,8 +159,19 @@ def event_uid(message) -> tuple[str | None, bool]:
         ics = re.sub(r"\r?\n[ \t]", "", data.decode("utf-8", errors="replace"))
         uid = re.search(r"(?im)^UID:(.+)$", ics)
         if uid:
-            return uid.group(1).strip(), bool(re.search(r"(?im)^RECURRENCE-ID(?:;[^:]*)?:", ics))
-    return None, False
+            recurrence = re.search(r"(?im)^RECURRENCE-ID(?P<params>;[^:]*)?:(?P<value>[^\r\n]+)", ics)
+            if not recurrence:
+                return uid.group(1).strip(), None
+            value = recurrence.group("value").strip()
+            if len(value) == 8:
+                instance = datetime.strptime(value, "%Y%m%d").date()
+            else:
+                instance = datetime.strptime(value.rstrip("Z"), "%Y%m%dT%H%M%S")
+                tz = re.search(r"(?:^|;)TZID=([^;:]+)", recurrence.group("params") or "", re.I)
+                if value.endswith("Z") or tz:
+                    instance = instance.replace(tzinfo=ZoneInfo("UTC" if value.endswith("Z") else tz.group(1).strip('"')))
+            return uid.group(1).strip(), instance
+    return None, None
 
 
 def mail_matches(message, sender: str, recipient: str, prefixes: tuple[str, ...]) -> bool:
@@ -258,11 +281,8 @@ def reconcile(dry_run: bool, poll_seconds: int) -> None:
             if not uid:
                 skipped.append(f"{account}: {subject} [{id}]: missing iCalendar UID")
                 continue
-            if instance:
-                skipped.append(f"{account}: {subject} [{id}]: recurring instance needs review")
-                continue
             try:
-                event = calendar_by_uid(account, uid, self_email)
+                event = calendar_by_uid(account, uid, self_email, instance)
             except RuntimeError as exc:
                 skipped.append(f"{account}: {subject} [{id}]: {exc}")
                 continue
@@ -273,7 +293,7 @@ def reconcile(dry_run: bool, poll_seconds: int) -> None:
                 # Dry run predicts the accepted state; actual run verifies it
                 # before removing the email.
                 if dry_run or recipient_status(
-                    calendar_by_uid(account, uid, self_email), self_email
+                    calendar_by_uid(account, uid, self_email, instance), self_email
                 ) == "accepted":
                     removable[account].add(id)
                 continue
@@ -281,12 +301,15 @@ def reconcile(dry_run: bool, poll_seconds: int) -> None:
             # Recipient event really missing. Recover from the *other* calendar
             # if it has the same UID and lists this recipient as an attendee.
             try:
-                source = calendar_by_uid(other_account, uid, self_email)
+                source = calendar_by_uid(other_account, uid, self_email, instance)
             except RuntimeError as exc:
                 skipped.append(f"{account}: {subject} [{id}]: {exc}")
                 continue
             if not source:
                 skipped.append(f"{account}: {subject} [{id}]: no matching active calendar event in either account")
+                continue
+            if instance and source.get("recurringEventId"):
+                skipped.append(f"{account}: {subject} [{id}]: cannot restore a detached recurring instance")
                 continue
             restore_copy(account, other_account, source, dry_run)
             restored.add((account, uid))

@@ -1,5 +1,16 @@
 # accept-invites
 
+## Be more liberal, 10 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+-->
+
+`accept-invites` reports several "recurring instance needs review". Let's not worry about that. Accept recurring invites, too.
+
+<!-- codex resume 01a1c492-2fbd-7443-ab65-d8a17ab253ac -->
+
 ## Initial version, 05 Oct 2026
 
 <!-- Create accept invites script: https://chatgpt.com/c/6ac372a9-7cec-83ec-ae67-bd7f4755dbb6 (2026-10-05T18:18:58+08:00) -->
