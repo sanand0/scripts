@@ -180,6 +180,19 @@ abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > 
 # Replace the archived LinkedIn backup command.
 abbr --add backuplinkedin.py 'linkedin backup me'
 
+# Show LinkedIn feed for people I follow
+abbr --add linkedinfeed "begin
+  linkedin activity \\
+    # AI
+    ramar randomwalker simonwillison rkris ksayash benedictevans sethlazar \\
+    # FOSS
+    siddharta rahulporuri kailashnadh danielstenberg dlemire eatonphil \\
+    # Edu
+    gvwilson bonnistachowiak dan-meyer-02922a109 roberttalbert marc-watkins-7a760356 justin-reich-6a52a318 \\
+    # Data Viz
+    currankelleher rasagy nbremer dansaffer albertocairo abmakulec moebio georgios-karamanis-a54926153 jburnmurdoch
+end"
+
 # Replace previously used commands with a single agentlog.py
 abbr --add claudelog 'agentlog.py claude'
 abbr --add codexlog 'agentlog.py codex'
