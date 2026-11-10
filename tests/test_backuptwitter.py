@@ -13,6 +13,12 @@ sys.modules[SPEC.name] = backup
 SPEC.loader.exec_module(backup)
 
 
+def test_explicitly_incomplete_empty_week_is_retried() -> None:
+    week = backup.parse_week("2026-11-08")
+    assert not backup.existing_data_complete({"data": [], "backup": {"complete": False}}, week)
+    assert backup.existing_data_complete({"data": [], "backup": {"complete": True}}, week)
+
+
 def test_fetch_skips_broken_client_transaction_initialization(monkeypatch, tmp_path: Path, capsys) -> None:
     class FakeClient:
         def __init__(self, *args, **kwargs):

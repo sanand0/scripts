@@ -19,7 +19,7 @@ Options:
   --ref REF          Snapshot this child ref instead of HEAD.
   --prefix PATH      Stage the child tree under this path in the parent repo.
   --allow-dirty      Allow a dirty child working tree. Snapshot still uses REF/HEAD.
-  --force            Allow replacing a suspicious existing parent path.
+  --force            Allow replacing an existing parent path, discarding its local changes.
   --dry-run          Show what would be staged, but do not modify the parent index.
   -h, --help         Show this help.
 
@@ -221,6 +221,11 @@ if [ "$force" -eq 0 ] && [ -e "$parent_top/$prefix" ] && [ "$nested_at_prefix" -
      [ -z "$(git -C "$parent_top" ls-files -- "$prefix/")" ]; then
     die "prefix exists but is not tracked by parent; pass --force to replace index entries: $prefix"
   fi
+fi
+
+if [ "$force" -eq 0 ] && [ "$nested_at_prefix" -eq 0 ] && \
+   [ -n "$(git -C "$parent_top" status --porcelain=v1 --untracked-files=all --ignored -- "$prefix")" ]; then
+  die "prefix has local changes or untracked/ignored files; preserve them first or pass --force: $prefix"
 fi
 
 checkout_prefix_from_index() {

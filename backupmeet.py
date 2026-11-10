@@ -133,7 +133,7 @@ class Archive:
         return self.output.stat().st_mtime >= self.file.modified_ts
 
     def done(self) -> bool:
-        return self.complete() and (not self.opus or self.opus.exists() and self.opus.stat().st_size > 0)
+        return self.complete() and (not self.opus or self.opus.exists() and self.opus.stat().st_size > 0 and self.opus.stat().st_mtime >= self.file.modified_ts)
 
 
 def avoid_output_collisions(archives: list[Archive], calls: Path) -> list[Archive]:
@@ -230,6 +230,8 @@ def gws_json(args: list[str], config_dir: Path) -> Any:
 
 
 def verify_account(config_dir: Path, account: str) -> str:
+    if account != ACCOUNT:
+        fail(f"refusing to archive any account other than {ACCOUNT}")
     if not config_dir.exists():
         fail(
             f"gws config dir not found for {account}: {config_dir}. "
@@ -273,11 +275,13 @@ def download(archive: Archive, config_dir: Path) -> None:
         args = ["drive", "files", "get", "--params", json_compact({"fileId": file.id, "alt": "media"})]
     run_gws(args, config_dir, tmp)
     os.utime(tmp, (file.modified_ts, file.modified_ts))
+    if not Archive(file, tmp, None).complete():
+        fail(f"incomplete download; keeping Drive original and previous local copy: {file.name}")
     tmp.replace(archive.output)
 
 
 def convert(archive: Archive) -> None:
-    if not archive.opus or archive.opus.exists() and archive.opus.stat().st_size > 0:
+    if not archive.opus or archive.done():
         return
     archive.opus.parent.mkdir(parents=True, exist_ok=True)
     tmp = archive.opus.with_name(f".backupmeet.{os.getpid()}.{archive.opus.name}")
@@ -385,9 +389,9 @@ def main() -> None:
         if eligible(file) and (not args.name or args.name.lower() in file.name.lower()) and file.matches_type(args.type)
     ]
     archives = avoid_output_collisions(
-        [Archive.for_file(file, args.dest, args.calls_dir) for file in matched[: args.limit]],
+        [Archive.for_file(file, args.dest, args.calls_dir) for file in matched],
         args.calls_dir,
-    )
+    )[: args.limit]
     parent_cache: dict[str, dict[str, Any]] = {}
     events = []
     for archive in archives:
@@ -406,6 +410,8 @@ def main() -> None:
             continue
         download(archive, args.config_dir)
         convert(archive)
+        if not archive.done():
+            fail(f"archive verification failed; keeping Drive original: {archive.file.name}")
         status = "archived"
         if old_enough_to_delete(archive.file, delete_before):
             status = f"{status}-{delete_or_warn(archive, args.config_dir, parent_cache)}"

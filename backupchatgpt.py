@@ -841,8 +841,12 @@ def main(
     describe: bool = typer.Option(False, "--describe"),
 ):
     if describe:
+        from inspect import signature
         from typer.main import get_command
-        print(encoded(dict(command="backupchatgpt", parameters=[dict(name=p.name, flags=p.opts+p.secondary_opts, type=p.type.name, multiple=p.multiple, default=str(p.default) if isinstance(p.default, Path) else p.default, help=p.help) for p in get_command(app).params], output="Conversation summaries plus final run record; canonical JSONL preserves scraper messages plus conversation metadata, conversationId and contentHash", coverage="Partial sidebar, current rendered branch only; no timestamp API", sources=[str(SCRAPERS / n) for n in SOURCES])))
+        # Derive types from our CLI signature; Typer 0.29 no longer exposes Click's .type.
+        types = {"str": "text", "list[str]": "text", "int": "integer", "bool": "boolean", "Path": "path"}
+        params = signature(main).parameters
+        print(encoded(dict(command="backupchatgpt", parameters=[dict(name=p.name, flags=p.opts+p.secondary_opts, type=types[params[p.name].annotation], multiple=p.multiple, default=str(p.default) if isinstance(p.default, Path) else p.default, help=p.help) for p in get_command(app).params], output="Conversation summaries plus final run record; canonical JSONL preserves scraper messages plus conversation metadata, conversationId and contentHash", coverage="Partial sidebar, current rendered branch only; no timestamp API", sources=[str(SCRAPERS / n) for n in SOURCES])))
         return
     if format not in {"text", "jsonl"}:
         raise typer.BadParameter("--format must be text or jsonl")

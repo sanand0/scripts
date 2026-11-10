@@ -17,10 +17,11 @@ ffmpeg -hide_banner -v error \
   -compression_level 2 -application voip -frame_duration 60 \
   -y "$AUDIO"
 
-CMD="$@"
+CMD="$*"
+LLM_ARGS=(-a "$AUDIO" -m gemini-3.7-flash)
 # Read system prompt from ./ask.md
 if [[ -f ./ask.md ]]; then
-  CMD="-s $(< ./ask.md) $CMD"
+  LLM_ARGS+=(-s "$(< ./ask.md)")
 # If CMD is empty, use fzf to select a prompt
 elif [[ -z "$CMD" ]]; then
   CMD="$(echo 'Transcribe. Drop fillers (um, uh...), correct minimally.
@@ -31,7 +32,7 @@ fi
 echo "$CMD" >&2
 
 # Why Gemini not OpenAI? As of 11 Sep 2025: `llm` rejects -a with audio
-llm -a "$AUDIO" -m gemini-3.7-flash "$CMD" \
+llm "${LLM_ARGS[@]}" "$CMD" \
   | tee /dev/tty \
   | {
       if [[ $CMD =~ [Cc]ode ]]; then

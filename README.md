@@ -122,17 +122,17 @@ Here are the setup details for my laptops.
   - Initialized via `htmlemail.py --init --client-secrets google-root.node-desktop_872568319651-7pde9a28vem61qfvon8pu0d9bgijv8lf.apps.googleusercontent.com.json` with Google OAuth desktop client secrets JSON.
 - [linkedin](linkedin) CLI. Sub-commands: `linkedin profile "Person"`, `linkedin activity "Person"`, `linkedin search people engineer --location Chennai --organization Tata --degree 2`, `linkedin scheduled --refresh`, `linkedin sync analytics me`, `linkedin backup me`, ...
 - [mailindex.py](mailindex.py) builds a compact, resumable SQLite FTS index for `~/Documents/Mail/*.mbox` at `~/Documents/Mail/mail-index.sqlite`.
-- [mcpserver](mcpserver) starts or reuses the LocalMCP2 OpenAI tunnel, then runs [mcpserver.py](mcpserver.py) in the development container. Pass `dev.sh` options directly, for example `mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro`; do not add `-- mcpserver.py`. See the [LocalMCP2 setup and operations guide](setup/localmcp.md).
+- [mcpserver](mcpserver) runs [mcpserver.py](mcpserver.py) in the development container, waits for it to respond, then starts or reuses the LocalMCP2 OpenAI tunnel. Pass `dev.sh` options directly, for example `mcpserver -p ~/code/talks,~/Downloads,~/code:ro,~/r2:ro`; do not add `-- mcpserver.py`. See the [LocalMCP2 setup and operations guide](setup/localmcp.md).
 - [mcpserver.py](mcpserver.py) exposes an MCP server at `http://127.0.0.1:2428/mcp2428` that lets LLMs run Bash commands and transfer files. It runs through `dev.sh` for a consistent container environment, but this is not a hard security boundary: `dev.sh` has default host mounts, including the Docker socket, in addition to explicit `-p` mounts. See the setup guide before granting access.
 - [musictag.py](musictag.py) manages MP3 ID3 tags from `~/Music/musicdump.csv`, with dry-run cleanup diffs, CSV dump/apply parity, managed tag columns, and preserved personal `POPM`/clean long `USLT` frames. Examples: `musictag.py dump`, `musictag.py fix "Album.Title.mp3"`, `musictag.py fix --write --genre Tamil --year 2014 *.mp3`, `musictag.py check | moor`.
   - Run `dump` from `~/Music` to export top-level MP3/MP4 files. Run `musictag.py apply ~/Music/musicdump.csv` from any directory to apply MP3/MP4 tags: supplied blank cells clear fields, omitted columns stay unchanged, and comments are deleted. File mtimes are preserved.
 - [play-music](play-music) plays a selected MP3 in VLC followed by 10 random MP3s from `~/Music`; `rofi-files.sh` uses it for MP3s opened from the file picker.
 - [phonemusic](phonemusic) syncs top-level MP3s, `musicdump.csv`, and merged `music-history.tsv` from `~/Music` to the first mounted Android MTP phone. Run `phonemusic path` to print the current Music folder mount, or `phonemusic sync` to copy; sync logs each MP3 and resumes completed copies from per-phone checkpoints in `~/.cache/sanand-scripts/phonemusic/`. Extra phone MP3s are warned about and kept unless you pass `phonemusic sync --delete`, which removes only those extra MP3s.
 - [prompt](prompt) shows Markdown prompts and skills, lets you pick one via rofi, or prints the closest fuzzy match when given a filter. Triggered by Ctrl + Alt + P; `prompt git-commit` is suitable for shell pipelines.
-- [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?' --llm chatgpt` opens Google AI mode, asks the question, and prints the answer. `q --m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
+- [q](q) is a terminal AI chat interface. `q 'What is 2 + 2?'` opens Google AI mode, asks the question, and prints the answer. `q -m chatgpt 'What is 2 + 2?'` does the same with ChatGPT.
 - [rgb](rgb) converts RGB to hex and vice versa.
-- [rofi-picker](rofi-picker) powers **Ctrl+Alt+F**. Type one key: [F]iles, [W]indows, [D]irectories, [B]rowser [T]abs, [P]rompts (`Ctrl+Alt+P`), [M]ap clipboard (`Ctrl+Alt+M`), [C]ommands. **Enter** runs, **Ctrl/Alt+Enter** opens contextual actions. Directories use zoxide frecency (plus Git repositories); Git actions appear only inside repositories. [File](rofi-files.sh), [directory](rofi-directories.sh), [tab](rofi-chrome-tabs.sh), and [window](rofi-window-actions.sh) handlers stay independent. VS Code terminal actions use the existing [terminal-focus binding](setup/linux.md) and type the actual command into an idle shell so fish records it.
-- [rofi-clip.sh](rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
+- [rofi-picker](rofi-picker) powers **Ctrl+Alt+F**. Type one key: [F]iles, [W]indows, [D]irectories, [B]rowser [T]abs, [P]rompts (`Ctrl+Alt+P`), [M]ap clipboard (`Ctrl+Alt+M`), [C]ommands. **Enter** runs, **Ctrl/Alt+Enter** opens contextual actions. Directories use zoxide frecency (plus Git repositories); Git actions appear only inside repositories. [File](rofi/rofi-files.sh), [directory](rofi/rofi-directories.sh), [tab](rofi/rofi-chrome-tabs.sh), and [window](rofi/rofi-window-actions.sh) handlers stay independent. VS Code terminal actions use the existing [terminal-focus binding](setup/linux.md) and type the actual command into an idle shell so fish records it.
+- [rofi-clip.sh](rofi/rofi-clip.sh) opens a rofi clipboard transform menu (text/Markdown/Rich text/URL/date utilities), applies the selected transform, and writes back to clipboard. Triggered by Ctrl + Alt + M (since it's mostly Markdown related).
 - [rss-archive-page](rss-archive-page) is called by `uvx feed2exec fetch` via `~/.config/feed2exec.ini` to download RSS feeds into `~/Documents/rss/$FEED/*.html` as single-page HTMLs.
 - [run-at](run-at) runs a command at a specific time, setting up systemd timers. Example: `run-at '2026-08-15 14:00' bash -c "echo 'hello' > /tmp/hello.txt"`.
 - [skilluse.py](skilluse.py) scans Codex, Claude, and Copilot logs for agent skill usage. Examples: `skilluse.py --agent codex --skill "github:*"`, `skilluse.py --format json | jaq .`, `skilluse.py --describe | jaq .`.
@@ -173,11 +173,9 @@ Here are the setup details for my laptops.
 
 `services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
 
-- `consolidate-transcripts-daily.*`: Consolidate transcript learnings
 - `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
-- `update-files-weekly.*`: Update mounted files
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 
 ## Archive

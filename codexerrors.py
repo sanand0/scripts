@@ -27,7 +27,7 @@ def extract_command(args_raw: str) -> tuple[str | None, str | None]:
 
     cmd_field = None
     if isinstance(parsed, dict):
-        cmd_field = parsed.get("command")
+        cmd_field = parsed.get("cmd") or parsed.get("command")
     elif isinstance(parsed, str):
         cmd_field = parsed
 
@@ -47,9 +47,11 @@ def extract_command(args_raw: str) -> tuple[str | None, str | None]:
 def shorten(text: str, limit: int) -> str:
     if limit <= 0 or len(text) <= limit:
         return text
-    head = limit // 2
+    if limit <= 3:
+        return text[:limit]
+    head = (limit - 3) // 2
     tail = limit - head - 3
-    return f"{text[:head]}...{text[-tail:]}"
+    return f"{text[:head]}...{text[-tail:] if tail else ''}"
 
 
 def clean(text: str) -> str:
@@ -58,7 +60,7 @@ def clean(text: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Emit TSV of failing/missing commands from JSONL logs.")
-    parser.add_argument("--log-dir", default=".", help="Directory to scan recursively for *.jsonl logs.")
+    parser.add_argument("--log-dir", default=Path.home() / ".codex/sessions", help="Directory to scan recursively for *.jsonl logs.")
     parser.add_argument("--start", help="ISO datetime (inclusive).")
     parser.add_argument("--end", help="ISO datetime (inclusive).")
     parser.add_argument("--max-detail", type=int, default=160, help="Max chars to show for command detail.")
@@ -69,7 +71,7 @@ def main() -> None:
 
     call_meta: dict[str, tuple[str, str]] = {}
     counts: Counter[tuple[str, str, str, str]] = Counter()
-    exit_re = re.compile(r"Exit code:\s*(-?\d+)")
+    exit_re = re.compile(r"(?:Exit code:|Process exited with code)\s*(-?\d+)")
 
     def within_range(ts: datetime) -> bool:
         if start_ts and ts < start_ts:
@@ -78,7 +80,7 @@ def main() -> None:
             return False
         return True
 
-    def rows_for_file(path: Path) -> Iterable[tuple[str, str, str]]:
+    def rows_for_file(path: Path) -> Iterable[tuple[str, str, str, str]]:
         try:
             fh = path.open()
         except OSError:
@@ -98,7 +100,7 @@ def main() -> None:
 
                 payload = rec.get("payload", {})
                 ptype = payload.get("type")
-                if ptype == "function_call" and payload.get("name") in {"shell_command", "shell"}:
+                if ptype == "function_call" and payload.get("name", "").rsplit(".", 1)[-1] in {"shell_command", "shell", "exec_command"}:
                     base_cmd, full_cmd = extract_command(payload.get("arguments", ""))
                     if base_cmd:
                         call_meta[payload.get("call_id")] = (base_cmd, full_cmd or base_cmd)
@@ -117,7 +119,7 @@ def main() -> None:
                 try:
                     output_json = json.loads(output)
                     if isinstance(output_json, dict):
-                        meta_code = output_json.get("metadata", {}).get("exit_code")
+                        meta_code = output_json.get("exit_code", output_json.get("metadata", {}).get("exit_code"))
                         if meta_code is not None:
                             exit_code = str(meta_code)
                         inner_out = output_json.get("output")
@@ -159,7 +161,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    import os
-    os.chdir("/home/sanand/.codex/sessions/")
-
     main()

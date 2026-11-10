@@ -31,6 +31,30 @@ import htmlemail
 SCRIPT = Path(__file__).resolve().parents[1] / "htmlemail.py"
 
 
+def test_token_persistence_is_private_and_atomic(tmp_path: Path) -> None:
+    token = tmp_path / "token.json"
+    for content in ('{"refresh_token":"first"}', '{"refresh_token":"next"}'):
+        htmlemail.save_token(token, content)
+        assert token.read_text() == content
+        assert token.stat().st_mode & 0o777 == 0o600
+        token.chmod(0o644)  # Existing permissive files are secured on replacement.
+    assert sorted(tmp_path.iterdir()) == [token]
+
+
+def test_failed_token_replace_preserves_previous_credentials(tmp_path: Path, monkeypatch) -> None:
+    token = tmp_path / "token.json"
+    token.write_text("previous")
+
+    def fail_replace(*_args):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match="replacement failed"):
+        htmlemail.save_token(token, "next")
+    assert token.read_text() == "previous"
+    assert sorted(tmp_path.iterdir()) == [token]
+
+
 def render(
     tmp_path: Path,
     markdown: str,

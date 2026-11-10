@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from google_oauth import save_token
+
 import frontmatter
 import typer
 from google.auth.transport.requests import AuthorizedSession, Request
@@ -630,8 +632,7 @@ def get_credentials_for_sender(
     identity = identity_from_credentials(creds)
     validate_sender_identity(requested, identity)
 
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(creds.to_json())
+    save_token(token_path, creds.to_json())
 
     verified_email = normalized_email(str(identity["email"]))
     display_name = str(identity.get("name") or identity.get("given_name") or verified_email)

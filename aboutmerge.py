@@ -110,6 +110,8 @@ def parse_source(path: Path) -> list[H1Section]:
 
 
 def find_target(title: str, target_dir: Path) -> Path:
+    if not title or any(char in title for char in ("/", "\\", "\0")):
+        raise ValueError(f"Person heading must be a filename without path separators: {title!r}")
     expected = f"{title}.md"
     for path in target_dir.glob("*.md"):
         if path.name.casefold() == expected.casefold():

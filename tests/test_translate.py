@@ -1,10 +1,8 @@
 """Tests for the single-file translate CLI. Run: uv run --with websockets --with python-dotenv --with pytest pytest tests/test_translate.py"""
 import importlib.machinery
 import importlib.util
-import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

@@ -186,7 +186,7 @@ def stream_markdown(host: str, category_id: int, since: datetime, until: datetim
                 continue
             old_hits = 0
             op_post, posts = collect_topic_posts(client, topic, since, until)
-            if not posts:
+            if not posts and not (op_post and since <= parse_dt(op_post["created_at"]) <= until):
                 continue
             yield format_topic_block(host, topic, op_post, posts) + "\n"
 
@@ -196,7 +196,7 @@ def main(
     host: str = typer.Option(..., help="e.g. https://discourse.onlinedegree.iitm.ac.in"),
     category_id: int = typer.Option(None, help="e.g. 34"),
     topic_id: int = typer.Option(None, help="e.g. 12345"),
-    since: str = typer.Option(..., help="ISO8601 timestamp (UTC), e.g. 2025-01-31"),
+    since: str | None = typer.Option(None, help="ISO8601 timestamp (UTC), required for category mode, e.g. 2025-01-31"),
     until: str = typer.Option(None, help="ISO8601 timestamp (UTC), e.g. 2025-02-28. Defaults to now."),
 ) -> None:
     load_dotenv()
@@ -204,15 +204,17 @@ def main(
         raise typer.BadParameter("Provide --category-id or --topic-id")
     if category_id and topic_id:
         raise typer.BadParameter("Choose only one of --category-id or --topic-id")
+    if category_id and not since:
+        raise typer.BadParameter("--since is required with --category-id")
     clean_host = host.rstrip("/")
-    since_dt = parse_dt(since)
+    since_dt = parse_dt(since) if since else None
     until_dt = parse_dt(until) if until else datetime.now(timezone.utc)
     emitted = False
     if topic_id:
         with http_client(clean_host) as client:
             topic = get_json(client, f"/t/{topic_id}.json")
             op_post, posts = collect_topic_posts(client, topic, None)
-            if posts:
+            if op_post:
                 print(format_topic_block(clean_host, topic, op_post, posts))
                 emitted = True
     else:
@@ -220,7 +222,7 @@ def main(
             print(block, end="")
             emitted = True
     if not emitted:
-        print(f"No posts after {iso(since_dt)}.")
+        print(f"No posts after {iso(since_dt)}." if since_dt else "No posts.")
 
 
 if __name__ == "__main__":

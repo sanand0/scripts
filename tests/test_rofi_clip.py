@@ -4,8 +4,30 @@ from pathlib import Path
 import subprocess
 import textwrap
 
+import pytest
+
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "rofi" / "rofi-clip.sh"
+
+
+@pytest.mark.parametrize("failed_tool", ["xclip", "mise"])
+def test_copy_to_markdown_preserves_clipboard_on_failure(tmp_path, monkeypatch, failed_tool):
+    script = SCRIPT_PATH.parents[1] / "copy-to-markdown.sh"
+    writes = tmp_path / "writes"
+    for tool in ("xclip", "mise"):
+        content = "#!/bin/bash\n"
+        if tool == "xclip":
+            content += f'if [[ " $* " != *" -o "* ]]; then echo write >> "{writes}"; exit; fi\n'
+        content += "exit 1\n" if tool == failed_tool else "printf '<p>Keep</p>'\n"
+        target = tmp_path / tool
+        target.write_text(content)
+        target.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path) + ":/usr/bin:/bin")
+
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True)
+
+    assert result.returncode != 0
+    assert not writes.exists()
 
 
 def run_transform(transform_name: str, text: str) -> subprocess.CompletedProcess[str]:

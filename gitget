@@ -2,6 +2,8 @@
 
 # https://claude.ai/share/60152de8-ece4-4b04-80d9-4366dba6ca13
 
+set -euo pipefail
+
 if [ $# -lt 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     cat << 'EOF'
 Usage: gitget REPO BRANCH path:target [path:target ...]
@@ -16,7 +18,7 @@ Arguments:
   BRANCH  Branch name to checkout
   path:target  Source path in repo and destination directory (repeat as needed)
 EOF
-    exit 1
+    if [[ ${1-} == -h || ${1-} == --help ]]; then exit 0; else exit 2; fi
 fi
 
 repo="$1"
@@ -25,13 +27,16 @@ shift 2
 
 # Clone repo into temp directory
 tmpdir=$(mktemp -d)
+trap 'rm -rf -- "$tmpdir"' EXIT
 git clone --depth 1 --branch "$branch" "$repo" "$tmpdir"
 
 # Process each path:target pair
 for pair in "$@"; do
     IFS=':' read -r src dst <<< "$pair"
-    mkdir -p "$dst"
-    cp -r "$tmpdir/$src/"* "$dst/"
+    if [[ -z "$src" || -z "$dst" || "$pair" != *:* ]]; then
+        printf 'gitget: expected path:target, got %s\n' "$pair" >&2
+        exit 2
+    fi
+    mkdir -p -- "$dst"
+    cp -r -- "$tmpdir/$src/." "$dst/"
 done
-
-rm -rf "$tmpdir"

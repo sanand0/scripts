@@ -7,6 +7,7 @@
 import json
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from hashlib import sha256
 from math import log10
@@ -24,7 +25,7 @@ def api_cache(url, token, cache_dir, cache_days):
         age = datetime.now().timestamp() - cache_file.stat().st_mtime
         if age < cache_days * 86400:
             return json.loads(cache_file.read_text())
-    tqdm.write(f"API: {url}")
+    tqdm.write(f"API: {url}", file=sys.stderr)
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     response = httpx.get(url, headers=headers, timeout=30)
     response.raise_for_status()
@@ -47,7 +48,7 @@ def ratio_score(numerator, denominator, max_score):
     return max_score * (numerator / denominator) if denominator > 0 else 0
 
 
-def test_paths(repo_data):
+def test_paths(repo_data, token, cache_dir, cache_days):
     """Check if repo has test files."""
     owner, name = repo_data["owner"]["login"], repo_data["name"]
     test_patterns = [
@@ -60,7 +61,7 @@ def test_paths(repo_data):
     ]
     api_url = f"https://api.github.com/repos/{owner}/{name}/git/trees/{repo_data['default_branch']}?recursive=1"
     try:
-        tree = api_cache(api_url, os.environ["GITHUB_TOKEN"], cache_dir, cache_days)
+        tree = api_cache(api_url, token, cache_dir, cache_days)
         for item in tree.get("tree", []):
             path = item.get("path", "")
             if any(re.search(p, path) for p in test_patterns):
@@ -138,7 +139,7 @@ def get_user_data(login, since, max_repos, cache_dir, cache_days):
             pass
 
         # Tests
-        if test_paths(repo):
+        if test_paths(repo, token, cache_dir, cache_days):
             tests_count += 1
 
         # Tags
@@ -274,23 +275,14 @@ def format_yaml(data_list):
     """Format data as YAML."""
     lines = []
     for data in data_list:
-        lines.append(f"- login: {data['login']}")
+        lines.append(f"- login: {json.dumps(data['login'], ensure_ascii=False)}")
         for key, value in data.items():
             if key != "login":
-                if value is None:
-                    lines.append(f"  {key}: null")
-                elif isinstance(value, bool):
-                    lines.append(f"  {key}: {str(value).lower()}")
-                elif isinstance(value, str):
-                    lines.append(f"  {key}: {value}")
-                else:
-                    lines.append(f"  {key}: {value}")
+                lines.append(f"  {key}: {json.dumps(value, ensure_ascii=False)}")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    import sys
-
     # Parse arguments
     args = sys.argv[1:]
     since = None

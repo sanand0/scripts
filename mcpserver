@@ -200,7 +200,7 @@ until curl --silent --output /dev/null --max-time 1 "$MCP_URL"; do
     exit 1
   fi
   if ((SECONDS >= deadline)); then
-    printf 'ERROR: MCP server did not start at %s within 10 seconds\n' "$MCP_URL" >&2
+    printf 'ERROR: MCP server did not start at %s within 20 seconds\n' "$MCP_URL" >&2
     exit 1
   fi
   sleep 0.1

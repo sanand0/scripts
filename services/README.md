@@ -35,6 +35,10 @@ standalone services, and can run a health check.
   services.
 - `sync-plutonium.*`: hourly, one-way rsync of the entire
   `~/Documents/` on Graphene to `C:\Documents\` on Plutonium.
+  It also archives the selected Codex, Claude, and Copilot history/settings under
+  `C:\graphene\`, takes a consistent snapshot of Copilot's SQLite store, and
+  copies the selected private code directories and environment files listed in
+  `sync-plutonium.sh` under `C:\code\`.
   New and changed files are copied from Graphene; **Plutonium-only files are
   never deleted**. The source is checked for Windows-invalid names and
   case collisions; symlinks to files within Documents are copied as files.

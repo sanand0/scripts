@@ -736,7 +736,7 @@ systemctl --user restart espanso
   - [Emoji Copy](https://extensions.gnome.org/extension/6242/emoji-copy/) - Win+.
   - [Tiling Assistant](https://extensions.gnome.org/extension/3733/tiling-assistant/)
   - [Vitals](https://extensions.gnome.org/extension/1460/vitals/) - System monitoring
-- Install [AI Usage](./ai-usage/install.sh)
+- Install [AI Usage](../ai-usage/install.sh)
 
 Wayland enables smooth scrolling and touch gestures. (But it has problems with autokey, maybe rofi.) To enable:
 

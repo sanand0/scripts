@@ -383,7 +383,8 @@ make_tmpdir() {
     return 1
   }
   cleanup_items+=("$tmp")
-  printf '%s' "$tmp"
+  # Assign in this shell so cleanup_items survives until the EXIT trap.
+  printf -v "$1" '%s' "$tmp"
 }
 
 # cleanup removes everything we created so the repo stays clean.
@@ -506,7 +507,8 @@ if has_command uv; then
       beautifulsoup4 cairosvg numpy openpyxl pillow playwright pyyaml \
       python-docx python-pptx requests ruamel.yaml scikit-learn scipy websocket-client
   fi
-  tmp_uv="$(make_tmpdir)"
+  tmp_uv=''
+  make_tmpdir tmp_uv
   if [ -n "$tmp_uv" ]; then
     check_command_runs "uv pip install --target tmp requests" uv pip install --target "$tmp_uv" requests
   fi
@@ -523,7 +525,8 @@ if has_command npm; then
     @google/gemini-cli \
     @openai/codex
   run_check "npm ls -g pixelmatch pngjs --depth=0" npm_global_packages_present pixelmatch pngjs
-  tmp_npm="$(make_tmpdir)"
+  tmp_npm=''
+  make_tmpdir tmp_npm
   if [ -n "$tmp_npm" ]; then
     run_check "npm install lodash" npm_install_lodash "$tmp_npm"
   fi
@@ -549,7 +552,8 @@ run_check \
 run_check "system firefox absent" command_absent firefox
 check_command_runs "google-chrome-stable --version" google-chrome-stable --version
 
-tmp_system_chrome="$(make_tmpdir)"
+tmp_system_chrome=''
+make_tmpdir tmp_system_chrome
 if [ -n "$tmp_system_chrome" ]; then
   cat <<'HTML' >"$tmp_system_chrome/index.html"
 <!doctype html>
@@ -573,7 +577,8 @@ fi
 # screenshot checks below prove Playwright's version-matched Chromium, patched
 # Firefox, and patched WebKit payloads are actually usable at runtime.
 if has_command playwright; then
-  tmp_playwright="$(make_tmpdir)"
+  tmp_playwright=''
+  make_tmpdir tmp_playwright
   if [ -n "$tmp_playwright" ]; then
     cat <<'HTML' >"$tmp_playwright/index.html"
 <!doctype html>
@@ -602,7 +607,8 @@ fi
 
 # Run uvx pytest inside a temp project to prove tests can execute end to end.
 if has_command uvx; then
-  tmp_pytest="$(make_tmpdir)"
+  tmp_pytest=''
+  make_tmpdir tmp_pytest
   if [ -n "$tmp_pytest" ]; then
     # Write a tiny passing test so pytest has real work to do.
     cat <<'PY' >"$tmp_pytest/test_sample.py"

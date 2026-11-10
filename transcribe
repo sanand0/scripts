@@ -160,7 +160,7 @@ def transcribe_file(client, audio: Path, model: str, prompt: str) -> Transcript:
 @app.command()
 def main(
     audio: list[Path] = typer.Argument(..., help="One or more audio file paths."),
-    prompt: str = typer.Option("Transcribe. Drop um, uh, etc. for smooth speech. Make MINIMAL corrections. Break into logical paragraphs. Use *emphasis* or **bold** for key points.", "--prompt", help="Transcription instruction."),
+    prompt: str = typer.Option("Transcribe", "--prompt", help="Transcription instruction."),
     model: str = typer.Option(DEFAULT_MODEL, "--model", envvar="TRANSCRIBE_CALLS_MODEL", help="Gemini model."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing .md transcript."),
 ) -> None:

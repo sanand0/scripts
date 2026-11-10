@@ -146,13 +146,20 @@ run_unmetered_job() {
 }
 
 export_open_tabs() {
-  local output
+  local output temporary status
 
-  mkdir -p "$OPEN_TABS_DIR"
+  mkdir -p "$OPEN_TABS_DIR" || return
   output="$OPEN_TABS_DIR/$(date +%F).jsonl"
-  /home/sanand/code/scripts/edge tabs --json \
+  temporary=$(mktemp "${output}.XXXXXX") || return
+  if /home/sanand/code/scripts/edge tabs --json \
     | jaq -c '.timestamp as $t | .windows[] | .id as $w | .tabs[] | {timestamp:$t, window:$w, title, url, group, pinned}' \
-    >"$output"
+    >"$temporary"; then
+    mv -f -- "$temporary" "$output"
+  else
+    status=$?
+    rm -f -- "$temporary"
+    return "$status"
+  fi
 }
 
 if [[ ! -x "$UV" ]]; then

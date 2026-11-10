@@ -4,8 +4,8 @@
 #   cat file.json | tsv.jq
 #   cat file.json | jq -r ".items" | tsv.jq
 
-# Extract header from first object
-(.[0] | keys_unsorted as $headers | $headers | @tsv),
-
-# Extract data rows
-(.[] | . as $row | [.[$row | keys_unsorted[]]] | @tsv)
+# Extract header from first object and use that order for every data row.
+if length == 0 then empty else
+  (.[0] | keys_unsorted) as $headers |
+  ($headers | @tsv), (.[] | [.[$headers[]]] | @tsv)
+end

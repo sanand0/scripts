@@ -10,7 +10,11 @@ fastmcp := "3.4.7"
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-backup-chatgpt test-backup-google test-backup-observability test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-timestamp
+test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-transcribe test-translate test-timestamp
+
+# Run the offline subscription usage adapters and widget tests.
+test-ai-usage:
+    bash ai-usage/test.sh
 
 # Run the agentlog tests.
 test-agentlog:
@@ -27,6 +31,10 @@ test-backup-chatgpt:
 # Run the Google backup normalization and merge tests.
 test-backup-google:
     {{ pytest }} --with typer pytest -q tests/test_backupgoogle.py
+
+# Run the Twitter backup tests without fetching live timelines.
+test-backup-twitter:
+    {{ pytest }} --with httpx --with typer pytest -q tests/test_backuptwitter.py
 
 # Run the WhatsApp backup parser, merge, and incremental-selection tests.
 test-backup-whatsapp:
@@ -68,7 +76,7 @@ test-edge:
 test-htmlemail:
     uv run --python {{ python }} tests/test_htmlemail.py -q
 
-# Run the LinkedIn CLI tests using their PEP 723 environment.
+# Run archived Python LinkedIn CLI regressions using their PEP 723 environment.
 test-linkedin:
     uv run --python {{ python }} tests/test_linkedin.py -q
 

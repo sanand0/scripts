@@ -297,6 +297,12 @@ def test_describe_without_browser():
     schema = json.loads(result.stdout)
     assert schema['sources'] == [str(b.SCRAPERS / name) for name in b.SOURCES]
     assert next(p for p in schema['parameters'] if p['name']=='limit')['default'] == 20
+    params = {p['name']: p for p in schema['parameters']}
+    assert params['conversation']['type'] == 'text'
+    assert params['conversation']['multiple'] is True
+    assert params['limit']['type'] == 'integer'
+    assert params['dry_run']['type'] == 'boolean'
+    assert params['out_dir']['type'] == 'path'
 
 
 def exported(cid, title='Export title', content='export body'):

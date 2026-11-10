@@ -179,15 +179,16 @@ def download_attachments(messages: list[dict[str, Any]], root: Path, config_dir:
     out = root / "attachments"
     out.mkdir(parents=True, exist_ok=True)
     files = []
-    seen: dict[str, int] = {}
+    seen: set[str] = set()
     for message in messages:
         for part in attachment_parts(message):
             filename = safe_name(part["filename"])
-            seen[filename] = seen.get(filename, 0) + 1
-            if seen[filename] > 1:
-                stem = Path(filename).stem
-                suffix = Path(filename).suffix
-                filename = f"{stem}-{seen[filename]}{suffix}"
+            stem, suffix = Path(filename).stem, Path(filename).suffix
+            count = 1
+            while filename in seen:
+                count += 1
+                filename = f"{stem}-{count}{suffix}"
+            seen.add(filename)
             path = out / filename
             if not path.exists() or path.stat().st_size != part.get("body", {}).get("size"):
                 data = gws_json(

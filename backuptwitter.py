@@ -329,6 +329,8 @@ def existing_data_complete(existing: dict[str, Any] | None, week: Week) -> bool:
     if not existing:
         return False
     backup = existing.get("backup") or {}
+    if backup.get("complete") is False:
+        return False
     if backup.get("fetched_oldest_at"):
         return parse_dt({"createdAtISO": backup["fetched_oldest_at"]}) <= week.start
     if backup.get("fetched") is not None and backup.get("limit") is not None and int(backup["fetched"]) < int(backup["limit"]):

@@ -1,8 +1,6 @@
 """Shared Google OAuth helpers for local scripts.
 
-Exposes:
-- `client_config_from_env()`: builds InstalledApp client config from env vars
-- `ensure_token(scopes, token_file)`: ensures OAuth token for explicit scopes
+Exposes `ensure_token(scopes, token_file)` and private, atomic token persistence.
 
 Callers must pass both `scopes` and `token_file` explicitly. This lets callers
 use separate users/tokens per script without global defaults.
@@ -15,10 +13,27 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def save_token(token_file: Path, serialized: str) -> None:
+    """Replace a token atomically with owner-only permissions, including existing files."""
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=token_file.parent, prefix=f".{token_file.name}.", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(token_file)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def ensure_token(*, scopes: list[str], token_file: Path, force_auth: bool = False) -> str:
@@ -50,7 +65,7 @@ def ensure_token(*, scopes: list[str], token_file: Path, force_auth: bool = Fals
         """Get fresh credentials via OAuth flow, persisting in the token file"""
         flow = InstalledAppFlow.from_client_config(config, scopes)
         creds: Credentials | None = flow.run_local_server(port=0, open_browser=True)
-        token_file.write_text(creds.to_json())
+        save_token(token_file, creds.to_json())
         return creds
 
     creds: Credentials | None = None
@@ -64,7 +79,7 @@ def ensure_token(*, scopes: list[str], token_file: Path, force_auth: bool = Fals
     elif not creds.valid:
         try:
             creds.refresh(Request())
-            token_file.write_text(creds.to_json())
+            save_token(token_file, creds.to_json())
         except RefreshError:
             token_file.unlink(missing_ok=True)
             creds = get_credentials(config, scopes)

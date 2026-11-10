@@ -6,6 +6,8 @@
 
 # Dependencies: xclip, deno
 
+set -euo pipefail
+
 # CAPTURE HTML content
 html=$(xclip -selection clipboard -t text/html -o 2>/dev/null)
 
