@@ -664,7 +664,7 @@ test('explicit identities bypass people lookup and missing names/filters fail ra
 
 test('posts put timestamps first and infer missing publication time from stable activity IDs',()=>{
  const id='urn:li:activity:'+String(BigInt(Date.parse('2026-11-09T10:30:00Z'))<<22n),record={kind:'post',id,author:{name:'Author',headline:'A long headline'},text:'Body'};
- const output=render({ok:true,data:record},'md',undefined,mdContext('post'));assert.match(output,/\n\nPublished: 9 Nov 2026, 10:30 UTC \(from activity ID\) · Author/);assert.ok(output.indexOf('Published:')<output.indexOf('Body'));
+ const output=render({ok:true,data:record},'md',undefined,mdContext('post'));assert.match(output,/\nPublished: /);assert.doesNotMatch(output,/from activity ID/);assert.ok(output.indexOf('Published:')<output.indexOf('Body'));
 });
 
 test('interactive Markdown prefers glow -p, falls back to PAGER, and leaves pipes/raw fallback untouched',async()=>{
@@ -696,7 +696,7 @@ test('paths reports effective locations and configuration without credentials, b
 });
 
 test('native session cleanup closes every owned socket and browser socket after a target-close failure',async()=>{
- const client=new Client(),closed=[],targets=[];client.page={close(){closed.push('borrowed');}};client.owned=[{id:'one',page:{close(){closed.push('one');}}},{id:'two',page:{close(){closed.push('two');}}}];client.browser={async call(method,{targetId}){targets.push(targetId);if(targetId==='two')throw Error('Target disappeared');},close(){closed.push('browser');}};
+ const client=new Client(),closed=[],targets=[];client.json=async()=>[];client.page={close(){closed.push('borrowed');}};client.owned=[{id:'one',page:{close(){closed.push('one');}}},{id:'two',page:{close(){closed.push('two');}}}];client.browser={async call(method,{targetId}){targets.push(targetId);if(targetId==='two')throw Error('Target disappeared');},close(){closed.push('browser');}};
  await assert.rejects(client.close(),/Target disappeared/);assert.deepEqual(new Set(closed),new Set(['borrowed','one','two','browser']));assert.deepEqual(targets,['two','one']);
 });
 
@@ -788,4 +788,90 @@ test('native short permalinks follow a bounded HEAD redirect and restore clipboa
 
 test('machine post records carry inferred publication timestamps and the help documents human lookup/viewer behavior',async()=>{
  const {postRecord,helpText}=await import('../linkedin'),when='2026-11-09T10:30:00.000Z',id='urn:li:activity:'+String(BigInt(Date.parse(when))<<22n);const record=postRecord({metadata:{backendUrn:id},commentary:{text:'Body'}});assert.equal(record.publishedAt,when);assert.equal(record.publishedAtConfidence,'id');const help=helpText();for(const text of ['Chennai','Tata','first accessible','glow -p','$PAGER','scheduled','paths'])assert.ok(help.includes(text),text);
+});
+
+test('post Markdown has a three-line header without redundant profile or Post labels',()=>{
+ const output=render({ok:true,data:mdPost},'md',undefined,mdContext('post'));
+ const lines=output.split('\n');assert.match(lines[0],/^# Post by Ada Rao$/);assert.match(lines[1],/^Published: .* · Author: Ada Rao/);assert.equal(lines[2],mdPost.url);assert.doesNotMatch(output,/Profile:|Post: /);
+ const list=render({ok:true,data:[mdPost,{...mdPost,id:'other'}]},'md',undefined,mdContext('feed'));assert.match(list,/## Post by Ada Rao\nPublished: .*\nhttps:/);
+});
+
+test('native author lists omit keywords, OR identities and request latest',async()=>{
+ const client=new Client();let captured;client.gql=async(id,args)=>{captured=args;return {data:{data:{searchDashClustersByAll:{elements:[],paging:{total:0}}}}};};
+ await client.authorPosts([{id:'urn:li:fsd_profile:one',kind:'profile'},{id:'urn:li:fsd_profile:two',kind:'profile'},{id:'urn:li:fsd_company:123',kind:'company'}],null,5);
+ assert.equal(captured.query.keywords,undefined);assert.deepEqual(captured.query.queryParameters,[{key:'resultType',value:['CONTENT']},{key:'fromMember',value:['one','two']},{key:'fromOrganization',value:['123']},{key:'sortBy',value:['date_posted']}]);
+});
+
+test('activity usernames try profiles, fall back to exact companies, and names search people',async()=>{
+ const f=fixture(),calls=[];const factory=()=>({...f.factory(),async profile(value){calls.push('profile:'+value);if(value==='openai'||value==='Alice')throw Object.assign(Error('Missing profile'),{code:value==='openai'?'FORBIDDEN':'NOT_FOUND'});return {id:'urn:li:fsd_profile:'+value,kind:'profile',username:value,name:value,url:'https://www.linkedin.com/in/'+value+'/'};},async company(value){calls.push('company:'+value);if(value!=='openai')throw Object.assign(Error('Missing company'),{code:'NOT_FOUND'});return{id:'urn:li:fsd_company:123',kind:'company',name:'OpenAI',url:'https://www.linkedin.com/company/openai/'};},async search(){calls.push('search');return{records:[{url:'https://www.linkedin.com/in/alice-person/',name:'Alice Person'}]};},async activity(){return{records:[{id:'post',kind:'post',text:'Body'}],next:null};},async authorPosts(actors){assert.equal(actors[0].kind,'company');return{records:[{id:'company-post',kind:'post',text:'Company body'}],next:null};}});
+ try{await run(['activity','sanand0','--db',f.path],{clientFactory:factory,log(){}});assert.deepEqual(calls,['profile:sanand0']);calls.length=0;
+ await run(['activity','openai','--db',f.path],{clientFactory:factory,log(){}});assert.deepEqual(calls,['profile:openai','company:openai']);calls.length=0;
+ await run(['activity','Alice','--db',f.path],{clientFactory:factory,log(){}});assert.deepEqual(calls,['profile:Alice','company:Alice','search','profile:alice-person']);calls.length=0;
+ await run(['activity','https://www.linkedin.com/company/openai/home','--db',f.path],{clientFactory:factory,log(){}});assert.deepEqual(calls,['company:openai']);
+ }finally{f.clean();}
+});
+
+test('multiple activity profiles use one native list, sort before limiting, and work offline',async()=>{
+ const f=fixture();let requests=0;const factory=()=>({...f.factory(),async profile(value){return{id:'urn:li:fsd_profile:'+value,kind:'profile',username:value,name:value};},async authorPosts(actors){requests++;assert.equal(actors.length,2);return{records:[{id:'old',kind:'post',publishedAt:'2026-01-01'},{id:'new',kind:'post',publishedAt:'2026-11-01'}],next:null,source:'voyager'};}});
+ try{const args=['activity','sanand0','ramar','--limit','1','--db',f.path];const response=await run(args,{clientFactory:factory,log(){}});assert.equal(response.result.data[0].id,'new');assert.equal(requests,1);
+ const offline=await run([...args,'--offline'],{clientFactory(){throw Error('No browser');}});assert.equal(offline.result.data[0].id,'new');
+ assert.throws(()=>parse(['activity','one','two','--kind','comments']),e=>e.code==='INVALID_INPUT');
+ }finally{f.clean();}
+});
+
+test('feed distinguishes collapse controls from unexpanded text and hydrates embedded reposts',async()=>{
+ const {feedCards}=await import('../linkedin');const dom=await backupDom(`<div data-urn="urn:li:activity:1" role="article"><div data-testid="expandable-text-box">Full text<button aria-label="see less">less</button><button aria-hidden="true">… more</button></div><div data-testid="expandable-text-box">Original text</div></div><div data-urn="urn:li:activity:2" role="article"><div data-testid="expandable-text-box">Short text<button aria-label="see more">… more</button></div></div>`);
+ try{const snapshot=await dom.root.value(feedCards);assert.equal(snapshot.records[0].textTruncated,false);assert.equal(snapshot.records[0].text,'Full text');assert.equal(snapshot.records[1].textTruncated,true);assert.deepEqual(snapshot.hydrate,['urn:li:activity:1','urn:li:activity:2']);
+ const client=new Client();client.feedPage=dom.page;client.wait=async()=>{};const hydrated=[];client.post=async id=>{hydrated.push(id);return{id,kind:'post',text:'API full text',textTruncated:false,...(id.endsWith(':1')?{resharedPost:{text:'API original text'}}:{})};};
+ const page=await client.feed(null,2);assert.equal(page.records[0].resharedPost.text,'API original text');assert.ok(page.records.every(post=>!post.textTruncated));assert.equal(hydrated.length,2);
+ }finally{await dom.close();}
+});
+
+test('post decoder accepts direct legacy reshares and metadata identity without infinite cycles',async()=>{
+ const {postRecord}=await import('../linkedin');const original={updateMetadata:{urn:'urn:li:activity:22'},actor:{name:'Original'},commentary:{text:'Original body'}};
+ const record=postRecord({updateMetadata:{urn:'urn:li:activity:33'},actor:{name:'Reposter'},commentary:{text:'My comment'},resharedUpdate:original});assert.equal(record.id,'urn:li:activity:33');assert.equal(record.resharedPost.text,'Original body');assert.equal(record.resharedPost.url,'https://www.linkedin.com/feed/update/urn:li:activity:22/');
+ const wrapped=postRecord({metadata:{backendUrn:'urn:li:activity:33'},resharedUpdate:{'*update':'original'}},ref=>ref==='original'?original:ref);assert.equal(wrapped.resharedPost.text,'Original body');
+ original.resharedUpdate=original;assert.doesNotThrow(()=>postRecord(original));
+ const c=new Client();c.api=async()=>({data:{'*value':'media'},included:[{entityUrn:'media',actor:{name:'Author'},content:{url:'https://example.com/image.jpg'}}]});assert.equal((await c.post('urn:li:activity:33')).text,'');
+});
+
+test('activity validates explicit types, propagates auth/rate/schema errors, and keeps profile precedence',async()=>{
+ const {activityTarget,resolveActivityTarget}=await import('../linkedin');assert.deepEqual(activityTarget('https://www.linkedin.com/company/openai/home'),{company:'openai'});assert.deepEqual(activityTarget('urn:li:company:123'),{company:'123'});assert.throws(()=>activityTarget('https://linkedin.com.evil/company/openai'));assert.throws(()=>activityTarget('https://www.linkedin.com/company/'));
+ for(const code of ['AUTH_REQUIRED','RATE_LIMITED','NETWORK_ERROR','SCHEMA_CHANGED'])await assert.rejects(resolveActivityTarget('someone',{profile(){throw Object.assign(Error('Failure'),{code});},company(){throw Error('Must not try company');}},()=>{throw Error('Must not search');}),e=>e.code===code);
+ await assert.rejects(resolveActivityTarget('https://www.linkedin.com/in/missing/',{profile(){throw Object.assign(Error('Missing'),{code:'NOT_FOUND'});},company(){throw Error('Must not try company');}},()=>{throw Error('Must not search');}),e=>e.code==='NOT_FOUND');
+ const person={kind:'profile',id:'person'};assert.equal(await resolveActivityTarget('openai',{async profile(){return person;},company(){throw Error('Profile must win');}},()=>[]),person);
+});
+
+test('company decoder handles numeric URLs, missing slugs and normalized roots',async()=>{
+ const c=new Client();let path;c.api=async p=>{path=p;return{data:{entityUrn:'urn:li:fsd_company:123',name:'Example',universalName:'example'}};};assert.equal((await c.company('123')).id,'urn:li:fsd_company:123');assert.match(path,/companies\/123$/);
+ c.api=async()=>({data:{elements:[]}});await assert.rejects(c.company('missing'),e=>e.code==='NOT_FOUND');
+});
+
+test('fresh paged caches honor larger limits and refresh replaces membership without losing saved records',async()=>{
+ const f=fixture();let calls=0;const factory=()=>({...f.factory(),async search(kind,query,cursor,size){calls++;const start=cursor?.start??0;return{records:Array.from({length:size},(_,i)=>({id:'p'+(start+i),kind:'profile',name:'Person '+(start+i)})),next:{start:start+size},source:'test'};}});
+ try{const args=['people','engineer','--page-size','2','--db',f.path];await run([...args,'--limit','1'],{clientFactory:factory,log(){}});const bigger=await run([...args,'--limit','3'],{clientFactory:factory,log(){}});assert.equal(bigger.result.data.length,3);assert.equal(calls,3);}finally{f.clean();}
+ const c=new Cache(':memory:');try{c.commit('a','query',[record('old')],null);await sync(c,'a','query',async()=>({records:[record('new')],next:null}),{limit:2});assert.deepEqual(c.list('a',{collection:'query'}).map(r=>r.id),['new']);assert.ok(c.get('a','old'));}finally{c.close();}
+});
+
+test('cleanup waits until closed targets stop appearing before allowing the next invocation',async()=>{
+ const client=new Client({timeout:1000});let polls=0;const closed=[];client.owned=[{id:'closing',page:{close(){closed.push('page');}}}];client.json=async()=>++polls<3?[{id:'closing'}]:[];client.browser={async call(method){assert.equal(method,'Target.closeTarget');},close(){closed.push('browser');}};await client.close();assert.equal(polls,3);assert.deepEqual(closed,['page','browser']);
+});
+
+test('post Markdown uses local wall time across date rollover and DST without the activity-ID note',()=>{
+ const previous=process.env.TZ;
+ try{for(const [zone,when,date]of [['Asia/Singapore','2026-11-09T20:30:00Z','10 Nov 2026, 04:30 GMT+8'],['America/New_York','2026-07-09T10:30:00Z','9 Jul 2026, 06:30 GMT-4'],['America/New_York','2026-11-09T10:30:00Z','9 Nov 2026, 05:30 GMT-5']]){
+ process.env.TZ=zone;const id='urn:li:activity:'+String(BigInt(Date.parse(when))<<22n);const inferred={kind:'post',id,text:'Body'};const published={...inferred,publishedAt:when,publishedAtConfidence:'id'};
+ for(const post of [inferred,published,{...published,resharedPost:inferred}]){const output=render({ok:true,data:post},'md',undefined,mdContext('post'));assert.ok(output.includes('Published: '+date),output);assert.doesNotMatch(output,/from activity ID|UTC/);}
+ assert.equal(JSON.parse(render({ok:true,data:published},'json')).data.publishedAt,when);
+ const partial=render({ok:true,data:{...published,publishedAt:'2026-11-09'}},'md',undefined,mdContext('post'));assert.match(partial,/Published: 9 Nov 2026 ·|Published: 9 Nov 2026\n/);assert.doesNotMatch(partial,/8 Nov/);
+ }}finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});
+
+test('showcase URLs and typed showcase targets resolve through organization lookup, bypassing member ambiguity',async()=>{
+ const {activityTarget,resolveActivityTarget}=await import('../linkedin');assert.deepEqual(activityTarget('https://www.linkedin.com/showcase/claude/posts/?feedView=all'),{company:'claude'});assert.deepEqual(activityTarget('showcase:claude'),{company:'claude'});assert.throws(()=>activityTarget('https://www.linkedin.com/showcase/'));assert.throws(()=>activityTarget('showcase:bad/name'));
+ const calls=[],organization={kind:'company',id:'urn:li:fsd_company:106863934',name:'Claude',url:'https://www.linkedin.com/showcase/claude/'};
+ for(const value of ['showcase:claude','https://www.linkedin.com/showcase/claude/']){const actor=await resolveActivityTarget(value,{profile(){throw Error('Must not look up person');},async company(slug){calls.push(slug);return organization;}},()=>{throw Error('Must not search');});assert.equal(actor,organization);}assert.deepEqual(calls,['claude','claude']);
+ const f=fixture();try{const factory=()=>({...f.factory(),async company(){return organization;},async authorPosts(actors){assert.equal(actors[0].id,organization.id);return{records:[{id:'showcase-post',kind:'post',author:{name:'Claude'},text:'Showcase content',publishedAt:'2026-11-10T00:00:00Z'}],next:null,source:'voyager'};}});
+ const args=['activity','showcase:claude','--db',f.path];const live=await run(args,{clientFactory:factory,log(){}});assert.equal(live.result.data[0].author.name,'Claude');const offline=await run([...args,'--offline'],{clientFactory(){throw Error('Must stay offline');}});assert.equal(offline.result.data[0].id,'showcase-post');
+ }finally{f.clean();}
 });

@@ -9,7 +9,7 @@
 #   "pytest>=8",
 # ]
 # ///
-"""Tests for the sibling linkedin.py script."""
+"""Offline regression tests for the archived Python LinkedIn CLI."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "linkedin.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "archive" / "linkedin.py"
 SPEC = importlib.util.spec_from_file_location("linkedin", SCRIPT)
 assert SPEC and SPEC.loader
 linkedin = importlib.util.module_from_spec(SPEC)

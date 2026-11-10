@@ -1,5 +1,42 @@
 # linkedin
 
+## Improve posts and activity, 10 Nov 2026
+
+<!--
+cd ~/code/research/linkedin-cli
+codex --model gpt-6.1-sol --config model_reasoning_effort=high
+-->
+
+Update `linkedin` so that (especially for Markdown outputs):
+
+- In posts,
+  - The Profile: $URL is skipped in posts. The Post: $URL will link that anyway.
+  - The post title is the first line, the Published: and Author: are on the next line, and the post URL is the third line, without the Post:
+  - Reposts with comments / text should include the contents of the reposted post.
+  - Check why "This saved post test is incomplete" appears for some posts that DO seem complete. Some examples that happened to appear on my feed:
+    https://www.linkedin.com/feed/update/urn:li:activity:7525629644318879744/
+    https://www.linkedin.com/feed/update/urn:li:activity:7525540464230461440/
+    https://www.linkedin.com/feed/update/urn:li:activity:7525680542780944385/
+    https://www.linkedin.com/feed/update/urn:li:activity:7525498889613877249/
+- Update `linkedin activity`:
+  - Accept usernames, e.g. `linkedin activity sanand0` will show the activity of that profile. Assume that any valid LinkedIn username is a profile and test. If it fails to match a profile, treat it as a name and search.
+  - Accept multiple profiles. For example `linkedin activity sanand0 ramar` will show the activity of both profiles, sorted by most recent first. This behavior seems available natively in LinkedIn (see https://www.linkedin.com/pulse/how-take-advantage-linkedins-secret-lists-feature-mickey-mellen-munfe/) - so try and leverage the API feature for this.
+  - Accept companies, e.g. `linkedin activity openai` should show posts by OpenAI. In case of ambiguity, prefer profiles over companies. URLs, of course, make it clear: `https://www.linkedin.com/company/openai/` or `https://www.linkedin.com/company/openai/home` etc. would show OpenAI's posts.
+
+Also, find everything that's inconsistent, inefficient, or no longer needed. Fix what you’re sure about and list the rest for me to review.
+
+---
+
+In the Markdown output:
+
+- In posts
+  - I don't need "(from activity ID)" after the date.
+  - Show local time rather than UTC.
+
+How do we make sure `linkedin activity claude` lets us see posts from https://www.linkedin.com/showcase/claude/
+
+<!-- codex resume 01a1c2c6-95d6-7a90-bd16-a4fcc6b6b594 -->
+
 ## Initial research, 08 Nov 2026
 
 <!--
