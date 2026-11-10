@@ -758,7 +758,7 @@ test('scheduled components decode exact timestamps and full Unicode/multiline co
  assert.deepEqual(decodeScheduledList(scheduledListFixture([second,scheduledDescriptor])),[scheduledDescriptor,second]);const post=decodeScheduledPost(scheduledFullFixture(scheduledDescriptor,text),scheduledDescriptor);assert.equal(post.text,text.trim());assert.equal(post.scheduledAt,'2026-11-10T08:15:00.000Z');assert.equal(post.kind,'scheduled');assert.equal(decodeScheduledPost(scheduledFullFixture(scheduledDescriptor,'$1\nLiteral dollars $$5'),scheduledDescriptor).text,'$1\nLiteral dollars $$5');assert.deepEqual(decodeScheduledList(scheduledListFixture([])),[]);
  assert.throws(()=>readRscRows('0:T10,short'),e=>e.code==='SCHEMA_CHANGED');assert.throws(()=>scheduledRequest({...scheduledDescriptor,feedUpdateUrn:'invalid'}),e=>e.code==='INVALID_INPUT');assert.throws(()=>decodeScheduledPost(scheduledFullFixture(second,text),scheduledDescriptor),e=>e.code==='SCHEMA_CHANGED');
  const unknown=decodeScheduledPost('0:'+JSON.stringify({componentKey:'ScheduledPostRowSlot_'+scheduledDescriptor.feedUpdateUrn}),scheduledDescriptor);assert.equal(unknown.text,undefined);assert.equal(unknown.warnings.length,1);
- const output=render({ok:true,data:[post]},'md',undefined,mdContext('scheduled'));assert.match(output,/Scheduled posts/);assert.match(output,/10 Nov 2026, 08:15 UTC/);assert.ok(output.indexOf('Scheduled:')<output.indexOf('A queued post'));assert.doesNotMatch(output,/Published:/);
+ const output=render({ok:true,data:[post]},'md',undefined,mdContext('scheduled'));assert.match(output,/Scheduled posts/);assert.match(output,/10 Nov 2026/);assert.ok(output.indexOf('Scheduled:')<output.indexOf('A queued post'));assert.doesNotMatch(output,/Published:/);
 });
 
 test('scheduled reads only allow registered components and bound body requests by limit',async()=>{
@@ -792,8 +792,14 @@ test('machine post records carry inferred publication timestamps and the help do
 
 test('post Markdown has a three-line header without redundant profile or Post labels',()=>{
  const output=render({ok:true,data:mdPost},'md',undefined,mdContext('post'));
- const lines=output.split('\n');assert.match(lines[0],/^# Post by Ada Rao$/);assert.match(lines[1],/^Published: .* · Author: Ada Rao/);assert.equal(lines[2],mdPost.url);assert.doesNotMatch(output,/Profile:|Post: /);
+ const lines=output.split('\n');assert.match(lines[0],/^# Post by Ada Rao$/);assert.match(lines[1],/^Published: .* · Researcher\s*$/);assert.equal(lines[2],mdPost.url);assert.doesNotMatch(output,/Author:|Profile:|Post: /);
  const list=render({ok:true,data:[mdPost,{...mdPost,id:'other'}]},'md',undefined,mdContext('feed'));assert.match(list,/## Post by Ada Rao\nPublished: .*\nhttps:/);
+ assert.doesNotMatch(list,/Author:/);
+ const named=render({ok:true,data:[{...mdPost,name:'A custom title'}]},'md',undefined,mdContext('feed'));assert.match(named,/## A custom title\nPublished: .* · Author: Ada Rao/);
+ for(const name of ['Ada Rao','Ben Shah']){
+ const repost=render({ok:true,data:{...mdPost,resharedPost:{...mdPost,author:{name}}}},'md',undefined,mdContext('post'));assert.equal((repost.match(/Author:/g)??[]).length,1);assert.ok(repost.includes('Author: '+name));
+ }
+ const activity=render({ok:true,data:{kind:'activity',actor:{name:'Ben'},post:mdPost}},'md',undefined,mdContext('activity'));assert.match(activity,/Author: Ada Rao/);
 });
 
 test('native author lists omit keywords, OR identities and request latest',async()=>{
@@ -864,6 +870,35 @@ test('post Markdown uses local wall time across date rollover and DST without th
  for(const post of [inferred,published,{...published,resharedPost:inferred}]){const output=render({ok:true,data:post},'md',undefined,mdContext('post'));assert.ok(output.includes('Published: '+date),output);assert.doesNotMatch(output,/from activity ID|UTC/);}
  assert.equal(JSON.parse(render({ok:true,data:published},'json')).data.publishedAt,when);
  const partial=render({ok:true,data:{...published,publishedAt:'2026-11-09'}},'md',undefined,mdContext('post'));assert.match(partial,/Published: 9 Nov 2026 ·|Published: 9 Nov 2026\n/);assert.doesNotMatch(partial,/8 Nov/);
+ }}finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});
+
+test('all Markdown time displays use local time while structured timestamps and partial dates retain precision',()=>{
+ const previous=process.env.TZ;
+ try{for(const [zone,when,expected]of [['Asia/Singapore','2026-11-09T20:30:00Z','10 Nov 2026, 04:30 GMT+8'],['America/New_York','2026-07-09T10:30:00Z','9 Jul 2026, 06:30 GMT-4'],['America/New_York','2026-11-09T02:30:00Z','8 Nov 2026, 21:30 GMT-5']]){
+ process.env.TZ=zone;
+ const scheduled={kind:'scheduled',scheduledAt:when,text:'Queued content'};
+ const analytics={kind:'analytics',postId:mdPost.id,analytics:{scrapedAt:when,reactionCount:1}};
+ const samples=[
+ ['scheduled',scheduled],['scheduled',[scheduled]],['scheduled',[scheduled,scheduled]],
+ ['comments',[{kind:'comment',text:'Comment',publishedAt:when}]],
+ ['analytics',analytics],['analytics',[analytics,analytics]],
+ ['connections',[{kind:'profile',name:'Ada',connectedAt:when}]],
+ ['invitations',[{kind:'invitation',name:'Ada',sentAt:when}]],
+ ['cache get',{kind:'invitation',name:'Ada',sentAt:when}],
+ ['find',[{kind:'history',name:'Saved',visitedAt:when}]],
+ ['cache get',{kind:'history',name:'Saved',visitedAt:when}],
+ ['cache get',{kind:'unknown',details:{updated_at:when}}],
+ ['cache status',{counts:[],collections:[{key:'saved',updated_at:when}],runs:[{started_at:when}]}],
+ ['profile',{kind:'profile',name:'Ada',observedAt:when}],
+ ];
+ for(const [operation,data]of samples){const result={ok:true,data,meta:{source:'cache',observed_at:when}};
+ const output=render(result,'md',undefined,mdContext(operation));assert.ok(output.includes(expected),operation+': '+output);assert.doesNotMatch(output,/UTC|20:30|02:30|10:30/);
+ assert.deepEqual(JSON.parse(render(result,'json')),result);assert.deepEqual(JSON.parse(render(result,'ndjson').trim().split('\n')[0]).data,Array.isArray(data)?data[0]:data);
+ }
+ const notes=render({ok:true,data:{kind:'profile',name:'Ada'},meta:{source:'cache',observed_at:when}},'md',undefined,mdContext('profile'));assert.ok(notes.includes('last fetched '+expected));
+ for(const data of [{kind:'profile',observedAt:when},[{kind:'profile',observedAt:when}]]){const selected=render({ok:true,data},'md','observedAt',mdContext('profile'));assert.ok(selected.includes(expected),selected);}
+ const partial=render({ok:true,data:[{kind:'profile',name:'Ada',connectedAt:'2026-11-09',sentAt:'2026-11',visitedAt:'August 2026'}]},'md',undefined,mdContext('connections'));assert.match(partial,/9 Nov 2026/);assert.match(partial,/Nov 2026/);assert.match(partial,/August 2026/);assert.doesNotMatch(partial,/GMT|UTC/);
  }}finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
 });
 

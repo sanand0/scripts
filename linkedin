@@ -1625,7 +1625,7 @@ export const schema = { ...manifest, name: 'linkedin', description: 'Read-only L
   cache: 'LINKEDIN_DB or ~/.cache/sanand-scripts/linkedin-cli/cache.sqlite', output: ['markdown (default; md alias)', 'json', 'ndjson (jsonl alias)', 'text'],
   profile_targets:'me, explicit URL/URN/identifier, or quoted full name; first personalized result. Use name:QUERY for single-word names. Account-scoped lookups last 1 hour; --refresh re-resolves.',
   activity_targets:'One or more profiles, companies or showcases. Use showcase:SLUG or an explicit /showcase/ URL for showcase pages. Bare usernames try profiles, then exact company slugs, then personalized people name search; explicit URLs/URNs never switch type. Multiple actors and companies support posts only. Native fromMember/fromOrganization filters with date_posted; returned posts sorted latest first. Resolutions cached per account for 1 hour.',
-  post_dates:'Markdown post publication times use the system local timezone (or TZ); activity-ID provenance stays in JSON without a Markdown suffix. Date-only values retain their precision.',
+  post_dates:'All Markdown times use the system local timezone (or TZ); structured timestamps retain UTC ISO values. Activity-ID provenance stays in JSON without a Markdown suffix. Date-only values retain their precision.',
   viewer:'Interactive Markdown uses glow -p, then PAGER, then raw Markdown; pipes/files and JSON/JSONL/text bypass viewers.',
   record_kinds:kinds,
   search_filters: {location:'Comma-separated partial location names (Chennai, Singapore, Boston), geo IDs or urn:li:geo:ID',organization:'Comma-separated partial organization names (IBM, Tata), current-employer company IDs/URNs','past-organization':'Same name/ID resolution for previous employers',degree:'1,2,3 or F,S,O; 3 includes third-degree and beyond. OR within a filter, AND across filters. All returned typeahead matches/aliases are included.'},
@@ -1725,14 +1725,14 @@ const mdInline = value => String(value ?? '').replace(/&/g,'&amp;').replace(/</g
 const mdCount = value => typeof value === 'number' ? value.toLocaleString('en-US',{maximumFractionDigits:2}) : typeof value === 'boolean' ? value?'Yes':'No' : value === null || value === undefined ? '—' : mdInline(value);
 const mdPlural = kind => ({scheduled:'Scheduled posts',profile:'People',post:'Posts',comment:'Comments',activity:'Activity',invitation:'Invitations',company:'Companies',analytics:'Analytics',history:'Visited links'})[kind] ?? mdLabel(kind);
 const mdAmount = (count,plural) => `${mdCount(count)} ${count===1?({'Scheduled posts':'post',People:'person',Companies:'company',Posts:'post',Comments:'comment',Invitations:'invitation',Analytics:'post',Activity:'activity item','Visited links':'visited link',Records:'record'})[plural]??plural.toLowerCase():plural==='Activity'?'activity items':plural.toLowerCase()}`;
-function mdDate(value, local = false) {
+function mdDate(value) {
   if (!value && value !== 0) return '';
   if (/^\d{4}-\d{2}$/.test(String(value))) return new Date(value+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'});
   if (/^[A-Za-z]+\s+\d{4}$/.test(String(value))) return mdInline(value);
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return mdInline(value);
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(String(value));
-  const timeZone = local && !dateOnly ? undefined : 'UTC';
+  const timeZone = dateOnly ? 'UTC' : undefined;
   return date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone}) + (dateOnly ? '' : ', '+date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone,timeZoneName:'short'}));
 }
 function mdUrl(url) {
@@ -1792,11 +1792,11 @@ function mdAnalytics(record,level=2) {
   if(!record.analytics&&record.text)sections.push(mdSection('Captured text',mdBody(record.text,level+1),level));
   return [[updated?'Updated: '+mdDate(updated):'',links].filter(Boolean).join(' · '),...sections,mdMetricRows(metrics).some(row=>row[1]==='—')?'_— means this metric was not available._':''].filter(Boolean).join('\n\n');
 }
-function mdPost(record,level=2) {
+function mdPost(record,level=2,heading='') {
   const author=record.author??{name:record.name,url:record.profile,headline:record.description};
-  const info=[author.name?'Author: '+mdInline(author.name):'',mdInline(author.headline)].filter(Boolean).join(' · ');
+  const info=[author.name&&heading!=='Post by '+author.name?'Author: '+mdInline(author.name):'',mdInline(author.headline)].filter(Boolean).join(' · ');
   const published=record.publishedAt??record.postedAt,fromId=!published&&backupIdDate(record.id??record.postId??record.url);
-  const date=published?mdDate(published,true)+(['id','exact'].includes(record.publishedAtConfidence??record.postedAtConfidence)?'':record.publishedAtConfidence?' (estimated)':''):fromId?mdDate(fromId,true):mdInline(record.relativeTime??record.postedText??'');
+  const date=published?mdDate(published)+(['id','exact'].includes(record.publishedAtConfidence??record.postedAtConfidence)?'':record.publishedAtConfidence?' (estimated)':''):fromId?mdDate(fromId):mdInline(record.relativeTime??record.postedText??'');
   const metrics={...(record.analytics??{}),...Object.fromEntries(['reactionCount','commentCount','repostCount','impressionCount','replyCount'].filter(key=>key in record).map(key=>[key,record[key]]))};
   const counts=['impressionCount','reactionCount','commentCount','repostCount','replyCount'].filter(key=>key in metrics&&metrics[key]!==null).map(key=>mdCount(metrics[key])+' '+({impressionCount:'impressions',reactionCount:'reactions',commentCount:'comments',repostCount:'reposts',replyCount:'replies'})[key]).join(' · ');
   const attachments=(record.media??[]).map((media,i)=>'- '+mdInline(mdLabel(media.kind??'attachment')+(media.alt?' — '+media.alt:' '+(i+1)))+': '+mdUrl(media.url));
@@ -1896,8 +1896,8 @@ function renderMarkdown(result,context={}) {
       else if(type==='analytics')blocks.push(mdAnalytics(record,level));
       else if(type==='activity')blocks.push(`This is ${mdInline(record.actor?.name??'the member')}’s ${record.activityKind==='comments'?'comment':'reaction'} activity on a post by ${mdInline(record.post?.author?.name??'another member')}.`,mdSection('Target post',mdPost(record.post??{text:record.text},level+1),level));
       else if(type==='post'){
-        if(array)blocks.push('## '+mdInline(heading)+'\n'+mdPost(record,level));
-        else blocks[0]+='\n'+mdPost(record,level);
+        if(array)blocks.push('## '+mdInline(heading)+'\n'+mdPost(record,level,heading));
+        else blocks[0]+='\n'+mdPost(record,level,title);
         if(!record.text&&!record.content&&!record.author&&!record.url&&!record.media)blocks.push(mdDetails(record));
       }else blocks.push(mdDetails(record));
     }
@@ -2113,7 +2113,7 @@ Own post analytics:
   Since is inclusive; until exclusive. mo=30 days, y=365 days. Date selection may use activity-ID times.
 
 Scheduled posts and local paths:
-  linkedin scheduled [--refresh|--offline]   # exact scheduled times (UTC) and full post text
+  linkedin scheduled [--refresh|--offline]   # exact scheduled times (local timezone) and full post text
   linkedin paths                          # script, backup/lock, SQLite/WAL/SHM, config and tests
   Scheduled posts are read only; refreshing replaces the cached active-list snapshot.
   No app config file is used: configuration comes from flags and environment variables.

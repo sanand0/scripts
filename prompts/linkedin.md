@@ -1,5 +1,19 @@
 # linkedin
 
+## Improve posts and activity further, 10 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=high
+-->
+
+Update `linkedin` so that (especially for Markdown outputs):
+
+- Posts don't repeat `Author: ...` if it was a `## Post by ...` the same author.
+- `linkedin scheduled` shows time in local timezone, not UTC. Same for any other command that shows time.
+
+<!-- codex resume 01a1c4e7-9050-71c3-b92c-e008772b4c20 -->
+
 ## Improve posts and activity, 10 Nov 2026
 
 <!--
