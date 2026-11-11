@@ -297,13 +297,23 @@ S4U runs without a password or admin privileges. The separate home-directory sha
 
 ## Google Workspace
 
-Copy `client_secret.json` from each Linux config folder into the matching `$HOME\.config\` folder:
+On Plutonium, all three directories already exist under `C:\Users\Anand\.config\` (`$env:USERPROFILE/.config`), each with `client_secret.json` (checked 11 Nov 2026):
 
 - `~/.config/gws/` (default account)
 - `~/.config/gws-root.node@gmail.com/`
 - `~/.config/gws-anand@study.iitm.ac.in/`
 
 Encrypted credentials may not decrypt across machines, so run `gws auth login` locally for each. Select a non-default account with `GOOGLE_WORKSPACE_CLI_CONFIG_DIR` and verify with `gws auth status`.
+
+On Plutonium, log back in from PowerShell. Open the fresh URL, select **s.anand@straive.com**, and keep the command running until it succeeds:
+
+```powershell
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-anand@study.iitm.ac.in"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-root.node@gmail.com"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+```
+
+Remote Desktop Commander: use the same config and full `gws.cmd` path; its PATH may be stale. Straive Gmail, Calendar, Drive and Chat verified on 11 Nov 2026.
 
 ## Agent instructions
 
