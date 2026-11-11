@@ -1,5 +1,14 @@
 # services
 
+## Fix sync, 11 Nov 2026
+
+<!-- Sync Plutonium Graphene Agent Sessions and .env: https://chatgpt.com/c/6ae843eb-9774-83ec-9192-bac0a4d58897 (2026-11-04T16:26:49+05:30) -->
+
+Fix this and similar issues. What's a smart way to do this?
+
+🔴 2026-11-11T11:44:36+08:00 ERROR NTFS-compatibility Unsafe symlink target: /home/sanand/code/exam/.private/face-expressions/.venv-pyfeat/lib64 -> /home/sanand/code/exam/.private/face-expressions/.venv-pyfeat/lib
+🔴 2026-11-11T11:44:36+08:00 END status=failed mode=apply elapsed=2s source_files=0 transferred_files=0 transferred_data=0B sent=0B received=0B
+
 ## Sync more files, 02 Nov 2026
 
 <!-- Sync Plutonium Graphene Agent Sessions and .env: https://chatgpt.com/c/6ae843eb-9774-83ec-9192-bac0a4d58897 (2026-11-04T16:26:49+05:30) -->

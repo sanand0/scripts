@@ -35,6 +35,21 @@ SYNC_FILES=(
   code/scripts/.env
 )
 
+# Re-creatable Linux dependencies and tool caches. Match directory names at
+# any depth in both the preflight validator and every rsync transfer.
+SKIP_DIRS=(
+  '.venv*'
+  venv
+  node_modules
+  __pycache__
+  .pytest_cache
+  .ruff_cache
+  .mypy_cache
+  .wrangler
+  .cloudflare
+  .rsync-partial
+)
+
 cache="$HOME/.cache/sanand-scripts/sync-plutonium"
 mkdir -p "$cache"
 exec 9>"$cache/run.lock"
@@ -128,24 +143,25 @@ fi
 
 # Preserve Documents filenames containing ':' with Windows-safe '%3A' names.
 # Other invalid names, case collisions and unsafe symlinks still fail the sync.
-if ! python3 - "$work" "${validate_sources[@]}" >"$work/check.log" 2>&1 <<'PY_VALIDATE'
-import os, re, sys
+if ! python3 - "$work" "${SKIP_DIRS[@]}" -- "${validate_sources[@]}" >"$work/check.log" 2>&1 <<'PY_VALIDATE'
+import fnmatch, os, re, sys
 from collections import Counter
 from pathlib import Path
 
 work = Path(sys.argv[1])
-roots = [Path(arg).resolve() for arg in sys.argv[2:]]
+split = sys.argv.index("--")
+skip_dirs = sys.argv[2:split]
+roots = [Path(arg).resolve() for arg in sys.argv[split + 1:]]
 documents = roots[0]
 renames = []
 for root in roots:
-    copilot = root.parts[-2:] == (".copilot", "session-state")
     if root.is_file():
         if any(c in root.name for c in '<>:"\\|?*'):
             sys.exit(f"Unsafe Windows filename: {root}")
         continue
     for base, dirs, files in os.walk(root, followlinks=False):
-        if copilot:
-            dirs[:] = [d for d in dirs if d != ".venv-playwright"]
+        dirs[:] = [d for d in dirs
+                   if not any(fnmatch.fnmatchcase(d, pattern) for pattern in skip_dirs)]
         names = dirs + files
         folded = Counter(n.casefold() for n in names)
         for name in names:
@@ -221,13 +237,19 @@ details() {
   done <<<"$text"
 }
 
+# Apply the same directory exclusions in rsync and the preflight scanner.
+exclude_args=()
+for dir in "${SKIP_DIRS[@]}"; do
+  exclude_args+=(--exclude="$dir/")
+done
+
 # Run one group at a time, preserving existing no-delete and logging behavior.
 run_sync() {
   local label="$1" code
   shift
   if rsync -rlt --copy-links --partial-dir=.rsync-partial \
        --no-perms --no-owner --no-group --omit-dir-times \
-       --exclude='.rsync-partial/' --timeout=300 --stats \
+       "${exclude_args[@]}" --timeout=300 --stats \
        --rsync-path='C:/cygwin/bin/rsync.exe' -e "$ssh_cmd" \
        "${dry_run[@]}" "$@" >"$work/rsync.log" 2>&1; then
     :
@@ -279,8 +301,7 @@ then
 fi
 
 # The staged path includes 'graphene/' and all source subpaths.
-# Skip Copilot's generated Playwright virtual environment.
-run_sync graphene --relative --exclude='.venv-playwright/' \
+run_sync graphene --relative \
   "$work/./graphene/" "Anand@plutonium:/cygdrive/c/"
 
 # Preserve 'code/' in the destination path for both dirs and individual files.

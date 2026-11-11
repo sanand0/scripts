@@ -39,8 +39,11 @@ standalone services, and can run a health check.
   copies the selected private code directories and environment files listed in
   `sync-plutonium.sh` under `C:\code\`.
   New and changed files are copied from Graphene; **Plutonium-only files are
-  never deleted**. The source is checked for Windows-invalid names and
-  case collisions; symlinks to files within Documents are copied as files.
+  never deleted**. Windows-invalid names and case collisions are checked;
+  colon-containing Documents filenames are copied with Windows-safe names.
+  `SKIP_DIRS` excludes regenerable environments and caches (such as `.venv*`,
+  `node_modules`, `__pycache__`, and `.wrangler`) from both validation and rsync.
+  Symlinks to files within the selected trees are copied as files.
 - `*.{service,timer}.disabled`: reference units that are intentionally not
   installed by `setup.sh`. This includes the retired
   `consolidate-transcripts-daily.*` units.
