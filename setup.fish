@@ -856,6 +856,7 @@ end
 # https://chatgpt.com/c/6ad6a7f9-15d8-83ec-b648-3656df59bc14
 # Background AV1 NVENC compression: pause at 79°C, resume below 70°C.
 # Default CQ 55 (lower = better quality); encode at full speed, monitor GPU temperature.
+# Require 4:2:0 for Ada NVENC; retain 8-bit inputs and allow 10-bit camera inputs.
 # Usage: videocompress [-q|--quality 45] "/path/to/File Name.mp4" -> file-name.webm
 function videocompress --description "Background AV1 compression with GPU thermal protection"
     argparse 'q/quality=!_validate_int' 'h/help' -- $argv; or return 2
@@ -898,7 +899,7 @@ function videocompress --description "Background AV1 compression with GPU therma
         input=$1 output=$2 cq=$3
         tmp="$output.partial-$$.webm"
         ffmpeg -nostdin -n -hide_banner -loglevel error -stats -i "$input" \
-            -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq "$cq" -b:v 0 -spatial-aq 1 \
+            -vf "format=pix_fmts=yuv420p|p010le" -c:v av1_nvenc -preset p6 -tune uhq -rc vbr -cq "$cq" -b:v 0 -spatial-aq 1 \
             -c:a libopus -b:a 24k -vbr on -compression_level 10 "$tmp" &
         pid=$!
         trap '\''kill -CONT "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null; rm -f "$tmp"'\'' EXIT
