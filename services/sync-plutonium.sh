@@ -22,8 +22,9 @@ GRAPHENE_FILES=(
 )
 # The Copilot session-store.db gets a consistent SQLite snapshot.
 
-# Mirror these code paths as-is into C:\code\ on Plutonium.
+# Mirror these home-relative paths as-is into C:\ on Plutonium.
 SYNC_DIRS=(
+  r2
   code/tds-network-games/.private
   code/exam/dumps
   code/exam/.private
@@ -99,7 +100,7 @@ finish() {
 trap 'finish $?' EXIT
 trap 'rc=$?; log "🔴" "ERROR line=$LINENO exit=$rc command=$BASH_COMMAND"' ERR
 
-log '🟢' "START mode=$mode targets=C:/Documents/,C:/graphene/,C:/code/ policy=update-no-delete"
+log '🟢' "START mode=$mode targets=C:/Documents/,C:/graphene/,C:/code/,C:/r2/ policy=update-no-delete"
 
 # Same metered-network safeguard as the other services.
 if [[ "${SYNC_DOCUMENTS_ALLOW_METERED:-0}" != 1 ]]; then
@@ -304,7 +305,7 @@ fi
 run_sync graphene --relative \
   "$work/./graphene/" "Anand@plutonium:/cygdrive/c/"
 
-# Preserve 'code/' in the destination path for both dirs and individual files.
+# Preserve home-relative destination paths for both dirs and individual files.
 sync_paths=()
 for relative in "${SYNC_DIRS[@]}"; do
   sync_paths+=("$HOME/./$relative/")
@@ -312,4 +313,4 @@ done
 for relative in "${SYNC_FILES[@]}"; do
   sync_paths+=("$HOME/./$relative")
 done
-run_sync code --relative "${sync_paths[@]}" "Anand@plutonium:/cygdrive/c/"
+run_sync paths --relative "${sync_paths[@]}" "Anand@plutonium:/cygdrive/c/"

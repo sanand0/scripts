@@ -1,5 +1,16 @@
 # services
 
+## Sync r2, 12 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Update services/sync-plutonium.sh to sync ~/r2 from graphene to Plutonium. Follow the existing style and principles. Run and test.
+
+<!-- codex resume 01a1cd4d-bc36-7b41-93b1-9179eb0825e2 -->
+
 ## Fix sync, 11 Nov 2026
 
 <!-- Sync Plutonium Graphene Agent Sessions and .env: https://chatgpt.com/c/6ae843eb-9774-83ec-9192-bac0a4d58897 (2026-11-04T16:26:49+05:30) -->

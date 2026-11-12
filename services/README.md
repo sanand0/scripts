@@ -33,7 +33,8 @@ standalone services, and can run a health check.
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
 - `sync-plutonium.*`: hourly, one-way rsync of the entire
-  `~/Documents/` on Graphene to `C:\Documents\` on Plutonium.
+  `~/Documents/` on Graphene to `C:\Documents\` on Plutonium, and
+  `~/r2/` to `C:\r2\`.
   It also archives the selected Codex, Claude, and Copilot history/settings under
   `C:\graphene\`, takes a consistent snapshot of Copilot's SQLite store, and
   copies the selected private code directories and environment files listed in
@@ -77,9 +78,9 @@ Run from this directory:
 `~/.config/systemd/user/`. If systemd is running an old copied unit, move that
 file aside and re-run setup so the repo version is linked.
 
-## Hourly Documents Sync
+## Hourly Plutonium Sync
 
-`./sync-plutonium.sh --dry-run` syncs ~/Documents/ from graphene to Plutonium via rsync/SSH on Tailscale.
+`./sync-plutonium.sh --dry-run` previews the Documents, r2, agent-history, and selected code syncs from Graphene to Plutonium via rsync/SSH on Tailscale.
 Plutonium files are updated, but never deleted.
 
 The systemd timer runs hourly after Graphene resumes or the user logs in.
