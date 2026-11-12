@@ -102,6 +102,7 @@ class TranscriptionResult:
     error: str | None = None
     saved_cost_usd: float | None = 0.0
     chunk_costs: tuple[float | None, ...] = ()
+    finish_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -337,12 +338,61 @@ def render_chunk_timestamps(transcript: str, start_seconds: float) -> str:
     return timestamp_tools().shift_chunk(transcript, round(start_seconds))[0]
 
 
+# Model-only text Gemini sometimes writes before the first speaker turn. Regexes match the start of a
+# stripped line, case-insensitively; add `$` to require the whole line. When a warning reports kept
+# text that is model output, add a pattern here.
+# PREAMBLE: any matching line marks everything before the first turn as leaked reasoning (often a full draft).
+TRANSCRIPT_PREAMBLE = (
+    r"thought$",  # Thinking-mode marker emitted as plain text, not as an API thought part.
+    r"The user wants ",
+    r"An accurate and verbatim transcript ",
+    r"Let's (?:carefully (?:listen|transcribe)|(?:listen|transcribe) (?:carefully|meticulously))",  # Not "Let's transcribe that".
+)
+# FILLER: drops just the matching lines; any other line is kept and reported.
+TRANSCRIPT_FILLER = (
+    r"Notice the audio ",
+    r"Transcribing verbatim",
+    r"Transcribe the call recording",
+    r"Speaker identifications?:",
+    r"Sure[,!. ]+(?:here|below)",
+    r"Here(?: is|'s) (?:the|your) .*(?:transcri|record|conversation)",
+    r"The following is (?:a|the) transcri",
+    r"(?:\*{3,}|-{3,})$",
+    r"This is (?:a |the )?(?:transcript|transcription|part \d)",
+    r"This (?:call recording features|meeting is a discussion) ",
+)
+
+
+def repair_transcript_formatting(transcript: str) -> str:
+    """Separate timed speaker turns and remove known model-only text before the first turn.
+
+    Untimed bold labels and chunk-boundary fragments can be speech, so unrecognized lines are kept and reported.
+    This changes neither the spoken text nor any timestamps.
+    """
+    marker = r"\*\*[^*\n]+(?:\*\*:?|:\*\*)[ \t]+\[\d{2}:\d{2}(?::\d{2})?(?:\s*-\s*\d{2}:\d{2}(?::\d{2})?)?\]"
+    cleaned = re.sub(r"(?<=[^\n])(?=" + marker + r")", "\n\n", transcript.strip())
+    first = re.search(marker, cleaned)
+    if not first:
+        return cleaned
+    lines = [line.strip() for line in cleaned[:first.start()].splitlines() if line.strip()]
+    if any(re.match("|".join(TRANSCRIPT_PREAMBLE), line, re.IGNORECASE) for line in lines):
+        return cleaned[first.start():]
+    kept = [line for line in lines if not re.match("|".join(TRANSCRIPT_FILLER), line, re.IGNORECASE)]
+    if kept:
+        typer.echo(f"WARNING: kept text before first speaker line: {' | '.join(kept)[:200]!r}. "
+            "If it is model output, add a regex to TRANSCRIPT_FILLER or TRANSCRIPT_PREAMBLE in call.", err=True)
+    if kept == lines:
+        return cleaned  # Nothing removed: keep the original layout.
+    return "\n\n".join(["\n".join(kept), cleaned[first.start():]]).strip()
+
+
 def normalize_chunk(transcript: str, window: tuple[float, float]) -> tuple[str, str | None]:
     """Repair formatting and clear offsets; preserve text when timestamps are ambiguous."""
     cleaned = transcript.strip()
     fence = CODE_FENCE_RE.fullmatch(cleaned)
     if fence:
         cleaned = fence[1].strip()
+    cleaned = repair_transcript_formatting(cleaned)
     # Reserve the note's separator for actual audio chunks; keep model decorations equivalent.
     cleaned = cleaned.replace("\n\n---\n\n", "\n\n***\n\n")
     if is_silence(cleaned):
@@ -804,7 +854,13 @@ def read_cached_chunk(cache_path: Path) -> TranscriptionResult | None:
     state = read_chunk_state(cache_path)
     if state.get("status") not in {"complete", "received", "needs_review"}:
         return None
-    return TranscriptionResult(state["raw_transcript"], UsageCost(0, 0, 0, 0.0), error=state.get("error"))
+    error = state.get("error")
+    if error and state["raw_transcript"] and "finish_reasons" in state:
+        # Re-check paid responses with current rules so a fixed false positive costs nothing to recover.
+        error = response_error(state["raw_transcript"], state["finish_reasons"], state.get("prompt_feedback"))
+    elif error and (legacy := re.search(r"Gemini returned incomplete output; finish_reason=([^;]*); prompt_feedback=([^.]*)\.", error)):
+        error = response_error(state["raw_transcript"], legacy[1].split(","), legacy[2])
+    return TranscriptionResult(state["raw_transcript"], UsageCost(0, 0, 0, 0.0), error=error)
 
 
 def write_chunk_state(cache_path: Path, state: dict[str, Any]) -> None:
@@ -1053,6 +1109,24 @@ def emit_remaining_warnings(
         )
 
 
+def response_error(transcript: str, reasons: list[str] | tuple[str, ...], prompt_feedback: str | None) -> str | None:
+    """Name the specific check a model response failed, with the evidence that triggered it."""
+    finish = ",".join(reasons) or "no candidates"
+    bad_finish = next((reason for reason in reasons if reason.rsplit(".", 1)[-1] not in {"STOP", "unknown"}), None)
+    if not transcript:
+        return (f"Gemini returned empty output (finish_reason={finish}; prompt_feedback={prompt_feedback}). "
+            "Check audio/prompt for blocking; if MAX_TOKENS, reduce --chunk; otherwise retry or choose --model.")
+    if bad_finish:
+        return (f"Gemini stopped early: finish_reason={bad_finish} after {len(transcript)} chars "
+            f"(prompt_feedback={prompt_feedback}). If MAX_TOKENS, reduce --chunk; otherwise retry or choose --model.")
+    # Speakers can say "I cannot process..."; only a response with no speaker lines is a refusal.
+    refused = re.search(r"(?:cannot|can't|unable to) (?:assist|transcribe|process)", transcript, re.IGNORECASE)
+    if refused and not looks_like_transcript(transcript):
+        excerpt = " ".join(transcript.split())[:200]
+        return f"Gemini refused (matched {refused[0]!r}, no speaker lines): {excerpt!r}. Retry or choose --model."
+    return None
+
+
 def transcribe_single_audio(
     audio_path: Path,
     system_prompt: str,
@@ -1101,17 +1175,8 @@ def transcribe_single_audio(
         finish_reasons=reasons, prompt_feedback=str(getattr(response, "prompt_feedback", None)),
         usage=asdict(usage), raw_usage=raw_usage.model_dump(mode="json") if hasattr(raw_usage, "model_dump") else None,
         pricing=rates, transcript_chars=len(transcript))
-    bad_finish = next((reason for reason in reasons if reason.rsplit(".", 1)[-1] not in {"STOP", "unknown"}), None)
-    error = None
-    refused = re.search(r"(?:cannot|can't|unable to) (?:assist|transcribe|process)", transcript, re.IGNORECASE)
-    if not transcript or bad_finish or refused:
-        error = (
-            f"Gemini returned {'empty output' if not transcript else 'incomplete output'}; "
-            f"finish_reason={','.join(reasons) or 'no candidates'}; "
-            f"prompt_feedback={getattr(response, 'prompt_feedback', None)}. "
-            "Check audio/prompt for blocking; if MAX_TOKENS, reduce --chunk; otherwise retry or choose --model."
-        )
-    return TranscriptionResult(transcript, usage, error=error)
+    error = response_error(transcript, reasons, str(getattr(response, "prompt_feedback", None)))
+    return TranscriptionResult(transcript, usage, error=error, finish_reasons=tuple(reasons))
 
 
 def transcribe_audio(
@@ -1195,7 +1260,7 @@ def transcribe_audio(
                         break
                     state["attempts"].append({"usage": asdict(result.usage), "error": result.error})
                     state.update(version=2, status="received", transcript=result.transcript,
-                        raw_transcript=result.transcript, error=result.error,
+                        raw_transcript=result.transcript, error=result.error, finish_reasons=list(result.finish_reasons),
                         request={"audio": str(audio_path.resolve()), "size": audio_path.stat().st_size,
                             "mtime_ns": audio_path.stat().st_mtime_ns, "window": windows[index - 1],
                             "chunk_index": index, "chunk_count": len(windows), "model": model,
@@ -1231,7 +1296,8 @@ def transcribe_audio(
             transcripts.append(TranscriptionResult(local, usage))
             context.append(local)
             if failure:
-                warnings.append(InvalidTranscriptWarning(index, len(windows), count_matching_transcript_lines(local), failure))
+                warnings.append(InvalidTranscriptWarning(index, len(windows), count_matching_transcript_lines(local),
+                    f"{failure} Raw response: {cache_path}" if cache_path else failure))
                 # Never alter ambiguous timestamps or conceal failed text; only explicit patches re-request it.
                 rendered.append(local or "[Transcription failed: no usable text; rerun call or use --patch.]")
                 stopped = True

@@ -2406,3 +2406,77 @@ def test_inline_timestamps_preserve_valid_prefix_without_paid_retry(revision_cas
     assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 1
     state = json.loads(next((c.root / 'cache').glob('chunk-*.json')).read_text())
     assert 'Spurious continuation' in state['raw_transcript']
+
+
+def test_normalize_real_model_preamble_and_glued_speaker_turns():
+    module = load_module()
+    raw = ('Notice the audio cut off at 20:00, which corresponds to the first part of the recording.\n'
+           'Transcribing verbatim, keeping tone accurate, marking bold on key points / takeaways as requested.\n'
+           'Speaker identifications: Anand, Hritik, Sujal, Jaideep, Atharva.**Anand**: [00:00] Hey, Hritik.\n\n'
+           '**Hritik**: [00:02] Hi, Anand.**Jaideep:** [00:09] Hi, Anand.')
+    text, warning = module.normalize_chunk(raw, (0, 1200))
+    assert text == '**Anand**: [00:00] Hey, Hritik.\n\n**Hritik**: [00:02] Hi, Anand.\n\n**Jaideep:** [00:09] Hi, Anand.'
+    assert warning is None
+    assert module.count_matching_transcript_lines(text) == 3
+    assert module.normalize_chunk(text, (0, 1200))[0] == text
+
+
+def test_format_repair_preserves_unrecognized_intro_and_spoken_formatting():
+    module = load_module()
+    raw = ('[The meeting starts during a demonstration.]**Anand**: [00:01] Click **Save**: it keeps your work.\n\n'
+           '**Hritik**: [00:04] The note says **Next steps**: ship Friday.')
+    text, warning = module.normalize_chunk(raw, (0, 20))
+    assert '[The meeting starts during a demonstration.]\n\n**Anand**:' in text
+    assert '**Save**: it keeps your work.' in text
+    assert '**Next steps**: ship Friday.' in text
+    assert warning is None
+
+
+def test_speech_containing_refusal_phrase_is_not_a_refusal() -> None:
+    module = load_module()
+    speech = "**Nand**: [00:00] So, I cannot process, irrespective of who I am, 1,000 videos."
+    assert module.response_error(speech, ["FinishReason.STOP"], "None") is None
+    error = module.response_error("I cannot transcribe this audio.", ["FinishReason.STOP"], "None")
+    assert "refused" in error and "I cannot transcribe this audio." in error
+    assert "stopped early: finish_reason=MAX_TOKENS" in module.response_error(speech, ["MAX_TOKENS"], "None")
+
+
+def test_cached_false_positive_error_is_rechecked_without_new_request(tmp_path) -> None:
+    module = load_module()
+    cache = tmp_path / "chunk.json"
+    speech = "**Nand**: [00:00] So, I cannot process, irrespective of who I am."
+    legacy_error = ("Gemini returned incomplete output; finish_reason=FinishReason.STOP; prompt_feedback=None. "
+        "Check audio/prompt for blocking; if MAX_TOKENS, reduce --chunk; otherwise retry or choose --model.")
+    state = {"version": 2, "status": "received", "transcript": speech, "raw_transcript": speech,
+        "attempts": [{"usage": None, "error": legacy_error}], "error": legacy_error}
+    cache.write_text(json.dumps(state))
+    assert module.read_cached_chunk(cache).error is None
+    cache.write_text(json.dumps(state | {"error": "x", "finish_reasons": ["FinishReason.STOP"]}))
+    assert module.read_cached_chunk(cache).error is None
+
+
+def test_leaked_thought_marker_before_first_turn_is_removed() -> None:
+    module = load_module()
+    raw = "thought\n**Premlal**: [05:20] Hey Anand.\n\n**Sujal**: [05:24] I thought so."
+    assert module.repair_transcript_formatting(raw) == raw.removeprefix("thought\n")
+    kept = "thoughtful remark\n**Premlal**: [05:20] Hey Anand."
+    assert module.repair_transcript_formatting(kept) == kept
+
+
+def test_unknown_text_before_first_turn_is_kept_and_reported(capsys) -> None:
+    module = load_module()
+    raw = "Here's the complete transcript of the call:\n***\nand that's the end of it.\n**Premlal**: [05:20] Hey Anand."
+    assert module.repair_transcript_formatting(raw) == "and that's the end of it.\n\n**Premlal**: [05:20] Hey Anand."
+    assert "kept text before first speaker line: \"and that's the end of it.\"" in capsys.readouterr().err
+    clean = "Here is the transcript:\n**Premlal**: [05:20] Hey Anand."
+    assert module.repair_transcript_formatting(clean) == "**Premlal**: [05:20] Hey Anand."
+    assert capsys.readouterr().err == ""
+
+
+def test_leaked_reasoning_marker_anywhere_drops_whole_preamble(capsys) -> None:
+    module = load_module()
+    raw = "times\nthought\n**Nutan**: [00:00] couple of data engineers."
+    assert module.repair_transcript_formatting(raw) == "**Nutan**: [00:00] couple of data engineers."
+    draft = "The user wants a transcript.\nRules:\n- Drop fillers.\n00:00 - Anand: \"Hi\"\n**Anand**: [00:00] Hi."
+    assert module.repair_transcript_formatting(draft) == "**Anand**: [00:00] Hi."
+    assert capsys.readouterr().err == ""

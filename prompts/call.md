@@ -1,6 +1,19 @@
 # Transcribe Calls
 
-##
+## Fix errors, 12 Nov 2026
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+Why is `call "AI Builders"` failing? Fix it and prevent it from happening again - sensibly.
+
+--- <!-- steering -->
+
+Make it easier for me to see the reason for such failures (by printing relevant information).
+
+## Fix errors, 06 Nov 2026
 
 <!--
 cd ~/code/scripts
@@ -29,6 +42,9 @@ durable exact-request caches and diagnostic logs for every operational run.
 Dry runs write diagnostic logs only. Keep `timestamp.py` for legacy/ambiguous notes.
 Benchmark thinking, continuity context and chunk sizes before changing defaults;
 prefer transcript fidelity over a lower token bill when they conflict.
+Re-check cached errors with current rules. Strip leaked reasoning (`TRANSCRIPT_PREAMBLE`)
+and known filler (`TRANSCRIPT_FILLER`) before the first speaker turn; keep and warn on
+anything else, since chunks can start mid-sentence.
 
 ## Fix errors, 01 Oct 2026
 

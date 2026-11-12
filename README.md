@@ -137,6 +137,7 @@ Here are the setup details for my laptops.
   - Transcribe/resume: `call "Meeting"`; add context with `call "Meeting" --prompt "Speaker names and context"`.
   - Plan: `call "Meeting" --dry-run`; list pending/incomplete notes: `call --list-changes | moor`. Both save logs.
   - Logs in `~/.cache/sanand-scripts/transcribe_calls/run.jsonl`
+- [meetcall](meetcall) downloads and transcribes recordings from my Google calendar using `call` to transcribe it. Usage: `meetcall "Call name"`, `meetcall --scan --days 3 --dry-run`, `meetcall TDS --after "2 months ago" --before yesterday`.
 - [timestamp.py](timestamp.py) repairs timestamps in older/ambiguous transcripts; new `call` output already uses cumulative timestamps. It idempotently makes timestamps cumulative across legacy chunks. Bare names resolve to the latest descending filename match under `~/Dropbox/notes/transcripts`; use `--chunk-starts 0,25,50` for ambiguous chunk boundaries. Examples: `timestamp.py Naveen`, `timestamp.py Naveen Ankor --dry-run`, `timestamp.py "2026-09-01 GIPCL" --chunk-starts 0,30,60,90,120`, `timestamp.py --describe | jaq .`.
 - [update-files](update-files) caches directory listings for `rofi-files.sh`. It excludes bulky generated/archive trees (e.g. HostGator backup, Go modules, MCP temp files, old GitLab copies, Hugo output), but not file types. Previously selected paths remain available through `frecent.txt`; to find a different file in an excluded tree, browse or search that directory explicitly.
 

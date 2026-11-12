@@ -1,0 +1,465 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12", "dateparser>=1.2", "google-genai>=1.67", "python-dotenv>=1", "pyyaml>=6"]
+# ///
+"""Fetch the latest matching completed calendar meeting and transcribe it.
+
+Examples:
+    meetcall --scan --days 7 --dry-run
+    meetcall TDS --dry-run
+    meetcall Innovation --date 'last Wednesday' --chat messages.txt
+    meetcall 'TDS Weekly' --before yesterday --after '2 months ago'
+    meetcall --describe | jaq .
+
+Matching follows call: case-insensitive exact date-prefixed name first,
+then literal substring. Use the latest occurrence in the first matching calendar;
+stop before searching more calendars/accounts. --date is a local calendar day;
+--before excludes that day, --after excludes that day. Future/ongoing calls are excluded.
+--scan checks all calendars for recordings without completed local transcripts;
+--days defaults to 7. Explicit --date/--after override that default window.
+"""
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timedelta
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from typing import Annotated
+
+import dateparser
+import typer
+
+spec = importlib.util.spec_from_loader('meetcall_call', SourceFileLoader('meetcall_call', str(Path(__file__).with_name('call'))))
+call = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = call
+spec.loader.exec_module(call)
+app = typer.Typer(add_completion=False, help=__doc__)
+CACHE = Path.home() / '.cache/sanand-scripts/meetcall'
+FRAGMENTS = Path.home() / 'code/blog/pages/prompts/fragments.md'
+
+
+def log(message: str) -> None:
+    typer.echo(message, err=True)
+
+
+def run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
+    return subprocess.run(args, check=True, **kwargs)
+
+
+def gws(args: list[str], profile: str, cwd: Path) -> None:
+    run(['gws', *args], env={**os.environ, 'GOOGLE_WORKSPACE_CLI_CONFIG_DIR': profile}, cwd=cwd, capture_output=True, text=True)
+
+
+def gws_json(args: list[str], *, config_dir: str) -> dict:
+    # Capture stderr until the caller decides whether an optional file error matters.
+    result = run(['gws', *args, '--format', 'json'], env={**os.environ, 'GOOGLE_WORKSPACE_CLI_CONFIG_DIR': config_dir}, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+def unavailable_file(exc: subprocess.CalledProcessError, label: str) -> None:
+    error = json.loads(exc.stdout or '{}').get('error', {})
+    reason = error.get('reason', '').lower()
+    if error.get('code') not in (403, 404) or 'quota' in reason or 'limit' in reason:
+        raise exc
+    log(f'WARNING skipping inaccessible {label}.' + (' Use --chat FILE to supply its messages.' if 'chat' in label else ''))
+
+
+def items(profile: str, resource: str, params: dict, key: str):
+    """Page explicitly: never silently truncate results at a CLI page limit."""
+    while True:
+        page = gws_json([*resource.split(), '--params', json.dumps(params)], config_dir=profile)
+        yield from page.get(key, [])
+        if not page.get('nextPageToken'):
+            return
+        params = {**params, 'pageToken': page['nextPageToken']}
+
+
+def bounds(date: str | None, before: str | None, after: str | None, now: datetime) -> tuple[datetime, datetime]:
+    if date and (before or after):
+        raise ValueError('Use --date by itself, or combine --before and --after.')
+    def day(value: str) -> datetime:
+        # dateparser does not understand "last Wednesday"; past preference handles weekdays.
+        value = re.sub(r'^last (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$', r'\1', value, flags=re.IGNORECASE)
+        parsed = dateparser.parse(value, settings={'RELATIVE_BASE': now.replace(tzinfo=None), 'PREFER_DATES_FROM': 'past', 'DATE_ORDER': 'YMD'})
+        if parsed is None:
+            raise ValueError(f'Unrecognized date: {value!r}. Use YYYY-MM-DD or e.g. yesterday.')
+        if parsed.tzinfo:
+            parsed = parsed.astimezone(now.tzinfo)
+        return parsed.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=now.tzinfo)
+    low = day(date) if date else day(after) + timedelta(days=1) if after else now.replace(year=1970, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    high = min(day(date) + timedelta(days=1) if date else day(before) if before else now, now)
+    if low >= high:
+        raise ValueError('Date range is empty or in the future.')
+    return low, high
+
+
+def stem(event: dict) -> str:
+    title = re.sub(r'[\\/:*?"<>|\x00-\x1f]|\s+-\s+', ' ', event.get('summary', 'Meeting'))
+    title = ' '.join(title.split()).strip('. ')
+    return f"{event['start']['dateTime'][:10]} {title or 'Meeting'}"
+
+
+def matches(event: dict, query: str) -> bool:
+    return query.lower() in event.get('summary', '').lower() or query.lower() in stem(event).lower()
+
+
+def choose(events: list[dict], query: str) -> dict:
+    rows = [e for e in events if matches(e, query)]
+    exact = [e for e in rows if query.lower() == stem(e).lower()]
+    if not rows:
+        raise ValueError(f'No completed meeting matching {query!r} in the date range.')
+    return max(exact or rows, key=lambda e: (datetime.fromisoformat(e['start']['dateTime']), len(e.get('attachments', [])), e.get('organizer', {}).get('email') == e.get('_account')))
+
+
+def search(query: str, low: datetime, high: datetime, accounts: list[str], *, all_calendars: bool = False) -> list[dict]:
+    # A bare phrase cannot exactly match call's dated stem: a recent hit wins outright.
+    if not all_calendars and high - low > timedelta(days=90) and not re.match(r'^\d{4}-\d{2}-\d{2} ', query):
+        cutoff = high - timedelta(days=90)
+        if recent := search(query, cutoff, high, accounts):
+            return recent
+        high = cutoff  # No recent hit: search all older history, without a hidden cutoff.
+    profiles = [Path(os.environ.get('GOOGLE_WORKSPACE_CLI_CONFIG_DIR', Path.home()/'.config/gws'))]
+    profiles += [p for p in (Path.home()/'.config').glob('gws-*@*') if '-before-' not in p.name and any((p/name).exists() for name in ('credentials.enc', 'credentials.json'))]
+    found, seen = [], set()
+    for profile in dict.fromkeys(profiles):
+        email = gws_json(['drive', 'about', 'get', '--params', '{"fields":"user(emailAddress)"}'], config_dir=str(profile))['user']['emailAddress']
+        if email in seen or accounts and email not in accounts:
+            continue
+        seen.add(email)
+        log(f'Searching {email}…')
+        for calendar in items(str(profile), 'calendar calendarList list', {'maxResults': 250, 'showHidden': all_calendars, 'fields': 'items(id),nextPageToken'}, 'items'):
+            params = {'calendarId': calendar['id'], 'timeMin': low.isoformat(), 'timeMax': high.isoformat(), 'maxResults': 2500, 'singleEvents': all_calendars, 'fields': 'items(id,summary,start,end,recurrence,status,attachments,organizer),nextPageToken'}
+            events = list(items(str(profile), 'calendar events list', params, 'items'))
+            for event in sorted(events, key=lambda e: e.get('start', {}).get('dateTime', ''), reverse=True):
+                if event.get('status') == 'cancelled' or 'dateTime' not in event.get('start', {}):
+                    continue
+                # Date-prefixed queries must still find the parent recurring series.
+                title_query = re.sub(r'^\d{4}-\d{2}-\d{2}\s+', '', query)
+                if not matches(event, title_query):
+                    continue
+                series_params = {k: v for k, v in {**params, 'eventId': event['id']}.items() if k != 'singleEvents'}
+                if found and not all_calendars and not re.match(r'^\d{4}-\d{2}-\d{2} ', query):
+                    best = choose(found, query)
+                    best_exact = query.lower() == stem(best).lower()
+                    event_exact = query.lower() == stem(event).lower()
+                    if best_exact and not event_exact:
+                        continue
+                    if best_exact or not event_exact:
+                        series_params['timeMin'] = max(low, datetime.fromisoformat(best['start']['dateTime'])).isoformat()
+                occurrences = items(str(profile), 'calendar events instances', series_params, 'items') if event.get('recurrence') else [event]
+                for occurrence in occurrences:
+                    if occurrence.get('status') == 'cancelled' or 'dateTime' not in occurrence.get('start', {}):
+                        continue
+                    start = datetime.fromisoformat(occurrence['start']['dateTime'])
+                    end = datetime.fromisoformat(occurrence.get('end', occurrence['start'])['dateTime'])
+                    if low <= start < high and end <= datetime.now().astimezone() and matches(occurrence, query):
+                        found.append({**occurrence, '_profile': str(profile), '_account': email})
+            if found and not all_calendars:
+                return found
+    if missing := set(accounts) - seen:
+        raise ValueError(f'No authenticated gws profile for: {", ".join(sorted(missing))}')
+    return found
+
+
+def clean_document(markdown: str) -> tuple[str, str]:
+    """Keep the concise quick notes (or full summary/actions), and actual speaker turns."""
+    markdown = re.sub(r'(?m)^\[image\d+\]:.*$', '', markdown)
+    markdown = re.sub(r'!\[[^\]]*\]\([^)]*\)|!\[[^\]]*\]\[image\d+\]', '', markdown)
+    heading = re.search(r'(?mi)^#{1,3}\s+(?:\*\*)?(?:.*?\\?-\s*)?Transcript(?:\*\*)?\s*$', markdown)
+    transcript_source = markdown[heading.end():] if heading else ''
+    notes = markdown[:heading.start()] if heading else markdown
+    quick_end = re.search(r'(?m)^\*\*Want to see more\?', notes)
+    if quick_end:
+        quick = notes[:quick_end.start()]
+        paragraphs = quick.split('\n\n')
+        # Skip survey, empty heading, meeting title, date, and attendee list.
+        first = next((i for i, p in enumerate(paragraphs) if 'mailto:' in p), None)
+        summary = '\n\n'.join(paragraphs[first + 1:]) if first is not None else ''
+    else:
+        start = re.search(r'(?mi)^#{1,4}\s+(?:\*\*)?Summary(?:\*\*)?\s*$', notes)
+        summary = notes[start.end():] if start else ''
+        summary = re.split(r'(?mi)^#{1,4}\s+(?:\*\*)?Details', summary)[0]
+    summary = re.sub(r'(?m)^#{1,5}\s+(?:\*\*)?(.*?)(?:\*\*)?\s*$', lambda m: '### ' + m[1].strip('* '), summary)
+    summary = summary.replace('\\[', '[').replace('\\]', ']')
+    turns, timestamp = [], '00:00:00'
+    for paragraph in re.split(r'\n\s*\n', transcript_source):
+        if match := re.match(r'#{1,4}\s+\*{0,2}(\d{2}:\d{2}:\d{2})', paragraph.strip()):
+            timestamp = match[1]
+        elif match := re.match(r'\*\*([^*\n]+?):\*\*\s*(.*)', paragraph.strip(), re.DOTALL):
+            turns.append(f'**{match[1]}**: [{timestamp}] {match[2].strip()}')
+    return summary.strip(), '\n\n'.join(turns)
+
+
+def export_documents(profile: str, documents: list[dict]) -> tuple[str, str, str]:
+    summaries, transcripts, originals = [], [], []
+    with tempfile.TemporaryDirectory(prefix='meetcall-') as temp:
+        for index, doc in enumerate(documents):
+            path = Path(temp)/f'{index}.md'
+            try:
+                gws(['drive', 'files', 'export', '--params', json.dumps({'fileId': doc['fileId'], 'mimeType': 'text/markdown'}), '--output', path.name], profile, Path(temp))
+            except subprocess.CalledProcessError as exc:
+                unavailable_file(exc, 'transcript document')
+                continue
+            original = path.read_text()
+            summary, transcript = clean_document(original)
+            if summary not in summaries:
+                summaries.append(summary)
+            if transcript and transcript not in transcripts:
+                transcripts.append(transcript)
+            originals.append(re.sub(r'(?m)^\[image\d+\]:.*$', '', original))
+    return '\n\n'.join(summaries).strip(), '\n\n'.join(transcripts), '\n\n'.join(originals)
+
+
+def export_chats(profile: str, chats: list[dict]) -> str:
+    messages = []
+    with tempfile.TemporaryDirectory(prefix='meetcall-chat-') as temp:
+        for index, chat in enumerate(chats):
+            try:
+                metadata = gws_json(['drive', 'files', 'get', '--params', json.dumps({'fileId': chat['fileId'], 'fields': 'capabilities(canDownload)'})], config_dir=profile)
+                if not metadata.get('capabilities', {}).get('canDownload'):
+                    log('WARNING chat download restricted. Use --chat FILE to supply its messages.')
+                    continue
+                path = Path(temp)/f'{index}.txt'
+                gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': chat['fileId'], 'alt': 'media'}), '--output', path.name], profile, Path(temp))
+            except subprocess.CalledProcessError as exc:
+                unavailable_file(exc, 'chat')
+                continue
+            text = path.read_text(encoding='utf-8-sig').strip()
+            if text and text not in messages:
+                messages.append(text)
+    return '\n\n'.join(messages)
+
+
+def add_chat(note: Path, chat: str, replace: bool = False) -> None:
+    """Keep chat separate from spoken turns, without interpreting chat text as Markdown."""
+    if chat:
+        _, markdown, _ = call.read_existing_note(note)
+        quoted = '\n'.join('> ' + line if line else '>' for line in chat.splitlines())
+        section = f'## Chat\n\n{quoted}\n'
+        match = re.search(r'(?ms)^## Chat\s*$\n?(.*?)(?=^## |\Z)', markdown)
+        updated = markdown[:match.start()] + section + '\n' + markdown[match.end():] if match and replace else markdown if match else f'{markdown.rstrip()}\n\n{section}'
+        if updated != markdown:
+            call.atomic_write(note, updated)
+
+
+def save_note(path: Path, title: str, summary: str, transcript: str, sources: list[str]) -> None:
+    _, existing, _ = call.read_existing_note(path)
+    if call.has_transcript_content(existing):
+        return
+    if not transcript:
+        raise ValueError('Notes exist but contain no transcript speaker turns; refusing to mark a summary as a transcript.')
+    if not existing:
+        existing = f'---\nsource: google-meet\ntimestamp_basis: google-meet-block\nsource_documents: {json.dumps(sources)}\n---\n\n# {title}\n'
+    if summary and not re.search(r'(?m)^## Summary\s*$', existing):
+        existing += f'\n## Summary\n\n{summary}\n'
+    updated = call.upsert_transcript_section(existing, title, transcript)
+    call.atomic_write(path, updated)
+
+
+def download_audio(profile: str, recordings: list[dict], target: Path) -> None:
+    if target.exists() and target.stat().st_size:
+        log(f'Reusing {target}')
+        return
+    call.preflight_write(target)
+    with tempfile.TemporaryDirectory(prefix='.meetcall-', dir=target.parent) as temp:
+        audios = []
+        for index, recording in enumerate(recordings):
+            log(f'Downloading recording {index + 1}/{len(recordings)}…')
+            video, audio = Path(temp)/f'{index}.mp4', Path(temp)/f'{index}.opus'
+            gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': recording['fileId'], 'alt': 'media'}), '--output', video.name], profile, Path(temp))
+            run(['ffmpeg', '-nostdin', '-hide_banner', '-v', 'warning', '-i', str(video), '-vn', '-c:a', 'libopus', '-b:a', '12k', '-ac', '1', '-application', 'voip', '-vbr', 'on', '-compression_level', '10', str(audio)])
+            audios.append(audio)
+        combined = audios[0]
+        if len(audios) > 1:
+            listing = Path(temp)/'concat.txt'
+            listing.write_text(''.join(f"file '{audio.name}'\n" for audio in audios))
+            combined = Path(temp)/'combined.opus'
+            run(['ffmpeg', '-nostdin', '-v', 'warning', '-f', 'concat', '-safe', '0', '-i', str(listing), '-c', 'copy', str(combined)])
+        os.replace(combined, target)
+
+
+def context_prompt(original: str, account: str) -> str:
+    fragment = re.search(r'(?ms)^## Meeting transcript context\s*\n(.*?)(?=^## |\Z)', FRAGMENTS.read_text())
+    if not fragment:
+        raise ValueError(f'Meeting transcript context section missing in {FRAGMENTS}')
+    instruction = call.extract_system_prompt(fragment[1])
+    digest = hashlib.sha256((instruction + original + 'gpt-6-luna/high').encode()).hexdigest()
+    cached = CACHE/account/f'{digest}.txt'
+    if cached.exists():
+        return cached.read_text()
+    call.preflight_write(cached)
+    log('Generating speaker context with GPT 6 Luna (high)…')
+    result = run(['llm', '-m', 'gpt-6-luna', '-o', 'reasoning_effort', 'high', '--no-log', '-s', instruction], input=original, text=True, capture_output=True)
+    if not result.stdout.strip():
+        raise ValueError('GPT 6 Luna returned empty context.')
+    call.atomic_write(cached, result.stdout.strip())
+    return result.stdout.strip()
+
+
+def note_path(event: dict, out_dir: Path) -> Path:
+    title = stem(event)
+    note = out_dir/f'{title}.md'
+    documents = [a for a in event.get('attachments', []) if a.get('mimeType') == 'application/vnd.google-apps.document']
+    # Preserve manually named notes when they already link this exact source document.
+    if not note.exists() and documents:
+        aliases = [p for p in out_dir.glob(f'{title[:10]} *.md') if any(d['fileId'] in p.read_text() for d in documents)]
+        if len(aliases) == 1:
+            note = aliases[0]
+    return note
+
+
+def meeting_label(event: dict) -> str:
+    start = datetime.fromisoformat(event['start']['dateTime']).strftime('%Y-%m-%d %H:%M %Z')
+    return f"{start} | {' '.join(event['summary'].split())} [{event['_account']}]"
+
+
+def scaffold_note(note: Path, title: str, prompt: str | None = None) -> None:
+    """Persist recovery context before model calls, preserving any existing note content."""
+    _, existing, _ = call.read_existing_note(note)
+    prompt = prompt or call.extract_prompt_metadata(existing) or call.load_system_prompt(call.DEFAULT_PROMPT_FILE)
+    markdown = existing or f'# {title}\n'
+    if not call.TRANSCRIPT_SECTION_RE.search(markdown):
+        markdown = f'{markdown.rstrip()}\n\n## Transcript\n'
+    markdown = call.set_prompt_metadata(markdown, prompt)
+    if markdown != existing:
+        call.atomic_write(note, markdown)
+
+
+def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, chat_file: Path | None = None, local_chat: str = '') -> None:
+    recordings = [a for a in event.get('attachments', []) if a.get('mimeType', '').startswith(('video/', 'audio/'))]
+    documents = [a for a in event.get('attachments', []) if a.get('mimeType') == 'application/vnd.google-apps.document']
+    chats = [a for a in event.get('attachments', []) if a.get('mimeType') == 'text/plain' and 'chat' in a.get('title', '').lower()]
+    title = stem(event)
+    note = note_path(event, out_dir)
+    audio = input_dir/f'{note.stem}.opus'
+    _, existing, _ = call.read_existing_note(note)
+    complete = call.has_transcript_content(existing) and call.note_metadata(existing).get('transcription_status') != 'incomplete'
+    needs_chat = bool(chat_file) or bool(chats) and not re.search(r'(?m)^## Chat\s*$', existing)
+    action = 'skip' if complete else 'update' if existing else 'create'
+    if complete and needs_chat:
+        action = 'update-chat' if re.search(r'(?m)^## Chat\s*$', existing) else 'add-chat'
+    sources = ', '.join(f'{count} {label}{"" if count == 1 else "s"}' for count, label in [(len(recordings), 'recording'), (len(documents), 'notes document'), (len(chats), 'chat file')] if count)
+    actions = {'create': 'Create transcript', 'update': 'Update transcript', 'skip': 'Skip: already transcribed', 'add-chat': 'Add chat', 'update-chat': 'Update chat'}
+    typer.echo(meeting_label(event))
+    typer.echo(f'  Sources: {sources or "none"}')
+    typer.echo(f'  Action: {actions[action]}' + (' (dry run)' if dry_run else ''))
+    if recordings:
+        typer.echo(f'  Audio: {audio}')
+    typer.echo(f'  Note: {note}')
+    if chat_file:
+        typer.echo(f'  Chat: {chat_file}')
+    sys.stdout.flush()
+    if complete and not needs_chat:
+        return
+    if not complete and not recordings and not documents:
+        raise ValueError('Selected meeting has no recording or transcript attached; no files written.')
+    if dry_run:
+        return
+    call.preflight_write(note)
+    chat = local_chat or (export_chats(event['_profile'], chats) if needs_chat else '')
+    if complete:
+        add_chat(note, chat, replace=bool(chat_file))
+        return
+    summary, transcript, original = export_documents(event['_profile'], documents) if documents else ('', '', '')
+    if chat:
+        original += f'\n\n## Meeting chat\n\n{chat}'
+    if recordings:
+        download_audio(event['_profile'], recordings, audio)
+        scaffold_note(note, title)
+        # call persists the generated context, so interrupted reruns reuse it.
+        prompt = (None if chat_file else call.extract_prompt_metadata(existing)) or (context_prompt(original, event['_account']) if transcript else None)
+        scaffold_note(note, title, prompt)
+        args = [str(Path(__file__).with_name('call')), str(audio), '--out', str(out_dir)]
+        if prompt:
+            args += ['--prompt', prompt]
+        run(args)
+    else:
+        save_note(note, title, summary, transcript, [d.get('fileUrl', f"https://docs.google.com/document/d/{d['fileId']}/edit") for d in documents])
+        log(f'Saved {note}')
+    add_chat(note, chat, replace=bool(chat_file))
+
+
+def pending_meetings(events: list[dict], out_dir: Path) -> list[dict]:
+    """Skip complete notes and duplicate Drive recordings, including cross-account copies."""
+    pending, seen = [], set()
+    for event in sorted(events, key=lambda e: datetime.fromisoformat(e['start']['dateTime']), reverse=True):
+        recordings = {a['fileId'] for a in event.get('attachments', []) if a.get('mimeType', '').startswith(('video/', 'audio/'))}
+        if not recordings or recordings <= seen:
+            continue
+        _, markdown, _ = call.read_existing_note(note_path(event, out_dir))
+        if call.has_transcript_content(markdown) and call.note_metadata(markdown).get('transcription_status') != 'incomplete':
+            seen.update(recordings)
+            continue
+        seen.update(recordings)
+        pending.append(event)
+    return pending
+
+
+@app.command(help=__doc__)
+def main(
+    phrase: str = typer.Argument('', help='Literal title substring, or date-prefixed name like call.'),
+    date: str | None = typer.Option(None, '--date', help='Meeting day: YYYY-MM-DD, yesterday, last Wednesday…'),
+    before: str | None = typer.Option(None, help='Before this local day (exclusive).'),
+    after: str | None = typer.Option(None, help='After this local day (exclusive).'),
+    account: list[str] = typer.Option([], help='Limit to an authenticated email; repeatable.'),  # noqa: B008
+    dry_run: bool = typer.Option(False, help='Show selection and action without downloads, models, or note writes.'),
+    input_dir: Path = typer.Option(call.DEFAULT_INPUT_DIR, help='Where to save Opus recordings.'),  # noqa: B008
+    out_dir: Path = typer.Option(call.DEFAULT_OUTPUT_DIR, help='Where to save Markdown notes.'),  # noqa: B008
+    describe: bool = typer.Option(False, help='Print the CLI contract as JSON.'),
+    chat_file: Annotated[Path | None, typer.Option('--chat', exists=True, dir_okay=False, readable=True, help='Use local chat messages instead of downloading chat.')] = None,
+    scan: Annotated[bool, typer.Option('--scan', help='Process recordings without completed local transcripts across all calendars.')] = False,
+    days: Annotated[int, typer.Option(min=1, help='Scan lookback in days; --date or --after overrides it.')] = 7,
+    limit: Annotated[int | None, typer.Option('--limit', '-n', min=1, help='Maximum pending meetings to process with --scan.')] = None,
+):
+    if describe:
+        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
+        return
+    if not scan and not phrase.strip():
+        raise ValueError('Provide a meeting phrase. Example: meetcall TDS --dry-run')
+    if scan and chat_file:
+        raise ValueError('--chat supplies one meeting; use it without --scan.')
+    if not scan and (days != 7 or limit is not None):
+        raise ValueError('--days and --limit require --scan.')
+    local_chat = chat_file.read_text(encoding='utf-8-sig').strip() if chat_file else ''
+    if chat_file and not local_chat:
+        raise ValueError(f'Chat file is empty: {chat_file}')
+    low, high = bounds(date, before, after, datetime.now().astimezone())
+    event = None if scan else choose(search(phrase.strip(), low, high, account), phrase.strip())
+    if scan:
+        if not (date or after):
+            low = max(low, high - timedelta(days=days))
+        pending = pending_meetings(search(phrase.strip(), low, high, account, all_calendars=True), out_dir)
+        selected = pending[:limit] if limit else pending
+        if not pending:
+            typer.echo('No pending meetings.')
+            return
+        typer.echo(f'Pending meetings ({len(pending)}):')
+        for index, event in enumerate(pending, 1):
+            typer.echo(f'  {index}. {meeting_label(event)}')
+        typer.echo(f'\n{"Dry run: would process" if dry_run else "Will process"} {len(selected)} of {len(pending)} pending meetings.')
+        sys.stdout.flush()  # Keep the queue ahead of child-process output, including when piped.
+        for index, event in enumerate(selected, 1):
+            typer.echo(f'\n{"Previewing" if dry_run else "Processing"} [{index}/{len(selected)}]')
+            sys.stdout.flush()
+            process_meeting(event, input_dir, out_dir, dry_run)
+        return
+    process_meeting(event, input_dir, out_dir, dry_run, chat_file, local_chat)
+
+
+
+if __name__ == '__main__':
+    try:
+        app()
+    except (ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+        log(f'Error: {exc}')
+        if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
+            log(exc.stderr)
+        sys.exit(1)
