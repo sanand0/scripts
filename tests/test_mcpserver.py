@@ -114,7 +114,7 @@ def test_log_event_writes_compact_jsonl(tmp_path, monkeypatch) -> None:
         result=result,
     )
 
-    [line] = (tmp_path / "events.jsonl").read_text().splitlines()
+    [line] = next(tmp_path.glob("events-????-??.jsonl")).read_text().splitlines()
     event = json.loads(line)
     assert event["operation"] == "bash"
     assert event["server_start_id"] == "start-test"
@@ -122,11 +122,8 @@ def test_log_event_writes_compact_jsonl(tmp_path, monkeypatch) -> None:
     assert event["output"] == "ok"
     assert event["result"]["exit_code"] == 0
     assert event["result"]["output_bytes_after_limits"] == 2
-    [log_path] = tmp_path.glob("????-??/*.md")
-    markdown = log_path.read_text()
-    assert markdown.index("## Command") < markdown.index("## Request") < markdown.index("## Output")
-    assert markdown.index("## Output") < markdown.index("## Result")
-    assert "printf ok" in markdown
+    [log_path] = tmp_path.glob("operations-????-??.jsonl")
+    assert json.loads(log_path.read_text()) == event
 
 
 def test_run_bash_command_records_nonzero_timeout_and_cwd(tmp_path) -> None:
@@ -302,7 +299,7 @@ def test_startup_record_is_compact_jsonl_and_prints_mounts(tmp_path, monkeypatch
 
     record = mcpserver.log_startup_record()
 
-    [line] = (tmp_path / "startup.jsonl").read_text().splitlines()
+    [line] = next(tmp_path.glob("startup-????-??.jsonl")).read_text().splitlines()
     logged = json.loads(line)
     assert logged == record
     assert logged["server_start_id"] == "start-test"
@@ -339,7 +336,7 @@ def test_log_event_records_safe_http_context_and_session(tmp_path, monkeypatch) 
         result="ok",
     )
 
-    assert json.loads((tmp_path / "events.jsonl").read_text()) == record
+    assert json.loads(next(tmp_path.glob("events-????-??.jsonl")).read_text()) == record
     assert record == {
         "server_start_id": "start-test",
         "timestamp": record["timestamp"],
@@ -409,8 +406,11 @@ def test_mcp_rate_appends_latest_session_score(tmp_path, monkeypatch) -> None:
 
     mcpserver.mcp_rate(["2", "tool_failure", "command timed out"])
 
-    [line] = (tmp_path / "ratings.tsv").read_text().splitlines()
-    timestamp, session_id, score, tag, note = line.split("\t")
+    [log_path] = tmp_path.glob("ratings-????-??.jsonl")
+    record = json.loads(log_path.read_text())
+    timestamp, session_id, score, tag, note = (record[key] for key in (
+        "timestamp", "session_id", "score", "tag", "note"
+    ))
     assert timestamp
     assert session_id == "sess-latest"
     assert score == "2"
@@ -553,13 +553,13 @@ def test_download_file_tool_is_registered_read_only_and_callable(tmp_path) -> No
     assert [log.data["msg"] for log in logs] == []
     [event] = [
         event
-        for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
+        for line in next((tmp_path / "logs").glob("events-????-??.jsonl")).read_text().splitlines()
         if (event := json.loads(line))["operation"] == "download_file"
     ]
     assert event["operation"] == "download_file"
     assert event["result"]["size"] == 5
-    [log_path] = (tmp_path / "logs").glob("????-??/*.md")
-    assert "# mcpserver download_file log " in log_path.read_text()
+    [log_path] = (tmp_path / "logs").glob("operations-????-??.jsonl")
+    assert json.loads(log_path.read_text()) == event
 
 
 def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypatch) -> None:
@@ -619,13 +619,13 @@ def test_save_file_streams_chatgpt_upload_under_writable_root(tmp_path, monkeypa
     assert [log.data["msg"] for log in logs] == []
     [event] = [
         event
-        for line in (tmp_path / "logs/events.jsonl").read_text().splitlines()
+        for line in next((tmp_path / "logs").glob("events-????-??.jsonl")).read_text().splitlines()
         if (event := json.loads(line))["operation"] == "save_file"
     ]
     assert event["operation"] == "save_file"
     assert event["result"]["size"] == len(data)
-    [log_path] = (tmp_path / "logs").glob("????-??/*.md")
-    assert "# mcpserver save_file log " in log_path.read_text()
+    [log_path] = (tmp_path / "logs").glob("operations-????-??.jsonl")
+    assert json.loads(log_path.read_text()) == event
 
 
 def test_save_file_rejects_traversal_overwrite_http_and_oversize(tmp_path, monkeypatch) -> None:
@@ -1124,7 +1124,7 @@ def test_tool_call_audit_logs_full_request_response_and_truncates_console(tmp_pa
 
     events = [
         json.loads(line)
-        for line in (tmp_path / "logs" / "events.jsonl").read_text().splitlines()
+        for line in next((tmp_path / "logs").glob("events-????-??.jsonl")).read_text().splitlines()
     ]
     [audit] = [event for event in events if event["operation"] == "tool_call"]
     assert audit["tool"] == "read_file"
@@ -1132,12 +1132,8 @@ def test_tool_call_audit_logs_full_request_response_and_truncates_console(tmp_pa
     assert audit["response"]["structured_content"]["content"] == content
     assert audit["is_error"] is False
 
-    [markdown_path] = (tmp_path / "logs" / "tool-calls").glob("????-??/*.md")
-    markdown = markdown_path.read_text()
-    assert "## Arguments" in markdown
-    assert str(path) in markdown
-    assert "## Response" in markdown
-    assert content.rstrip("\n") in markdown
+    [log_path] = (tmp_path / "logs").glob("tool-calls-????-??.jsonl")
+    assert json.loads(log_path.read_text()) == audit
 
 
 def test_tool_call_audit_logs_structured_error(tmp_path, capsys, monkeypatch) -> None:
@@ -1159,7 +1155,7 @@ def test_tool_call_audit_logs_structured_error(tmp_path, capsys, monkeypatch) ->
 
     events = [
         json.loads(line)
-        for line in (tmp_path / "logs" / "events.jsonl").read_text().splitlines()
+        for line in next((tmp_path / "logs").glob("events-????-??.jsonl")).read_text().splitlines()
     ]
     [audit] = [event for event in events if event["operation"] == "tool_call"]
     assert audit["is_error"] is True
@@ -1429,3 +1425,17 @@ def test_bash_does_not_emit_duplicate_client_logs(tmp_path) -> None:
 
     assert result.structured_content["output"] == "ok"
     assert logs == []
+
+
+def test_monthly_logs_roll_over_using_record_timestamp(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(mcpserver, "LOG_DIR", tmp_path)
+    timestamps = iter(["2026-10-31T23:59:59+00:00", "2026-11-01T00:00:00+00:00",
+                       "2026-11-01T00:00:01+00:00"])
+    monkeypatch.setattr(mcpserver, "iso_timestamp", lambda: next(timestamps))
+    events = [mcpserver.log_event("request", method="ping") for _ in range(3)]
+    for name in ("events", "requests"):
+        october = [json.loads(line) for line in (tmp_path / f"{name}-2026-10.jsonl").read_text().splitlines()]
+        november = [json.loads(line) for line in (tmp_path / f"{name}-2026-11.jsonl").read_text().splitlines()]
+        assert [row["timestamp"] for row in october] == [events[0]["timestamp"]]
+        assert [row["timestamp"] for row in november] == [row["timestamp"] for row in events[1:]]
+    assert not list(tmp_path.rglob("*.md"))

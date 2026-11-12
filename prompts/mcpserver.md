@@ -1,5 +1,14 @@
 # MCP Server
 
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Modify mcpserver minimally to create monthly JSONL logs. Migrate existing logs to monthly JSONL.
+
+<!-- codex resume 01a1cd5b-b12e-7701-bd5d-6ee0c6b7cb01 -->
+
 ## Fix tests, 03 Nov 2026
 
 <!--

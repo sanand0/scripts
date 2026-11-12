@@ -1,5 +1,24 @@
 # context.py
 
+## Add agent logs, 12 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+If I update context.py to index agent logs (~/Documents/{chatgpt,claude}) - and any other content from ~/Documents/data - how big is the benefit and how large / slow does that make the context?
+
+See past chats from ~/Documents/{chatgpt,claude} and ~/.codex and ~/.claude to gauge the extend and frequency of impact. Test and see the impact on index size and realistic query latency based on actual and expected usage.
+
+Based on this, guide me on whather / what should be added in what priority.
+
+---
+
+Then I'll skip updates for now. FYI - no response required.
+
+<!-- codex resume 01a1cd73-29fc-7021-953a-3344eee2f8d5 -->
+
 ## Move logging path, 29 Sep 2026
 
 <!--

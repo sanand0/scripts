@@ -247,17 +247,6 @@ def iso_timestamp() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def markdown_code_block(text: str) -> str:
-    fence = "```"
-    while fence in text:
-        fence += "`"
-    return f"{fence}\n{text}\n{fence}"
-
-
-def markdown_json(data: Any) -> str:
-    return markdown_code_block(json.dumps(data, indent=2, default=str, ensure_ascii=False))
-
-
 def http_request_info() -> dict[str, Any] | None:
     with suppress(RuntimeError):
         request = get_http_request()
@@ -277,44 +266,18 @@ def http_request_info() -> dict[str, Any] | None:
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # Use the record timestamp (UTC), including across month boundaries.
+    path = path.with_stem(f"{path.stem}-{record['timestamp'][:7]}")
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, separators=(",", ":"), default=str, ensure_ascii=False) + "\n")
 
 
-def write_markdown_log(event: dict[str, Any]) -> None:
+def write_detail_log(event: dict[str, Any]) -> None:
     operation = event["operation"]
-    if operation not in {"tool_call", "bash", "download_file", "save_file"}:
-        return
-    now = datetime.now(UTC)
-    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S.%f")
-    sections = [f"# mcpserver {operation} log {timestamp}"]
-    if operation == "tool_call":
-        sections += [
-            "## Tool",
-            markdown_code_block(event["tool"]),
-            "## Arguments",
-            markdown_json(event["arguments"]),
-            "## Response",
-            markdown_json(event["response"]),
-            "## Duration",
-            f"{event['duration_ms']} ms",
-        ]
-    if operation == "bash":
-        sections += [
-            "## Command",
-            markdown_code_block(event["commands"]),
-            "## Request",
-            markdown_json(event["request"]),
-            "## Output",
-            markdown_code_block(event["output"]),
-        ]
-    if operation != "tool_call":
-        sections += ["## Result", markdown_json(event["result"])]
-    base = LOG_DIR / "tool-calls" if operation == "tool_call" else LOG_DIR
-    path = base / now.strftime("%Y-%m") / f"{timestamp}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")
+    if operation in {"tool_call", "bash", "download_file", "save_file"}:
+        name = "tool-calls" if operation == "tool_call" else "operations"
+        append_jsonl(LOG_DIR / f"{name}.jsonl", event)
 
 
 def write_request_log(event: dict[str, Any]) -> None:
@@ -335,7 +298,7 @@ def write_request_log(event: dict[str, Any]) -> None:
         "error": event.get("error"),
     }
     append_jsonl(
-        LOG_DIR / f"requests-{datetime.now():%Y-%m-%d}.jsonl",
+        LOG_DIR / "requests.jsonl",
         {key: value for key, value in record.items() if value is not None},
     )
 
@@ -354,7 +317,7 @@ def log_event(operation: str, **data: Any) -> dict[str, Any]:
     if operation == "request":
         write_request_log(event)
     else:
-        write_markdown_log(event)
+        write_detail_log(event)
     if http and http.get("session_id"):
         (LOG_DIR / "latest-session").write_text(str(http["session_id"]), encoding="utf-8")
     return event
@@ -2246,9 +2209,10 @@ def mcp_rate(args: list[str]) -> int:
     if tag and tag not in RATE_TAGS:
         raise SystemExit(f"Tag must be one of: {', '.join(sorted(RATE_TAGS))}")
     note = " ".join(args[2:]) if len(args) > 2 else ""
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    with (LOG_DIR / "ratings.tsv").open("a", encoding="utf-8") as handle:
-        handle.write(f"{iso_timestamp()}\t{latest_session_id()}\t{score}\t{tag}\t{note}\n")
+    append_jsonl(LOG_DIR / "ratings.jsonl", {
+        "timestamp": iso_timestamp(), "session_id": latest_session_id(),
+        "score": score, "tag": tag, "note": note,
+    })
     return 0
 
 

@@ -205,8 +205,14 @@ The MCP server also prints one compact operator log per tool call to its termina
 the complete request, then a green success or red failure line with duration and a
 middle-truncated response preview. Set `MCPSERVER_CONSOLE_RESPONSE_CHARS` to
 change the default 1600-character response preview. Full tool-call arguments and
-structured results are still written to `events.jsonl`, with a readable per-call
-copy under `tool-calls/YYYY-MM/*.md`.
+structured results are written to monthly `events-YYYY-MM.jsonl`, with full per-call
+copies in `tool-calls-YYYY-MM.jsonl`. Bash and transfer details use
+`operations-YYYY-MM.jsonl`; requests, startups, and ratings use
+`requests-YYYY-MM.jsonl`, `startup-YYYY-MM.jsonl`, and `ratings-YYYY-MM.jsonl`.
+Months follow each record's UTC timestamp. Logs live under
+`~/.local/share/sanand-scripts/mcpserver/`. Historical Markdown migrated to JSONL
+retains its original text in `legacy_markdown` and filename in `legacy_source`.
+Restart a running server after updating it to load the new logging behavior.
 
 ### 7. Create the ChatGPT plugin
 
