@@ -1,0 +1,188 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12", "dateparser>=1.2", "google-genai>=1.67", "python-dotenv>=1", "pyyaml>=6"]
+# ///
+"""Match pending calls to captions, generate Luna context, and prepend transcription commands.
+
+Examples:
+    callprompt --dry-run
+    callprompt IITM
+    callprompt --audio IITM --caption gkz-nrnj-vhr
+    callprompt --describe | jaq .
+
+No selector processes all pending calls with confident caption matches, newest first.
+A selector chooses the latest audio, even if already queued/transcribed (then skips).
+--dry-run lists matches without model requests or writes. Commented commands also
+count as queued. Batch output omits unmatched entries; text output omits the
+calls-directory prefix. Automatic matching requires the same local meeting day, then
+title/header hints or a unique file modification time within 10 minutes.
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import shlex
+import subprocess
+import sys
+from datetime import UTC, datetime
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+spec = importlib.util.spec_from_loader('callprompt_meetcall', SourceFileLoader('callprompt_meetcall', str(Path(__file__).with_name('meetcall'))))
+meetcall = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = meetcall
+spec.loader.exec_module(meetcall)
+call = meetcall.call
+app = typer.Typer(add_completion=False, help=__doc__)
+QUEUE = Path.home() / 'Downloads/transcribe.sh'
+
+
+def captions() -> list[dict]:
+    """Read headers once; exporter filenames encode UTC start, not local time."""
+    rows = []
+    for directory in ('Downloads', 'Documents'):
+        for pattern in ('gmeet*.md', 'teams*.md'):
+            for path in (Path.home() / directory).glob(pattern):
+                with path.open(encoding='utf-8') as handle:
+                    header = ''.join(next(handle, '') for _ in range(12))
+                stamp = re.search(r'(\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d)', path.name)
+                started = (datetime.strptime(stamp[1], '%Y-%m-%d-%H-%M-%S').replace(tzinfo=UTC).astimezone()
+                           if stamp else datetime.fromtimestamp(path.stat().st_mtime).astimezone())
+                rows.append({'path': path, 'header': header, 'started': started, 'mtime': path.stat().st_mtime})
+    return rows
+
+
+def queued_files(text: str) -> set[str]:
+    """Parse literal call arguments, including commented history, without executing shell."""
+    result = set()
+    # Parse only call lines and stop before prompt text: prose comments may have
+    # unmatched quotes, and model output may mention other audio filenames.
+    for match in re.finditer(r'(?m)^\s*(?:#\s*)?(?:\S*/)?call\s+([^\n]*)', text):
+        lexer = shlex.shlex(match[1], posix=True)
+        lexer.whitespace_split = True
+        for arg in lexer:
+            if arg == '--prompt':
+                break
+            if Path(arg).suffix.lower() in call.AUDIO_SUFFIXES:
+                result.add(Path(arg).name)
+                break
+    return result
+
+
+def words(value: str) -> set[str]:
+    return set(re.findall(r'[a-z]{3,}', value.casefold())) - {'meeting', 'call', 'weekly', 'team', 'with', 'anand', 'connect', 'the'}
+
+
+def match_caption(audio: Path, rows: list[dict], query: str | None = None) -> tuple[Path | None, str]:
+    if query:
+        exact = [r for r in rows if str(r['path']) == query or r['path'].name == query]
+        found = exact or [r for r in rows if query.casefold() in (r['path'].name + '\n' + r['header']).casefold()]
+        if not found:
+            raise ValueError(f'No caption matching {query!r}; search uses filenames and first 12 lines.')
+        return max(found, key=lambda r: (r['started'], r['mtime']))['path'], 'explicit caption'
+    day = re.match(r'\d{4}-\d\d-\d\d', audio.name)
+    day = day[0] if day else datetime.fromtimestamp(audio.stat().st_mtime).date().isoformat()
+    same_day = [r for r in rows if r['started'].date().isoformat() == day]
+    hints = words(audio.stem)
+    ranked = sorted(((len(hints & words(r['header'])), r) for r in same_day), key=lambda pair: pair[0], reverse=True)
+    if ranked and ranked[0][0]:
+        best = [r for score, r in ranked if score == ranked[0][0]]
+        # Ignore Started/Participants changes when identifying repeated exports.
+        identities = {r['header'].splitlines()[0] + str(re.findall(r'Meeting code.*', r['header'])) for r in best}
+        if len(identities) == 1:
+            return max(best, key=lambda r: (r['started'], r['mtime']))['path'], 'same day + header hint'
+    close = sorted(same_day, key=lambda r: abs(r['mtime'] - audio.stat().st_mtime))
+    if (close and abs(close[0]['mtime'] - audio.stat().st_mtime) <= 600
+            and (len(close) == 1 or abs(close[1]['mtime'] - audio.stat().st_mtime) > 600)):
+        return close[0]['path'], 'same day + unique file time within 10m'
+    return None, 'no confident match; use --audio TEXT --caption TEXT'
+
+
+def command(audio: Path, prompt: str) -> str:
+    """Double-quote context safely; no model-generated shell expansions may execute."""
+    escaped = re.sub(r'([\\"$`])', r'\\\1', ' '.join(prompt.splitlines()))
+    return f'call {shlex.quote(str(audio.resolve()))} --prompt "{escaped}"\n'
+
+
+def prepend(path: Path, line: str) -> bool:
+    """Recheck history after the model call and preserve an existing shebang."""
+    existing = path.read_text() if path.exists() else ''
+    if Path(shlex.split(line)[1]).name in queued_files(existing):
+        return False
+    if existing.startswith('#!'):
+        first, _, rest = existing.partition('\n')
+        updated = first + '\n' + line + rest
+    else:
+        updated = line + existing
+    call.atomic_write(path, updated)
+    return True
+
+
+@app.command(help=__doc__)
+def main(
+    phrase: Annotated[str | None, typer.Argument(help='Latest audio filename substring; also a caption header hint.')] = None,
+    audio: Annotated[str | None, typer.Option(help='Audio path or latest filename substring (like call).')] = None,
+    caption: Annotated[str | None, typer.Option(help='Latest caption filename/header substring, or exact path.')] = None,
+    dry_run: Annotated[bool, typer.Option(help='List pending matches; no model calls or writes.')] = False,
+    limit: Annotated[int, typer.Option('--limit', '-n', min=1, help='Maximum calls to queue.')] = 20,
+    format: Annotated[str, typer.Option(help='text (TSV) or jsonl.')] = 'text',
+    describe: Annotated[bool, typer.Option(help='Print machine-readable CLI contract.')] = False,
+):
+    if describe:
+        typer.echo(json.dumps({'phrase': 'latest audio filename substring; caption header hint', 'audio': 'path or latest filename substring', 'caption': 'latest filename or first 12 lines substring; requires audio selector', 'dry_run': 'no writes or model calls', 'limit': 20, 'format': ['text', 'jsonl'], 'queue': str(QUEUE), 'model': 'gpt-6-luna/high', 'default': 'queue confident matches for pending calls', 'output_fields': ['status', 'audio', 'caption', 'reason']}))
+        return
+    if format not in ('text', 'jsonl'):
+        raise typer.BadParameter('--format must be text or jsonl')
+    if phrase and audio:
+        raise typer.BadParameter('Use PHRASE or --audio, not both.')
+    if caption and not (audio or phrase):
+        raise typer.BadParameter('--caption requires PHRASE or --audio.')
+    try:
+        selector = audio or phrase
+        files = [call.resolve_audio_path(selector, call.DEFAULT_INPUT_DIR)] if selector else list(reversed(call.list_audio_files(call.DEFAULT_INPUT_DIR)))
+        completed = call.find_notes_with_transcript_content(call.DEFAULT_OUTPUT_DIR)
+        queued = queued_files(QUEUE.read_text() if QUEUE.exists() else '')
+        rows = captions()
+        plans = []
+        for path in files:
+            if call.DEFAULT_OUTPUT_DIR / f'{path.stem}.md' in completed or path.name in queued:
+                if not selector:
+                    continue
+                chosen, reason, status = None, 'already transcribed or queued', 'skip'
+            else:
+                # A shared selector is a hint, not an override across meeting days.
+                hints = [r for r in rows if phrase and phrase.casefold() in (r['path'].name + r['header']).casefold()]
+                chosen, reason = match_caption(path, hints or rows, caption)
+                status = 'pending' if chosen else 'unmatched'
+            if status == 'unmatched' and not selector:
+                continue
+            record = {'status': status, 'audio': str(path), 'caption': str(chosen) if chosen else '', 'reason': reason}
+            if format == 'jsonl':
+                typer.echo(json.dumps(record))
+            else:
+                display = path.relative_to(call.DEFAULT_INPUT_DIR) if path.is_relative_to(call.DEFAULT_INPUT_DIR) else path
+                typer.echo('\t'.join((status, str(display), record['caption'], reason)))
+            if status == 'pending' and len(plans) < limit:
+                plans.append((path, chosen))
+        if dry_run or not plans:
+            return
+        call.preflight_write(QUEUE)
+        for index, (path, chosen) in enumerate(plans, 1):
+            meetcall.log(f'[{index}/{len(plans)}] {path.name} ← {chosen.name}')
+            prompt = meetcall.context_prompt(chosen.read_text(), 'callprompt')
+            if not (call.DEFAULT_OUTPUT_DIR / f'{path.stem}.md') in call.find_notes_with_transcript_content(call.DEFAULT_OUTPUT_DIR):
+                prepend(QUEUE, command(path, prompt))
+        meetcall.log(f'Queue saved: {QUEUE}')
+    except subprocess.CalledProcessError as exc:
+        raise typer.BadParameter(f'Luna failed: {exc.stderr or exc}') from exc
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+if __name__ == '__main__':
+    app()

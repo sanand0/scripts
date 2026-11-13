@@ -10,7 +10,7 @@ fastmcp := "3.4.7"
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-wabackup test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-daily-activities test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-transcribe test-translate test-timestamp
+test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-wabackup test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-daily-activities test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-callprompt test-transcribe test-translate test-timestamp
 
 # Run the offline subscription usage adapters and widget tests.
 test-ai-usage:
@@ -151,3 +151,7 @@ test-translate:
 # Run calendar meeting ingestion contracts without Google or model requests.
 test-meetcall:
     {{ pytest }} --with typer --with dateparser --with google-genai --with python-dotenv --with pyyaml pytest -q tests/test_meetcall.py
+
+# Run caption matching and safe transcription queue contracts without model requests.
+test-callprompt:
+    {{ pytest }} --with typer --with dateparser --with google-genai --with python-dotenv --with pyyaml pytest -q tests/test_callprompt.py
