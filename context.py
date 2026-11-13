@@ -461,10 +461,32 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
     if config.whatsapp.is_dir():
         for path in sorted(config.whatsapp.glob("*.jsonl")):
             for line_number, row in json_lines(path):
+                # Prefer the current wacli view; the top-level fields retain the CDP source.
+                original = row
+                current = row.get("wacli", {})
+                row = dict(row)
+                for target, source in (("time", "Timestamp"), ("conversationTitle", "ChatName"),
+                                       ("text", "Text"), ("isOutgoing", "FromMe"),
+                                       ("mediaType", "MediaType"), ("isEdited", "Edited"), ("isRecalled", "Revoked")):
+                    if source in current:
+                        row[target] = current[source]
+                sender = current.get("SenderJID", "")
+                if sender:
+                    row["userId"] = sender
+                # Retain display names when the CLI only has an empty name or numeric JID.
+                display_name = current.get("SenderName", "")
+                row["author"] = (display_name if display_name and not display_name.lstrip("+").isdigit() else row.get("author")) or display_name or sender
+                if sender.endswith("@s.whatsapp.net"):
+                    row["authorPhone"] = sender.partition("@")[0]
                 extra_keys = (
                     "userId", "authorPhone", "isOutgoing", "reactions", "linkUrl", "linkSite",
-                    "linkTitle", "mediaType", "scrapedAt",
+                    "linkTitle", "mediaType", "scrapedAt", "mediaPath", "isEdited", "isRecalled",
                 )
+                extra = {key: row[key] for key in extra_keys if key in row}
+                if current:
+                    extra["deletedForMe"] = current.get("DeletedForMe", False)
+                    if original.get("text") != row.get("text"):
+                        extra["legacyText"] = original.get("text", "")
                 author = row.get("author") or row.get("authorPhone") or row.get("userId", "")
                 item_id = add_item(
                     connection, source="whatsapp", native_id=row.get("messageId", ""),
@@ -473,7 +495,7 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
                     locator=f"{display_path(path, config.home)}#L{line_number}",
                     conversation_id=row.get("conversationId", ""), author=author,
                     role="user" if row.get("isOutgoing") else "other",
-                    extra=compact_json({key: row[key] for key in extra_keys if key in row}),
+                    extra=compact_json(extra),
                 )
                 link_item(
                     connection, item_id, alias_entities, "sender",

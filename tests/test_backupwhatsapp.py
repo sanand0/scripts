@@ -16,7 +16,7 @@ from typer.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import backupwhatsapp as backup
+from archive import backupwhatsapp as backup
 
 
 @pytest.mark.parametrize(("flags", "enabled"), [

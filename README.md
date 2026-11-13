@@ -78,12 +78,7 @@ Here are the setup details for my laptops.
 - [audiosync.py](audiosync.py) syncs audio and video files using cross-correlation. Usage: `uv run audiosync.py video.mkv audio.opus output.mkv`. I use this to sync screen recordings via `videorecord` with phone audio recordings of better quality.
 - [backupgoogle.py](backupgoogle.py) archives Google Mail, Calendar, and Chat from currently logged in `gws` user into `~/Documents/data/$EMAIL/{source}-YYYY-MM.jsonl`. `backupgoogle.py --since YYYY-MM-DD --until YYYY-MM-DD`. Use `--config-dir ~/.config/gws-root.node@gmail.com` for the personal account or `--config-dir ~/.config/gws-anand@study.iitm.ac.in` for IITM. `daily-activities` backs up all three accounts. Account setup and service checks: `~/Dropbox/notes/gws-cli.md`.
 - [backupchatgpt.py](backupchatgpt.py) backs up rendered ChatGPT conversations via `../tools/aiscrapers/{chatgptscraper,chatgpt-sidebar-scraper}.js`. Daily: `uv run backupchatgpt.py --limit 20 --format jsonl`. Weekly: `uv run backupchatgpt.py --rescan --limit 5`. Retry: `uv run backupchatgpt.py --conversation 'https://chatgpt.com/c/UUID' --format jsonl`. Logs: `~/.cache/sanand-scripts/backupchatgpt/YYYY-MM-runs.jsonl`
-- [backupwhatsapp.py](backupwhatsapp.py) backs up WhatsApp Web conversations through Chrome DevTools Protocol into `~/Documents/data/whatsapp/`. Examples: `backupwhatsapp.py --limit 5`, `backupwhatsapp.py --conversation "Family" --format jsonl`, `backupwhatsapp.py --since 2026-05-01 --until 2026-05-17 --limit 20 | moor`.
-- [wabackup](wabackup) incrementally backs up `wacli` messages and images into `~/Documents/data/whatsapp-wacli/`, preserving legacy fields and prior versions.
-  - Daily: `wabackup --sync`; with an existing sync daemon: `wabackup`.
-  - First combine archives: `cp -a ~/Documents/data/whatsapp/. ~/Documents/data/whatsapp-wacli/` (create the destination first); then `wabackup`. Copies media/history; leaves the CDP archive intact.
-  - Inspect: `wabackup --conversation "Family" --dry-run --format jsonl | jaq .`; expired checkpoint: `wabackup --full`. `--no-images` skips downloads; missing images are retried, and download failures return a nonzero exit status.
-  - Current source values are under `wacli`; legacy fields stay intact. State/logs: `~/.cache/sanand-scripts/wabackup/<output-path-hash>/{state.json,run.jsonl}`; prior records: `.history/*.wabackup.jsonl`. Filtered runs never advance the global checkpoint. Local history and server media availability are best effort.
+- [wabackup](wabackup) incrementally backs up `wacli` messages and images into `~/Documents/data/whatsapp/`. `wabackup --conversation "Family"`.
 - [browsing_history.py](browsing_history.py) syncs Microsoft Edge URL activity from `History` and recoverable `Shortcuts` records into `~/Documents/data/browsing-history.db`, then queries it as TSV, CSV, or JSON. Examples: `browsing_history.py --root ~/.config/microsoft-edge --sync-only`, `browsing_history.py --no-sync --since 6m --fields timestamp,activity_source,url,title --limit 100`.
 - [ccusage](ccusage) reports Claude Code subscription quota and resets; `ccusage --json` for agents; uses the regular Claude Code login (restart Claude Code if its token expires).
 - [codexusage](codexusage) reports Codex quota and resets; `codexusage --json` for agents.
@@ -92,7 +87,7 @@ Here are the setup details for my laptops.
 - [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --save "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
 - [chatgpt-export](chatgpt-export) exports ChatGPT data dumps avoiding the 3-minute OpenAI server timeout via HTTP ranges in an authenticated Edge tab. Copy the export link from email, then run: `chatgpt-export`. <!-- https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9 -->
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
-- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
+- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
@@ -169,13 +164,14 @@ Here are the setup details for my laptops.
 
 `services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
 
-- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, and unmetered-only personal backup/sync jobs
+- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp backups, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 
 ## Archive
 
+- [backupwhatsapp.py](archive/backupwhatsapp.py): Replaced by [wabackup](wabackup), which uses `wacli` instead of CDP.
 - [backupmeet.py](archive/backupmeet.py): I use ChatGPT when required, including to automate bulk downloads. Removed from the daily jobs.
 - [emailai](archive/emailai): I use ChatGPT because it has more context.
 - [codexlist](archive/codexlist): I use [agentlog.py](agentlog.py).

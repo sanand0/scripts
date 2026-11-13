@@ -1,0 +1,688 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["typer"]
+# ///
+"""Incrementally archive wacli's local messages, preserving existing JSONL and images.
+
+Default output: ~/Documents/data/whatsapp. The retired CDP archive is whatsapp-old/.
+Syncs until idle by default; --no-sync reads only local data. Local history is best effort.
+Images use bounded retries: 1, 2, 4, 8, 16, then 30 days. Two named pictures
+are tried on the phone on every run, so you can follow the instructions and
+rerun immediately without flags. Confirmed unavailable pictures are skipped.
+Existing fields remain intact; wacli holds the complete current CLI record.
+Changed records are preserved in .history before atomic replacement. Deletions
+never remove archived messages/media. State and run logs live under
+~/.cache/sanand-scripts/wabackup/<output-path-hash>/ (override WABACKUP_CACHE_DIR).
+
+Examples:
+  wabackup
+  wabackup --conversation 'Family' --format jsonl | jaq .
+  wabackup --since 2026-01-01 --limit 5 --dry-run
+  wabackup --full --no-images
+"""
+
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shlex
+import sqlite3
+import subprocess
+import tempfile
+import time
+from contextlib import closing
+from pathlib import Path
+from typing import Any
+
+import typer
+
+app = typer.Typer(add_completion=False, help=__doc__, pretty_exceptions_show_locals=False)
+
+
+def packed(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def atomic(path: Path, content: str) -> None:
+    """Replace durably, on the same filesystem; readers never see partial JSONL."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def cache_dir(output: Path) -> Path:
+    root = Path(os.environ.get("WABACKUP_CACHE_DIR", str(Path.home() / ".cache/sanand-scripts/wabackup")))
+    return root / hashlib.sha256(str(output.resolve()).encode()).hexdigest()[:16]
+
+
+def state_file(output: Path) -> Path:
+    return cache_dir(output) / "state.json"
+
+
+def safe(value: str) -> str:
+    return re.sub(r'[/\\\x00-\x1f<>:"|?*]', "_", value)[:160] or "untitled"
+
+
+def load(path: Path) -> dict[str, dict]:
+    """Reject corruption, duplicate IDs, and mixed-chat files before any writes."""
+    rows = {}
+    chat = None
+    match = re.search(r"\[([^\[\]]+)\]$", path.stem)
+    for number, line in enumerate(path.read_text().split("\n"), 1):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if not isinstance(row, dict) or any(
+            not isinstance(row.get(k), str) or not row[k] for k in ("messageId", "conversationId")
+        ):
+            raise ValueError(f"Invalid identities: {path}:{number}")
+        chat = chat or row["conversationId"]
+        if row["conversationId"] != chat or (match and chat != match[1]) or row["messageId"] in rows:
+            raise ValueError(f"Mixed chat or duplicate message: {path}:{number}")
+        rows[row["messageId"]] = row
+    return rows
+
+
+class Wacli:
+    def __init__(self, account: str, store: Path | None):
+        self.command = ["wacli", "--json"]
+        if account:
+            self.command += ["--account", account]
+        if store:
+            self.command += ["--store", str(store)]
+
+    def call(self, *args: str, readonly: bool = True) -> Any:
+        command = self.command + (["--read-only"] if readonly else []) + list(args)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=360, check=False)
+        if not result.stdout.strip():
+            raise RuntimeError(result.stderr.strip() or f"wacli exited {result.returncode}")
+        envelope = json.loads(result.stdout)
+        if result.returncode or envelope.get("success") is not True:
+            raise RuntimeError(envelope.get("error") or result.stderr.strip())
+        return envelope["data"]
+
+    def export(self, *filters: str) -> list[dict]:
+        rows, cursors = [], set()
+        cursor = ""
+        while True:
+            data = self.call(
+                "messages",
+                "export",
+                "--limit",
+                "10000",
+                *filters,
+                *(["--cursor", cursor] if cursor else []),
+            )
+            rows.extend(data["messages"])
+            page = data["page"]
+            if not page["has_more"]:
+                return rows
+            cursor = page["next_cursor"]
+            if not cursor or cursor in cursors:
+                raise ValueError("Missing or repeated wacli pagination cursor")
+            cursors.add(cursor)
+
+    def changes(self, token: str) -> tuple[list[dict], str]:
+        rows, tokens = [], set()
+        while True:
+            data = self.call("messages", "changes", "--since", token, "--limit", "10000")
+            rows.extend(data["changes"])
+            token = data["next_checkpoint"]
+            if not token or token in tokens:
+                raise ValueError("Missing or repeated change checkpoint")
+            tokens.add(token)
+            if not data["has_more"]:
+                return rows, token
+
+
+def date(value: str) -> dt.datetime:
+    when = dt.datetime.fromisoformat(value)
+    return when.replace(tzinfo=dt.UTC) if when.tzinfo is None else when
+
+
+def merge(old: dict, message: dict) -> dict:
+    """Keep every legacy field. Full previous CLI versions go to .history."""
+    row = dict(old)
+    fields = {
+        "messageId": "MsgID",
+        "conversationId": "ChatJID",
+        "conversationTitle": "ChatName",
+        "time": "Timestamp",
+        "text": "Text",
+        "author": "SenderName",
+        "mediaType": "MediaType",
+        "mediaCaption": "MediaCaption",
+        "quoteMessageId": "quoted_msg_id",
+        "isForwarded": "IsForwarded",
+        "isOutgoing": "FromMe",
+        "isEdited": "Edited",
+        "isRecalled": "Revoked",
+    }
+    for target, source in fields.items():
+        if target not in row and message.get(source) not in (None, ""):
+            row[target] = message[source]
+    row["wacli"] = message
+    return row
+
+
+def image(client: Wacli, output: Path, row: dict, phone: bool = False) -> bool:
+    """wacli verifies hashes; phone recovery may update its media cache and metadata."""
+    if row.get("mediaPath"):
+        path = (output / row["mediaPath"]).resolve()
+        if not path.is_relative_to(output.resolve()):
+            raise ValueError("mediaPath escapes output directory")
+        if path.is_file() and path.stat().st_size:
+            return False
+    message = row["wacli"]
+    if message.get("MediaType") != "image":
+        return False
+    extension = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }.get(message.get("MimeType"), ".img")
+    relative = (
+        Path("media") / safe(message["ChatJID"]) / (hashlib.sha256(message["MsgID"].encode()).hexdigest() + extension)
+    )
+    target = output / relative
+    if not target.is_file() or not target.stat().st_size:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A unique staging directory prevents interrupted downloads becoming cache hits.
+        with tempfile.TemporaryDirectory(dir=target.parent) as stage:
+            download = Path(stage) / target.name
+            client.call(
+                "media",
+                "download",
+                "--chat",
+                message["ChatJID"],
+                "--id",
+                message["MsgID"],
+                "--output",
+                str(download),
+                "--timeout",
+                "12s" if phone else "8s",
+                *(["--retry-on-phone"] if phone else []),
+                readonly=not phone,
+            )
+            if not download.is_file() or not download.stat().st_size:
+                raise ValueError("wacli returned without a nonempty image")
+            os.replace(download, target)
+    row["mediaPath"] = str(relative)
+    return True
+
+
+def save_archive(path: Path, old: dict, rows: dict) -> None:
+    history = [row for mid, row in old.items() if row != rows.get(mid)]
+    if old == rows:
+        return
+    if history:
+        history_path = path.parent / ".history" / f"{path.stem}.wabackup.jsonl"
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        with history_path.open("a") as handle:
+            handle.write("".join(packed(row) + "\n" for row in history))
+            handle.flush()
+            os.fsync(handle.fileno())
+    atomic(
+        path,
+        "".join(packed(row) + "\n" for row in sorted(rows.values(), key=lambda r: (r.get("time", ""), r["messageId"]))),
+    )
+    stamps = [date(r["time"]).timestamp() for r in rows.values() if r.get("time")]
+    if stamps:
+        os.utime(path, (max(stamps), max(stamps)))
+
+
+def picture_hint(row: dict, jid: str) -> str:
+    """Describe what the user can see or search for in WhatsApp, without message IDs."""
+    message = row.get("wacli", {})
+    title = message.get("ChatName") or row.get("conversationTitle") or jid
+    sender = (
+        message.get("SenderName")
+        or row.get("author")
+        or message.get("SenderJID", "").partition("@")[0]
+        or "sender unknown"
+    )
+    when = date(row["time"]).astimezone().strftime("%Y-%m-%d at %H:%M %Z") if row.get("time") else "date unknown"
+    text = next(
+        (
+            " ".join(str(value).split())
+            for value in (
+                message.get("MediaCaption"),
+                row.get("mediaCaption"),
+                message.get("Text"),
+                row.get("text"),
+                row.get("quoteText"),
+            )
+            if value and str(value).strip().casefold() not in {"[image]", "[photo]", "(image)", "(photo)", "(message)"}
+        ),
+        "",
+    )
+    detail = f"search for {packed(text[:160])}" if text else "photo without a caption"
+    return f"{title}: {when}; from {sender}; {detail}"
+
+
+def recover_images(
+    client: Wacli,
+    output: Path,
+    paths: dict,
+    archives: dict,
+    store: Path,
+    retry_selected: bool = False,
+) -> None:
+    """Back off bulk retries; always probe the two pictures last suggested to the user."""
+    cache = cache_dir(output)
+    media_file = cache / "media.json"
+    state = json.loads(media_file.read_text()) if media_file.exists() else {}
+    items = state.get("items", {})
+    with closing(sqlite3.connect(f"{store.as_uri()}?mode=ro", uri=True)) as db:
+        metadata = {
+            (jid, mid): (gone, direct, local, bool(ready))
+            for jid, mid, gone, direct, local, ready in db.execute(
+                "SELECT chat_jid,msg_id,media_unavailable_at,direct_path,local_path, (coalesce(direct_path,'') != '' AND length(media_key)>0) FROM messages WHERE media_type='image'"
+            )
+        }
+    now = time.time()
+    pending, fresh = {}, set()
+    for jid, rows in archives.items():
+        for mid, row in rows.items():
+            message = row.get("wacli", {})
+            if message.get("MediaType") != "image":
+                continue
+            relative = row.get("mediaPath")
+            if relative:
+                target = (output / relative).resolve()
+                if not target.is_relative_to(output.resolve()):
+                    raise ValueError("mediaPath escapes output directory")
+                if target.is_file() and target.stat().st_size:
+                    items.pop(f"{jid}/{mid}", None)
+                    continue
+            key = f"{jid}/{mid}"
+            gone, direct, local, ready = metadata.get((jid, mid), (None, message.get("DirectPath"), None, True))
+            fingerprint = hashlib.sha256(packed([direct, message.get("MimeType"), ready]).encode()).hexdigest()
+            entry = items.get(key, {})
+            if entry.get("fingerprint") != fingerprint:
+                entry = {"fingerprint": fingerprint, "attempts": 0, "next": 0, "status": "waiting", "kind": "direct"}
+            if not ready:
+                entry.update(
+                    kind="metadata",
+                    error="Missing download information; a fresh forwarded or resent copy may be needed",
+                )
+            if gone:
+                entry.update(status="unavailable", error="Phone confirmed no copy and CDN reference expired")
+            items[key] = entry
+            if entry["status"] != "unavailable":
+                pending[key] = (jid, mid, row)
+                if local and Path(local).is_file():
+                    fresh.add(key)
+    ordered = sorted(pending, key=lambda k: pending[k][2].get("time", ""), reverse=True)
+    # Keep the previously printed instructions actionable even during cooldown.
+    focus = [k for k in state.get("focus", []) if k in pending and items[k].get("kind") == "phone"][:2]
+    focus += [k for k in ordered if k not in focus and items[k].get("kind") == "phone"][: 2 - len(focus)]
+    phone_keys = set(focus)
+    due = [
+        k
+        for k in ordered
+        if k not in phone_keys
+        and (k in fresh or (items[k].get("kind") != "metadata" and (retry_selected or items[k]["next"] <= now)))
+    ]
+    if retry_selected:
+        # Repeated chat-specific commands make progress beyond the same failed pictures.
+        due.sort(key=lambda k: items[k]["attempts"])
+    saved = attempted = 0
+    started = time.monotonic()
+    changed = {}
+    try:
+        for key in focus + due:
+            if attempted >= 20 or time.monotonic() - started >= 40:
+                break
+            jid, mid, old = pending[key]
+            row = dict(old)
+            entry = items[key]
+            phone = (key in phone_keys or entry.get("kind") == "phone") and key not in fresh
+            typer.echo(
+                f"Trying image {attempted + 1}/20: {old.get('conversationTitle', jid)} ({'phone' if phone else 'download'})",
+                err=True,
+            )
+            attempted += 1
+            try:
+                image(client, output, row, phone=phone)
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                error = str(exc)
+                attempts = entry["attempts"] + 1
+                entry.update(
+                    attempts=attempts, next=now + min(2 ** min(attempts - 1, 5), 30) * 86400, error=error[:1000]
+                )
+                if "media recovery not_on_phone for " in error:
+                    entry.update(status="unavailable", kind="phone")
+                elif phone or re.search(r"status code (403|404|410)\b", error):
+                    entry["kind"] = "phone"
+            else:
+                changed.setdefault(jid, dict(archives[jid]))[mid] = row
+                saved += 1
+                items.pop(key, None)
+        for jid, rows in changed.items():
+            save_archive(paths[jid], archives[jid], rows)
+            archives[jid] = rows
+    finally:
+        # Save retry decisions even when a later archive write is interrupted.
+        waiting = [k for k in ordered if k in items and items[k]["status"] == "waiting"]
+        focus = [k for k in focus if k in waiting]
+        focus += [k for k in waiting if k not in focus and items[k].get("kind") == "phone"][: 2 - len(focus)]
+        atomic(media_file, packed({"items": items, "focus": focus}) + "\n")
+    unavailable = sum(e["status"] == "unavailable" for key, e in items.items() if key.rpartition("/")[0] in archives)
+    typer.echo(
+        f"Images: {saved} saved; {len(waiting)} waiting; {unavailable} confirmed unavailable (skipped); {attempted} attempted.",
+        err=True,
+    )
+    missing_metadata = sum(items[k].get("kind") == "metadata" for k in waiting)
+    if waiting:
+        instructions = [
+            "To recover missing pictures:",
+            "1. Open WhatsApp on your phone. Keep it online, unlocked, and WhatsApp open.",
+            "2. Open these conversations, go to these dates, and tap the pictures to download them:",
+        ]
+        for key in focus:
+            jid, _, row = pending[key]
+            instructions.append(f"   - {picture_hint(row, jid)}")
+        if not focus:
+            instructions.append("   No phone-recovery pictures selected yet; other failures will retry later.")
+        instructions += [
+            "3. Leave WhatsApp open and run wabackup again. No extra flags are needed.",
+            (
+                "Chat-specific runs retry waiting pictures now, up to 20 attempts/40 seconds plus an in-flight download. Repeat the same command to continue."
+                if retry_selected
+                else "Only the two pictures listed above bypass the delay. Other retries wait 1, 2, 4, 8, 16, then 30 days."
+            ),
+            "If WhatsApp says a picture is unavailable, scrolling will not restore it. You would need another copy or the sender to resend it.",
+        ]
+        instructions.append("To back up images from just one chat at a time, run one of these commands:")
+        chat_examples = dict.fromkeys(pending[k][0] for k in (focus or waiting[:1]))
+        for jid in chat_examples:
+            row = next(row for chat, _, row in pending.values() if chat == jid)
+            title = row.get("wacli", {}).get("ChatName") or row.get("conversationTitle") or jid
+            instructions.append("   " + shlex.join(["wabackup", "--conversation", title]))
+        instructions.append(
+            "This also backs up that chat's text and retries its waiting images now. Other chat archives are left alone; repeat the command to continue within the retry budget."
+        )
+        if missing_metadata:
+            instructions.append(
+                f"{missing_metadata} pictures also lack download information. If you can see them on your phone, forward them to your 'Message yourself' chat, then run wabackup. The original record stays; the forwarded picture is saved as a new message."
+            )
+        checklist = (
+            "\n".join(instructions)
+            + "\n\nAll waiting pictures:\n"
+            + "\n".join(
+                f"{picture_hint(pending[k][2], pending[k][0])}\t{items[k].get('kind', 'direct')} retry pending"
+                for k in waiting
+            )
+            + "\n"
+        )
+        atomic(cache / "media-help.txt", checklist)
+        typer.echo("\n".join(instructions) + f"\nFull picture list: {cache / 'media-help.txt'}", err=True)
+
+
+def backup(
+    client: Wacli,
+    output: Path,
+    conversations: list[str],
+    name: str,
+    since: str,
+    until: str,
+    limit: int,
+    images: bool,
+    full: bool,
+    dry_run: bool,
+    format: str,
+) -> None:
+    paths, archives = {}, {}
+    for path in sorted([*output.glob("*.jsonl"), *output.glob("*.json")]):
+        if path.name.startswith("."):
+            continue
+        rows = load(path)
+        if not rows:
+            continue
+        jid = next(iter(rows.values()))["conversationId"]
+        if jid in paths:
+            # Legacy renamed-chat aliases stay intact; update the first path only.
+            for mid, row in rows.items():
+                archives[jid][mid] = {**row, **archives[jid].get(mid, {})}
+        else:
+            paths[jid], archives[jid] = path, rows
+    state_path = state_file(output)
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    doctor = client.call("doctor")
+    source = {k: doctor[k] for k in ("store_dir", "linked_jid")}
+    if state and state["source"] != source:
+        raise ValueError("Output belongs to another wacli store/account")
+    filtered = bool(conversations or name or since or until or limit)
+    changed = None
+    if not filtered and state and not full:
+        # Expired journal tokens fail visibly: --full rebuilds without deleting data.
+        try:
+            changes, anchor = client.changes(state["checkpoint"])
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Change feed failed: {exc}. If the checkpoint expired, rerun with --full; existing data is retained."
+            ) from exc
+        changed = {
+            c[k]
+            for c in changes
+            if c.get("reason") != "local_removal"
+            for k in ("chat_jid", "new_chat_jid")
+            if c.get(k)
+        }
+    elif not filtered:
+        # Capture before a full export so concurrent changes replay on the next run.
+        anchor = client.call("messages", "changes", "--checkpoint")["next_checkpoint"]
+    # The CLI's after bound is strict; include the boundary second, then filter exactly.
+    after = (date(since).astimezone(dt.UTC) - dt.timedelta(seconds=1)).isoformat() if since else ""
+    filters = [item for flag, value in (("--after", after), ("--before", until)) if value for item in (flag, value)]
+    messages = []
+    if changed is None or filtered:
+        if conversations:
+            for selector in conversations:
+                messages.extend(client.export("--chat", selector, *filters))
+        else:
+            messages = client.export(*filters)
+    else:
+        for jid in sorted(changed):
+            messages.extend(client.export("--chat", jid))
+    # Export hides tombstones. Read only their IDs from the documented local DB,
+    # then obtain full records via show; never open session.db or export secrets.
+    db = Path(doctor["store_dir"]) / "wacli.db"
+    with closing(sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True)) as connection:
+        tombstones = connection.execute(
+            "SELECT chat_jid,msg_id FROM messages WHERE deleted_at IS NOT NULL OR revoked=1 OR deleted_for_me=1"
+        ).fetchall()
+    for jid, mid in tombstones:
+        if conversations and all("@" in c for c in conversations) and jid not in conversations:
+            continue
+        if changed is None or jid in changed or filtered:
+            messages.append(client.call("messages", "show", "--chat", jid, "--id", mid))
+    grouped = {}
+    for message in messages:
+        jid, mid = message["ChatJID"], message["MsgID"]
+        if not isinstance(jid, str) or not jid or not isinstance(mid, str) or not mid:
+            raise ValueError("wacli returned an invalid message identity")
+        title = message.get("ChatName") or jid
+        if conversations and jid not in conversations and title not in conversations:
+            continue
+        if name and name.casefold() not in title.casefold():
+            continue
+        if (since and date(message["Timestamp"]) < date(since)) or (
+            until and date(message["Timestamp"]) >= date(until)
+        ):
+            continue
+        grouped.setdefault(jid, {})[mid] = message
+    if conversations:
+        found = {value for jid, rows in grouped.items() for value in (jid, next(iter(rows.values())).get("ChatName"))}
+        if missing := set(conversations) - found:
+            raise ValueError(f"No matching messages for: {', '.join(sorted(missing))}")
+    selected_archives = {}
+    ordered = sorted(grouped, key=lambda jid: max(m["Timestamp"] for m in grouped[jid].values()), reverse=True)
+    for jid in ordered[: limit or None]:
+        incoming = grouped[jid]
+        title = next(iter(incoming.values())).get("ChatName") or jid
+        path = paths.get(jid, output / f"{safe(title)[:100]} [{safe(jid)}].jsonl")
+        old = archives.get(jid, {})
+        rows = dict(old)
+        updated = 0
+        typer.echo(
+            f"{'Planning' if dry_run else 'Backing up'} {title}: {len(incoming)} local messages",
+            err=True,
+        )
+        for mid, message in incoming.items():
+            row = merge(old.get(mid, {}), message)
+            if old.get(mid) != row:
+                updated += 1
+                rows[mid] = row
+        if not dry_run:
+            save_archive(path, old, rows)
+            paths[jid], archives[jid] = path, rows
+        selected_archives[jid] = rows
+        summary = {
+            "conversation_id": jid,
+            "path": str(path),
+            "messages_seen": len(incoming),
+            "rows_changed": updated,
+            "dry_run": dry_run,
+        }
+        typer.echo(packed(summary) if format == "jsonl" else "\t".join(str(v) for v in summary.values()))
+    if images and not dry_run:
+        targets = selected_archives if filtered else archives
+        recover_images(
+            client,
+            output,
+            paths,
+            targets,
+            Path(doctor["store_dir"]) / "wacli.db",
+            retry_selected=bool(conversations),
+        )
+    if not dry_run and not filtered:
+        atomic(
+            state_path,
+            packed(
+                {
+                    "source": source,
+                    "checkpoint": anchor,
+                }
+            )
+            + "\n",
+        )
+
+
+@app.command()
+def main(
+    output_dir: Path = typer.Option(Path.home() / "Documents/data/whatsapp", "--output-dir"),
+    conversation: list[str] = typer.Option([], "--conversation"),
+    name: str = typer.Option("", "--name"),
+    since: str = typer.Option("", "--since", help="Inclusive RFC3339 or YYYY-MM-DD."),
+    until: str = typer.Option("", "--until", help="Exclusive RFC3339 or YYYY-MM-DD."),
+    limit: int = typer.Option(0, "--limit", "-n", min=0, help="Maximum chats; 0 = all."),
+    images: bool = typer.Option(True, "--images/--no-images"),
+    sync: bool = typer.Option(True, "--sync/--no-sync", help="Sync until idle before exporting (default)."),
+    full: bool = typer.Option(False, "--full", help="Rescan retained history; recover expired checkpoints."),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    account: str = typer.Option("", "--account"),
+    store: Path | None = typer.Option(None, "--store"),
+    format: str = typer.Option("text", "--format"),
+    describe: bool = typer.Option(False, "--describe"),
+) -> None:
+    if describe:
+        typer.echo(
+            packed(
+                {
+                    "name": "wabackup",
+                    "output": str(output_dir),
+                    "primary_key": ["conversationId", "messageId"],
+                    "source_record": "wacli",
+                    "checkpoint": str(state_file(output_dir)),
+                    "logs": str(cache_dir(output_dir) / "run.jsonl"),
+                    "history": ".history/*.wabackup.jsonl",
+                    "incremental": "change journal; --full after expiry",
+                    "freshness": "sync until idle by default; --no-sync uses local archive",
+                    "images": "default; 20 attempts/40 seconds per run plus at most one in-flight timeout; two named phone probes bypass cooldown",
+                    "media_state": str(cache_dir(output_dir) / "media.json"),
+                    "phone_instructions": str(cache_dir(output_dir) / "media-help.txt"),
+                }
+            )
+        )
+        return
+    if format not in ("text", "jsonl"):
+        raise typer.BadParameter("--format must be text or jsonl")
+    for value in (since, until):
+        if value:
+            date(value)
+    if since and until and date(since) >= date(until):
+        raise typer.BadParameter("--since must be before --until")
+    client = Wacli(account, store)
+    output_dir = output_dir.expanduser().resolve()
+    if dry_run:
+        backup(
+            client,
+            output_dir,
+            conversation,
+            name,
+            since,
+            until,
+            limit,
+            images,
+            full,
+            True,
+            format,
+        )
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / ".wabackup.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        started = time.monotonic()
+        status = "failed"
+        try:
+            if sync:
+                if client.call("doctor").get("lock_held"):
+                    typer.echo("wacli already has an active store owner; reading alongside it.", err=True)
+                else:
+                    typer.echo("Syncing wacli until idle...", err=True)
+                    client.call("sync", "--once", "--idle-exit", "10s", readonly=False)
+            backup(
+                client,
+                output_dir,
+                conversation,
+                name,
+                since,
+                until,
+                limit,
+                images,
+                full,
+                False,
+                format,
+            )
+            status = "ok"
+        finally:
+            logs = cache_dir(output_dir)
+            logs.mkdir(parents=True, exist_ok=True)
+            with (logs / "run.jsonl").open("a") as log:
+                log.write(
+                    packed(
+                        {
+                            "at": dt.datetime.now(dt.UTC).isoformat(),
+                            "status": status,
+                            "seconds": round(time.monotonic() - started, 3),
+                        }
+                    )
+                    + "\n"
+                )
+
+
+if __name__ == "__main__":
+    app()

@@ -537,3 +537,40 @@ def test_status_and_compact_query_log(corpus) -> None:
     assert {"timestamp", "mode", "query", "filters", "result_count", "result_sources", "latency_ms"} <= entry.keys()
     assert "body" not in entry and "secret body marker" == entry["query"]
     assert str(home) not in json.dumps(entry)
+
+
+def test_wacli_current_fields_preserve_legacy_text_and_sender_identity(corpus):
+    home, config, db, _ = corpus
+    path = home / "Documents/data/whatsapp/Family [family@g.us].jsonl"
+    jsonl(path, [{
+        "messageId": "wa-1", "conversationId": "family@g.us", "conversationTitle": "Old Family",
+        "author": "Alice Example", "userId": "wrong-group-id", "isOutgoing": True,
+        "time": "2026-08-07T10:00:00Z", "text": "old preserved text",
+        "mediaPath": "media/picture.jpg", "reactions": "heart 2",
+        "wacli": {"ChatName": "Current Family", "Timestamp": "2026-08-07T10:00:01Z",
+                  "SenderJID": "15550001@lid", "SenderName": "", "Text": "current edited text",
+                  "FromMe": False, "Edited": True, "Revoked": False, "DeletedForMe": False},
+    }])
+    context.rebuild_database(db, config)
+    r = rows(db, "select body,title,author,role,extra from items where source='whatsapp'")[0]
+    assert (r["body"], r["title"], r["author"], r["role"]) == ("current edited text", "Current Family", "Alice Example", "other")
+    extra = json.loads(r["extra"])
+    assert extra["legacyText"] == "old preserved text"
+    assert extra["userId"] == "15550001@lid"
+    assert extra["mediaPath"] == "media/picture.jpg"
+    assert extra["reactions"] == "heart 2" and extra["isEdited"] is True
+    assert json.loads(path.read_text())["text"] == "old preserved text"
+
+
+def test_wacli_empty_current_text_does_not_resurrect_old_text(corpus):
+    home, config, db, _ = corpus
+    jsonl(home / "Documents/data/whatsapp/Family [family@g.us].jsonl", [{
+        "messageId": "wa-1", "conversationId": "family@g.us", "text": "old retained payload",
+        "wacli": {"Text": "", "FromMe": False, "Revoked": True, "DeletedForMe": True},
+    }])
+    context.rebuild_database(db, config)
+    r = rows(db, "select body,extra from items where source='whatsapp'")[0]
+    assert r["body"] == ""
+    extra = json.loads(r["extra"])
+    assert extra["legacyText"] == "old retained payload"
+    assert extra["isRecalled"] is True and extra["deletedForMe"] is True

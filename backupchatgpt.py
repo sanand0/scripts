@@ -48,7 +48,7 @@ from uuid import UUID
 import typer
 import websockets
 
-from backupwhatsapp import CDPPage, cdp_http_base
+from archive.backupwhatsapp import CDPPage, cdp_http_base
 import sanand_observability as obs
 
 app = typer.Typer(add_completion=False, help=__doc__)

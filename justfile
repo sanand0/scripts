@@ -10,7 +10,7 @@ fastmcp := "3.4.7"
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-transcribe test-translate test-timestamp
+test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-wabackup test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-daily-activities test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-transcribe test-translate test-timestamp
 
 # Run the offline subscription usage adapters and widget tests.
 test-ai-usage:
@@ -36,9 +36,13 @@ test-backup-google:
 test-backup-twitter:
     {{ pytest }} --with httpx --with typer pytest -q tests/test_backuptwitter.py
 
-# Run the WhatsApp backup parser, merge, and incremental-selection tests.
+# Run the archived CDP WhatsApp backup parser, merge, and incremental-selection tests.
 test-backup-whatsapp:
     {{ pytest }} --with typer --with websockets pytest -q tests/test_backupwhatsapp.py
+
+# Run the wacli backup preservation, incremental, and media retry tests.
+test-wabackup:
+    {{ pytest }} --with typer pytest -q tests/test_wabackup.py
 
 # Run the browsing history tests.
 test-browsing-history:
@@ -63,6 +67,10 @@ test-codextags:
 # Run the deterministic cross-source context index tests.
 test-context:
     {{ pytest }} --with pyyaml --with typer pytest -q tests/test_context.py
+
+# Run daily WhatsApp scheduling and failure reporting tests without live jobs.
+test-daily-activities:
+    {{ pytest }} pytest -q tests/test_daily_activities.py
 
 # Rebuild the local cross-source context index.
 context-rebuild:
