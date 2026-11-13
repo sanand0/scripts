@@ -775,9 +775,24 @@ function aimode --description "Example: aimode 'What is AI?' opens Google AI Mod
     open "https://www.google.com/search?udm=50&q=$encoded"
 end
 
-# #TODO - unused so far
-function youtube-subtitles --description "downloads subtitles from YouTube video URL"
-    curl -s "$(uvx --with mutagen yt-dlp -q --skip-download --remote-components ejs:github --convert-subs srt --write-sub --sub-langs "en" --write-auto-sub --print "requested_subtitles.en.url" $argv[1])"
+# Usage: youtube-subtitles URL > video.vtt
+function youtube-subtitles --description "Print English VTT, preferring edited captions over automatic captions"
+    if test (count $argv) -ne 1
+        echo "Usage: youtube-subtitles URL > video.vtt" >&2
+        return 2
+    end
+    set -l metadata (uvx yt-dlp --ignore-config -q --skip-download --no-playlist --remote-components ejs:github --print '%(.{subtitles,automatic_captions})j' "$argv[1]")
+    or return
+    # Check all English manual tracks before falling back to automatic ones.
+    # Exclude auto-translation variants such as en-fr; retain regional English.
+    set -l url (printf '%s\n' "$metadata" | jaq -er '
+        [.subtitles // {}, .automatic_captions // {}]
+        | map(to_entries | map(select(.key | test("^en(-[A-Z]{2}|-orig)?$")))
+            | sort_by(if .key == "en-orig" then 0 elif .key == "en" then 1 else 2 end)
+            | map(.value[] | select(.ext == "vtt")))
+        | flatten | .[0].url // error("No English VTT subtitles available")')
+    or return
+    curl --fail --silent --show-error --location "$url"
 end
 
 # Extract the first embedded subtitle track, retaining speaker names in the text.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import shutil
 import subprocess
 import textwrap
 
@@ -8,6 +10,113 @@ import pytest
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "rofi" / "rofi-clip.sh"
+
+
+def test_vtt_to_text_removes_youtube_rolling_overlap():
+    text = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.000 --> 00:00:02.000 align:start position:0%
+
+Hello<00:00:01.000><c> everyone</c>
+
+00:00:02.000 --> 00:00:02.010
+Hello everyone
+
+00:00:02.010 --> 00:00:04.000
+Hello everyone
+welcome<00:00:03.000><c> to class.</c>
+
+00:00:04.000 --> 00:00:04.010
+welcome to class.
+"""
+    result = run_transform("transform_vtt_to_text", text)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Hello everyone welcome to class.\n"
+
+
+def test_vtt_to_text_preserves_speakers_repetitions_and_paragraphs(tmp_path):
+    source = tmp_path / "captions.vtt"
+    source.write_text("""WEBVTT
+
+STYLE
+::cue {color: lime;}
+
+NOTE a comment
+not speech
+
+first-cue
+00:00.000 --> 00:01.000
+<v Alice><i>Yes.</i> &amp; 2 &lt; 3.</v>
+
+second-cue
+00:01.000 --> 00:02.000
+<v Alice>Yes.</v>
+
+3
+00:02.000 --> 00:03.000
+<v Bob>Yes.</v>
+
+4
+00:06.000 --> 00:07.000
+<v Bob>Next topic.</v>
+""")
+    result = run_transform("transform_vtt_to_text", str(source))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Alice: Yes. & 2 < 3. Yes.\n\nBob: Yes.\n\nBob: Next topic.\n"
+
+
+def test_vtt_to_text_rejects_non_vtt():
+    result = run_transform("transform_vtt_to_text", "This is not a caption file.")
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+def test_vtt_to_text_menu_is_wired():
+    result = run_shell('source "$1"; printf "%s" "${MENU_FNS["VTT to text                   (subtitles or file path)"]}"')
+    assert result.stdout == "transform_vtt_to_text"
+
+
+def test_vtt_to_text_runs_through_clipboard_menu(tmp_path):
+    result = run_shell(f'''
+        source "$1"
+        ACTIVATION_LOG="{tmp_path}/activations.tsv"
+        clipboard_get() {{ printf 'WEBVTT\n\n00:00.000 --> 00:01.000\nHello world.\n'; }}
+        rofi() {{ cat >/dev/null; printf 'VTT to text                   (subtitles or file path)'; }}
+        clipboard_set() {{ cat; }}
+        main
+    ''')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "Hello world."
+    assert "VTT to text" in (tmp_path / "activations.tsv").read_text()
+
+
+@pytest.mark.skipif(not shutil.which("fish") or not shutil.which("jaq"), reason="needs fish and jaq")
+@pytest.mark.parametrize("manual,automatic,expected", [
+    ({"en-US": [{"ext": "vtt", "url": "manual"}]},
+     {"en": [{"ext": "vtt", "url": "automatic"}]}, "manual"),
+    ({}, {"en-orig": [{"ext": "vtt", "url": "original"}],
+          "en-fr": [{"ext": "vtt", "url": "translated"}]}, "original"),
+    ({"fr": [{"ext": "vtt", "url": "french"}]}, {}, None),
+])
+def test_youtube_subtitles_prefers_edited_english(tmp_path, manual, automatic, expected):
+    setup = (SCRIPT_PATH.parents[1] / "setup.fish").read_text()
+    function = setup.split("function youtube-subtitles ", 1)[1].split("\n# Extract the first embedded", 1)[0]
+    metadata = tmp_path / "metadata.json"
+    metadata.write_text(json.dumps({"subtitles": manual, "automatic_captions": automatic}))
+    result = subprocess.run(["fish", "-c", f'''
+        function uvx; cat "{metadata}"; end
+        function curl; printf '%s' "$argv[-1]"; end
+        function youtube-subtitles {function}
+        youtube-subtitles 'https://www.youtube.com/watch?v=test'
+    '''], capture_output=True, text=True)
+    if expected is None:
+        assert result.returncode != 0
+        assert result.stdout == ""
+    else:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == expected
 
 
 @pytest.mark.parametrize("failed_tool", ["xclip", "mise"])

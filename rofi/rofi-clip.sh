@@ -157,6 +157,7 @@ declare -a MENU_LABELS=(
     "Markdown → Rich text           (paste into Docs, Notion)"
     "Markdown → HTML                (paste into WordPress)"
     "Markdown → Plain text          (strip all formatting)"
+    "VTT to text                   (subtitles or file path)"
     "Markdown: Strip links          ([text](url) → text)"
     "Markdown: Strip <details>      (keep summary only)"
     "Markdown: Clean & reformat     (dprint)"
@@ -183,6 +184,7 @@ declare -A MENU_FNS=(
     ["Markdown → Rich text           (paste into Docs, Notion)"]="transform_md_to_richtext"
     ["Markdown → HTML                (paste into WordPress)"]="transform_md_to_html"
     ["Markdown → Plain text          (strip all formatting)"]="transform_md_to_text"
+    ["VTT to text                   (subtitles or file path)"]="transform_vtt_to_text"
     ["Markdown: Strip links          ([text](url) → text)"]="transform_strip_links"
     ["Markdown: Strip <details>      (keep summary only)"]="transform_strip_details"
     ["Markdown: Clean & reformat     (dprint)"]="transform_md_clean"
@@ -282,6 +284,98 @@ transform_md_to_text() {
     echo "$INPUT" \
         | pandoc -f "$PANDOC_FROM" -t plain --wrap=none \
         | sed 's/\[\([^]]*\)\]([^)]*)/\1/g'  # catch any residual links
+}
+
+transform_vtt_to_text() {
+    with_input_file uv run --no-project python - <<'PYEOF'
+import html
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding='utf-8-sig')
+# Accept either copied VTT contents or a path copied from a file manager.
+if '\n' not in text and not text.startswith('WEBVTT'):
+    text = Path(text.strip()).expanduser().read_text(encoding='utf-8-sig')
+if not re.match(r'WEBVTT(?:\s|$)', text):
+    raise ValueError('Expected WEBVTT contents or a VTT file path')
+
+stamp = r'(?:\d+:)?\d{2}:\d{2}\.\d{3}'
+timing = re.compile(rf'^({stamp})\s+-->\s+({stamp})(?:\s|$)')
+rolling = bool(re.search(rf'<{stamp}>', text))
+
+def seconds(value):
+    total = 0.0
+    for part in value.split(':'):
+        total = total * 60 + float(part)
+    return total
+
+cues = []
+body = []
+times = None
+skip = False
+lines = text.splitlines()
+for i, line in enumerate(lines):
+    line = line.strip()
+    if re.match(r'^(NOTE|STYLE|REGION)(?:\s|$)', line):
+        skip = True
+    if not line:
+        skip = False
+        continue
+    if skip:
+        continue
+    match = timing.match(line)
+    if match:
+        if times is not None:
+            cues.append((*times, ' '.join(body)))
+        times = tuple(seconds(value) for value in match.groups())
+        body = []
+    elif times is not None:
+        # Cue identifiers precede timing lines; YouTube also leaves blank lines
+        # between timings and payloads, so blank-line splitting loses speech.
+        if i + 1 < len(lines) and timing.match(lines[i + 1].strip()):
+            continue
+        body.append(line)
+if times is not None:
+    cues.append((*times, ' '.join(body)))
+if not cues:
+    raise ValueError('No VTT cues found')
+
+paragraphs = []
+words = []
+previous = []
+previous_end = -1.0
+previous_speaker = None
+for start, end, payload in cues:
+    # Keep source speaker labels, without inventing speakers or punctuation.
+    payload = re.sub(r'<v(?:\.[^\s>]+)*\s+([^>]+)>', r'\1: ', payload)
+    speaker = re.match(r'^([^<>:]+): ', payload)
+    speaker = speaker[1] if speaker else None
+    if speaker:
+        payload = payload[len(speaker) + 2:]
+    current = html.unescape(re.sub(r'<[^>]*>', '', payload)).split()
+    if not current:
+        continue
+    fresh = current
+    # Only collapse adjacent rolling/overlapping cues, never global repeats.
+    if speaker == previous_speaker and (start < previous_end or (rolling and start <= previous_end + 0.05)):
+        for size in range(min(len(previous), len(current)), 0, -1):
+            if previous[-size:] == current[:size]:
+                fresh = current[size:]
+                break
+    if fresh:
+        if words and (start - previous_end >= 2 or speaker != previous_speaker
+                      or (len(words) >= 100 and re.search(r'[.!?][\"\u201d\u2019)]*$', words[-1]))):
+            paragraphs.append(' '.join(words))
+            words = []
+        if not words and speaker:
+            words.append(html.unescape(speaker) + ':')
+        words.extend(fresh)
+    previous, previous_end, previous_speaker = current, end, speaker
+if words:
+    paragraphs.append(' '.join(words))
+print('\n\n'.join(paragraphs))
+PYEOF
 }
 
 transform_strip_tracking() {
