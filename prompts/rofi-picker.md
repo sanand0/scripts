@@ -1,5 +1,19 @@
 # rofi-picker
 
+## Change hotkeys, 13 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6-luna --config model_reasoning_effort=high
+-->
+
+Let Ctrl+Alt+F be the hotkey for what is currently Ctrl+Alt+F followed by `f`, i.e. for files.
+Let Ctrl+Alt+G be the hotkey for the current Ctrl+Alt+F - i.e. the main rofi picker.
+That's because my fingers are trained to use Ctrl+Alt+F for files, and I want to keep that muscle memory.
+
+<!-- Later changed to Ctrl+Alt+K manually -->
+<!-- codex resume 01a1d321-5531-74d1-a78f-866994265338 -->
+
 ## Refactor, 03 Nov 2026
 
 <!-- Rofi keyboard shortcuts refactor: https://chatgpt.com/c/6ae8995b-0ac0-83ec-8b96-972d8dcb7e99 (2026-11-03T12:13:23+05:30) -->

@@ -1,7 +1,7 @@
 # When adding a new custom keybinding, add its path to the [/] list below. Then see ../linux.md for how to load this dconf file.
 
 [/]
-custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-toggle/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-previous/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-next/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-backward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-forward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-open/']
+custom-keybindings=['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/downloads/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/suspend/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ask-win/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/picker/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/files/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/prompts/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rofi-clip/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/copy-to-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/chatgpt/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/clean-markdown/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-toggle/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-previous/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-next/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-backward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-forward/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/music-open/']
 
 # Default media keybindings
 # gsettings list-keys org.gnome.settings-daemon.plugins.media-keys  # List all media keys
@@ -35,19 +35,25 @@ binding='Print'
 command='flameshot gui'
 name='Flameshot'
 
-# Ctrl+Alt+F selects a picker with one key before loading its entries
+# Ctrl+Alt+K selects a picker with one key before loading its entries
 [custom-keybindings/picker]
-binding='<Control><Alt>f'
+binding='<Control><Alt>k'
 command='/home/sanand/code/scripts/rofi-picker'
 name='Picker'
 
-# Ctrl+Alt+P is Ctrl+Alt+F, then p (direct prompt picker)
+# Ctrl+Alt+F opens the file picker directly
+[custom-keybindings/files]
+binding='<Control><Alt>f'
+command='/home/sanand/code/scripts/rofi-picker f'
+name='Files'
+
+# Ctrl+Alt+P opens the prompt picker directly (also available from the main picker)
 [custom-keybindings/prompts]
 binding='<Control><Alt>p'
 command='/home/sanand/code/scripts/rofi-picker p'
 name='Prompts'
 
-# Ctrl+Alt+M is Ctrl+Alt+F, then m (direct clipboard transformations)
+# Ctrl+Alt+M opens clipboard transformations directly (also available from the main picker)
 [custom-keybindings/rofi-clip]
 binding='<Control><Alt>m'
 command='/home/sanand/code/scripts/rofi-picker m'
