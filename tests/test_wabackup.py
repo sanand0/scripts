@@ -355,7 +355,7 @@ def test_expired_cdn_focus_retries_immediately_on_phone_without_flags(setup, cap
     assert rows(output)["M1"]["mediaPath"]
 
 
-def test_transient_retry_delays_double_and_no_phone_request(setup, monkeypatch):
+def test_transient_retry_delays_double_and_no_phone_request(setup, monkeypatch, capsys):
     client, output = setup
     clock = [1_800_000_000.0]
     monkeypatch.setattr(wa.time, "time", lambda: clock[0])
@@ -365,6 +365,9 @@ def test_transient_retry_delays_double_and_no_phone_request(setup, monkeypatch):
         run(client, output)
         entry = media_state(output)["items"]["123@g.us/M1"]
         assert entry["next"] == clock[0] + delay * 86400
+        text = capsys.readouterr().err
+        attempt = next(line for line in text.splitlines() if line.startswith("Trying image"))
+        assert f"failed; retry in {delay} day{'s' if delay != 1 else ''}" in attempt
         count = len(client.downloads)
         run(client, output)
         assert len(client.downloads) == count
@@ -386,7 +389,7 @@ def test_only_two_focus_images_ignore_cooldown(setup):
     assert media_state(output)["focus"] == focus
 
 
-def test_confirmed_not_on_phone_skipped_permanently(setup):
+def test_confirmed_not_on_phone_skipped_permanently(setup, capsys):
     client, output = setup
     client.messages = [msg(MediaType="image")]
     client.download_error = "download failed with status code 403"
@@ -394,6 +397,7 @@ def test_confirmed_not_on_phone_skipped_permanently(setup):
     client.download_error = "media recovery not_on_phone for 123@g.us/M1: "
     run(client, output)
     assert media_state(output)["items"]["123@g.us/M1"]["status"] == "unavailable"
+    assert "failed; no retry (confirmed unavailable on phone)" in capsys.readouterr().err
     client.downloads.clear()
     run(client, output)
     assert not client.downloads
@@ -444,13 +448,39 @@ def test_new_cached_copy_bypasses_transient_backoff(setup):
     assert media_state(output)["items"] == {}
 
 
-def test_image_attempt_budget_preserves_remaining_queue(setup):
+@pytest.mark.parametrize("options,expected", [({}, 100), ({"image_attempts": 3}, 3), ({"image_attempts": 103}, 103)])
+def test_image_attempt_budget_preserves_remaining_queue(setup, capsys, options, expected):
     client, output = setup
-    client.messages = [msg(f"M{i}", MediaType="image") for i in range(30)]
+    client.messages = [msg(f"M{i}", MediaType="image") for i in range(105)]
     client.download_error = "temporary network error"
+    run(client, output, **options)
+    assert len(client.downloads) == expected
+    assert len(media_state(output)["items"]) == 105
+    assert f"Trying image {expected}/{expected}:" in capsys.readouterr().err
+
+
+def test_image_attempts_cli_default_custom_and_invalid(monkeypatch, tmp_path):
+    budgets = []
+    monkeypatch.setattr(wa, "backup", lambda *args: budgets.append(args[-1]))
+    monkeypatch.setenv("WABACKUP_CACHE_DIR", str(tmp_path / "cache"))
+    runner = CliRunner()
+    for mode in ("--dry-run", "--no-sync"):
+        for flags in ([], ["--image-attempts", "7"]):
+            result = runner.invoke(wa.app, [mode, "--output-dir", str(tmp_path), *flags])
+            assert result.exit_code == 0, result.output
+    assert budgets == [100, 7, 100, 7]
+    result = runner.invoke(wa.app, ["--dry-run", "--image-attempts", "0"])
+    assert result.exit_code == 2
+    assert budgets == [100, 7, 100, 7]
+
+
+def test_image_attempt_time_budget_is_preserved(setup, monkeypatch):
+    client, output = setup
+    client.messages = [msg(f"M{i}", MediaType="image") for i in range(3)]
+    ticks = iter([0, 0, 119, 120])
+    monkeypatch.setattr(wa.time, "monotonic", lambda: next(ticks))
     run(client, output)
-    assert len(client.downloads) == 20
-    assert len(media_state(output)["items"]) == 30
+    assert len(client.downloads) == 2
 
 
 def test_missing_download_information_is_not_probed_on_phone(setup, capsys):
@@ -467,7 +497,8 @@ def test_missing_download_information_is_not_probed_on_phone(setup, capsys):
     assert "forward" in text
 
 
-def test_sync_is_default_and_no_sync_is_available(monkeypatch, tmp_path):
+@pytest.mark.parametrize("terminal", [True, False])
+def test_sync_is_default_and_no_sync_is_available(monkeypatch, tmp_path, terminal):
     syncs = []
 
     class Fake:
@@ -476,8 +507,9 @@ def test_sync_is_default_and_no_sync_is_available(monkeypatch, tmp_path):
 
         def call(self, *args, **kwargs):
             if args == ("doctor",):
+                monkeypatch.setattr(wa.sys.stdout, "isatty", lambda: terminal)
                 return {"lock_held": False}
-            syncs.append(args)
+            syncs.append((args, kwargs))
 
     monkeypatch.setattr(wa, "Wacli", Fake)
     monkeypatch.setattr(wa, "backup", lambda *args: None)
@@ -485,10 +517,71 @@ def test_sync_is_default_and_no_sync_is_available(monkeypatch, tmp_path):
     runner = CliRunner()
     result = runner.invoke(wa.app, ["--output-dir", str(tmp_path / "archive")])
     assert result.exit_code == 0, result.output
-    assert syncs == [("sync", "--once", "--idle-exit", "10s")]
+    assert syncs == [(("sync", "--once", "--idle-exit", "10s"), {"readonly": False, "stream": terminal})]
     syncs.clear()
     assert runner.invoke(wa.app, ["--output-dir", str(tmp_path / "archive"), "--no-sync"]).exit_code == 0
     assert syncs == []
+
+
+def test_image_attempt_shows_message_metadata_and_success(setup, capsys):
+    client, output = setup
+    client.messages = [msg(MediaType="image", SenderJID="987654321@s.whatsapp.net")]
+    run(client, output)
+    text = capsys.readouterr().err
+    attempt = next(line for line in text.splitlines() if line.startswith("Trying image"))
+    local = wa.date(client.messages[0]["Timestamp"]).astimezone().strftime("%Y-%m-%d at %H:%M %Z")
+    assert f"Family: {local}; from 987654321" in attempt
+    assert attempt.endswith("succeeded")
+
+
+def test_text_summary_has_column_legend_without_filename(setup, capsys):
+    client, output = setup
+    run(client, output, format="text")
+    result = capsys.readouterr()
+    assert result.out == "123@g.us\t1\t1\tFalse\n"
+    assert "Columns: chat ID, local messages seen, archive rows changed, dry run" in result.err
+    assert result.err.index("Columns:") < result.err.index("Backing up Family")
+
+
+def test_stream_call_inherits_output_and_checks_exit_status(monkeypatch, capfd):
+    import subprocess
+    import sys
+
+    client = wa.Wacli("", None)
+    client.command = [
+        sys.executable,
+        "-u",
+        "-c",
+        "import sys; print('sync stdout'); print('sync stderr', file=sys.stderr)",
+    ]
+    original_run = subprocess.run
+
+    def checked_run(command, **kwargs):
+        assert not kwargs.get("capture_output")
+        assert kwargs.get("stdout") is None and kwargs.get("stderr") is None
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(wa.subprocess, "run", checked_run)
+    client.call(readonly=False, stream=True)
+    captured = capfd.readouterr()
+    assert "sync stdout" in captured.out and "sync stderr" in captured.err
+    client.command = [sys.executable, "-c", "raise SystemExit(2)"]
+    with pytest.raises(subprocess.CalledProcessError):
+        client.call(readonly=False, stream=True)
+
+
+def test_buffered_call_hides_both_outputs(capfd):
+    import sys
+
+    client = wa.Wacli("", None)
+    client.command = [
+        sys.executable,
+        "-c",
+        "import sys; print('{\"success\":true,\"data\":{}}'); print('sync stderr', file=sys.stderr)",
+    ]
+    assert client.call(readonly=False, stream=False) == {}
+    captured = capfd.readouterr()
+    assert captured.out == captured.err == ""
 
 
 def test_existing_store_owner_is_not_disrupted(monkeypatch, tmp_path):

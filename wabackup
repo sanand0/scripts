@@ -7,7 +7,8 @@
 
 Default output: ~/Documents/data/whatsapp. The retired CDP archive is whatsapp-old/.
 Syncs until idle by default; --no-sync reads only local data. Local history is best effort.
-Images use bounded retries: 1, 2, 4, 8, 16, then 30 days. Two named pictures
+Images allow --image-attempts per run (default 100), with a 120-second budget.
+Retries wait 1, 2, 4, 8, 16, then 30 days. Two named pictures
 are tried on the phone on every run, so you can follow the instructions and
 rerun immediately without flags. Confirmed unavailable pictures are skipped.
 Existing fields remain intact; wacli holds the complete current CLI record.
@@ -31,6 +32,7 @@ import re
 import shlex
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import closing
@@ -101,8 +103,11 @@ class Wacli:
         if store:
             self.command += ["--store", str(store)]
 
-    def call(self, *args: str, readonly: bool = True) -> Any:
+    def call(self, *args: str, readonly: bool = True, stream: bool = False) -> Any:
         command = self.command + (["--read-only"] if readonly else []) + list(args)
+        if stream:
+            subprocess.run(command, timeout=360, check=True)
+            return None
         result = subprocess.run(command, capture_output=True, text=True, timeout=360, check=False)
         if not result.stdout.strip():
             raise RuntimeError(result.stderr.strip() or f"wacli exited {result.returncode}")
@@ -278,6 +283,7 @@ def recover_images(
     archives: dict,
     store: Path,
     retry_selected: bool = False,
+    image_attempts: int = 100,
 ) -> None:
     """Back off bulk retries; always probe the two pictures last suggested to the user."""
     cache = cache_dir(output)
@@ -343,15 +349,16 @@ def recover_images(
     changed = {}
     try:
         for key in focus + due:
-            if attempted >= 20 or time.monotonic() - started >= 40:
+            if attempted >= image_attempts or time.monotonic() - started >= 120:
                 break
             jid, mid, old = pending[key]
             row = dict(old)
             entry = items[key]
             phone = (key in phone_keys or entry.get("kind") == "phone") and key not in fresh
             typer.echo(
-                f"Trying image {attempted + 1}/20: {old.get('conversationTitle', jid)} ({'phone' if phone else 'download'})",
+                f"Trying image {attempted + 1}/{image_attempts}: {picture_hint(old, jid)} ({'phone' if phone else 'download'}) ... ",
                 err=True,
+                nl=False,
             )
             attempted += 1
             try:
@@ -359,14 +366,24 @@ def recover_images(
             except (RuntimeError, subprocess.TimeoutExpired) as exc:
                 error = str(exc)
                 attempts = entry["attempts"] + 1
+                days = min(2 ** min(attempts - 1, 5), 30)
                 entry.update(
-                    attempts=attempts, next=now + min(2 ** min(attempts - 1, 5), 30) * 86400, error=error[:1000]
+                    attempts=attempts, next=now + days * 86400, error=error[:1000]
                 )
                 if "media recovery not_on_phone for " in error:
                     entry.update(status="unavailable", kind="phone")
                 elif phone or re.search(r"status code (403|404|410)\b", error):
                     entry["kind"] = "phone"
+                result = (
+                    "failed; no retry (confirmed unavailable on phone)"
+                    if entry["status"] == "unavailable"
+                    else f"failed; retry in {days} day{'s' if days != 1 else ''}"
+                )
+                if entry["status"] != "unavailable" and entry.get("kind") == "phone":
+                    result += "; phone recovery may retry next run"
+                typer.echo(result, err=True)
             else:
+                typer.echo("succeeded", err=True)
                 changed.setdefault(jid, dict(archives[jid]))[mid] = row
                 saved += 1
                 items.pop(key, None)
@@ -399,7 +416,7 @@ def recover_images(
         instructions += [
             "3. Leave WhatsApp open and run wabackup again. No extra flags are needed.",
             (
-                "Chat-specific runs retry waiting pictures now, up to 20 attempts/40 seconds plus an in-flight download. Repeat the same command to continue."
+                f"Chat-specific runs retry waiting pictures now, up to {image_attempts} attempts/120 seconds plus an in-flight download. Repeat the same command to continue."
                 if retry_selected
                 else "Only the two pictures listed above bypass the delay. Other retries wait 1, 2, 4, 8, 16, then 30 days."
             ),
@@ -443,6 +460,7 @@ def backup(
     full: bool,
     dry_run: bool,
     format: str,
+    image_attempts: int = 100,
 ) -> None:
     paths, archives = {}, {}
     for path in sorted([*output.glob("*.jsonl"), *output.glob("*.json")]):
@@ -530,6 +548,8 @@ def backup(
             raise ValueError(f"No matching messages for: {', '.join(sorted(missing))}")
     selected_archives = {}
     ordered = sorted(grouped, key=lambda jid: max(m["Timestamp"] for m in grouped[jid].values()), reverse=True)
+    if ordered and format == "text":
+        typer.echo("Columns: chat ID, local messages seen, archive rows changed, dry run (True/False).", err=True)
     for jid in ordered[: limit or None]:
         incoming = grouped[jid]
         title = next(iter(incoming.values())).get("ChatName") or jid
@@ -557,7 +577,11 @@ def backup(
             "rows_changed": updated,
             "dry_run": dry_run,
         }
-        typer.echo(packed(summary) if format == "jsonl" else "\t".join(str(v) for v in summary.values()))
+        typer.echo(
+            packed(summary)
+            if format == "jsonl"
+            else "\t".join(str(v) for k, v in summary.items() if k != "path")
+        )
     if images and not dry_run:
         targets = selected_archives if filtered else archives
         recover_images(
@@ -567,6 +591,7 @@ def backup(
             targets,
             Path(doctor["store_dir"]) / "wacli.db",
             retry_selected=bool(conversations),
+            image_attempts=image_attempts,
         )
     if not dry_run and not filtered:
         atomic(
@@ -590,6 +615,9 @@ def main(
     until: str = typer.Option("", "--until", help="Exclusive RFC3339 or YYYY-MM-DD."),
     limit: int = typer.Option(0, "--limit", "-n", min=0, help="Maximum chats; 0 = all."),
     images: bool = typer.Option(True, "--images/--no-images"),
+    image_attempts: int = typer.Option(
+        100, "--image-attempts", min=1, help="Maximum image attempts per run; also stops after 120 seconds."
+    ),
     sync: bool = typer.Option(True, "--sync/--no-sync", help="Sync until idle before exporting (default)."),
     full: bool = typer.Option(False, "--full", help="Rescan retained history; recover expired checkpoints."),
     dry_run: bool = typer.Option(False, "--dry-run"),
@@ -611,7 +639,7 @@ def main(
                     "history": ".history/*.wabackup.jsonl",
                     "incremental": "change journal; --full after expiry",
                     "freshness": "sync until idle by default; --no-sync uses local archive",
-                    "images": "default; 20 attempts/40 seconds per run plus at most one in-flight timeout; two named phone probes bypass cooldown",
+                    "images": f"default; {image_attempts} attempts/120 seconds per run plus at most one in-flight timeout; two named phone probes bypass cooldown",
                     "media_state": str(cache_dir(output_dir) / "media.json"),
                     "phone_instructions": str(cache_dir(output_dir) / "media-help.txt"),
                 }
@@ -640,6 +668,7 @@ def main(
             full,
             True,
             format,
+            image_attempts,
         )
         return
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -653,7 +682,7 @@ def main(
                     typer.echo("wacli already has an active store owner; reading alongside it.", err=True)
                 else:
                     typer.echo("Syncing wacli until idle...", err=True)
-                    client.call("sync", "--once", "--idle-exit", "10s", readonly=False)
+                    client.call("sync", "--once", "--idle-exit", "10s", readonly=False, stream=sys.stdout.isatty())
             backup(
                 client,
                 output_dir,
@@ -666,6 +695,7 @@ def main(
                 full,
                 False,
                 format,
+                image_attempts,
             )
             status = "ok"
         finally:
