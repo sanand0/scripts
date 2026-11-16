@@ -24,6 +24,16 @@ frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elaps
 
 What's the cleanest, future-proof, elegant fix? Update `setup.fish` accordingly.
 
+---
+
+When I use `avifenc -q 20 --speed 0 --jobs (nproc) image.png` on `~/Downloads/image.png` it created `~/Downloads/image.avif` which is larger than what https://squoosh.app/editor created - see `~/Downloads/squoosh-image.avif`.
+Squoosh is open on my browser (see devtools skill - CDP localhost:9222) if you want to compare settings.
+How do I get `avif` to reproduce the same settings minimally?
+
+--- <!-- steering -->
+
+Feel free to check the source code for squoosh and see if you can optimize further in line with how squoosh does.
+
 <!-- codex resume 01a1e375-c7a3-75d2-bfb7-cee993fcdf17 -->
 
 ## Videocompress fix, 12 Nov 2026

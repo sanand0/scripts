@@ -560,9 +560,9 @@ function avif --description "Usage: avif --width 1920 --quality 50 --speed 4 *.p
             ffmpeg -hide_banner -stats -v warning -i "$file" \
                 -vf "scale=w=$width:h=$height:force_original_aspect_ratio=decrease" \
                 -pix_fmt yuv420p -f yuv4mpegpipe - \
-            | avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim --stdin "$output" >/dev/null
+            | avifenc -q $quality --speed $speed --jobs (nproc) --tilecolslog2 0 -a tune=ssim --stdin "$output" >/dev/null
         else
-            avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim "$file" "$output" >/dev/null
+            avifenc -q $quality --speed $speed --jobs (nproc) -y 420 --tilecolslog2 0 -a tune=ssim "$file" "$output" >/dev/null
         end
     end
 end
