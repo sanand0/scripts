@@ -534,13 +534,13 @@ def test_image_attempt_shows_message_metadata_and_success(setup, capsys):
     assert attempt.endswith("succeeded")
 
 
-def test_text_summary_has_column_legend_without_filename(setup, capsys):
+def test_text_progress_row_has_four_aligned_columns(setup, capsys):
     client, output = setup
     run(client, output, format="text")
     result = capsys.readouterr()
-    assert result.out == "123@g.us\t1\t1\tFalse\n"
-    assert "Columns: chat ID, local messages seen, archive rows changed, dry run" in result.err
-    assert result.err.index("Columns:") < result.err.index("Backing up Family")
+    assert result.out == ""
+    assert result.err.splitlines()[0] == f"{'123@g.us':>30} {1:>6} {1:>6} Family"
+    assert "Columns:" not in result.err
 
 
 def test_stream_call_inherits_output_and_checks_exit_status(monkeypatch, capfd):

@@ -548,8 +548,6 @@ def backup(
             raise ValueError(f"No matching messages for: {', '.join(sorted(missing))}")
     selected_archives = {}
     ordered = sorted(grouped, key=lambda jid: max(m["Timestamp"] for m in grouped[jid].values()), reverse=True)
-    if ordered and format == "text":
-        typer.echo("Columns: chat ID, local messages seen, archive rows changed, dry run (True/False).", err=True)
     for jid in ordered[: limit or None]:
         incoming = grouped[jid]
         title = next(iter(incoming.values())).get("ChatName") or jid
@@ -557,15 +555,12 @@ def backup(
         old = archives.get(jid, {})
         rows = dict(old)
         updated = 0
-        typer.echo(
-            f"{'Planning' if dry_run else 'Backing up'} {title}: {len(incoming)} local messages",
-            err=True,
-        )
         for mid, message in incoming.items():
             row = merge(old.get(mid, {}), message)
             if old.get(mid) != row:
                 updated += 1
                 rows[mid] = row
+        typer.echo(f"{jid:>30} {len(incoming):>6} {updated:>6} {title}", err=True)
         if not dry_run:
             save_archive(path, old, rows)
             paths[jid], archives[jid] = path, rows
@@ -577,11 +572,8 @@ def backup(
             "rows_changed": updated,
             "dry_run": dry_run,
         }
-        typer.echo(
-            packed(summary)
-            if format == "jsonl"
-            else "\t".join(str(v) for k, v in summary.items() if k != "path")
-        )
+        if format == "jsonl":
+            typer.echo(packed(summary))
     if images and not dry_run:
         targets = selected_archives if filtered else archives
         recover_images(

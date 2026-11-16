@@ -1,5 +1,34 @@
 # wabackup
 
+## Improve logging, 17 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6-luna --config model_reasoning_effort=high
+-->
+
+In wabackup, change the logging from `Backing up ${chat_name}\n${chat_id} ${chat_file} ...` to `${chat_id} ${local_messages_seen} ${archive_rows_changed} ${dry_run} ${chat_name}`.
+Make sure the columns are aligned (right aligned for numerical) with reasonable column widths. This makes it tabular and easier to read
+
+---
+
+The log prints TWO lines - just one (with the chat title) suffices. Also, drop the dry run field. So, just the following, aligned properly:
+
+`${chat_id} ${local_messages_seen} ${archive_rows_changed} ${chat_name}`
+
+---
+
+I still see two lines, e.g.
+
+```
+    6591832100-1457770016@g.us    403      0 IIMB 2001 Global
+6591832100-1457770016@g.us      403     0       False
+```
+
+I want just the first line.
+
+<!-- codex resume 01a1e369-b02f-7242-b20a-150d410f689a -->
+
 ## Improve logging, 16 Nov 2026
 
 <!--
