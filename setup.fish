@@ -507,55 +507,13 @@ abbr --add yt-dlp 'uvx --with mutagen yt-dlp --remote-components ejs:github'
 
 abbr --add unbrace 'npx -y jscodeshift -t $HOME/code/scripts/unbrace.js'
 
-function avif --description "Convert images to AVIF with optional quality, speed, width, and height"
-    argparse 'q/quality=!_validate_int' 's/speed=!_validate_int' 'w/width=!_validate_int' 'h/height=!_validate_int' 'H/help' -- $argv
-    or return
-
-    if set -q _flag_help
-        echo "Usage: avif [-q|--quality N] [-s|--speed N] [-w|--width N] [-h|--height N] file1 [file2 ...]"
-        return 0
-    end
-
-    set -l quality 50
-    set -l speed 4
-    set -l width 1920
-    set -l height 1080
-
-    if set -q _flag_quality
-        set quality $_flag_quality
-    end
-
-    if set -q _flag_speed
-        set speed $_flag_speed
-    end
-
-    if set -q _flag_width
-        set width $_flag_width
-    end
-
-    if set -q _flag_height
-        set height $_flag_height
-    end
-
-    for file in $argv
-        set -l output (string replace -r '\.[^.]+$' '.avif' -- "$file")
-        if test -e "$output"
-            echo "Skipping $file -> $output (already exists)"
-            continue
-        end
-
-        ffmpeg  -hide_banner -stats -v warning -i "$file" -vf "scale=w=$width:h=$height:force_original_aspect_ratio=decrease,format=yuv420p" -f yuv4mpegpipe - \
-        | avifenc -q $quality --speed $speed --jobs $(nproc) -a tune=ssim --stdin "$output" >/dev/null
-    end
-end
-
 function webp-lossy --description "webp-lossy file1.jpg file2.png ... converts into file1.webp file2.webp with lossy compression"
     for file in $argv
         cwebp -q 10 -m 6 $file -o (string replace -r '\.[^.]+$' '.webp' $file)
     end
 end
 
-function avif --description "Convert images to AVIF with optional quality, speed, width, and height"
+function avif --description "Usage: avif --width 1920 --quality 50 --speed 4 *.png"
     argparse 'q/quality=!_validate_int' 's/speed=!_validate_int' 'w/width=!_validate_int' 'h/height=!_validate_int' 'H/help' -- $argv
     or return
 
@@ -598,9 +556,10 @@ function avif --description "Convert images to AVIF with optional quality, speed
         end
 
         if test $resize -eq 1
+            # Y4M cannot carry RGB; explicitly convert before piping to avifenc.
             ffmpeg -hide_banner -stats -v warning -i "$file" \
                 -vf "scale=w=$width:h=$height:force_original_aspect_ratio=decrease" \
-                -f yuv4mpegpipe - \
+                -pix_fmt yuv420p -f yuv4mpegpipe - \
             | avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim --stdin "$output" >/dev/null
         else
             avifenc -q $quality --speed $speed --jobs (nproc) -a tune=ssim "$file" "$output" >/dev/null

@@ -2,6 +2,30 @@
 
 Prompts for setup.{fish,bash}.
 
+## Avif fix, 16 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+See `setup.fish` for the `avif` function. It currently fails with the following error on ~/Downloads/
+
+```
+❯ avif --width 1024 --quality 20 --speed 0 Pocket\ Professor’s\ Tenure\ Test.png
+[yuv4mpegpipe @ 0x62c5eb0ae4c0] ERROR: yuv4mpeg can only handle yuv444p, yuv422p, yuv420p, yuv411p and gray8 pixel formats. And using 'strict -1' also yuv444p9, yuv422p9, yuv420p9, yuv444p10, yuv422p10, yuv420p10, yuv444p12, yuv422p12, yuv420p12, yuv444p14, yuv422p14, yuv420p14, yuv444p16, yuv422p16, yuv420p16, yuva444p, gray9, gray10, gray12 and gray16 pixel formats. Use -pix_fmt to select one.
+[out#0/yuv4mpegpipe @ 0x62c5eb0b1b80] Could not write header (incorrect codec parameters ?): Invalid data found when processing input
+[vf#0:0 @ 0x62c5eb0b4b00] Error sending frames to consumers: Invalid data found when processing input
+[vf#0:0 @ 0x62c5eb0b4b00] Task finished with error code: -1094995529 (Invalid data found when processing input)
+[vf#0:0 @ 0x62c5eb0b4b00] Terminating thread with return code -1094995529 (Invalid data found when processing input)
+[out#0/yuv4mpegpipe @ 0x62c5eb0b1b80] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.08
+```
+
+What's the cleanest, future-proof, elegant fix? Update `setup.fish` accordingly.
+
+<!-- codex resume 01a1e375-c7a3-75d2-bfb7-cee993fcdf17 -->
+
 ## Videocompress fix, 12 Nov 2026
 
 <!--
