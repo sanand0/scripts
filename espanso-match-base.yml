@@ -74,6 +74,11 @@ matches:
       codex --model gpt-6.1-terra --config model_reasoning_effort=medium
       -->
 
+  - trigger: "-steer "
+    force_clipboard: true
+    replace: |
+      --- <!-- steering -->
+
   - trigger: "-claude "
     force_clipboard: true
     replace: |
