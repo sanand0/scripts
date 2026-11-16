@@ -106,7 +106,7 @@ def match_caption(audio: Path, rows: list[dict], query: str | None = None) -> tu
 def command(audio: Path, prompt: str) -> str:
     """Double-quote context safely; no model-generated shell expansions may execute."""
     escaped = re.sub(r'([\\"$`])', r'\\\1', ' '.join(prompt.splitlines()))
-    return f'call {shlex.quote(str(audio.resolve()))} --prompt "{escaped}"\n'
+    return f'call {shlex.quote(audio.name)} --prompt "{escaped}"\n'
 
 
 def prepend(path: Path, line: str) -> bool:
@@ -156,7 +156,7 @@ def main(
                 chosen, reason, status = None, 'already transcribed or queued', 'skip'
             else:
                 # A shared selector is a hint, not an override across meeting days.
-                hints = [r for r in rows if phrase and phrase.casefold() in (r['path'].name + r['header']).casefold()]
+                hints = [r for r in rows if phrase and not caption and phrase.casefold() in (r['path'].name + r['header']).casefold()]
                 chosen, reason = match_caption(path, hints or rows, caption)
                 status = 'pending' if chosen else 'unmatched'
             if status == 'unmatched' and not selector:

@@ -61,9 +61,10 @@ def test_queue_round_trip_and_shell_safety(m, tmp_path):
     assert m.QUEUE.read_text().startswith('#!/bin/sh\ncall ')
     assert m.QUEUE.stat().st_mode & 0o777 == 0o755
     result = subprocess.run(['bash', '-c', 'call() { printf "%s\\0" "$@"; }; ' + line], cwd=tmp_path, capture_output=True, check=True)
-    assert result.stdout.decode().split('\0')[:-1] == [str(audio), '--prompt', ' '.join(prompt.splitlines())]
+    assert result.stdout.decode().split('\0')[:-1] == [audio.name, '--prompt', ' '.join(prompt.splitlines())]
     assert not (tmp_path / 'BAD').exists()
-    assert shlex.split(line)[1] == str(audio)
+    assert shlex.split(line)[1] == audio.name
+    assert m.call.resolve_audio_path(audio.name, tmp_path) == audio
 
 
 def test_latest_repeated_export(m, tmp_path):
@@ -87,6 +88,19 @@ def test_caption_export_utc_date_and_header_search(m, tmp_path, monkeypatch):
         m.match_caption(tmp_path / 'anything.opus', rows, 'BodyOnly')
 
 
+@pytest.mark.parametrize('query', ['filename-only', 'HEADER-ONLY'])
+@pytest.mark.parametrize('selector', [['IITM'], ['--audio', 'IITM']])
+def test_explicit_caption_searches_all_filenames_and_headers(m, tmp_path, monkeypatch, query, selector):
+    (tmp_path / '2026-11-13 IITM.opus').touch()
+    hint = row(tmp_path, 'gmeet-hint.md', '# IITM')
+    chosen = row(tmp_path, 'teams-Filename-Only.md', '# Header-only')
+    monkeypatch.setattr(m, 'captions', lambda: [hint, chosen])
+    result = CliRunner().invoke(m.app, [*selector, '--caption', query, '--dry-run'])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.split('\t')[2] == str(chosen['path'])
+    assert not m.QUEUE.exists()
+
+
 def test_dry_run_and_process_then_skip(m, tmp_path, monkeypatch):
     audio = tmp_path / '2026-11-13 IITM.opus'
     audio.touch()
@@ -102,7 +116,7 @@ def test_dry_run_and_process_then_skip(m, tmp_path, monkeypatch):
     result = runner.invoke(m.app, ['IITM'])
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
-    assert shlex.split(m.QUEUE.read_text()) == ['call', str(audio), '--prompt', 'Speaker context']
+    assert shlex.split(m.QUEUE.read_text()) == ['call', audio.name, '--prompt', 'Speaker context']
     result = runner.invoke(m.app, ['IITM'])
     assert result.exit_code == 0 and 'skip' in result.stdout
     assert len(calls) == 1
@@ -137,7 +151,7 @@ def test_batch_hides_unmatched_and_shortens_audio(m, tmp_path, monkeypatch, dry_
     assert unmatched.name not in result.stdout
     assert str(matched) not in result.stdout
     if not dry_run:
-        assert shlex.split(m.QUEUE.read_text())[1] == str(matched)
+        assert shlex.split(m.QUEUE.read_text())[1] == matched.name
     result = CliRunner().invoke(m.app, ['Other', '--dry-run'])
     assert result.exit_code == 0 and 'unmatched' in result.stdout
 

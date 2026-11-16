@@ -1,6 +1,17 @@
 # meetcall
 
-## Revisions, #TODO
+## Captions, 16 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Update `meetcall` to allow a `--transcript $FILE` option. Instead of downloading the meeting's transcripts, it instead passes $FILE as the transcript file (along with `## Meeting transcript context` from `~/code/blog/pages/prompts/fragments.md`) to GPT-6 Luna.
+
+<!-- codex resume 01a1e507-6d63-79b3-872a-384a62bc8b03 -->
+
+## Revisions, 12 Nov 2026
 
 This meeting does not have a video recording or transcript, so `--scan` shouldn't even list it: `2026-11-07 20:00 UTC+05:30 | TDS - Workshop`. Or does it have one?
 

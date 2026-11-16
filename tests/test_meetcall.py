@@ -130,6 +130,99 @@ def test_no_sources_and_summary_only_fail_without_creating_note(tmp_path, monkey
     assert not (tmp_path/'note.md').exists()
 
 
+@pytest.mark.parametrize('with_document', [False, True])
+def test_local_transcript_reaches_luna_and_overrides_saved_context(tmp_path, monkeypatch, with_document):
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+    m = load()
+    transcript = tmp_path/'captions.txt'
+    transcript.write_text('\ufeffAlice: Local speaker turns.\n')
+    fragment = tmp_path/'fragments.md'
+    fragment.write_text('## Meeting transcript context\n\n```markdown\nIdentify speakers\n```\n')
+    monkeypatch.setattr(m, 'FRAGMENTS', fragment)
+    monkeypatch.setattr(m, 'CACHE', tmp_path/'cache')
+    attachments = [{'fileId': 'video', 'mimeType': 'video/mp4'}]
+    if with_document:
+        attachments.append({'fileId': 'doc', 'mimeType': 'application/vnd.google-apps.document'})
+    monkeypatch.setattr(m, 'search', lambda *a: [event(attachments=attachments, _profile='p', _account='me')])
+    monkeypatch.setattr(m, 'export_documents', lambda *a: pytest.fail('downloaded Google transcript'))
+    monkeypatch.setattr(m, 'download_audio', lambda *a: None)
+    note = tmp_path/'2026-11-04 TDS.md'
+    note.write_text('---\nprompt: Old context\n---\n\n# TDS\n\n## Transcript\n')
+    requests = []
+    def request(args, **kwargs):
+        requests.append(args)
+        if args[0] == 'llm':
+            assert args[args.index('-m')+1] == 'gpt-6-luna'
+            assert args[args.index('-s')+1] == 'Identify speakers'
+            assert kwargs['input'] == 'Alice: Local speaker turns.'
+            return SimpleNamespace(stdout='New local speaker context')
+        assert args[-2:] == ['--prompt', 'New local speaker context']
+        assert m.call.extract_prompt_metadata(note.read_text()) == 'New local speaker context'
+    monkeypatch.setattr(m, 'run', request)
+    flags = ['TDS', '--transcript', str(transcript), '--out-dir', str(tmp_path)]
+    result = CliRunner().invoke(m.app, flags)
+    assert result.exit_code == 0, result.output
+    assert len(requests) == 2 and str(transcript) in result.output
+    result = CliRunner().invoke(m.app, flags)
+    assert result.exit_code == 0, result.output
+    assert len(requests) == 3  # Luna context is cached on retry.
+
+
+@pytest.mark.parametrize('kind', ['missing', 'directory', 'empty', 'scan'])
+def test_local_transcript_validation_precedes_calendar_search(tmp_path, monkeypatch, kind):
+    from typer.testing import CliRunner
+    m = load()
+    path = tmp_path/'transcript.txt'
+    if kind == 'directory':
+        path.mkdir()
+    elif kind != 'missing':
+        path.write_text('Speaker: Words' if kind == 'scan' else '\ufeff \n')
+    monkeypatch.setattr(m, 'search', lambda *a, **kw: pytest.fail('searched before validating transcript'))
+    result = CliRunner().invoke(m.app, ['TDS', '--transcript', str(path), *(['--scan'] if kind == 'scan' else [])])
+    assert result.exit_code != 0
+    if kind == 'empty':
+        assert 'Transcript file is empty' in str(result.exception)
+
+
+def test_local_transcript_dry_run_does_not_download_or_generate_context(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    m = load()
+    path = tmp_path/'captions.txt'
+    path.write_text('Speaker: Words')
+    e = event(attachments=[{'fileId': 'video', 'mimeType': 'video/mp4'}], _profile='p', _account='me')
+    monkeypatch.setattr(m, 'search', lambda *a: [e])
+    monkeypatch.setattr(m, 'export_documents', lambda *a: pytest.fail('downloaded transcript'))
+    monkeypatch.setattr(m, 'download_audio', lambda *a: pytest.fail('downloaded audio'))
+    monkeypatch.setattr(m, 'context_prompt', lambda *a: pytest.fail('generated context'))
+    result = CliRunner().invoke(m.app, ['TDS', '--transcript', str(path), '--dry-run', '--out-dir', str(tmp_path/'notes')])
+    assert result.exit_code == 0, result.output
+    assert str(path) in result.output and not (tmp_path/'notes').exists()
+
+
+@pytest.mark.parametrize('complete', [False, True])
+def test_local_transcript_without_recording_and_completed_note(tmp_path, monkeypatch, complete):
+    from typer.testing import CliRunner
+    m = load()
+    path = tmp_path/'captions.txt'
+    path.write_text('Alice: Local words.')
+    e = event(attachments=[{'fileId': 'doc', 'mimeType': 'application/vnd.google-apps.document'}], _profile='p', _account='me')
+    monkeypatch.setattr(m, 'search', lambda *a: [e])
+    monkeypatch.setattr(m, 'export_documents', lambda *a: pytest.fail('downloaded transcript'))
+    note = tmp_path/'2026-11-04 TDS.md'
+    previous = '# TDS\n\n## Transcript\n\n**A**: Already done.\n'
+    if complete:
+        note.write_text(previous)
+    result = CliRunner().invoke(m.app, ['TDS', '--transcript', str(path), '--out-dir', str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    if complete:
+        assert note.read_text() == previous
+    else:
+        assert '## Transcript\n\nAlice: Local words.' in note.read_text()
+        assert str(path) in note.read_text()
+
+
 def test_context_uses_requested_fragment_model_and_thinking(tmp_path, monkeypatch):
     from types import SimpleNamespace
     m = load()

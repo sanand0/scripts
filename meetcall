@@ -9,6 +9,7 @@ Examples:
     meetcall --scan --days 7 --dry-run
     meetcall TDS --dry-run
     meetcall Innovation --date 'last Wednesday' --chat messages.txt
+    meetcall TDS --transcript captions.txt
     meetcall 'TDS Weekly' --before yesterday --after '2 months ago'
     meetcall --describe | jaq .
 
@@ -333,7 +334,7 @@ def scaffold_note(note: Path, title: str, prompt: str | None = None) -> None:
         call.atomic_write(note, markdown)
 
 
-def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, chat_file: Path | None = None, local_chat: str = '') -> None:
+def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, chat_file: Path | None = None, local_chat: str = '', transcript_file: Path | None = None, local_transcript: str = '') -> None:
     recordings = [a for a in event.get('attachments', []) if a.get('mimeType', '').startswith(('video/', 'audio/'))]
     documents = [a for a in event.get('attachments', []) if a.get('mimeType') == 'application/vnd.google-apps.document']
     chats = [a for a in event.get('attachments', []) if a.get('mimeType') == 'text/plain' and 'chat' in a.get('title', '').lower()]
@@ -356,10 +357,12 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
     typer.echo(f'  Note: {note}')
     if chat_file:
         typer.echo(f'  Chat: {chat_file}')
+    if transcript_file:
+        typer.echo(f'  Transcript: {transcript_file}')
     sys.stdout.flush()
     if complete and not needs_chat:
         return
-    if not complete and not recordings and not documents:
+    if not complete and not recordings and not documents and not transcript_file:
         raise ValueError('Selected meeting has no recording or transcript attached; no files written.')
     if dry_run:
         return
@@ -368,21 +371,25 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
     if complete:
         add_chat(note, chat, replace=bool(chat_file))
         return
-    summary, transcript, original = export_documents(event['_profile'], documents) if documents else ('', '', '')
+    if transcript_file:
+        summary, transcript, original = '', local_transcript, local_transcript
+    else:
+        summary, transcript, original = export_documents(event['_profile'], documents) if documents else ('', '', '')
     if chat:
         original += f'\n\n## Meeting chat\n\n{chat}'
     if recordings:
         download_audio(event['_profile'], recordings, audio)
         scaffold_note(note, title)
         # call persists the generated context, so interrupted reruns reuse it.
-        prompt = (None if chat_file else call.extract_prompt_metadata(existing)) or (context_prompt(original, event['_account']) if transcript else None)
+        prompt = (None if chat_file or transcript_file else call.extract_prompt_metadata(existing)) or (context_prompt(original, event['_account']) if transcript else None)
         scaffold_note(note, title, prompt)
         args = [str(Path(__file__).with_name('call')), str(audio), '--out', str(out_dir)]
         if prompt:
             args += ['--prompt', prompt]
         run(args)
     else:
-        save_note(note, title, summary, transcript, [d.get('fileUrl', f"https://docs.google.com/document/d/{d['fileId']}/edit") for d in documents])
+        sources = [str(transcript_file.resolve())] if transcript_file else [d.get('fileUrl', f"https://docs.google.com/document/d/{d['fileId']}/edit") for d in documents]
+        save_note(note, title, summary, transcript, sources)
         log(f'Saved {note}')
     add_chat(note, chat, replace=bool(chat_file))
 
@@ -418,19 +425,23 @@ def main(
     scan: Annotated[bool, typer.Option('--scan', help='Process recordings without completed local transcripts across all calendars.')] = False,
     days: Annotated[int, typer.Option(min=1, help='Scan lookback in days; --date or --after overrides it.')] = 7,
     limit: Annotated[int | None, typer.Option('--limit', '-n', min=1, help='Maximum pending meetings to process with --scan.')] = None,
+    transcript_file: Annotated[Path | None, typer.Option('--transcript', exists=True, dir_okay=False, readable=True, help='Use a local UTF-8 transcript instead of downloading notes; supplies Luna speaker context for recordings.')] = None,
 ):
     if describe:
-        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
+        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'transcript': 'local UTF-8 file; replaces downloaded notes and supplies Luna speaker context for recordings; without a recording, saves the supplied transcript', 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
         return
     if not scan and not phrase.strip():
         raise ValueError('Provide a meeting phrase. Example: meetcall TDS --dry-run')
-    if scan and chat_file:
-        raise ValueError('--chat supplies one meeting; use it without --scan.')
+    if scan and (chat_file or transcript_file):
+        raise ValueError('--chat and --transcript supply one meeting; use them without --scan.')
     if not scan and (days != 7 or limit is not None):
         raise ValueError('--days and --limit require --scan.')
     local_chat = chat_file.read_text(encoding='utf-8-sig').strip() if chat_file else ''
     if chat_file and not local_chat:
         raise ValueError(f'Chat file is empty: {chat_file}')
+    local_transcript = transcript_file.read_text(encoding='utf-8-sig').strip() if transcript_file else ''
+    if transcript_file and not local_transcript:
+        raise ValueError(f'Transcript file is empty: {transcript_file}')
     low, high = bounds(date, before, after, datetime.now().astimezone())
     event = None if scan else choose(search(phrase.strip(), low, high, account), phrase.strip())
     if scan:
@@ -451,7 +462,7 @@ def main(
             sys.stdout.flush()
             process_meeting(event, input_dir, out_dir, dry_run)
         return
-    process_meeting(event, input_dir, out_dir, dry_run, chat_file, local_chat)
+    process_meeting(event, input_dir, out_dir, dry_run, chat_file, local_chat, transcript_file, local_transcript)
 
 
 

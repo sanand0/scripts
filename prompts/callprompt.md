@@ -1,5 +1,20 @@
 # callprompt
 
+## Allow filename, 16 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.1-sol --config model_reasoning_effort=medium
+-->
+
+Modify `callprompt` so that `--caption $CAPTION` looks for $CAPTION in the filename OR in the first few lines, not just in the first few lines.
+
+--- <!-- steering -->
+
+Also, in transcribe.sh, just use the filename rather than the full path, e.g. `call 'xxx.opus'` instead of `call '/home/sanand/Documents/calls/xxx.opus'`.
+
+<!-- codex resume 01a1e50f-82cd-7570-9d7f-f0f29e09afe0 -->
+
 ## Initial draft, 13 Nov 2026
 
 <!--
