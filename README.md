@@ -56,8 +56,7 @@ Here are the setup details for my laptops.
 - [espanso-match-base.yml](espanso-match-base.yml): espanso match file. Symlinked to `~/.config/espanso/match/base.yml` on Linux/Cygwin.
 - [touchegg.conf](touchegg.conf): touchpad gesture config file. Symlinked to `~/.config/touchegg/touchegg.conf` on Linux/Cygwin.
   - Global Gestures (Application: All)
-    - Swipe Up 4 fingers: Increase volume 5%
-    - Swipe Down 4 fingers: Decrease volume 5%
+    - Swipe up or down with 4 fingers to adjust speaker volume by 5 percentage points. Hold Ctrl to adjust the microphone. Requires the [Volume extension](volume/README.md).
     - Swipe Left/Right 4 fingers: Pause / Play on VLC
     - Tap 2 fingers: Right mouse click (Button 3) on gesture begin.
     - Tap 3 fingers: Middle mouse click (Button 2) on gesture begin.
@@ -66,6 +65,7 @@ Here are the setup details for my laptops.
     - Pinch In 2 fingers: Zoom Out
     - Swipe Left 3 fingers: Back
     - Swipe Right 3 fingers: Forward
+- [volume/](volume/) adds live speaker and microphone percentages and 0–200% sliders to the GNOME panel. Install with `bash volume/install.sh`. [Setup and testing](volume/README.md)
 - [redirector.json](redirector.json): config for [Redirector](https://chromewebstore.google.com/detail/redirector/lioaeidejmlpffbndjhaameocfldlhin) browser extension.
 
 # Scripts

@@ -71,7 +71,7 @@ matches:
     replace: |
       <!--
       cd $PWD
-      codex --model gpt-6.1-terra --config model_reasoning_effort=medium
+      codex --model gpt-6.2-sol --config model_reasoning_effort=medium
       -->
 
   - trigger: "-steer "

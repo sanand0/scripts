@@ -1,0 +1,7 @@
+{
+  "uuid": "volume@sanand.net",
+  "name": "Volume",
+  "description": "Speaker and microphone volume from 0% to 200% in the GNOME panel",
+  "shell-version": ["46"],
+  "version": 1
+}
