@@ -1,5 +1,16 @@
 # services
 
+## Sync r2, 18 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Why isn't sync-plutonium.sh syncing? Fix it.
+
+<!-- codex resume 01a1ecab-c26a-78c0-a230-cc7d18375849 -->
+
 ## Sync r2, 12 Nov 2026
 
 <!--

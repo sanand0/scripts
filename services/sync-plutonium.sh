@@ -102,21 +102,36 @@ trap 'rc=$?; log "🔴" "ERROR line=$LINENO exit=$rc command=$BASH_COMMAND"' ERR
 
 log '🟢' "START mode=$mode targets=C:/Documents/,C:/graphene/,C:/code/,C:/r2/ policy=update-no-delete"
 
-# Same metered-network safeguard as the other services.
+network_metering() {
+  local dev kind connection metered state=unknown
+  while IFS=: read -r dev kind connection; do
+    [[ "$connection" == connected* && ( "$kind" == wifi || "$kind" == ethernet ) ]] || continue
+    metered="$(nmcli -g GENERAL.METERED device show "$dev" 2>/dev/null)" || continue
+    case "$metered" in
+      yes*) state=metered; break ;;
+      no*) state=unmetered ;;
+    esac
+  done < <(nmcli -t -f DEVICE,TYPE,STATE device status)
+  printf '%s\n' "$state"
+}
+
+# The hourly timer can fire as Graphene wakes, before Wi-Fi reconnects.
 if [[ "${SYNC_DOCUMENTS_ALLOW_METERED:-0}" != 1 ]]; then
-  unmetered=0
   if ! command -v nmcli >/dev/null; then
     log '🟠' "SKIP reason=nmcli-unavailable (override: SYNC_DOCUMENTS_ALLOW_METERED=1)"
     status=skipped; exit 0
   fi
-  while IFS=: read -r dev kind connection; do
-    [[ "$connection" == connected* && ( "$kind" == wifi || "$kind" == ethernet ) ]] || continue
-    metered="$(nmcli -g GENERAL.METERED device show "$dev" 2>/dev/null | head -1)"
-    [[ "$metered" == no* ]] && unmetered=1
-    [[ "$metered" == yes* ]] && { unmetered=0; break; }
-  done < <(nmcli -t -f DEVICE,TYPE,STATE device status)
-  if [[ "$unmetered" != 1 ]]; then
-    log '🟠' "SKIP reason=metered-or-unknown-network (override: SYNC_DOCUMENTS_ALLOW_METERED=1)"
+  metering="$(network_metering)"
+  if [[ "$metering" == unknown ]]; then
+    log '🟠' "WAIT reason=network-metering-unknown timeout=30s"
+    for (( attempt=0; attempt<6; attempt++ )); do
+      sleep 5
+      metering="$(network_metering)"
+      [[ "$metering" != unknown ]] && break
+    done
+  fi
+  if [[ "$metering" != unmetered ]]; then
+    log '🟠' "SKIP reason=${metering}-network (override: SYNC_DOCUMENTS_ALLOW_METERED=1)"
     status=skipped; exit 0
   fi
 fi
