@@ -163,12 +163,19 @@ Here are the setup details for my laptops.
 
 ## Services
 
-`services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh). Current services are:
+`services/` has systemd services that are installed by [`services/setup.sh`](services/setup.sh).
+
+Current services are:
 
 - `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp backups, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
+
+[servicestatus](servicestatus) shows one 🟢/🟡/🔴 line per service + job from the journal, with the most informative error, hiding failures that repeat identically for 3+ days. The fish prompt runs `servicestatus --new --no-ok` at most hourly.
+  - `servicestatus` - did last night's jobs run OK?
+  - `servicestatus --days 4 --no-ok` - problems since I last looked
+  - `servicestatus -d 3 --all` - complete log: every run on its own line, nothing hidden
 
 ## Archive
 

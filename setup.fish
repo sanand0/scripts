@@ -940,6 +940,17 @@ if not string match -q 'CYGWIN*' (uname -s)
     mcfly init fish | source
 end
 
+# Show new service failures/warnings (services/*.service) at most hourly, at the prompt.
+# Change `--no-ok` to `--ok` to also see 🟢 lines. Manual: `servicestatus --days 4`.
+if status is-interactive; and not string match -q 'CYGWIN*' (uname -s)
+    function __servicestatus_prompt --on-event fish_prompt
+        set -l seen ~/.cache/sanand-scripts/servicestatus/seen.json
+        test -e $seen; and test (math (date +%s) - (path mtime $seen)) -lt 3600; and return
+        mkdir -p (path dirname $seen); and touch $seen
+        servicestatus --new --no-ok
+    end
+end
+
 # I store secrets in a .env file. But it's unsafe to source them in every shell. So use direnv
 # source "/c/Dropbox/scripts/.env"
 string match -q 'CYGWIN*' (uname -s); or direnv hook fish | source

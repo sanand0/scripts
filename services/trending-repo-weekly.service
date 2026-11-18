@@ -4,6 +4,8 @@ OnFailure=timer-failure-notify@%n.service
 
 [Service]
 Type=oneshot
+# Timers fire the instant the laptop resumes, before Wi-Fi reconnects; wait like daily-activities does.
+ExecStartPre=/usr/bin/sleep 60
 ExecStart=/home/sanand/code/til/trending-repos.sh
 WorkingDirectory=/home/sanand
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/bin

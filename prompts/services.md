@@ -1,5 +1,47 @@
 # services
 
+## Service status, 18 Nov 2026
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+Create a script `servicestatus` that checks the status of the recently run services in `services/`.
+
+For example, I'd like to know when `daily-activities`, `sync-plutonium.sh`, etc. ran, and if any failed, WHICH ones failed. For example, daily-activities has multiple scripts and I'd like to know which scripts failed and which succeeded. I'd like a succinct error message from the logs to be printed - pick the most informative one.
+
+My aim is to see this automatically first thing in the morning when I use the system - so, for example, a small hook in the fish prompt to see if there's an update and show it might be helpful. But keep in mind that
+
+- I might be busy or need something done urgently and miss it - so I should be able to run it manually any time.
+- I might be ignoring it for a few days - so I should be able to easily see the results for a number of days, e.g .`--days 4` for the last 4 days
+- It might distract me - so keep it consise, e.g. 1 line per service + command (e.g. daily-activities service might have multiple commands) beginning with 🟢 or 🟡 or 🔴 and mentioning the time (e.g. Wed 18 Nov 2026, 11:55:23 am SGT), service, command, error/warning (none required if 🟢)
+
+Go through past logs and see WHAT I would want to know about. Mainly, I'm keen on:
+
+- Did it run OK?
+- If it errored, what do I need to do about it?
+
+If an error or warning is persistent and I probably won't do anything about it, I probably don't need to see it.
+
+When I run it manually, I would want to see 🟢 as well but when it appears for me in the morning as part of a fish prompt trigger, I might want to skip the 🟢 messages (or not -- I might go back on this, so make this an easy CLI option.)
+
+--- <!-- steering -->
+
+See how you can keep this future-proof when I add more services and/or commands to daily-activities.
+
+---
+
+I fixed `backupgoogle.py`.
+I would like `servicestatus --all` to report the results of all runs over a period. For example, if `servicestatus --days 3 --all` has 3 instances of daily-activities I'd like to see each as a separate line. I'd also like `--all` to show network outages, etc. This is like a complete log, without skipping anything.
+Also, `servicestatus --days 30 --all` shows only `backupgoogle` had 22/29 failures, the rest are OK. So, to confirm, NONE of the services or commands had even a SINGLE error or warning that I need to know about in the last 30 days? Sure?
+
+---
+
+Yes, fix vlc-history and add the sleep 60 to the two weekly units.
+
+<!-- claude --resume b372dc4a-f0c1-4d41-b424-078054a8d7ae -->
+
 ## Fix Windows ACL 403, 18 Nov 2026
 
 <!-- Fix Windows ACL 403: https://chatgpt.com/c/6afd209d-920c-83ec-9abf-0bf0c902b2a5 (2026-11-18T13:02:08+08:00) -->

@@ -1,0 +1,350 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["typer>=0.12"]
+# ///
+"""Show recent runs of the user systemd services in ~/code/scripts/services/.
+
+One line per service + command: 🟢 ok, 🟡 skipped or transient (network down, metered), 🔴 needs action.
+Services are discovered from services/*.service. Commands inside a wrapper (e.g. daily-activities) are
+discovered from log lines `<ISO time> <tag>: start|ok|failed|skip <job>`, and a run's overall result
+from systemd or an `END status=ok|failed|skipped` line - so new services and jobs appear automatically.
+By default each line summarizes a service + command's runs in the window: the latest status, plus
+"[k/n not ok]" if any run in the window was not ok. Failures repeating with the same message on
+--persistent distinct days are hidden. --all lists every run separately, hiding nothing.
+
+\b
+Examples:
+  servicestatus                          # last 24h, including 🟢
+  servicestatus --days 4 --no-ok         # only problems in the last 4 days
+  servicestatus --days 3 --all           # complete log: every run, incl. network outages
+  servicestatus --new --no-ok            # only changes since the last --new (fish prompt hook)
+  servicestatus -d 7 --format jsonl | jaq -c 'select(.level == "fail")'
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import typer
+
+SERVICES_DIR = Path(__file__).resolve().parent / "services"
+STATE_FILE = Path.home() / ".cache/sanand-scripts/servicestatus/seen.json"
+TZ_ABBR = {"Asia/Singapore": "SGT", "Asia/Kolkata": "IST", "Asia/Calcutta": "IST", "Europe/London": None}
+EMOJI = {"ok": "🟢", "warn": "🟡", "fail": "🔴"}
+COLOR = {"ok": "", "warn": "\x1b[33m", "fail": "\x1b[31m"}
+FIELDS = "MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_INVOCATION_ID,USER_INVOCATION_ID,USER_UNIT,_SYSTEMD_USER_UNIT,JOB_RESULT,EXIT_STATUS"
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+STAMP_RE = re.compile(r"^(?:\S{1,2}\s+)?\d{4}-\d\d-\d\dT[\d:.,]+(?:Z|[+-]\d\d:?\d\d)?\s+")
+JOB_RE = re.compile(r"^[\w.@-]+: (start|ok|failed|skip) ([\w.@-]+)(?::\s*(.*)|\s+(.*))?$")
+END_RE = re.compile(r"\bEND status=(\w+)")
+SKIP_RE = re.compile(r"\bSKIP reason=(\S+)")
+NOISE_RE = re.compile(r"^(\s|[│╭╰┃─━╮╯]|Traceback|File \"|[~^]+$)")
+STRONG_RE = re.compile(
+    r"error|fail|fatal|denied|could not|cannot|unable|not found|no such|refused|timed? ?out|invalid"
+    r"|unauthori[sz]ed|forbidden|quota|exhausted|unsafe|\bSKIP\b",
+    re.I,
+)
+EXC_RE = re.compile(r"^[\w.]*(Error|Exception|Exit|Interrupt)\b")
+GENERIC_RE = re.compile(
+    r"rsync_exit=\d+\s*$|completed with \d+ failed|Failed to bisync|Bisync aborted|There were errors"
+    r"|non-zero exit status|^Done: |\bEND status=|^[\w.@-]+: (start|ok|failed|skip) ",
+    re.I,
+)
+TRANSIENT_RE = re.compile(
+    r"dns error|name resolution|could not resolve|no such host|connection error|connection (refused|reset)"
+    r"|connection unexpectedly closed|timed? ?out|network is unreachable|key-scan-failed|temporary failure"
+    r"|server misbehaving|metered|already.running",
+    re.I,
+)
+
+app = typer.Typer(add_completion=False, help=__doc__, rich_markup_mode=None)
+
+
+@dataclasses.dataclass
+class Run:
+    service: str
+    job: str
+    end: dt.datetime
+    level: str  # ok | warn | fail
+    message: str = ""
+
+    @property
+    def sig(self) -> str:
+        return f"{self.level}|{re.sub(r'\d+', '#', self.message.lower())[:120]}"
+
+
+def clean(text: str) -> str:
+    return STAMP_RE.sub("", ANSI_RE.sub("", text)).rstrip()
+
+
+def pick_message(lines: list[str], fallback: str) -> tuple[str, bool]:
+    """Return (most informative error line, is_transient) from a job's output."""
+    lines = [line for line in lines if line.strip() and not NOISE_RE.match(line)]
+    strong = [line for line in lines if STRONG_RE.search(line) and not GENERIC_RE.search(line)]
+    if specific := [line for line in strong if not EXC_RE.match(line)]:
+        i = lines.index(specific[0])
+        message = lines[i]
+        while message.endswith(("{", "(", "[", ",", ":")) and i + 1 < len(lines):  # rejoin wrapped lines
+            i += 1
+            message += " " + lines[i].strip()
+    elif exc := [i for i, line in enumerate(lines) if EXC_RE.match(line)]:
+        context = [line for line in lines[: exc[0]] if not JOB_RE.match(line)]
+        message = lines[exc[-1]] + (f" (after: {context[-1]})" if context else "")
+    elif strong := [line for line in lines if STRONG_RE.search(line) and not END_RE.search(line)]:
+        message = strong[0]
+    else:
+        message = f"{fallback} · last log: {lines[-1]}" if lines else fallback
+    # Surface the network cause up front: "dns error · error[auth]: Authentication failed: ..."
+    cause = next((m for line in [message, *strong] if (m := TRANSIENT_RE.search(line))), None)
+    early = TRANSIENT_RE.search(message[:60])
+    if cause and not early:
+        message = f"{cause[0].lower()} · {message}"
+    return message, cause is not None
+
+
+def job_run(service: str, job: str, end: dt.datetime, ok: bool, output: list[str], fallback: str) -> Run:
+    if ok:
+        return Run(service, job, end, "ok")
+    message, transient = pick_message(output, fallback)
+    return Run(service, job, end, "warn" if transient else "fail", message)
+
+
+def parse_invocation(service: str, command: str, records: list[tuple[dt.datetime, dict]]) -> list[Run]:
+    """Turn one systemd invocation's journal records into per-job runs (and the overall run if needed)."""
+    output: list[str] = []
+    runs: list[Run] = []
+    started: dict[str, int] = {}
+    ended, failed, terminated, end_status, skip_reason, exit_msg = None, False, False, None, "", "failed"
+    for ts, rec in records:
+        msg = rec["MESSAGE"]
+        if "USER_INVOCATION_ID" in rec:  # systemd's own message about the unit
+            if "Failed with result" in msg:
+                failed, ended = True, ts
+            elif rec.get("JOB_RESULT") or "Deactivated successfully" in msg:
+                ended = ts
+            terminated |= rec.get("EXIT_STATUS") in ("15", "143") or "status=15/TERM" in msg
+            if m := re.search(r"Main process exited, (.*)", msg):
+                exit_msg = m[1]
+            continue
+        line = clean(msg)
+        if m := JOB_RE.match(line):
+            verb, job, rest = m[1], m[2], m[3] or m[4] or ""
+            if verb == "start":
+                started[job] = len(output) + 1
+            elif verb == "skip":
+                runs.append(Run(service, job, ts, "warn", f"skipped: {rest}"))
+            else:
+                exit_code = re.search(r"exit=(\d+)", rest)
+                fallback = f"exit {exit_code[1]}" if exit_code else "failed"
+                runs.append(job_run(service, job, ts, verb == "ok", output[started.pop(job, 0) :], fallback))
+            output.append(line)
+            continue
+        output.append(line)
+        if m := END_RE.search(line):
+            end_status = m[1]
+        if m := SKIP_RE.search(line):
+            skip_reason = m[1]
+    if ended is None:  # still running: report finished jobs only
+        return runs
+    failed &= not terminated  # SIGTERM at logout/shutdown is not a failure
+    if end_status == "skipped":
+        return [*runs, Run(service, command, ended, "warn", f"skipped: {skip_reason}" if skip_reason else "skipped")]
+    failed |= end_status == "failed"
+    if runs and not (failed and all(r.level == "ok" for r in runs)):
+        return runs
+    return [*runs, job_run(service, command, ended, not failed, output, exit_msg)]
+
+
+def discover() -> tuple[dict[str, tuple[str, str]], dict[str, float]]:
+    """Return {unit: (command, syslog identifier)} for services/*.service and {unit: period_days} for timers."""
+    units, periods = {}, {}
+    for path in sorted(SERVICES_DIR.glob("*.service")):
+        if path.name.endswith("@.service"):
+            continue
+        exec_line = next((ln for ln in path.read_text().splitlines() if ln.startswith("ExecStart=")), "=")
+        tokens = exec_line.split("=", 1)[1].split() or [path.stem]
+        code = str(SERVICES_DIR.parents[1])  # ~/code: name the script, not uv/flock/bash
+        command = next((Path(t).name for t in tokens if t.startswith(code)), path.stem)
+        units[path.name] = (command, Path(tokens[0].lstrip("-@+!:")).name)  # systemd's default SyslogIdentifier
+        if (timer := path.with_suffix(".timer")).exists():
+            cal = re.search(r"^OnCalendar=(.*)$", timer.read_text(), re.M)
+            spec = cal[1].strip().lower() if cal else "daily"
+            periods[path.name] = 1 / 24 if "hourly" in spec else 7 if re.match(r"(mon|tue|wed|thu|fri|sat|sun|weekly)", spec) else 31 if "monthly" in spec else 1
+    return units, periods
+
+
+def journal(args: list[str]):
+    """Yield (timestamp, record) from `journalctl -o json`, with MESSAGE decoded to str."""
+    base = ["journalctl", "--user", "-o", "json", "--no-pager", f"--output-fields={FIELDS}"]
+    with subprocess.Popen(base + args, stdout=subprocess.PIPE, text=True) as proc:
+        for raw in proc.stdout:
+            rec = json.loads(raw)
+            if isinstance(msg := rec.get("MESSAGE", ""), list):
+                msg = bytes(msg).decode(errors="replace")
+            rec["MESSAGE"] = msg or ""
+            yield dt.datetime.fromtimestamp(int(rec["__REALTIME_TIMESTAMP"]) / 1e6).astimezone(), rec
+    if proc.returncode:
+        raise SystemExit(f"journalctl failed with exit {proc.returncode}")
+
+
+def journal_runs(units: dict[str, tuple[str, str]], since: dt.datetime, until: dt.datetime) -> list[Run]:
+    span = [f"--since=@{int(since.timestamp())}", f"--until=@{int(until.timestamp())}"]
+    invocations: dict[str, tuple[str, list]] = {}
+    for ts, rec in journal([*span, *(f"-u{u}" for u in units)]):
+        inv = rec.get("_SYSTEMD_INVOCATION_ID") or rec.get("USER_INVOCATION_ID")
+        unit = rec.get("USER_UNIT") or rec.get("_SYSTEMD_USER_UNIT")
+        if inv and unit in units:
+            invocations.setdefault(inv, (unit, []))[1].append((ts, rec))
+    # journald sometimes loses a stream's unit metadata (e.g. across suspend), dropping lines from `-u`.
+    # Re-attach those by SYSLOG_IDENTIFIER to the run of that unit whose time span contains them.
+    spans = defaultdict(list)
+    for unit, recs in invocations.values():
+        spans[units[unit][1]].append((recs[0][0], recs[-1][0], recs))
+    idents = sorted({ident for _, ident in units.values()})
+    for ts, rec in journal([*span, *(f"-t{i}" for i in idents)]):
+        if "_SYSTEMD_USER_UNIT" not in rec:
+            ident = rec.get("SYSLOG_IDENTIFIER", "")
+            if match := next((recs for lo, hi, recs in spans[ident] if lo <= ts <= hi), None):
+                match.append((ts, rec))
+    runs = []
+    for unit, recs in invocations.values():
+        recs.sort(key=lambda tr: tr[0])
+        runs += parse_invocation(unit.removesuffix(".service"), units[unit][0], recs)
+    return runs
+
+
+def tz_abbr(when: dt.datetime) -> str:
+    zone = os.environ.get("TZ") or (os.path.realpath("/etc/localtime").split("zoneinfo/")[-1])
+    return TZ_ABBR.get(zone) or when.tzname() or ""
+
+
+def fmt_time(when: dt.datetime | None) -> str:
+    if when is None:
+        return "-"
+    return f"{when:%a %-d %b %Y, %I:%M:%S} {when:%p}".replace("AM", "am").replace("PM", "pm") + f" {tz_abbr(when)}"
+
+
+def summarize(runs: list[Run], since: dt.datetime, persist_days: int) -> list[dict]:
+    """One row per (service, job): latest status in the window, with persistence and failure counts."""
+    by_key: dict[tuple[str, str], list[Run]] = defaultdict(list)
+    for run in sorted(runs, key=lambda r: r.end):
+        by_key[(run.service, run.job)].append(run)
+    rows = []
+    for (service, job), history in by_key.items():
+        window = [r for r in history if r.end >= since]
+        if not window:
+            continue
+        last = window[-1]
+        streak = []
+        for run in reversed(history):
+            if run.level == "ok" or run.sig != last.sig:
+                break
+            streak.append(run)
+        days = {r.end.date() for r in streak}
+        bad = sum(r.level != "ok" for r in window)
+        rows.append(dict(
+            level=last.level, time=last.end.isoformat(timespec="seconds"), service=service, job=job,
+            message=last.message, runs=len(window), failed=bad,
+            since=streak[-1].end.isoformat(timespec="seconds") if streak else None,
+            persistent=persist_days > 0 and len(days) >= persist_days, _end=last.end, _sig=last.sig,
+        ))
+    return rows
+
+
+def every_run(runs: list[Run], since: dt.datetime) -> list[dict]:
+    """One row per run in the window - a complete log, nothing hidden."""
+    return [dict(level=r.level, time=r.end.isoformat(timespec="seconds"), service=r.service, job=r.job,
+                 message=r.message, runs=1, failed=int(r.level != "ok"), since=None, persistent=False,
+                 _end=r.end, _sig=r.sig) for r in runs if r.end >= since]
+
+
+def overdue(periods: dict[str, float], now: dt.datetime) -> list[dict]:
+    """Timers whose last trigger is older than their period + 1 day (laptop off, timer broken, etc.)."""
+    timers = [unit.removesuffix(".service") + ".timer" for unit in periods]
+    args = ["systemctl", "--user", "show", "-p", "Id,LastTriggerUSec", *timers]
+    blocks = subprocess.run(args, capture_output=True, text=True, check=True).stdout.strip().split("\n\n")
+    rows = []
+    for block in blocks:
+        props = dict(line.split("=", 1) for line in block.splitlines())
+        service = props["Id"].removesuffix(".timer")
+        stamp = props.get("LastTriggerUSec", "").split()  # e.g. "Wed 2026-11-18 01:34:22 +08", local time
+        seen = dt.datetime.fromisoformat(" ".join(stamp[1:3])).astimezone() if len(stamp) >= 3 else None
+        if seen is None or now - seen > dt.timedelta(days=periods[f"{service}.service"] + 1):
+            rows.append(dict(level="warn", time=seen.isoformat(timespec="seconds") if seen else None,
+                             service=service, job="-", message=f"timer last ran {fmt_time(seen)}" if seen else "timer never ran",
+                             runs=0, failed=0, since=None, persistent=False, _end=seen, _sig=f"warn|overdue|{seen}"))
+    return rows
+
+
+@app.command(help=__doc__)
+def main(
+    days: float = typer.Option(1, "--days", "-d", help="Show runs that ended in the last N days."),
+    ok: bool = typer.Option(True, "--ok/--no-ok", help="Show 🟢 lines."),
+    new: bool = typer.Option(False, "--new", help="Only lines whose status changed since the last --new run."),
+    show_all: bool = typer.Option(False, "--all", help="List every run separately, hiding nothing."),
+    persistent: int = typer.Option(3, "--persistent", help="Hide failures repeating identically on N+ days (0: never)."),
+    name: str = typer.Option("", "--name", help="Only services/jobs containing this substring."),
+    until: str = typer.Option("", "--until", help="Report as of this ISO time (default: now)."),
+    fmt: str = typer.Option("text", "--format", help="text | jsonl"),
+    color: str = typer.Option("auto", "--color", help="auto | always | never"),
+):
+    now = (dt.datetime.fromisoformat(until) if until else dt.datetime.now()).astimezone()
+    since = now - dt.timedelta(days=days)
+    lookback = int(days) + persistent + 1
+    units, periods = discover()
+    start = now - dt.timedelta(days=lookback)
+    runs = journal_runs(units, start, now)
+    rows = every_run(runs, since) if show_all else summarize(runs, since, persistent)
+    rows += [] if until else overdue(periods, now)
+    rows = [r for r in rows if name.lower() in f"{r['service']} {r['job']}".lower()]
+    hidden = [r for r in rows if r["persistent"]]
+    rows = [r for r in rows if r not in hidden]
+    if new:
+        state = json.loads(STATE_FILE.read_text() or "{}") if STATE_FILE.exists() else {}
+        current = {f"{r['service']}/{r['job']}": r["_sig"] for r in rows + hidden}
+        rows = [r for r in rows if state.get(f"{r['service']}/{r['job']}") != r["_sig"]]
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps({**state, **current}, indent=1))
+    rows = [r for r in rows if ok or r["level"] != "ok"]
+    rows.sort(key=lambda r: (r["_end"] is None, r["_end"] or now))
+
+    if fmt == "jsonl":
+        for row in rows:
+            print(json.dumps({k: v for k, v in row.items() if not k.startswith("_")}, ensure_ascii=False))
+        return
+    tty = sys.stdout.isatty()
+    use_color = color == "always" or (color == "auto" and tty)
+    width = shutil.get_terminal_size().columns if tty else 10_000
+    svc_w = max((len(r["service"]) for r in rows), default=0)
+    job_w = max((len(r["job"]) for r in rows), default=0)
+    for row in rows:
+        head = f"{EMOJI[row['level']]} {fmt_time(row['_end']):<33} {row['service']:<{svc_w}}  {row['job']:<{job_w}}"
+        tail = row["message"]
+        if row["failed"] and row["runs"] > 1:
+            tail = f"[{row['failed']}/{row['runs']} not ok] {tail}".rstrip()
+        tail = tail[: max(width - len(head) - 4, 20)] if len(head) + 3 + len(tail) > width else tail
+        if use_color and tail:
+            tail = f"{COLOR[row['level']]}{tail}\x1b[0m"
+        print(f"{head}  {tail}".rstrip(), flush=True)
+    if hidden and not new:
+        first = [dt.datetime.fromisoformat(r["since"]) for r in hidden]
+        names = ", ".join(
+            f"{r['job']} " + (f"since {f:%a %-d %b}" if f - start > dt.timedelta(days=1) else f"for {lookback}+ days")
+            for r, f in zip(hidden, first)
+        )
+        print(f"({len(hidden)} persistent hidden: {names}. --all shows)", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    app()

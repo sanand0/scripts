@@ -214,6 +214,16 @@ For wrappers that run multiple jobs, log start/end/exit status for each job,
 continue after failures, and exit non-zero at the end if any job failed so
 systemd can record and notify the aggregate failure.
 
+`servicestatus` (in the repo root) discovers new units and jobs automatically if
+they follow these log conventions (see `daily-activities` and `sync-plutonium.sh`):
+
+- Per job: `<ISO time> <tag>: start <job>: ...`, then `<ISO time> <tag>: ok <job> ...`,
+  `<ISO time> <tag>: failed <job> exit=N ...`, or `<ISO time> <tag>: skip <job>: <reason>`.
+  Print the job's own errors between `start` and its result.
+- Per run (optional): `END status=ok|failed|skipped` and `SKIP reason=<reason>`.
+- Print a specific error line (`ERROR ...`, `error: ...`, an exception) - it is
+  what `servicestatus` shows. Network/DNS/metered failures are shown as 🟡.
+
 Daily jobs should also be harmless to re-run. Prefer incremental updates,
 merge-by-ID writes, skip-existing archive checks, and metadata fields that mark a
 file as already processed.

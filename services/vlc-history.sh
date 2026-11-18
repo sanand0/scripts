@@ -22,9 +22,9 @@ record() {
     last_key=
     return
   fi
-  [[ "$status" == Playing && -n "$url" ]] || return
+  [[ "$status" == Playing && -n "$url" ]] || return 0  # paused etc.: not an error (a bare return exits 1 under set -e)
   key="$track"$'\t'"$url"
-  [[ "$key" == "$last_key" ]] && return
+  [[ "$key" == "$last_key" ]] && return 0
   path=${url#file://}
   printf -v path '%b' "${path//%/\\x}"
   music_dir="$HOME/Music/"

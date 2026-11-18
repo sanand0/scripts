@@ -7,6 +7,8 @@ OnFailure=timer-failure-notify@%n.service
 [Service]
 Type=oneshot
 ExecStartPre=/usr/bin/mkdir -p /home/sanand/.cache/sanand-scripts/daily-activities
+# Timers fire the instant the laptop resumes, before Wi-Fi reconnects; wait like daily-activities does.
+ExecStartPre=/usr/bin/sleep 60
 ExecStart=/usr/bin/flock -n /home/sanand/.cache/sanand-scripts/daily-activities/run.lock /home/sanand/.local/bin/uv run /home/sanand/code/scripts/activities.py --patch-only --patch-days 0
 WorkingDirectory=/home/sanand
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/home/sanand/.local/bin:/home/sanand/.local/share/mise/shims:/home/sanand/bin
