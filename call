@@ -1555,6 +1555,17 @@ def main(
     if patch and dry_run:
         raise typer.BadParameter("--patch cannot be used with --dry-run.")
 
+    # Resolve every argument before any work, so a stray word (e.g. a prompt without `--prompt`) fails fast.
+    missing = []
+    for audio_arg in audio:
+        try:
+            resolve_audio_path(audio_arg, DEFAULT_INPUT_DIR)
+        except typer.BadParameter as exc:
+            missing.append(f"  {audio_arg!r}: {exc}")
+    if missing:
+        hint = " Did you forget --prompt before the prompt text?" if len(audio) > 1 else ""
+        raise typer.BadParameter(f"{len(missing)}/{len(audio)} audio argument(s) not found; nothing processed.{hint}\n" + "\n".join(missing))
+
     failed_audio: list[str] = []
     for audio_arg in audio:
         try:

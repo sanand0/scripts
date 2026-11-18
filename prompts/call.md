@@ -1,5 +1,17 @@
 # Transcribe Calls
 
+## Check scripts first, 18 Nov 2026
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+Before processing the audio file, check if all of them exist. Exit early if any of them do not.
+This is to avoid a missing `--prompt` treating the prompt as a filename.
+
+<!-- claude --resume 84431435-0e79-449a-813f-89e6f329a679 -->
+
 ## Fix errors, 12 Nov 2026
 
 <!--

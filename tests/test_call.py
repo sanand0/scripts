@@ -1846,12 +1846,27 @@ def test_unhandled_failure_reports_cause_and_action(monkeypatch, failure, action
     def fail(*args, **kwargs):
         raise failure
     monkeypatch.setattr(module, "process_audio", fail)
+    monkeypatch.setattr(module, "resolve_audio_path", lambda arg, _dir: Path(arg))
     result = CliRunner().invoke(module.app, ["example"])
     assert result.exit_code == 1
     assert str(failure) in result.output
     assert action in result.output
     if isinstance(failure, IndexError):
         assert "Traceback" in result.output
+
+
+def test_missing_audio_argument_fails_before_processing_any(monkeypatch, tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    module = load_module()
+    (tmp_path / "2026-01-01 Real Call.opus").write_bytes(b"")
+    monkeypatch.setattr(module, "DEFAULT_INPUT_DIR", tmp_path)
+    processed = []
+    monkeypatch.setattr(module, "process_audio", lambda audio, **kw: processed.append(audio))
+    result = CliRunner().invoke(module.app, ["Real Call", "focus on pricing"])
+    assert result.exit_code == 2
+    assert processed == []
+    assert "focus on pricing" in result.output and "--prompt" in result.output
 
 
 def test_corrupt_cache_reports_exact_file_to_repair(tmp_path) -> None:
