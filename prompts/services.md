@@ -1,5 +1,21 @@
 # services
 
+## Fix Windows ACL 403, 18 Nov 2026
+
+<!-- Fix Windows ACL 403: https://chatgpt.com/c/6afd209d-920c-83ec-9abf-0bf0c902b2a5 (2026-11-18T13:02:08+08:00) -->
+
+When connecting to plutonium via tailscale I am able to browse `https://plutonium.tail87dc61.ts.net/~/code/exam/.private/` but not access `https://plutonium.tail87dc61.ts.net/~/code/exam/.private/ga4-q4-roe-ideas-review-2026-11-16-revised.md` - it gives me a HTTP 403. Why? What do I need to do to fix it? Feel free to use @Remote Desktop Commander
+
+---
+
+This was created by a recent chat on @LocalMCP2 and sync-ed via sync-plutonium.sh in ~/code/scripts/services/
+
+How do I prevent a recurrance?
+
+---
+
+Make the change
+
 ## Sync r2, 18 Nov 2026
 
 <!--

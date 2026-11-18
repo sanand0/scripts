@@ -27,6 +27,10 @@ SYNC_DIRS=(
   r2
   code/tds-network-games/.private
   code/exam/dumps
+)
+# Explicitly web-browsable paths: Cygwin rsync otherwise creates 0600 files
+# with ACLs that deny Tailscale's LocalSystem service read access.
+WEB_SYNC_DIRS=(
   code/exam/.private
 )
 SYNC_FILES=(
@@ -138,7 +142,7 @@ fi
 
 # All listed sources must exist; avoid silently incomplete backups.
 validate_sources=("$HOME/Documents")
-for relative in "${GRAPHENE_DIRS[@]}" "${SYNC_DIRS[@]}"; do
+for relative in "${GRAPHENE_DIRS[@]}" "${SYNC_DIRS[@]}" "${WEB_SYNC_DIRS[@]}"; do
   if [[ ! -d "$HOME/$relative" ]]; then
     log '🔴' "ERROR missing-directory=~/$relative"
     exit 2
@@ -329,3 +333,10 @@ for relative in "${SYNC_FILES[@]}"; do
   sync_paths+=("$HOME/./$relative")
 done
 run_sync paths --relative "${sync_paths[@]}" "Anand@plutonium:/cygdrive/c/"
+
+# Grant only group read/traversal on new web-browsable copies, not secrets.
+web_paths=()
+for relative in "${WEB_SYNC_DIRS[@]}"; do
+  web_paths+=("$HOME/./$relative/")
+done
+run_sync web-paths --relative --chmod=g+rX "${web_paths[@]}" "Anand@plutonium:/cygdrive/c/"
