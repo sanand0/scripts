@@ -1,5 +1,16 @@
 # Backup Google
 
+## Fix error, 18 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+`backupgoogle.py` reports "JSONDecodeError: Unterminated string starting at: line 1 column 80 (char 79)". Find out why. Fix it.
+
+<!-- codex resume 01a1ed16-4337-7b61-8f17-2de66c7e8bcf -->
+
 ## Split into months, add IITM email, 17 Oct 2026
 
 <!--

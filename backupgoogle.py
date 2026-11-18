@@ -132,7 +132,8 @@ def gws_json(args: list[str], *, config_dir: str = "") -> Any:
     try:
         return json.loads(text or "{}")
     except json.JSONDecodeError:
-        return [json.loads(line) for line in text.splitlines() if line.strip()]
+        # Page delimiters are LF; Unicode line separators can occur inside JSON strings.
+        return [json.loads(line) for line in text.split("\n") if line.strip()]
 
 
 def gws_items(path: list[str], params: dict[str, Any], key: str, *, config_dir: str = "", page_limit: int = 50) -> list[dict[str, Any]]:
@@ -325,7 +326,8 @@ def user_path(account_dir: Path) -> Path:
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    with path.open(encoding="utf-8") as file:
+        return [json.loads(line) for line in file if line.strip()]
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

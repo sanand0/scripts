@@ -1,6 +1,7 @@
 import base64
 import importlib.util
 import datetime as dt
+import json
 import os
 from pathlib import Path
 
@@ -87,6 +88,24 @@ def test_normalize_chat_preserves_native_relationship_ids():
     assert row["space_id"] == "spaces/AAA"
     assert row["thread_id"] == "spaces/AAA/threads/BBB"
     assert row["sender_name"] == "Alice"
+
+
+def test_jsonl_preserves_unicode_line_separators(tmp_path):
+    path = tmp_path / "chat-2026-10.jsonl"
+    rows = [{"id": "one", "body": "first\u2028second\u2029third\x85fourth"}, {"id": "two"}]
+    backupgoogle.write_jsonl(path, rows)
+
+    assert backupgoogle.load_jsonl(path) == rows
+
+
+def test_gws_paginated_json_preserves_unicode_line_separators(monkeypatch):
+    pages = [{"messages": [{"text": "first\u2028second"}]}, {"messages": [{"text": "next page"}]}]
+    output = "\n".join(json.dumps(page, ensure_ascii=False) for page in pages)
+    monkeypatch.setattr(backupgoogle, "run_gws", lambda *args, **kwargs: output)
+
+    assert backupgoogle.gws_items(["chat", "spaces", "messages", "list"], {}, "messages") == [
+        message for page in pages for message in page["messages"]
+    ]
 
 
 @pytest.mark.parametrize("source", ["mail", "calendar", "chat", "chat-spaces"])
