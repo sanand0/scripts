@@ -65,12 +65,14 @@ def gws_json(args: list[str], *, config_dir: str) -> dict:
     return json.loads(result.stdout)
 
 
-def unavailable_file(exc: subprocess.CalledProcessError, label: str) -> None:
+def unavailable_file(exc: subprocess.CalledProcessError, label: str, *, attachment: str = '') -> None:
     error = json.loads(exc.stdout or '{}').get('error', {})
+    code = error.get('code')
     reason = error.get('reason', '').lower()
-    if error.get('code') not in (403, 404) or 'quota' in reason or 'limit' in reason:
+    if code not in (403, 404) or 'quota' in reason or 'limit' in reason:
         raise exc
-    log(f'WARNING skipping inaccessible {label}.' + (' Use --chat FILE to supply its messages.' if 'chat' in label else ''))
+    details = f' {attachment} (HTTP {code})' if attachment else ''
+    log(f'WARNING skipping inaccessible {label}{details}.' + (' Use --chat FILE to supply its messages.' if label == 'chat' else ''))
 
 
 def items(profile: str, resource: str, params: dict, key: str):
@@ -207,7 +209,9 @@ def export_documents(profile: str, documents: list[dict]) -> tuple[str, str, str
             try:
                 gws(['drive', 'files', 'export', '--params', json.dumps({'fileId': doc['fileId'], 'mimeType': 'text/markdown'}), '--output', path.name], profile, Path(temp))
             except subprocess.CalledProcessError as exc:
-                unavailable_file(exc, 'transcript document')
+                url = doc.get('fileUrl') or f"https://docs.google.com/document/d/{doc['fileId']}/edit"
+                attachment = f"{doc['title']!r} ({url})" if doc.get('title') else url
+                unavailable_file(exc, 'transcript document', attachment=attachment)
                 continue
             original = path.read_text()
             summary, transcript = clean_document(original)

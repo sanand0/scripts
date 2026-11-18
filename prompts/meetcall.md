@@ -1,5 +1,31 @@
 # meetcall
 
+## Transcript access, 18 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+I get this warning, "Skipping inaccessible transcript document."
+
+```
+❯ meetcall 'Innovation Team Meeting'
+Searching s.anand@straive.com…
+2026-11-18 13:30 UTC+08:00 | Innovation Team Meeting [s.anand@straive.com]
+  Sources: 1 recording, 2 notes documents
+  Action: Create transcript
+  Audio: /home/sanand/Documents/calls/2026-11-18 Innovation Team Meeting.opus
+  Note: /home/sanand/Dropbox/notes/transcripts/2026-11-18 Innovation Team Meeting.md
+WARNING skipping inaccessible transcript document.
+Downloading recording 1/1…
+```
+
+But the document is available at https://docs.google.com/document/d/1N0cusr_OKZfBxeeZeH8Zaeqd7muuiUHJpzr2232_47g/edit?tab=t.5ufxw8f15sbu
+Is it not accessible? How do we fix this?
+
+<!-- codex resume 01a1ed7e-6d63-76c1-8250-889aff4fb56f -->
+
 ## Captions, 16 Nov 2026
 
 <!--

@@ -454,7 +454,7 @@ def test_recording_with_missing_google_doc_still_transcribes(tmp_path, monkeypat
     import json
     import subprocess
     m = load()
-    e = event(attachments=[{'fileId': 'video', 'mimeType': 'video/mp4'}, {'fileId': 'deleted-doc', 'mimeType': 'application/vnd.google-apps.document'}], _profile='p', _account='me')
+    e = event(attachments=[{'fileId': 'video', 'mimeType': 'video/mp4'}, {'fileId': 'deleted-doc', 'title': 'Notes – TDS', 'mimeType': 'application/vnd.google-apps.document'}], _profile='p', _account='me')
     monkeypatch.setattr(m, 'search', lambda *a: [e])
     monkeypatch.setattr(m, 'download_audio', lambda *a: None)
     calls = []
@@ -468,6 +468,8 @@ def test_recording_with_missing_google_doc_still_transcribes(tmp_path, monkeypat
     assert len(calls) == 1 and '--prompt' not in calls[0]
     output = capsys.readouterr()
     assert 'WARNING skipping inaccessible transcript document' in output.err
+    assert 'Notes – TDS' in output.err and 'HTTP 404' in output.err
+    assert 'https://docs.google.com/document/d/deleted-doc/edit' in output.err
     assert 'error[api]' not in output.err
 
 
