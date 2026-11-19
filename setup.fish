@@ -179,6 +179,7 @@ abbr --add descriptions "ug --ignore-files '^(summary|description|keywords):' > 
 
 # Replace the archived LinkedIn backup command.
 abbr --add backuplinkedin.py 'linkedin backup me'
+abbr --add backupwhatsapp.py 'wabackup --sync'
 
 # Show LinkedIn feed for people I follow
 abbr --add linkedinfeed "begin

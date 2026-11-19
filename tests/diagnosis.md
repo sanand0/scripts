@@ -54,7 +54,7 @@ The summarizer recipes route OpenAI to a closed localhost endpoint as a fail-clo
 |---:|---|---|---|---|
 | 13 | `tests/test_htmlemail.py` | Runner dependency error; code and tests right | `frontmatter==3.0.8` is a different PyPI project and has no `load`. The intended `python-frontmatter==1.3.0` does. | Trivial |
 | 5 | `tests/test_mcpserver.py` Bash-tool tests | Cascading resolver error; code and tests right | Wrong `frontmatter` pins PyYAML 5.1. FastMCP 3.4.7 requires PyYAML 6.x, so uv backtracks to FastMCP 2.14.7, whose `ToolResult` lacks `is_error`. | Easy |
-| 4 | `tests/test_chatgpt_cli.py` browser tests | Environment provisioning; code and tests likely right | Playwright 1.62 expects Chromium headless-shell revision 1234, which is not installed. Only older revisions are cached. | Easy–medium |
+| 4 | `tests/test_chatcli.py` browser tests | Environment provisioning; code and tests likely right | Playwright 1.62 expects Chromium headless-shell revision 1234, which is not installed. Only older revisions are cached. | Easy–medium |
 | 2 | `tests/test_call.py` chunk tests | Test isolation plus restricted environment; code right | Tests write the default cache under `~/.cache/sanand-scripts/...`; that path is read-only here and is shared state on a normal host. | Trivial |
 | 2 | `tests/test_podcast.py` default-output tests | Stale tests; code right | Tests still require an always-timestamped name, contradicting the later explicit prompt to use `INPUT.mp3` unless it already exists. | Trivial |
 | 3 | `tests/test_summarize_transcript.py` `process_file` tests | Stale tests; code right | Calls use the old positional signature. Added `provider` and `client` parameters shift a `set` into the `content_set` position, hence `set.meta_keys`. | Easy |
@@ -78,7 +78,7 @@ FastMCP 2.14.7 ToolResult -> no is_error argument
 
 ### 2. Missing Playwright browser: four failures
 
-Four tests at `tests/test_chatgpt_cli.py:94-216` launch a real local Chromium process. They do not navigate to ChatGPT or submit anything; three use `page.set_content`, and the target-ID test uses a blank page. The Python Playwright package is installed, but its matching browser binary is not.
+Four tests at `tests/test_chatcli.py:94-216` launch a real local Chromium process. They do not navigate to ChatGPT or submit anything; three use `page.set_content`, and the target-ID test uses a blank page. The Python Playwright package is installed, but its matching browser binary is not.
 
 This is an environment failure, not an assertion or product-code failure. The durable answer is to pin Playwright and install its matching Chromium during test bootstrap/CI. Marking these tests (for example, `browser`) would let fast unit tests run separately and produce a clear preflight skip/error. A system Edge fallback is less reliable here because Edge's crash handler also needs a writable profile/config path.
 

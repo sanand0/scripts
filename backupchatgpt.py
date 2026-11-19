@@ -30,14 +30,17 @@ Examples:
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager
 import datetime as dt
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import time
 import tempfile
@@ -53,6 +56,8 @@ import sanand_observability as obs
 
 app = typer.Typer(add_completion=False, help=__doc__)
 SCRAPERS = Path(__file__).resolve().parent.parent / "tools" / "aiscrapers"
+RAW_DIR = Path.home() / "Documents/data/anand-chrome-tools/chatgpt-raw"
+CONVERTER = Path(__file__).resolve().parent.parent / "chatgpt-to-markdown/chatgpt-to-markdown.js"
 SOURCES = ("chatgptscraper.js", "chatgpt-sidebar-scraper.js")
 UUID_PATTERN = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
 LOCAL_ACTIVITY_PATTERN = rf"local-activity:({UUID_PATTERN}):(0|[1-9][0-9]*)"
@@ -194,17 +199,77 @@ def markdown_index(directory: Path) -> dict[Path, str | None]:
     return {path: markdown_owner(path) for path in sorted(directory.glob("*.md"))}
 
 
-def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, index: dict, previous: dict, metrics: dict | None = None) -> dict:
-    """Publish converter-compatible names; retain overwritten exports and leave later exports alone."""
-    data = canonical.read_bytes()
+def markdown_time(path: Path) -> float | None:
+    """Read the source version from converter metadata, including older exports."""
+    with path.open("rb") as stream:
+        header = stream.read(8192).decode("utf-8-sig", errors="replace")
+    header = header.replace("\r\n", "\n")
+    if header.startswith("---\n"):
+        match = re.search(r"^date: (.+)$", header.split("\n---", 1)[0], re.M)
+        if match:
+            try:
+                date = dt.datetime.fromisoformat(match[1].strip('"'))
+                if date.tzinfo:
+                    return date.timestamp()
+            except ValueError:
+                pass
+    else:
+        # Legacy exports show local time rounded to minutes. Protect the whole minute.
+        header = re.split(r"\n#+ (?:User|Assistant|ChatGPT)\s*\r?\n", header, maxsplit=1)[0]
+        match = re.search(r"^- Updated: (.+)$", header, re.M)
+        if match:
+            try:
+                return dt.datetime.strptime(match[1], "%b %d, %Y, %I:%M %p").timestamp() + 60
+            except ValueError:
+                pass
+    return None
+
+
+def markdown_stem(title: str, cid: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_]+", " ", title).strip() or cid
+
+
+def retitle_markdown(data: bytes, title: str) -> bytes:
+    """Change only the title in recognized frontmatter or the legacy export heading."""
+    if data.removeprefix(b"\xef\xbb\xbf").startswith((b"---\n", b"---\r\n")):
+        header = re.split(rb"\r?\n---(?:\r?\n|$)", data, maxsplit=1)[0]
+        match = re.search(rb"^title: [^\r\n]*", header, re.M)
+        line = f"title: {encoded(title)}".encode()
+    else:
+        match = re.match(rb"(?:\xef\xbb\xbf)?(# [^\r\n]*)", data)
+        line = f"# {' '.join(title.splitlines())}".encode()
+        if match:
+            start, end = match.span(1)
+            return data[:start] + line + data[end:]
+    return data[:match.start()] + line + data[match.end():] if match else data
+
+
+def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, index: dict, previous: dict,
+                     metrics: dict | None = None, *, source_time: float | None = None,
+                     rename_only: bool = False, dry_run: bool = False, revision_root: Path | None = None) -> dict:
+    """Publish by UUID, preserving the best local transcript for metadata-only renames."""
+    matches = [p for p, owner in index.items() if owner == cid]
+    base = markdown_stem(title, cid)
+    compatible = [p for p in matches if re.fullmatch(re.escape(base) + r"(?: \(\d+\))?", p.stem)]
+    if rename_only:
+        versions = {p: markdown_time(p) for p in matches}
+        if not source_time or not title.strip() or title.strip().casefold() in {"new chat", "untitled"}:
+            return dict(changed=False, held=True)
+        current = [p for p, t in versions.items() if t is not None and abs(t - source_time) <= .001]
+        if len(current) != 1 or any(t is None or t > source_time + .001 for t in versions.values()):
+            return dict(changed=False, held=True)
+        original = current[0].read_bytes()
+        data = retitle_markdown(original, title)
+        if data == original and len(compatible) == len(matches):
+            return dict(changed=False, held=True)
+    else:
+        if source_time is not None and any(t is None or t >= source_time - .001 for t in map(markdown_time, matches)):
+            return dict(changed=False, held=True)
+        data = canonical.read_bytes()
     fingerprint = hashlib.sha256(data).hexdigest()
     location = str(directory.resolve())
-    matches = [p for p, owner in index.items() if owner == cid]
-    if previous.get("hash") == fingerprint and previous.get("directory") == location and matches:
+    if previous.get("hash") == fingerprint and previous.get("directory") == location and matches and not rename_only:
         return dict(previous, file=matches[0].name, changed=False, removed=[], bytes=len(data))
-    # Equivalent to chatgpt-to-markdown's ASCII \w sanitization and collapsed spaces.
-    base = re.sub(r"[^A-Za-z0-9_]+", " ", title).strip() or cid
-    compatible = [p for p in matches if re.fullmatch(re.escape(base) + r"(?: \(\d+\))?", p.stem)]
     target = compatible[0] if compatible else directory / f"{base}.md"
     count = 0
     while True:
@@ -213,12 +278,16 @@ def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, ind
         if other is None:
             break
         if index[other] == cid:
-            target = other
+            if target.exists():
+                target = other
             break
         count += 1
         target = directory / f"{base} ({count}).md"
     if len(target.name.encode()) > 255:
         raise ValueError("Title exceeds the converter's filename limit; shorten the chat title")
+    if dry_run:
+        return dict(changed=True, file=target.name)
+    revision_root = revision_root or (directory if source_time is not None else canonical.parent) / ".revisions"
     removed = []
     for path in dict.fromkeys([*matches, target]):
         if not path.exists():
@@ -227,13 +296,12 @@ def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, ind
             raise ValueError(f"Markdown identity changed during publication: {path}; stop the converter and retry")
         old = path.read_bytes()
         if old != data or path != target:
-            revision = canonical.parent / ".revisions" / cid / f"shared-{digest([str(path), hashlib.sha256(old).hexdigest()])}"
+            revision = revision_root / cid / f"shared-{digest([str(path), hashlib.sha256(old).hexdigest()])}"
             atomic(revision.with_suffix(".md"), old)
             atomic(revision.with_suffix(".json"), encoded(dict(source=str(path), conversationId=cid)) + "\n")
-    details = f'markdown={size(len(data))}'
     if metrics:
-        details = f'elapsed={duration(metrics["duration_ms"] / 1000)} prompts={metrics["prompts"]} messages={metrics["messages"]} ' + details
-    print(f"Publishing local Markdown ID={cid} ({details})", file=sys.stderr, flush=True)
+        details = f'elapsed={duration(metrics["duration_ms"] / 1000)} prompts={metrics["prompts"]} messages={metrics["messages"]} markdown={size(len(data))}'
+        print(f"Publishing local Markdown ID={cid} ({details})", file=sys.stderr, flush=True)
     changed = atomic(target, data)
     index[target] = cid
     for path in matches:
@@ -242,6 +310,168 @@ def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, ind
             index.pop(path)
             removed.append(path.name)
     return dict(hash=fingerprint, file=target.name, directory=location, changed=changed or bool(removed), removed=removed, bytes=len(data))
+
+
+def raw_snapshot(path: Path) -> tuple[bytes, dict, dict]:
+    """Validate the identity and write pair without waiting for the extension."""
+    data = path.read_bytes()
+    info = json.loads(path.with_suffix(".backup.json").read_bytes())
+    value = json.loads(data)
+    if (not isinstance(value, dict) or not isinstance(info, dict) or
+        info.get("hash") != hashlib.sha256(data).hexdigest() or
+        value.get("conversation_id", value.get("id")) != path.stem or value.get("is_temporary_chat")):
+        raise ValueError("Snapshot identity or sidecar hash mismatch")
+    return data, value, info
+
+
+def raw_messages(snapshot: dict) -> list[dict]:
+    messages = snapshot.get("messages")
+    if messages is None:
+        nodes = snapshot.get("mapping", {})
+        messages = []
+        node_id = snapshot.get("current_node")
+        visited = set()
+        while node_id in nodes and node_id not in visited:
+            visited.add(node_id)
+            node = nodes[node_id]
+            if node.get("message") is not None:
+                messages.append(node["message"])
+            node_id = node.get("parent")
+        messages.reverse()
+    return messages
+
+
+def raw_has_reply(snapshot: dict, prompt_ids: set[str]) -> bool:
+    seen_prompt = False
+    for message in raw_messages(snapshot):
+        seen_prompt = seen_prompt or message.get("id") in prompt_ids
+        if (seen_prompt and message.get("status") == "finished_successfully" and
+            not message.get("metadata", {}).get("is_visually_hidden_from_conversation") and
+            message.get("channel") == "final" and message.get("author", {}).get("role") in {"assistant", "tool"}):
+            return True
+    return False
+
+
+def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: str, *, verbose: bool = False) -> int:
+    if not raw_dir.is_dir():
+        raise ValueError(f"Raw capture directory is missing: {raw_dir}")
+    if raw_dir.resolve() == markdown_dir.resolve():
+        raise ValueError("Raw and Markdown directories must be separate")
+    if not CONVERTER.is_file():
+        raise ValueError(f"Markdown converter is missing: {CONVERTER}")
+    catalog_path = raw_dir / "catalog.json"
+    catalog = json.loads(catalog_path.read_text()) if catalog_path.is_file() else {}
+    if not isinstance(catalog, dict) or any(not re.fullmatch(UUID_PATTERN, cid) or type(t) not in (int, float)
+                                           or not math.isfinite(t) or t <= 0 for cid, t in catalog.items()):
+        raise ValueError("Invalid ChatGPT capture catalog")
+    index = markdown_index(markdown_dir)
+    owned = defaultdict(list)
+    for path, owner in index.items():
+        owned[owner].append(path)
+    paths = {p.stem: p for p in raw_dir.glob("*.json") if re.fullmatch(UUID_PATTERN, p.stem)}
+    failures = 0
+    with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp:
+        for cid in sorted(paths.keys() | catalog.keys()):
+            path = paths.get(cid)
+            matches = owned[cid]
+            message = dict(conversationId=cid)
+            title = matches[0].stem if matches else "—"
+            pending_label = "part"
+            update = latest_update = catalog.get(cid, 0)
+            try:
+                versions = [markdown_time(p) for p in matches]
+                if path is None:
+                    if any(t is not None and t >= update - .001 for t in versions):
+                        continue
+                    status = "missing"
+                else:
+                    data, value, info = raw_snapshot(path)
+                    if isinstance(value.get("title"), str) and value["title"].strip():
+                        title = value["title"]
+                    messages = raw_messages(value)
+                    source_time = value.get("update_time")
+                    if type(source_time) in (int, float) and math.isfinite(source_time):
+                        latest_update = max(latest_update, source_time)
+                    # Older sidecars could mark an unfilled final image as a complete branch.
+                    empty_image = any(m.get("author", {}).get("role") == "tool" and m.get("channel") == "final"
+                                      and m.get("content", {}).get("content_type") == "multimodal_text"
+                                      and m["content"].get("parts") == [] for m in messages)
+                    if info.get("coverage") == "partial" or empty_image:
+                        status = "deferred"
+                        tip = next((m for m in messages if m.get("id") == value.get("current_node")), {})
+                        if empty_image:
+                            pending_label = "img"
+                        elif tip.get("status") == "in_progress":
+                            pending_label = "img" if "image_gen_estimated_duration_ms" in (tip.get("metadata") or {}) else "wip"
+                    elif info.get("coverage") not in {"tree", "branch"} or type(source_time) not in (int, float) or not math.isfinite(source_time) or source_time <= 0 or source_time != info.get("updateTime"):
+                        raise ValueError("Snapshot has no verified coverage or server update time")
+                    elif source_time + 1 < update:
+                        status = "stale-capture"
+                    elif any(t is None or t >= source_time - .001 for t in versions):
+                        result = publish_markdown(path, cid, value.get("title") or "", markdown_dir, index, {},
+                                                  source_time=source_time, rename_only=True, dry_run=dry_run)
+                        if result["changed"]:
+                            status = "would-rename" if dry_run else "renamed"
+                            message["file"] = result["file"]
+                        else:
+                            status = "up-to-date" if None not in versions else "unknown-markdown-version"
+                            if status == "unknown-markdown-version":
+                                files = ", ".join(p.name for p, t in zip(matches, versions) if t is None)
+                                message["warning"] = f"Check the update date in {files} before replacing the Markdown."
+                    else:
+                        render = subprocess.run(
+                            ["node", "--input-type=module", "-e",
+                             "import fs from 'node:fs'; const {renderSnapshot} = await import(process.argv[1]);"
+                             "process.stdout.write(renderSnapshot(JSON.parse(fs.readFileSync(0, 'utf8'))));",
+                             CONVERTER.as_uri()],
+                            input=data, capture_output=True, timeout=30,
+                        )
+                        if render.returncode:
+                            lines = render.stderr.decode(errors="replace").splitlines()
+                            detail = next((line for line in lines if line.startswith(("Error:", "TypeError:", "SyntaxError:"))), "No renderer diagnostic")
+                            raise ValueError(f"Markdown rendering failed: {detail}")
+                        rendered = Path(tmp) / "render.md"
+                        rendered.write_bytes(render.stdout)
+                        if markdown_owner(rendered) != cid:
+                            raise ValueError("Rendered Markdown identity mismatch")
+                        if dry_run:
+                            status = "would-update" if matches else "would-create"
+                        else:
+                            result = publish_markdown(rendered, cid, value.get("title") or cid, markdown_dir,
+                                                      index, {}, source_time=source_time)
+                            status = "up-to-date" if result.get("held") else "updated" if matches else "created"
+                            if result.get("file"):
+                                message["file"] = result["file"]
+            except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+                failures += 1
+                status = "error"
+                message["error"] = str(exc)
+            message["status"] = status
+            severity = "error" if "error" in message else "warning" if "warning" in message else None
+            if severity:
+                detail = " ".join(message[severity].splitlines())
+                print(f"{severity}[chatcli-backup]: {cid} {detail}", file=sys.stderr, flush=True)
+            if not (severity or verbose or (dry_run and status.startswith("would-"))):
+                continue
+            if verbose:
+                if severity:
+                    icon, label = "🔴", "check"
+                elif status in {"deferred", "missing", "stale-capture"}:
+                    icon, label = "🟡", pending_label
+                else:
+                    icon, label = "🟢", status if status.startswith("would-") else "done"
+                try:
+                    updated_at = dt.datetime.fromtimestamp(latest_update, dt.UTC).isoformat().replace("+00:00", "Z") if latest_update else None
+                except (OverflowError, OSError, ValueError):
+                    updated_at = None
+                message.update(label=label, updatedAt=updated_at, title=" ".join(title.split()))
+            if output_format == "jsonl":
+                print(encoded(message), flush=True)
+            elif verbose:
+                print(f"{icon} {label}\t{cid}\t{updated_at or '—'}\t{message['title']}", flush=True)
+            elif not severity:
+                print(f"{cid}\t{status}\t{message.get('file', '')}", flush=True)
+    return failures
 
 
 def records(messages: list[dict], cid: str, metadata: dict | None = None) -> list[dict]:
@@ -760,6 +990,16 @@ async def run(cdp_url, out_dir, conversations, name, rescan, limit, dry_run, out
                             result["messages"] = previous[:reused] + result["messages"]
                             trace.event("prefix_reused", dict(context, anchor_id=result["messages"][reused]["id"], reused_messages=reused, captured_messages=len(result["messages"])-reused, prefix_assumption=True, full_scan=True))
                             print(f"  retained_saved_prefix={reused:03}", file=sys.stderr, flush=True)
+                    # Some Work views hydrate the prompt while omitting a saved reply.
+                    if result["messages"] and all(m["role"] == "user" for m in result["messages"]):
+                        raw_path = RAW_DIR / f"{cid}.json"
+                        try:
+                            _, native, raw_info = raw_snapshot(raw_path)
+                        except (FileNotFoundError, ValueError):
+                            native, raw_info = {}, {}
+                        if raw_info.get("coverage") in {"branch", "tree"}:
+                            if raw_has_reply(native, {m["id"] for m in result["messages"]}):
+                                raise IncompleteChat("Rendered prompt-only view omits a reply present in native capture")
                     timestamps = {r["id"]: r["timestamp"] for r in previous if "timestamp" in r}
                     for message in result["messages"]:
                         if message["id"] in timestamps:
@@ -869,5 +1109,45 @@ def main(
             raise typer.Exit(1)
 
 
+raw_app = typer.Typer(add_completion=False)
+
+
+@raw_app.command()
+def backup_raw(
+    raw_dir: Path = typer.Option(RAW_DIR, help="Local extension capture directory."),
+    markdown_dir: Path = typer.Option(Path.home() / "Documents/chatgpt", help="Markdown publication directory."),
+    dry_run: bool = typer.Option(False, help="Show proposed changes without publishing."),
+    format: str = typer.Option("text", help="Output format: text (TSV) or jsonl."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show each chat’s status, ID, latest known update in UTC, and title."),
+):
+    """Update Markdown from local ChatGPT snapshots with newer server versions.
+
+    Examples:
+      chatcli backup --dry-run
+      chatcli backup --verbose --format jsonl | jaq .
+      chatcli backup --markdown-dir /tmp/chatgpt-preview
+    """
+    if format not in {"text", "jsonl"}:
+        raise typer.BadParameter("--format must be text or jsonl")
+    os.umask(0o077)
+    try:
+        if dry_run:
+            failed = raw_backup(raw_dir.expanduser(), markdown_dir.expanduser(), True, format, verbose=verbose)
+        else:
+            lock_dir = Path.home() / ".cache/sanand-scripts/backupchatgpt"
+            lock_dir.mkdir(parents=True, exist_ok=True)
+            with (lock_dir / "run.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                failed = raw_backup(raw_dir.expanduser(), markdown_dir.expanduser(), False, format, verbose=verbose)
+    except (OSError, ValueError) as exc:
+        print(f"error[chatcli-backup]: {exc}", file=sys.stderr)
+        raise typer.Exit(1) from exc
+    if failed:
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
-    app()
+    if sys.argv[1:2] == ["raw"]:
+        raw_app(args=sys.argv[2:], prog_name="chatcli backup")
+    else:
+        app()

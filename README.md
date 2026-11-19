@@ -20,7 +20,7 @@ See [sanand0/skills](https://github.com/sanand0/skills) for reusable agent skill
 
 ## Tests
 
-Run the complete suite with `just test`. The first run downloads the Chromium build pinned to the Playwright tests; later runs reuse it from Playwright's cache. Each test module has a focused recipe such as `just test-chatgpt` or `just test-mcpserver`; list them with `just --list`. Recipes use isolated, cached uv environments, so there is no test requirements file or lockfile to maintain.
+Run the complete suite with `just test`. The first run downloads the Chromium build pinned to the Playwright tests; later runs reuse it from Playwright's cache. Each test module has a focused recipe such as `just test-chatcli` or `just test-mcpserver`; list them with `just --list`. Recipes use isolated, cached uv environments, so there is no test requirements file or lockfile to maintain.
 
 ## Windows Setup
 
@@ -84,10 +84,11 @@ Here are the setup details for my laptops.
 - [codexusage](codexusage) reports Codex quota and resets; `codexusage --json` for agents.
 - [ai-usage/](ai-usage/) is the GNOME panel widget for both, with colored quotas, reset countdowns, and adjustable refresh. Install with `cd ~/code/scripts/ai-usage && ./install.sh`; see its [README](ai-usage/README.md).
 - [chars](chars) lists non-ASCII characters in files.
-- [chatgpt](chatgpt) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatgpt --inspect --format json | jaq .` before relying on current UI labels; examples: `chatgpt --save "Draft this"`, `chatgpt --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatgpt --connector "Google Drive" --format json`.
+- [chatcli](chatcli) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatcli --inspect --format json | jaq .` before relying on current UI labels; examples: `chatcli --save "Draft this"`, `chatcli --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatcli --connector "Google Drive" --format json`.
+  - `chatcli backup` updates `~/Documents/chatgpt/*.md` from `~/Documents/data/anand-chrome-tools/chatgpt-raw/`. It reports issues that need attention. Use `chatcli backup --verbose` to see each status, conversation ID, latest known update in UTC, and title. It runs in `daily-activities` before the context rebuild and uses Node.js with the sibling `chatgpt-to-markdown` checkout.
 - [chatgpt-export](chatgpt-export) exports ChatGPT data dumps avoiding the 3-minute OpenAI server timeout via HTTP ranges in an authenticated Edge tab. Copy the export link from email, then run: `chatgpt-export`. <!-- https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9 -->
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
-- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
+- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp and ChatGPT backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
@@ -167,7 +168,7 @@ Here are the setup details for my laptops.
 
 Current services are:
 
-- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp backups, and unmetered-only personal backup/sync jobs
+- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp and ChatGPT backups, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `update-files-daily.*`: Update local files
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`

@@ -280,7 +280,7 @@ def prepare_context(phrases: list[str], config_dir: str | None, limit: int) -> t
 def open_ai(ai: str, prompt_path: Path, attachments: list[Path], submit: bool, model: str | None, dry_run: bool, fmt: str) -> dict[str, Any]:
     if ai != "chatgpt":
         raise ValueError(f"--ai {ai!r} is reserved but not implemented yet")
-    cmd = ["chatgpt", "--format", "json"]
+    cmd = ["chatcli", "--format", "json"]
     if model:
         cmd += ["--model", model]
     if not submit:

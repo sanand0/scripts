@@ -1,5 +1,84 @@
 # backupchatgpt.py
 
+## Switch to anand-chrome-tools, 19 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+I updated the ~/code/tools/anand-chrome-tools/ extension to passively capture the ChatGPT backend API as JSON in ~/Documents/data/anand-chrome-tools/chatgpt-raw/
+
+Go through this and compare it with backupchatgpt.py: over the period that the extension has been operating in,
+
+A. How good is its coverage? I mean, are there chats since it started operating that are not present in chatgpt-raw?
+B. How good is the quality? Is there important/useful information that backupchatgpt.py captures that the extension does not?
+
+You may run backupchatgpt.py to verify, but limit to just the time period required - don't scan the default 300 chats or whatever it does right now.
+
+Based on your input, I plan to update the `chatcli` script to add a `chatcli backup` subcommand that will use the data from chatgpt-raw to create / update the Markdowns in ~/Documents/chatgpt/ if they are more recent. I will use this to keep ~/Documents/chatgpt/ up to date on a daily basis (and automate it via `daily-activities`) and use the ChatGPT export mechanism along with ~/code/chatgpt-to-markdown/ every few weeks to overwrite the Markdowns with the official export.
+
+Let me know if this is a good idea, and what needs to happen in order to do this. (Don't implement `chatcli backup` yet.)
+
+---
+
+Revise ~/code/anand-chrome-tools/ and ~/code/chatgpt-to-markdown/ and backupchatgpt.py to improve capture and address these gaps to the extent possible - elegantly and minimally. Test them.
+
+Then, add the `chatcli backup` subcommand to the `chatcli` script, which will use the data from chatgpt-raw to create / update the Markdowns in ~/Documents/chatgpt/ if they are more recent. Test this.
+
+---
+
+One key issue to handle is renaming of chats. If there is clear evidence that a chat has been renamed (e.g. based on the ID), I'd like `chatcli backup` to rename the Markdown in ~/Documents/chatgpt/ as well.
+
+Check if there are any existing Markdowns in ~/Documents/chatgpt/ that are renames (e.g. by checking via duplicate IDs) and do a one-time rename / update as required.
+
+Commit ~/code/anand-chrome-tools/ and push.
+Publish ~/code/chatgpt-to-markdown/ as a new npm release, updating release notes, etc.
+
+--- <!-- steering -->
+
+I ran npm login independently and I should be logged in now.
+
+--- <!-- steering -->
+
+I will run npm publish myself. Do everything required up to that point and leave the last publish to me.
+
+---
+
+I renamed `chagpt` to `chatcli` to avoid conflict with the ChatGPT Desktop app. I also renamed prompts/chatgpt.md to prompts/chatcli.md. Update test cases, docs, dependencies, etc. to reflect this.
+
+Include `chatcli backup` in the daily-activities script.
+
+---
+
+`chatcli backup` prints partial for IDs 6afd955e-b840-83ec-bbb9-92abb8459b50, 6afd2ebd-45ec-83ec-896d-28bdc2b67bc1, etc. and these seem to be because they have image blogs in them. "partial" is misleading - I get confused thinking I need to do something. Rename it to something intuitive, one-word (hyphenated if needed).
+
+Also, I'd like the logging to be such that `servicestatus` will report fine on it.
+
+So, maybe:
+
+- `chatcli backup` only reports errors or warnings I need to act on.
+- `chatcli backup --verbose` reports everything, including partials (renamed).
+
+---
+
+What are possible causes for "deferred"? The chat has an image... what else?
+
+---
+
+Change the verbose reporting like this: "🟢 $STATUS\tID\tChat title".
+Use these statuses if possible - in line with the current code: 🟢 done (instead of up-to-date), 🟡 wip, 🟡 image_wip, 🟡 part, 🔴 check.
+
+--- <!-- steering -->
+
+Include the ISO datetime of the latest update of each chat as the column before "Chat title"
+
+--- <!-- steering -->
+
+Rename image_wip to img
+
+<!-- codex resume 01a1f13f-8b42-7301-8d31-0170ba2c68c1 -->
+
 ## Handle issues, 02 Nov 2026
 
 <!--

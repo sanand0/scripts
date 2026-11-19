@@ -10,7 +10,7 @@ fastmcp := "3.4.7"
 verify: test
 
 # Run the complete test suite, failing on the first test module with an error.
-test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-wabackup test-browsing-history test-fish-usage test-chatgpt test-codextags test-context test-daily-activities test-servicestatus test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-callprompt test-transcribe test-translate test-timestamp
+test: test-agentlog test-ai-usage test-backup-chatgpt test-backup-google test-backup-observability test-backup-twitter test-backup-whatsapp test-wabackup test-browsing-history test-fish-usage test-chatcli test-codextags test-context test-daily-activities test-servicestatus test-edge test-htmlemail test-linkedin test-linkedin-api test-mcpserver test-musictag test-podcast test-prompt test-rofi test-run-at test-skilluse test-summarize-blog-tags test-summarize-transcript test-call test-meetcall test-callprompt test-transcribe test-translate test-timestamp
 
 # Run the offline subscription usage adapters and widget tests.
 test-ai-usage:
@@ -56,9 +56,9 @@ test-fish-usage:
 playwright-install:
     test -x "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}/chromium_headless_shell-{{ playwright_revision }}/chrome-headless-shell-linux64/chrome-headless-shell" || uv run --isolated --no-project --python {{ python }} --with 'playwright=={{ playwright }}' playwright install chromium
 
-# Run the ChatGPT CLI tests, installing their matching Chromium build if needed.
-test-chatgpt: playwright-install
-    {{ pytest }} --with typer --with 'playwright=={{ playwright }}' pytest -q tests/test_chatgpt_cli.py
+# Run the chatcli tests, installing their matching Chromium build if needed.
+test-chatcli: playwright-install
+    {{ pytest }} --with typer --with 'playwright=={{ playwright }}' pytest -q tests/test_chatcli.py
 
 # Run the Codex tag-index tests.
 test-codextags:
@@ -68,7 +68,7 @@ test-codextags:
 test-context:
     {{ pytest }} --with pyyaml --with typer pytest -q tests/test_context.py
 
-# Run daily WhatsApp scheduling and failure reporting tests without live jobs.
+# Run daily backup scheduling and failure reporting tests without live jobs.
 test-daily-activities:
     {{ pytest }} pytest -q tests/test_daily_activities.py
 

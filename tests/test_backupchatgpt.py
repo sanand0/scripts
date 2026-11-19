@@ -1033,3 +1033,134 @@ def test_discovery_failure_is_reported_and_explicit_run_ignores_old_error(tmp_pa
     assert not asyncio.run(b.run('http://localhost', out, [cid], 'no-match', False, 1, False, 'jsonl', 5))
     result = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert result['status'] == 'partial' and result['discovery_error'] is None
+
+
+def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    raw.mkdir()
+    output.mkdir()
+    released, current, partial, placeholder, working, image_working, missing, stale, corrupt, unknown = (str(uuid4()) for _ in range(10))
+
+    def capture(cid, coverage="branch"):
+        mid = str(uuid4())
+        snapshot = dict(conversation_id=cid, title="Same title", update_time=30,
+                        current_node=mid, page_info=dict(has_previous_page=False, has_next_page=False),
+                        messages=[dict(id=mid, author=dict(role="user"),
+                                       content=dict(content_type="text", parts=["Recovered prompt"]))])
+        if cid == placeholder:
+            snapshot["messages"][-1].update(author=dict(role="tool"), channel="final",
+                                            content=dict(content_type="multimodal_text", parts=[]))
+        if cid in {working, image_working}:
+            snapshot["title"] = "Working\tchat\n"
+            snapshot["messages"][-1]["status"] = "in_progress"
+            if cid == image_working:
+                snapshot["messages"][-1]["metadata"] = {"image_gen_estimated_duration_ms": 1000}
+        payload = b.encoded(snapshot)
+        (raw / f"{cid}.json").write_text(payload)
+        (raw / f"{cid}.backup.json").write_text(b.encoded(dict(
+            coverage=coverage, hash=b.hashlib.sha256(payload.encode()).hexdigest(), updateTime=30)))
+
+    for cid in (released, current, placeholder, stale, corrupt, unknown):
+        capture(cid)
+    for cid in (partial, working, image_working):
+        capture(cid, "partial")
+    (raw / "catalog.json").write_text(b.encoded({missing: 40, stale: 31.25}))
+    (raw / f"{corrupt}.json").write_text("{}")
+    original = f'---\ntitle: "Old name"\ndate: 1970-01-01T00:00:20Z\nsource: "https://chatgpt.com/c/{released}"\n---\n\nOld bytes\n'
+    newer = f'---\ntitle: "Same title"\ndate: 1970-01-01T00:00:30Z\nsource: "https://chatgpt.com/c/{current}"\n---\n\nOfficial export\n'
+    (output / "Old name.md").write_text(original)
+    (output / "Same title.md").write_text(newer)
+    (output / "Undated.md").write_text(f'---\nsource: "https://chatgpt.com/c/{unknown}"\n---\n\nKeep this.\n')
+
+    def statuses(dry_run, *, verbose=True):
+        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=verbose) == 1
+        out, err = capsys.readouterr()
+        rows = map(json.loads, out.splitlines())
+        assert sorted(err.splitlines()) == [
+            f"error[chatcli-backup]: {corrupt} Snapshot identity or sidecar hash mismatch",
+            f"warning[chatcli-backup]: {unknown} Check the update date in Undated.md before replacing the Markdown.",
+        ]
+        return {row["conversationId"]: row["status"] for row in rows}
+
+    attention = {unknown: "unknown-markdown-version", corrupt: "error"}
+    assert statuses(True) == (attention | {released: "would-update", current: "up-to-date", partial: "deferred",
+                                           placeholder: "deferred", working: "deferred", image_working: "deferred",
+                                           missing: "missing", stale: "stale-capture"})
+    assert b.raw_backup(raw, output, True, "text", verbose=True) == 1
+    rows = {cid: (label, updated, title) for label, cid, updated, title in (
+        line.split("\t") for line in capsys.readouterr().out.splitlines()
+    )}
+    updated = "1970-01-01T00:00:30Z"
+    assert rows == {
+        released: ("🟢 would-update", updated, "Same title"), current: ("🟢 done", updated, "Same title"),
+        partial: ("🟡 part", updated, "Same title"), placeholder: ("🟡 img", updated, "Same title"),
+        working: ("🟡 wip", updated, "Working chat"), image_working: ("🟡 img", updated, "Working chat"),
+        missing: ("🟡 part", "1970-01-01T00:00:40Z", "—"),
+        stale: ("🟡 part", "1970-01-01T00:00:31.250000Z", "Same title"),
+        corrupt: ("🔴 check", "—", "—"), unknown: ("🔴 check", updated, "Same title"),
+    }
+    assert statuses(True, verbose=False) == attention | {released: "would-update"}
+    assert sorted(p.name for p in output.iterdir()) == ["Old name.md", "Same title.md", "Undated.md"]
+    assert statuses(False, verbose=False) == attention
+    assert (output / "Same title.md").read_text() == newer
+    rendered = output / "Same title (1).md"
+    assert b.markdown_owner(rendered) == released
+    assert "Recovered prompt" in rendered.read_text()
+    assert next((output / ".revisions" / released).glob("*.md")).read_text() == original
+    stamp = rendered.stat().st_mtime_ns
+    assert statuses(False)[released] == "up-to-date"
+    assert rendered.stat().st_mtime_ns == stamp
+
+
+def test_prompt_only_check_requires_reply_after_a_matching_prompt():
+    user, other = str(uuid4()), str(uuid4())
+    prompt = {"id": user, "author": {"role": "user"}}
+    reply = {"id": other, "status": "finished_successfully", "channel": "final", "author": {"role": "assistant"}}
+    assert b.raw_has_reply({"messages": [prompt, reply]}, {user})
+    assert not b.raw_has_reply({"messages": [reply, prompt]}, {user})
+    assert not b.raw_has_reply({"messages": [prompt, {**reply, "channel": "commentary"}]}, {user})
+
+
+@pytest.mark.parametrize("new_title", ["New title", "OLD title", "Old title!"])
+def test_raw_same_version_rename_preserves_export_transcript(tmp_path, capsys, new_title):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    raw.mkdir()
+    output.mkdir()
+    cid, mid, other = (str(uuid4()) for _ in range(3))
+    payload = b.encoded(dict(conversation_id=cid, title=new_title, update_time=30, current_node=mid,
+                             page_info=dict(has_previous_page=False, has_next_page=False), messages=[dict(id=mid, author=dict(role="user"),
+                                            content=dict(content_type="text", parts=["Raw prompt only"]))]))
+    (raw / f"{cid}.json").write_text(payload)
+    (raw / f"{cid}.backup.json").write_text(b.encoded(dict(
+        coverage="branch", hash=b.hashlib.sha256(payload.encode()).hexdigest(), updateTime=30)))
+
+    def export(title, date, owner):
+        return (f'---\ntitle: "{title}"\ndate: 1970-01-01T00:00:{date}Z\n'
+                f'source: "https://chatgpt.com/c/{owner}"\n---\n\nOfficial transcript with assets\n')
+
+    old = output / "Old title.md"
+    previous = export("Old title", 30, cid)
+    old.write_text(previous)
+    collision = output / f"{new_title.lower()}.md"
+    if new_title == "New title":
+        collision.write_text(export("Unrelated title", 30, other))
+    newer = output / "Newer export.md"
+    newer.write_text(export("Newer export", 31, cid))
+    assert b.raw_backup(raw, output, True, "jsonl", verbose=True) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "up-to-date"
+    newer.unlink()
+
+    expected_name = "New title (1).md" if new_title == "New title" else b.markdown_stem(new_title, cid) + ".md"
+    for dry_run, status in [(True, "would-rename"), (False, "renamed")]:
+        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=True) == 0
+        row = json.loads(capsys.readouterr().out)
+        assert row["status"] == status
+        assert row["file"] == expected_name
+        assert old.exists() == (dry_run or old.name == expected_name)
+    target = output / expected_name
+    assert target.read_text() == export(new_title, 30, cid)
+    assert next((output / ".revisions" / cid).glob("*.md")).read_text() == previous
+    if new_title == "New title":
+        assert b.markdown_owner(collision) == other
+    assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "up-to-date"

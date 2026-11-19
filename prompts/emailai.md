@@ -29,7 +29,7 @@ emailai review "john doe" 2026-06
 - Finds the first line in `~/Documents/data/s.anand@straive.com/mail*.jsonl` that matches ALL the arguments as case-insensitive phrases (e.g. "john doe" matches "John Doe" but not "doe john")
 - Fetches the email + attachments + past emails in the thread using the `gws` CLI
 - Creates a new prompt asking it to create a reply to the email by concatenating a standard prompt with the email context. Include the phrase "Use @LocalMCP as required" in the prompt. Make the standard prompt easy for me to edit in the script.
-- Opens ChatGPT in the browser (see `chatgpt`, delegate to a system call if appropriate), pastes the prompt + attachments if any and exits (without running ChatGPT)
+- Opens ChatGPT in the browser (see `chatcli`, delegate to a system call if appropriate), pastes the prompt + attachments if any and exits (without running ChatGPT)
 - In the future, I will likely ask to submit to ChatGPT - i.e. press the submit button. I will likely ask for a similar feature for Claude instead of ChatGPT. Make sure the script is designed so I can pass a flag to choose.
 
 Run and test with the email IDs 19f3b8b815819f2c and 19f3d7a0188cb817 to see if the files and text are sent to ChatGPT - but don't submit to ChatGPT until I tell you to.

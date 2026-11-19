@@ -115,6 +115,9 @@ def pick_message(lines: list[str], fallback: str) -> tuple[str, bool]:
 
 def job_run(service: str, job: str, end: dt.datetime, ok: bool, output: list[str], fallback: str) -> Run:
     if ok:
+        prefix = f"warning[{job}]: "
+        if warning := next((line.removeprefix(prefix) for line in output if line.startswith(prefix)), ""):
+            return Run(service, job, end, "warn", warning)
         return Run(service, job, end, "ok")
     message, transient = pick_message(output, fallback)
     return Run(service, job, end, "warn" if transient else "fail", message)

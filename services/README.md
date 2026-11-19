@@ -22,6 +22,7 @@ standalone services, and can run a health check.
   - `/home/sanand/code/summary.py`.
   - `summarize.py blog`.
   - `summarize.py transcript`.
+  - `chatcli backup`, publishing local ChatGPT captures before the context rebuild.
   - `rsync` backup to `hetzner:/home/`, only on an unmetered connection.
   - `rclone bisync` for `~/r2/files`, `~/r2/private`, and `~/r2/redirect`,
     only on an unmetered connection.
@@ -219,7 +220,8 @@ they follow these log conventions (see `daily-activities` and `sync-plutonium.sh
 
 - Per job: `<ISO time> <tag>: start <job>: ...`, then `<ISO time> <tag>: ok <job> ...`,
   `<ISO time> <tag>: failed <job> exit=N ...`, or `<ISO time> <tag>: skip <job>: <reason>`.
-  Print the job's own errors between `start` and its result.
+  Print the job's own errors between `start` and its result. A successful job
+  can emit `warning[<job>]: <message>` to surface a warning.
 - Per run (optional): `END status=ok|failed|skipped` and `SKIP reason=<reason>`.
 - Print a specific error line (`ERROR ...`, `error: ...`, an exception) - it is
   what `servicestatus` shows. Network/DNS/metered failures are shown as 🟡.

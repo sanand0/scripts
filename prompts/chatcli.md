@@ -1,4 +1,8 @@
-# chatgpt
+# chatcli
+
+## Rename to chatcli, 19 Nov 2026
+
+<!-- Rename script to chatcli to avoid conflict with ChatGPT Desktop. -->
 
 ## Print the CDP ID, 01 Jul 2026
 
@@ -7,7 +11,7 @@ cd ~/code/scripts/
 dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
-Modify `chatgpt` minimally to print the CDP ID of the new tab it opens. This is useful for agents to monitor the tab directly.
+Modify `chatcli` minimally to print the CDP ID of the new tab it opens. This is useful for agents to monitor the tab directly.
 
 <!-- codex resume 019f1cb1-333f-7b41-b2c4-93a79de99e1f --yolo -->
 
@@ -18,11 +22,11 @@ cd ~/code/scripts/
 dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
-Minimally add an option `--temporary` to `chatgpt` that opens `https://chatgpt.com/?temporary-chat=true` instead of the default `https://chatgpt.com/`.
+Minimally add an option `--temporary` to `chatcli` that opens `https://chatgpt.com/?temporary-chat=true` instead of the default `https://chatgpt.com/`.
 
 ---
 
-The `--save` doesn't seem to work. When I ran `chatgpt --temporary --save $FILE $PROMPT` it exited immediately after submitting, and $FILE had the same content as $PROMPT for both the user _and_ ChatGPT. It took quite some time for ChatGPT to respond thereafter. Find out why this is happening, see what you can do to prevent recurrance even if ChatGPT's UI changes (rely on what's robust), fix, and test.
+The `--save` doesn't seem to work. When I ran `chatcli --temporary --save $FILE $PROMPT` it exited immediately after submitting, and $FILE had the same content as $PROMPT for both the user _and_ ChatGPT. It took quite some time for ChatGPT to respond thereafter. Find out why this is happening, see what you can do to prevent recurrance even if ChatGPT's UI changes (rely on what's robust), fix, and test.
 
 <!-- codex resume 019f18e2-6578-7a50-94de-bf18d03a9c12 --yolo -->
 
@@ -33,7 +37,7 @@ cd ~/code/scripts/
 dev.sh -- codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
-Add a `--save TARGET` option to `chatgpt` that waits for ChatGPT to respond, then saves the response to a file and prints the file location.
+Add a `--save TARGET` option to `chatcli` that waits for ChatGPT to respond, then saves the response to a file and prints the file location.
 If TARGET is a directory (or not specified), save it as `chatgpt-YYYY-MM-DD-HH-MM-SS.txt` in that directory (or the current directory).
 If TARGET is a file, save it to that file.
 
@@ -72,7 +76,7 @@ dev.sh
 codex --yolo --model gpt-5.5 --config model_reasoning_effort=medium
 -->
 
-Write and test an agent-friendly uv-based CLI `chatgpt` script that uses CDP on localhost:9222 to open a new https://chatgpt.com tab, type a prompt, attach files, change models, add connectors, switch projects, etc. and submit. ChatGPT might change the DOM structure slightly - so rely on what's robust, e.g. tags, ARIA attributes, robust element hierarchy, IDs or classes that feel semantic rather than auto-compiled, etc.
+Write and test an agent-friendly uv-based CLI `chatcli` script that uses CDP on localhost:9222 to open a new https://chatgpt.com tab, type a prompt, attach files, change models, add connectors, switch projects, etc. and submit. ChatGPT might change the DOM structure slightly - so rely on what's robust, e.g. tags, ARIA attributes, robust element hierarchy, IDs or classes that feel semantic rather than auto-compiled, etc.
 
 Run and test.
 

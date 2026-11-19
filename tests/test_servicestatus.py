@@ -126,3 +126,23 @@ def test_all_lists_every_run_in_window():
     assert [r["level"] for r in ss.every_run(runs, T0 + dt.timedelta(hours=1))] == ["warn", "ok"]
     (row,) = ss.summarize(runs, T0, persist_days=3)
     assert (row["level"], row["failed"], row["runs"]) == ("ok", 1, 3)  # a recovered failure is still counted
+
+
+def test_chatcli_backup_reports_only_actionable_diagnostics_in_job_status():
+    runs = ss.parse_invocation("daily-activities", "daily-activities", records(
+        "daily-activities: start chatcli-backup: uv run --script chatcli backup",
+        "daily-activities: ok chatcli-backup (0s)",
+        "daily-activities: start chatcli-backup: uv run --script chatcli backup",
+        "warning[elsewhere]: This is outside the job's status protocol.",
+        "warning[chatcli-backup]: uuid Check the update date in Undated.md before replacing the Markdown.",
+        "daily-activities: ok chatcli-backup (0s)",
+        "daily-activities: start chatcli-backup: uv run --script chatcli backup",
+        "error[chatcli-backup]: uuid Snapshot identity or sidecar hash mismatch",
+        "daily-activities: failed chatcli-backup exit=1 (0s)",
+        result="failed",
+    ))
+    assert [(run.level, run.message) for run in runs] == [
+        ("ok", ""),
+        ("warn", "uuid Check the update date in Undated.md before replacing the Markdown."),
+        ("fail", "error[chatcli-backup]: uuid Snapshot identity or sidecar hash mismatch"),
+    ]

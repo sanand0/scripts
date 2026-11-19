@@ -6,17 +6,19 @@
 """Open ChatGPT in a CDP browser, prepare a prompt, and optionally submit it.
 
 Examples:
-  chatgpt --dry-run --model gpt-5 "Summarize this"
-  chatgpt --inspect --connector-query drive --format json | jaq .
-  chatgpt --file report.pdf --project "Transcripts" "Analyze this file"
-  cat prompt.md | chatgpt --connector "Google Drive" --format json | jaq .
-  chatgpt --describe | jaq .
+  chatcli --dry-run --model gpt-5 "Summarize this"
+  chatcli --inspect --connector-query drive --format json | jaq .
+  chatcli --file report.pdf --project "Transcripts" "Analyze this file"
+  cat prompt.md | chatcli --connector "Google Drive" --format json | jaq .
+  chatcli backup --dry-run --verbose --format jsonl | jaq .
+  chatcli --describe | jaq .
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -167,10 +169,11 @@ def normalize_save_args(args: list[str]) -> list[str]:
 
 def describe() -> dict[str, Any]:
     return {
-        "name": "chatgpt",
+        "name": "chatcli",
         "default_cdp_url": CDP_URL,
         "source": CHATGPT_URL,
         "actions": ["inspect", "new_tab", "project", "model", "reasoning", "connector", "file", "prompt", "submit", "save"],
+        "subcommands": {"backup": {"flags": ["--raw-dir", "--markdown-dir", "--dry-run", "--verbose", "--format"], "formats": ["text", "jsonl"]}},
         "formats": ["text", "json"],
         "default_format": "text",
         "input": {
@@ -183,11 +186,11 @@ def describe() -> dict[str, Any]:
             "save": "Optional target file or directory. Bare --save writes a timestamped file in the current directory.",
         },
         "examples": [
-            'chatgpt --dry-run --model gpt-5 "Summarize this"',
-            'chatgpt --save "Summarize this"',
-            "chatgpt --inspect --connector-query drive --format json | jaq .",
-            'chatgpt --file report.pdf --project "Transcripts" "Analyze this file"',
-            'cat prompt.md | chatgpt --connector "Google Drive" --format json | jaq .',
+            'chatcli --dry-run --model gpt-5 "Summarize this"',
+            'chatcli --save "Summarize this"',
+            "chatcli --inspect --connector-query drive --format json | jaq .",
+            'chatcli --file report.pdf --project "Transcripts" "Analyze this file"',
+            'cat prompt.md | chatcli --connector "Google Drive" --format json | jaq .',
         ],
     }
 
@@ -369,7 +372,7 @@ async def copy_response_markdown(page: Page, prompt: str) -> str:
                 return response
         except PlaywrightTimeoutError:
             continue
-    eprint("chatgpt: copy button did not update clipboard; saving visible assistant text instead")
+    eprint("chatcli: copy button did not update clipboard; saving visible assistant text instead")
     return assistant_text
 
 
@@ -473,7 +476,7 @@ async def inspect_chat(cdp_url: str, model: str | None, temporary: bool, connect
         browser = await p.chromium.connect_over_cdp(cdp_url)
         page = await new_page(browser)
         cdp_id = await cdp_target_id(page)
-        eprint(f"chatgpt: cdp_id={cdp_id}")
+        eprint(f"chatcli: cdp_id={cdp_id}")
         try:
             await page.goto(chat_url(model, temporary), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(settle_ms)
@@ -503,7 +506,7 @@ async def prepare_chat(request: dict[str, Any]) -> dict[str, Any]:
         await browser.contexts[0].grant_permissions(["clipboard-read", "clipboard-write"], origin="https://chatgpt.com")
         page = await new_page(browser)
         cdp_id = await cdp_target_id(page)
-        eprint(f"chatgpt: cdp_id={cdp_id}")
+        eprint(f"chatcli: cdp_id={cdp_id}")
         try:
             await page.goto(chat_url(request["model"], request["temporary"]), wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(request["settle_ms"])
@@ -610,7 +613,7 @@ def main(
     except typer.Exit:
         raise
     except Exception as exc:
-        typer.echo(f"chatgpt: {exc}", err=True)
+        typer.echo(f"chatcli: {exc}", err=True)
         raise typer.Exit(1) from exc
     if format == "json":
         print(compact_json(result))
@@ -620,4 +623,7 @@ def main(
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["backup"]:
+        script = str(Path(__file__).resolve().with_name("backupchatgpt.py"))
+        os.execvp("uv", ["uv", "run", "--script", script, "raw", *sys.argv[2:]])
     app(args=normalize_save_args(sys.argv[1:]))
