@@ -52,6 +52,7 @@ import typer
 import websockets
 
 from archive.backupwhatsapp import CDPPage, cdp_http_base
+from chatgpt_streams import ROOT, captured_turns, replay_branch
 import sanand_observability as obs
 
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -199,18 +200,19 @@ def markdown_index(directory: Path) -> dict[Path, str | None]:
     return {path: markdown_owner(path) for path in sorted(directory.glob("*.md"))}
 
 
-def markdown_time(path: Path) -> float | None:
+def markdown_version(path: Path) -> tuple[float | None, bool]:
     """Read the source version from converter metadata, including older exports."""
     with path.open("rb") as stream:
         header = stream.read(8192).decode("utf-8-sig", errors="replace")
     header = header.replace("\r\n", "\n")
     if header.startswith("---\n"):
-        match = re.search(r"^date: (.+)$", header.split("\n---", 1)[0], re.M)
+        header = header.split("\n---", 1)[0]
+        match = re.search(r"^date: (.+)$", header, re.M)
         if match:
             try:
                 date = dt.datetime.fromisoformat(match[1].strip('"'))
                 if date.tzinfo:
-                    return date.timestamp()
+                    return date.timestamp(), 'capture: "stream-replay"' in header.splitlines()
             except ValueError:
                 pass
     else:
@@ -219,10 +221,19 @@ def markdown_time(path: Path) -> float | None:
         match = re.search(r"^- Updated: (.+)$", header, re.M)
         if match:
             try:
-                return dt.datetime.strptime(match[1], "%b %d, %Y, %I:%M %p").timestamp() + 60
+                return dt.datetime.strptime(match[1], "%b %d, %Y, %I:%M %p").timestamp() + 60, False
             except ValueError:
                 pass
-    return None
+    return None, False
+
+
+def markdown_blocks(version: tuple[float | None, bool], source_time: float, *, native: bool) -> bool:
+    updated, replay = version
+    if updated is None:
+        return True
+    if native and replay and abs(updated - source_time) <= .001:
+        return False
+    return updated >= source_time - .001
 
 
 def markdown_stem(title: str, cid: str) -> str:
@@ -246,13 +257,14 @@ def retitle_markdown(data: bytes, title: str) -> bytes:
 
 def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, index: dict, previous: dict,
                      metrics: dict | None = None, *, source_time: float | None = None,
-                     rename_only: bool = False, dry_run: bool = False, revision_root: Path | None = None) -> dict:
+                     rename_only: bool = False, dry_run: bool = False, revision_root: Path | None = None,
+                     native: bool = False) -> dict:
     """Publish by UUID, preserving the best local transcript for metadata-only renames."""
     matches = [p for p, owner in index.items() if owner == cid]
     base = markdown_stem(title, cid)
     compatible = [p for p in matches if re.fullmatch(re.escape(base) + r"(?: \(\d+\))?", p.stem)]
     if rename_only:
-        versions = {p: markdown_time(p) for p in matches}
+        versions = {p: markdown_version(p)[0] for p in matches}
         if not source_time or not title.strip() or title.strip().casefold() in {"new chat", "untitled"}:
             return dict(changed=False, held=True)
         current = [p for p, t in versions.items() if t is not None and abs(t - source_time) <= .001]
@@ -263,7 +275,7 @@ def publish_markdown(canonical: Path, cid: str, title: str, directory: Path, ind
         if data == original and len(compatible) == len(matches):
             return dict(changed=False, held=True)
     else:
-        if source_time is not None and any(t is None or t >= source_time - .001 for t in map(markdown_time, matches)):
+        if source_time is not None and any(markdown_blocks(v, source_time, native=native) for v in map(markdown_version, matches)):
             return dict(changed=False, held=True)
         data = canonical.read_bytes()
     fingerprint = hashlib.sha256(data).hexdigest()
@@ -324,12 +336,15 @@ def raw_snapshot(path: Path) -> tuple[bytes, dict, dict]:
     return data, value, info
 
 
-def raw_messages(snapshot: dict) -> list[dict]:
+def raw_messages(snapshot: dict, *, complete: bool = False) -> list[dict]:
     messages = snapshot.get("messages")
+    tip = snapshot.get("current_node")
+    if complete and not tip:
+        raise ValueError("Snapshot has no active tip")
     if messages is None:
         nodes = snapshot.get("mapping", {})
         messages = []
-        node_id = snapshot.get("current_node")
+        node_id = tip
         visited = set()
         while node_id in nodes and node_id not in visited:
             visited.add(node_id)
@@ -337,7 +352,13 @@ def raw_messages(snapshot: dict) -> list[dict]:
             if node.get("message") is not None:
                 messages.append(node["message"])
             node_id = node.get("parent")
+        if complete and node_id is not None:
+            raise ValueError("Snapshot has a broken active branch")
         messages.reverse()
+    elif complete and (not messages or messages[-1].get("id") != tip or
+                       any(snapshot.get("page_info", {}).get(k) is not False
+                           for k in ("has_previous_page", "has_next_page"))):
+        raise ValueError("Snapshot has an incomplete active branch")
     return messages
 
 
@@ -352,6 +373,31 @@ def raw_has_reply(snapshot: dict, prompt_ids: set[str]) -> bool:
     return False
 
 
+def render_snapshot(data: bytes, replay: bool) -> bytes:
+    render = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import fs from 'node:fs'; const {renderSnapshot} = await import(process.argv[1]);"
+         "process.stdout.write(renderSnapshot(JSON.parse(fs.readFileSync(0, 'utf8'))));",
+         CONVERTER.as_uri()],
+        input=data, capture_output=True, timeout=30,
+    )
+    if render.returncode:
+        lines = render.stderr.decode(errors="replace").splitlines()
+        detail = next((line for line in lines if line.startswith(("Error:", "TypeError:", "SyntaxError:"))), "No renderer diagnostic")
+        raise ValueError(f"Markdown rendering failed: {detail}")
+    if replay:
+        return render.stdout.replace(b'\n---\n', b'\ncapture: "stream-replay"\n---\n', 1)
+    return render.stdout
+
+
+def preserves_transcript(path: Path, rendered: bytes) -> bool:
+    """A stream replay may extend existing Markdown only if the visible prefix agrees."""
+    original = path.read_bytes().replace(b"\r\n", b"\n")
+    prefix = original.partition(b"\n---\n")[2].strip()
+    body = rendered.partition(b"\n---\n")[2].strip()
+    return bool(original.startswith(b"---\n") and prefix and (body == prefix or body.startswith(prefix + b"\n\n# ")))
+
+
 def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: str, *, verbose: bool = False) -> int:
     if not raw_dir.is_dir():
         raise ValueError(f"Raw capture directory is missing: {raw_dir}")
@@ -361,84 +407,117 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
         raise ValueError(f"Markdown converter is missing: {CONVERTER}")
     catalog_path = raw_dir / "catalog.json"
     catalog = json.loads(catalog_path.read_text()) if catalog_path.is_file() else {}
-    if not isinstance(catalog, dict) or any(not re.fullmatch(UUID_PATTERN, cid) or type(t) not in (int, float)
-                                           or not math.isfinite(t) or t <= 0 for cid, t in catalog.items()):
+    if not isinstance(catalog, dict):
         raise ValueError("Invalid ChatGPT capture catalog")
+    catalog_times = {}
+    catalog_titles = {}
+    for cid, entry in catalog.items():
+        update = entry.get("updateTime") if isinstance(entry, dict) else entry
+        if not re.fullmatch(UUID_PATTERN, cid) or type(update) not in (int, float) or not math.isfinite(update) or update <= 0:
+            raise ValueError("Invalid ChatGPT capture catalog")
+        catalog_times[cid] = update
+        title = entry.get("title") if isinstance(entry, dict) else None
+        if isinstance(title, str) and title.strip():
+            catalog_titles[cid] = title
     index = markdown_index(markdown_dir)
     owned = defaultdict(list)
     for path, owner in index.items():
         owned[owner].append(path)
     paths = {p.stem: p for p in raw_dir.glob("*.json") if re.fullmatch(UUID_PATTERN, p.stem)}
+    turns = captured_turns(raw_dir / "events")
+    label_width = len("would-update" if dry_run else "missing")
     failures = 0
     with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp:
-        for cid in sorted(paths.keys() | catalog.keys()):
+        for cid in sorted(paths.keys() | catalog_times.keys() | turns.keys()):
             path = paths.get(cid)
             matches = owned[cid]
             message = dict(conversationId=cid)
-            title = matches[0].stem if matches else "—"
+            catalog_title = catalog_titles.get(cid)
+            title = catalog_title or (matches[0].stem if matches else "—")
             pending_label = "part"
-            update = latest_update = catalog.get(cid, 0)
+            update = latest_update = catalog_times.get(cid, 0)
             try:
-                versions = [markdown_time(p) for p in matches]
+                versions = [markdown_version(p) for p in matches]
+                replay = False
+                ready = False
                 if path is None:
-                    if any(t is not None and t >= update - .001 for t in versions):
-                        continue
                     status = "missing"
+                    value, messages, source_time, tip = {}, [], 0, ROOT
                 else:
                     data, value, info = raw_snapshot(path)
-                    if isinstance(value.get("title"), str) and value["title"].strip():
-                        title = value["title"]
                     messages = raw_messages(value)
+                    tip = value.get("current_node")
                     source_time = value.get("update_time")
                     if type(source_time) in (int, float) and math.isfinite(source_time):
                         latest_update = max(latest_update, source_time)
+                    snapshot_title = value.get("title")
+                    if isinstance(snapshot_title, str) and snapshot_title.strip() and (not catalog_title or latest_update > update):
+                        title = snapshot_title
                     # Older sidecars could mark an unfilled final image as a complete branch.
                     empty_image = any(m.get("author", {}).get("role") == "tool" and m.get("channel") == "final"
                                       and m.get("content", {}).get("content_type") == "multimodal_text"
                                       and m["content"].get("parts") == [] for m in messages)
                     if info.get("coverage") == "partial" or empty_image:
                         status = "deferred"
-                        tip = next((m for m in messages if m.get("id") == value.get("current_node")), {})
+                        tip_message = next((m for m in messages if m.get("id") == tip), {})
                         if empty_image:
                             pending_label = "img"
-                        elif tip.get("status") == "in_progress":
-                            pending_label = "img" if "image_gen_estimated_duration_ms" in (tip.get("metadata") or {}) else "wip"
+                        elif tip_message.get("status") == "in_progress":
+                            pending_label = "img" if "image_gen_estimated_duration_ms" in (tip_message.get("metadata") or {}) else "wip"
                     elif info.get("coverage") not in {"tree", "branch"} or type(source_time) not in (int, float) or not math.isfinite(source_time) or source_time <= 0 or source_time != info.get("updateTime"):
                         raise ValueError("Snapshot has no verified coverage or server update time")
-                    elif source_time + 1 < update:
-                        status = "stale-capture"
-                    elif any(t is None or t >= source_time - .001 for t in versions):
-                        result = publish_markdown(path, cid, value.get("title") or "", markdown_dir, index, {},
-                                                  source_time=source_time, rename_only=True, dry_run=dry_run)
-                        if result["changed"]:
-                            status = "would-rename" if dry_run else "renamed"
-                            message["file"] = result["file"]
-                        else:
-                            status = "up-to-date" if None not in versions else "unknown-markdown-version"
-                            if status == "unknown-markdown-version":
-                                files = ", ".join(p.name for p, t in zip(matches, versions) if t is None)
-                                message["warning"] = f"Check the update date in {files} before replacing the Markdown."
                     else:
-                        render = subprocess.run(
-                            ["node", "--input-type=module", "-e",
-                             "import fs from 'node:fs'; const {renderSnapshot} = await import(process.argv[1]);"
-                             "process.stdout.write(renderSnapshot(JSON.parse(fs.readFileSync(0, 'utf8'))));",
-                             CONVERTER.as_uri()],
-                            input=data, capture_output=True, timeout=30,
-                        )
-                        if render.returncode:
-                            lines = render.stderr.decode(errors="replace").splitlines()
-                            detail = next((line for line in lines if line.startswith(("Error:", "TypeError:", "SyntaxError:"))), "No renderer diagnostic")
-                            raise ValueError(f"Markdown rendering failed: {detail}")
+                        status = "stale-capture" if source_time + 1 < update else ""
+                        ready = not status
+                if cid in turns and status != "deferred":
+                    if path is not None:
+                        messages = raw_messages(value, complete=True)
+                    recovered = replay_branch(turns[cid], messages, tip, source_time, update)
+                    if recovered:
+                        messages, stream_title, source_time = recovered
+                        title = catalog_title or stream_title or (title if title != "—" else cid)
+                        value = dict(conversation_id=cid, title=title, update_time=source_time, messages=messages,
+                                     current_node=messages[-1]["id"], page_info=dict(has_previous_page=False, has_next_page=False))
+                        data = encoded(value).encode()
+                        latest_update = max(latest_update, source_time)
+                        message["sourceType"] = "stream-replay"
+                        ready = replay = True
+                if status == "missing" and not replay and update and any(t is not None and t >= update - .001 for t, _ in versions):
+                    continue
+                if ready:
+                    if any(markdown_blocks(v, source_time, native=not replay) for v in versions):
+                        if replay:
+                            status = "up-to-date" if all(t is not None for t, _ in versions) else "replay-held"
+                            if status == "up-to-date" and not any(
+                                is_replay and abs(t - source_time) <= .001 for t, is_replay in versions
+                            ):
+                                replay = False
+                                del message["sourceType"]
+                        else:
+                            result = publish_markdown(path, cid, value.get("title") or "", markdown_dir, index, {},
+                                                      source_time=source_time, rename_only=True, dry_run=dry_run)
+                            if result["changed"]:
+                                status = "would-rename" if dry_run else "renamed"
+                                message["file"] = result["file"]
+                            else:
+                                status = "up-to-date" if all(t is not None for t, _ in versions) else "unknown-markdown-version"
+                                if status == "unknown-markdown-version":
+                                    files = ", ".join(p.name for p, (t, _) in zip(matches, versions) if t is None)
+                                    message["warning"] = f"Check the update date in {files} before replacing the Markdown."
+                    else:
+                        output = render_snapshot(data, replay)
                         rendered = Path(tmp) / "render.md"
-                        rendered.write_bytes(render.stdout)
+                        rendered.write_bytes(output)
                         if markdown_owner(rendered) != cid:
                             raise ValueError("Rendered Markdown identity mismatch")
-                        if dry_run:
+                        if replay and not all(preserves_transcript(p, output) for p in matches):
+                            status = "replay-held"
+                            message["reason"] = "Existing Markdown does not match the recovered transcript prefix"
+                        elif dry_run:
                             status = "would-update" if matches else "would-create"
                         else:
-                            result = publish_markdown(rendered, cid, value.get("title") or cid, markdown_dir,
-                                                      index, {}, source_time=source_time)
+                            result = publish_markdown(rendered, cid, value.get("title") or cid, markdown_dir, index, {},
+                                                      source_time=source_time, native=not replay)
                             status = "up-to-date" if result.get("held") else "updated" if matches else "created"
                             if result.get("file"):
                                 message["file"] = result["file"]
@@ -456,10 +535,11 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             if verbose:
                 if severity:
                     icon, label = "🔴", "check"
-                elif status in {"deferred", "missing", "stale-capture"}:
-                    icon, label = "🟡", pending_label
+                elif status in {"deferred", "missing", "stale-capture", "replay-held"}:
+                    icon, label = "🟡", {"deferred": pending_label, "missing": "missing",
+                                         "stale-capture": "stale", "replay-held": "held"}[status]
                 else:
-                    icon, label = "🟢", status if status.startswith("would-") else "done"
+                    icon, label = "🟢", status if status.startswith("would-") else "replay" if replay else "done"
                 try:
                     updated_at = dt.datetime.fromtimestamp(latest_update, dt.UTC).isoformat().replace("+00:00", "Z") if latest_update else None
                 except (OverflowError, OSError, ValueError):
@@ -468,7 +548,7 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             if output_format == "jsonl":
                 print(encoded(message), flush=True)
             elif verbose:
-                print(f"{icon} {label}\t{cid}\t{updated_at or '—'}\t{message['title']}", flush=True)
+                print(f"{icon} {label:<{label_width}}\t{cid}\t{updated_at or '—'}\t{message['title']}", flush=True)
             elif not severity:
                 print(f"{cid}\t{status}\t{message.get('file', '')}", flush=True)
     return failures
@@ -1120,7 +1200,7 @@ def backup_raw(
     format: str = typer.Option("text", help="Output format: text (TSV) or jsonl."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show each chat’s status, ID, latest known update in UTC, and title."),
 ):
-    """Update Markdown from local ChatGPT snapshots with newer server versions.
+    """Update Markdown from local ChatGPT snapshots and completed generation streams.
 
     Examples:
       chatcli backup --dry-run

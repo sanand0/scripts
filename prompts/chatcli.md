@@ -1,5 +1,52 @@
 # chatcli
 
+## Improve backup logging, 19 Nov 2026 #TODO
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+`chatcli backup --verbose` prints a "-" against many chats, e.g. 6afe4f2d-9980-83ec-b87b-7946f38d689a, 6afd6199-7fb0-83ec-88f0-97fe822f6a18, ...
+Why is that? What needs to improve - `chatcli` conversion?
+Or, given that most of these conversations were happening on the same browser that `anand-chrome-tools` runs on, is it `~/code/anand-chrome-tools` logging?
+
+---
+
+Did this complete? If not, continue.
+
+---
+
+Improve chatcli for clarity, as you suggested. Titles DO help identify missing chats.
+
+Suggest a concise prompt I could use for ~/code/anand-chrome-tools to diagnose the issue by running experiments.
+
+---
+
+Align the output by padding the right side of the status with spaces to match the longest status, e.g. "done    " and "missing" would have the same length.
+
+---
+
+Read the Codex session 01a1f34e-f870-72c1-884e-1d4ed559fcd4 results where I ran the prompt you suggested at anand-chrome-tools.
+Based on this, how can we we improve `chatcli backup` to use as much information as possible when creating the .md files?
+My logic is: when I'm using ChatGPT, the sum of all the API requests SHOULD be sufficient to reconstruct the Markdown, since it's anyway reflective of what I see in the UI, which has been constructed / aligned with the API messages.
+If that's right, then reconstruct the Markdown from the API messages in the simplest, most elegant possible way. If not, get close enough, and explain the gaps.
+If there's something further to change in ~/code/anand-chrome-tools to make this more robust, suggest that too.
+
+---
+
+Suggest a prompt for anand-chrome-tools to make this change.
+
+---
+
+I removed the changes in README.md. Delete unnecessary files, clean up what's not required, and commit.
+
+<!-- codex resume 01a1f241-2b5f-76f1-94a2-dd2be901e4b0 -->
+
+## Add chatcli backup, 19 Nov 2026
+
+<!-- See backupchatgpt.md -->
+
 ## Rename to chatcli, 19 Nov 2026
 
 <!-- Rename script to chatcli to avoid conflict with ChatGPT Desktop. -->

@@ -1039,7 +1039,9 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
     raw, output = tmp_path / "raw", tmp_path / "md"
     raw.mkdir()
     output.mkdir()
-    released, current, partial, placeholder, working, image_working, missing, stale, corrupt, unknown = (str(uuid4()) for _ in range(10))
+    released, current, partial, placeholder, working, image_working, missing, legacy, stale, corrupt, unknown = (
+        str(uuid4()) for _ in range(11)
+    )
 
     def capture(cid, coverage="branch"):
         mid = str(uuid4())
@@ -1064,7 +1066,12 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
         capture(cid)
     for cid in (partial, working, image_working):
         capture(cid, "partial")
-    (raw / "catalog.json").write_text(b.encoded({missing: 40, stale: 31.25}))
+    (raw / "catalog.json").write_text(b.encoded({
+        missing: {"updateTime": 40, "title": "Catalog\tchat\n"},
+        legacy: 40,
+        stale: {"updateTime": 31.25, "title": "Renamed in ChatGPT"},
+        current: {"updateTime": 29, "title": "Older catalog title"},
+    }))
     (raw / f"{corrupt}.json").write_text("{}")
     original = f'---\ntitle: "Old name"\ndate: 1970-01-01T00:00:20Z\nsource: "https://chatgpt.com/c/{released}"\n---\n\nOld bytes\n'
     newer = f'---\ntitle: "Same title"\ndate: 1970-01-01T00:00:30Z\nsource: "https://chatgpt.com/c/{current}"\n---\n\nOfficial export\n'
@@ -1075,28 +1082,34 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
     def statuses(dry_run, *, verbose=True):
         assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=verbose) == 1
         out, err = capsys.readouterr()
-        rows = map(json.loads, out.splitlines())
+        rows = {row["conversationId"]: row for row in map(json.loads, out.splitlines())}
         assert sorted(err.splitlines()) == [
             f"error[chatcli-backup]: {corrupt} Snapshot identity or sidecar hash mismatch",
             f"warning[chatcli-backup]: {unknown} Check the update date in Undated.md before replacing the Markdown.",
         ]
-        return {row["conversationId"]: row["status"] for row in rows}
+        if verbose:
+            assert (rows[missing]["label"], rows[missing]["title"]) == ("missing", "Catalog chat")
+            assert (rows[stale]["label"], rows[stale]["title"]) == ("stale", "Renamed in ChatGPT")
+        return {cid: row["status"] for cid, row in rows.items()}
 
     attention = {unknown: "unknown-markdown-version", corrupt: "error"}
     assert statuses(True) == (attention | {released: "would-update", current: "up-to-date", partial: "deferred",
                                            placeholder: "deferred", working: "deferred", image_working: "deferred",
-                                           missing: "missing", stale: "stale-capture"})
+                                           missing: "missing", legacy: "missing", stale: "stale-capture"})
     assert b.raw_backup(raw, output, True, "text", verbose=True) == 1
     rows = {cid: (label, updated, title) for label, cid, updated, title in (
         line.split("\t") for line in capsys.readouterr().out.splitlines()
     )}
+    assert {len(label) for label, _, _ in rows.values()} == {len("🟢 would-update")}
+    rows = {cid: (label.rstrip(), updated, title) for cid, (label, updated, title) in rows.items()}
     updated = "1970-01-01T00:00:30Z"
     assert rows == {
         released: ("🟢 would-update", updated, "Same title"), current: ("🟢 done", updated, "Same title"),
         partial: ("🟡 part", updated, "Same title"), placeholder: ("🟡 img", updated, "Same title"),
         working: ("🟡 wip", updated, "Working chat"), image_working: ("🟡 img", updated, "Working chat"),
-        missing: ("🟡 part", "1970-01-01T00:00:40Z", "—"),
-        stale: ("🟡 part", "1970-01-01T00:00:31.250000Z", "Same title"),
+        missing: ("🟡 missing", "1970-01-01T00:00:40Z", "Catalog chat"),
+        legacy: ("🟡 missing", "1970-01-01T00:00:40Z", "—"),
+        stale: ("🟡 stale", "1970-01-01T00:00:31.250000Z", "Renamed in ChatGPT"),
         corrupt: ("🔴 check", "—", "—"), unknown: ("🔴 check", updated, "Same title"),
     }
     assert statuses(True, verbose=False) == attention | {released: "would-update"}
@@ -1109,7 +1122,102 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
     assert next((output / ".revisions" / released).glob("*.md")).read_text() == original
     stamp = rendered.stat().st_mtime_ns
     assert statuses(False)[released] == "up-to-date"
+    assert b.raw_backup(raw, output, False, "text", verbose=True) == 1
+    labels = {line.split("\t", 1)[0] for line in capsys.readouterr().out.splitlines()}
+    assert {"🟢 done   ", "🟡 missing"} <= labels
+    assert {len(label) for label in labels} == {len("🟡 missing")}
     assert rendered.stat().st_mtime_ns == stamp
+
+
+def test_raw_backup_replays_linked_streams_and_preserves_conflicts(tmp_path, capsys):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    raw.mkdir()
+    cid, prompt_id, reply_id, follow_id, answer_id = (str(uuid4()) for _ in range(5))
+
+    def stream(parent, user_id, assistant_id, start, *, terminal=True):
+        path = "/backend-api/f/conversation"
+        capture = str(uuid4())
+        directory = raw / "events" / f"1-{capture}"
+        directory.mkdir(parents=True)
+        prompt = dict(id=user_id, author=dict(role="user"), status="finished_successfully",
+                      create_time=start, content=dict(content_type="text", parts=[f"Prompt {start}"]))
+        if parent != "client-created-root":
+            prompt["metadata"] = dict(parent_id=parent)
+        request = dict(action="next", parent_message_id=parent, messages=[prompt])
+        if parent != "client-created-root":
+            request["conversation_id"] = cid
+        reply = dict(id=assistant_id, author=dict(role="assistant"), channel="final", recipient="all",
+                     status="in_progress", create_time=start + 1, content=dict(content_type="text", parts=[""]),
+                     metadata=dict(parent_id=user_id, is_visually_hidden_from_conversation=True))
+
+        def event(body, event_type=""):
+            return (f"event: {event_type}\n" if event_type else "") + f"data: {b.encoded(body)}\n\n"
+
+        body = event("v1", "delta_encoding")
+        body += event(dict(type="input_message", conversation_id=cid, input_message=prompt))
+        body += event(dict(type="title_generation", conversation_id=cid, title="Observed chat"))
+        body += event(dict(o="add", p="", c=0, v=dict(conversation_id=cid, message=reply)), "delta")
+        body += event(dict(o="append", p="/message/content/parts/0", v="Full "), "delta")
+        body += event(dict(v=f"reply {start}"), "delta")
+        body += event(dict(o="patch", p="", v=[
+            dict(o="replace", p="/message/status", v="finished_successfully"),
+            dict(o="add", p="/message/end_turn", v=True),
+            dict(o="remove", p="/message/metadata/is_visually_hidden_from_conversation"),
+        ]), "delta")
+        if terminal:
+            body += event(dict(type="message_stream_complete", conversation_id=cid)) + "data: [DONE]\n\n"
+        records = [
+            dict(kind="start", request=request), dict(kind="headers", status=200, contentType="text/event-stream"),
+            dict(kind="chunk", text=body[:150]), dict(kind="chunk", text=body[150:]),
+            dict(kind="end", complete=False, reason="AbortError", finishedAt=(start + 3) * 1000),
+        ]
+        for i, record in enumerate(records):
+            (directory / f"{i:05}.json").write_text(b.encoded(dict(
+                record, index=i, startedAt=start * 1000, captureId=capture, method="POST", path=path)))
+        return directory, prompt, dict(reply, status="finished_successfully", end_turn=True,
+                                        content=dict(content_type="text", parts=[f"Full reply {start}"]),
+                                        metadata=dict(parent_id=user_id))
+
+    def run(dry_run):
+        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=True) == 0
+        return json.loads(capsys.readouterr().out)
+
+    _, prompt, reply = stream("client-created-root", prompt_id, reply_id, 20)
+    assert run(True)["status"] == "would-create"
+    assert not output.exists()
+    assert run(False)["sourceType"] == "stream-replay"
+    path = output / "Observed chat.md"
+    first = path.read_text()
+    assert 'capture: "stream-replay"' in first and "Full reply 20" in first
+    assert run(False)["status"] == "up-to-date"
+
+    incomplete, _, _ = stream(reply_id, follow_id, answer_id, 30, terminal=False)
+    assert run(False)["status"] == "missing"
+    assert path.read_text() == first
+    incomplete.rename(tmp_path / "incomplete")
+    branch, _, _ = stream(prompt_id, follow_id, answer_id, 30)
+    assert run(False)["status"] == "missing"
+    assert path.read_text() == first
+    branch.rename(tmp_path / "other-branch")
+    _, follow, answer = stream(reply_id, follow_id, answer_id, 30)
+    edited = first.replace("Full reply 20", "My local notes")
+    path.write_text(edited)
+    assert run(False)["status"] == "replay-held"
+    assert path.read_text() == edited
+    path.write_text(first)
+    assert run(False)["status"] == "updated"
+    combined = path.read_text()
+    assert combined.index("Full reply 20") < combined.index("Prompt 30") < combined.index("Full reply 30")
+    assert run(False)["status"] == "up-to-date"
+
+    native = b.encoded(dict(conversation_id=cid, title="Observed chat", update_time=31, current_node=answer_id,
+                            page_info=dict(has_previous_page=False, has_next_page=False),
+                            messages=[prompt, reply, follow, answer]))
+    (raw / f"{cid}.json").write_text(native)
+    (raw / f"{cid}.backup.json").write_text(b.encoded(dict(
+        coverage="branch", hash=b.hashlib.sha256(native.encode()).hexdigest(), updateTime=31)))
+    assert run(False)["status"] == "updated"
+    assert 'capture: "stream-replay"' not in path.read_text()
 
 
 def test_prompt_only_check_requires_reply_after_a_matching_prompt():
