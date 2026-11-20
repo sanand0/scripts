@@ -148,6 +148,7 @@ winget install --exact --id Tailscale.Tailscale --source winget
 tailscale set --unattended=true
 tailscale serve --bg --https=443 --set-path=/~/ "$env:USERPROFILE"
 tailscale serve --bg --https=443 --set-path=/tailrun http://127.0.0.1:8767
+tailscale drive share anand "C:\Users\Anand"
 
 # This can be slow. Download from https://github.com/PowerShell/Win32-OpenSSH/releases into C:\Program Files\OpenSSH. Run install-sshd.ps1 as Admin PowerShell.
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
