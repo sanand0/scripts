@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
+import struct
+import subprocess
 import sys
+
+import pytest
 
 from typer.testing import CliRunner
 
@@ -176,3 +181,93 @@ def test_load_environment_falls_back_to_script_dir_env(tmp_path: Path, monkeypat
     podcast.load_environment(current_dir=current_dir, script_dir=script_dir)
 
     assert os.environ["GEMINI_API_KEY"] == "fallback-key"
+
+
+@pytest.mark.parametrize("format_name", ["opus", "mp3"])
+def test_lossless_segment_cache_and_gapless_final_encode(tmp_path: Path, format_name: str) -> None:
+    """FLAC preserves exact PCM between turns; the output has no accumulated padding."""
+    durations = (0.19, 0.67, 1.03, 0.31, 0.89)
+    parts = [
+        b"".join(
+            struct.pack("<h", int(21000 * math.sin(2 * math.pi * (350 + i * 125) * j / 24000)))
+            for j in range(int(24000 * seconds))
+        )
+        for i, seconds in enumerate(durations)
+    ]
+    paths = []
+    for i, pcm in enumerate(parts):
+        path = tmp_path / f"{i}.flac"
+        podcast.render_pcm_to_flac(pcm, path)
+        paths.append(path)
+
+    listing = tmp_path / "segments.txt"
+    listing.write_text("".join(f"file '{path}'\n" for path in paths))
+    decoded_lossless = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-f", "concat", "-safe", "0",
+         "-i", str(listing), "-f", "s16le", "-ac", "1", "-ar", "24000", "-"],
+        check=True, capture_output=True,
+    ).stdout
+    assert decoded_lossless == b"".join(parts)
+
+    output = tmp_path / f"episode.{format_name}"
+    podcast.stitch_segments(paths, output, format_name)
+    codec = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+         "stream=codec_name", "-of", "default=nk=1:nw=1", str(output)],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert codec == format_name
+    decoded = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(output),
+         "-f", "s16le", "-ac", "1", "-ar", "24000", "-"],
+        check=True, capture_output=True,
+    ).stdout
+    assert abs(len(decoded) - sum(map(len, parts))) <= 480  # 10 ms at 24kHz, 16-bit
+
+
+def test_podcast_reuses_lossless_cache_across_formats(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("Alex: Hello\nMaya: Goodbye\nAlex: Hello\n")
+    calls = []
+
+    def fake_gemini(segment: podcast.Segment, voice: str, model: str) -> bytes:
+        calls.append((segment.text, voice, model))
+        return b"\x00\x00" * 4800  # 200 ms of 24kHz mono PCM
+
+    monkeypatch.setattr(podcast, "request_gemini_audio", fake_gemini)
+    cache = tmp_path / "cache"
+    podcast.render_podcast(source, tmp_path / "episode.mp3", "test-model", cache, False, 2)
+    podcast.render_podcast(source, tmp_path / "episode.opus", "test-model", cache, False, 2)
+    assert len(calls) == 2
+    assert len(list((cache / "segments").glob("*.flac"))) == 2
+    assert (tmp_path / "episode.mp3").stat().st_size > 0
+    assert (tmp_path / "episode.opus").stat().st_size > 0
+
+
+def test_stitch_handles_apostrophe_in_cache_path(tmp_path: Path) -> None:
+    segment = tmp_path / "someone's cache" / "sample.flac"
+    podcast.render_pcm_to_flac(b"\x00\x00" * 4800, segment)
+    output = tmp_path / "episode.opus"
+    podcast.stitch_segments([segment], output, "opus")
+    assert output.stat().st_size > 0
+
+
+def test_failed_encoding_does_not_clobber_existing_output(tmp_path: Path, monkeypatch) -> None:
+    cached = tmp_path / "cached.flac"
+    output = tmp_path / "episode.opus"
+    cached.write_bytes(b"old cached content")
+    output.write_bytes(b"old podcast content")
+
+    def fail_after_partial_output(args: list[str], **kwargs) -> None:
+        Path(args[-1]).write_bytes(b"partial output")
+        raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(podcast.subprocess, "run", fail_after_partial_output)
+    with pytest.raises(subprocess.CalledProcessError):
+        podcast.render_pcm_to_flac(b"\x00\x00" * 4800, cached)
+    with pytest.raises(subprocess.CalledProcessError):
+        podcast.stitch_segments([cached], output, "opus")
+
+    assert cached.read_bytes() == b"old cached content"
+    assert output.read_bytes() == b"old podcast content"
+    assert not list(tmp_path.glob(".podcast-*"))

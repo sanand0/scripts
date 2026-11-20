@@ -1,5 +1,23 @@
 # podcast
 
+## Avoid re-encoding podcasts, 20 Nov 2026
+
+<!-- Compare FFmpeg Changes: https://chatgpt.com/c/6b0045cf-5e6c-83ec-ae95-851b07b999f9 (Fri 20 Nov 2026, 9:06 PM SGT) -->
+
+What's new between ffmpeg N-123073-g743df5ded9-20260228 and N-129150-g7ddf7bc8a4-20261120? List top 10 differences, prioritized practically based on what'll be useful for me.
+
+---
+
+Based on this, any improvements I can leverage in ~/code/scripts/ on @LocalMCP2 where I use ffmpeg?
+
+---
+
+I reverted to the older ffmpeg.
+
+Now, does "3. Avoid re-encoding your generated podcasts" still make sense? If yes, carefully review, test, and fix.
+
+I prefer discarding audio in screencastcompress. I think there's a reason audiosync.py decodes and re-encodes, so we'll leave that be.
+
 ## Revise podcast parsing, 21 May 2026
 
 <!--

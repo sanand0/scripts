@@ -252,15 +252,14 @@ def codec_args(format_name: str) -> list[str]:
     raise typer.BadParameter(f"Unsupported audio format: {format_name}")
 
 
-def cache_key(segment: Segment, voice: str, model: str, format_name: str) -> str:
-    """Hash all request inputs that affect the cached segment audio."""
+def cache_key(segment: Segment, voice: str, model: str) -> str:
+    """Cache Gemini PCM losslessly, independently of the final output codec."""
     payload = {
         "model": model,
         "voice": voice,
         "text": segment.text,
         "prompt_version": 1,
-        "audio_format": format_name,
-        "codec_args": codec_args(format_name),
+        "cache_audio": "flac",
         "pcm": {"format": "s16le", "rate": 24000, "channels": 1},
     }
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
@@ -331,21 +330,22 @@ def request_gemini_audio(segment: Segment, voice: str, model: str) -> bytes:
     return base64.b64decode(audio_b64)
 
 
-def render_pcm_to_audio(audio_pcm: bytes, output_path: Path, format_name: str) -> None:
-    """Convert Gemini raw 24kHz mono PCM to a compressed audio segment."""
+def render_pcm_to_flac(audio_pcm: bytes, output_path: Path) -> None:
+    """Cache Gemini's 24kHz mono PCM losslessly; publish only complete segments."""
+    if not audio_pcm or len(audio_pcm) % 2:
+        raise ValueError("Gemini audio must contain whole 16-bit PCM samples")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    pcm_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pcm", dir=output_path.parent) as f:
-            f.write(audio_pcm)
-            pcm_path = Path(f.name)
+    with tempfile.TemporaryDirectory(prefix=".podcast-", dir=output_path.parent) as temp:
+        pcm_path = Path(temp) / "segment.pcm"
+        flac_path = Path(temp) / "segment.flac"
+        pcm_path.write_bytes(audio_pcm)
         subprocess.run(
             [
                 "ffmpeg",
+                "-nostdin",
                 "-hide_banner",
                 "-v",
                 "error",
-                "-y",
                 "-f",
                 "s16le",
                 "-ar",
@@ -354,34 +354,32 @@ def render_pcm_to_audio(audio_pcm: bytes, output_path: Path, format_name: str) -
                 "1",
                 "-i",
                 str(pcm_path),
-                *codec_args(format_name),
-                str(output_path),
+                "-c:a",
+                "flac",
+                str(flac_path),
             ],
             check=True,
         )
-    finally:
-        if pcm_path and pcm_path.exists():
-            pcm_path.unlink()
+        os.replace(flac_path, output_path)
 
 
 def stitch_segments(segment_paths: list[Path], output_path: Path, format_name: str) -> None:
-    """Concatenate segment files into the final podcast."""
+    """Concatenate lossless FLAC segments, then encode the podcast only once."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    list_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w", delete=False, suffix=".txt", dir=output_path.parent, encoding="utf-8"
-        ) as f:
+    with tempfile.TemporaryDirectory(prefix=".podcast-", dir=output_path.parent) as temp:
+        list_path = Path(temp) / "segments.txt"
+        staged_path = Path(temp) / f"podcast.{format_name}"
+        with list_path.open("w", encoding="utf-8") as f:
             for segment_path in segment_paths:
-                f.write(f"file '{segment_path.resolve()}'\n")
-            list_path = Path(f.name)
+                escaped_path = str(segment_path.resolve()).replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
         subprocess.run(
             [
                 "ffmpeg",
+                "-nostdin",
                 "-hide_banner",
                 "-v",
                 "error",
-                "-y",
                 "-f",
                 "concat",
                 "-safe",
@@ -389,13 +387,11 @@ def stitch_segments(segment_paths: list[Path], output_path: Path, format_name: s
                 "-i",
                 str(list_path),
                 *codec_args(format_name),
-                str(output_path),
+                str(staged_path),
             ],
             check=True,
         )
-    finally:
-        if list_path and list_path.exists():
-            list_path.unlink()
+        os.replace(staged_path, output_path)
 
 
 def generate_segment(
@@ -405,13 +401,12 @@ def generate_segment(
     segment: Segment,
     voice: str,
     model: str,
-    format_name: str,
     segment_path: Path,
 ) -> Path:
     """Generate one uncached segment and return its path."""
     log(f"{index}/{total} generating {segment.speaker} ({voice})")
     audio_pcm = request_gemini_audio(segment, voice, model)
-    render_pcm_to_audio(audio_pcm, segment_path, format_name)
+    render_pcm_to_flac(audio_pcm, segment_path)
     return segment_path
 
 
@@ -469,7 +464,7 @@ def render_podcast(
     missing_tasks: dict[Path, dict[str, Any]] = {}
     for index, segment in enumerate(segments, start=1):
         voice = voice_map[segment.speaker]
-        segment_path = segment_dir / f"{cache_key(segment, voice, model, format_name)}.{format_name}"
+        segment_path = segment_dir / f"{cache_key(segment, voice, model)}.flac"
         segment_paths.append(segment_path)
         if segment_path.exists():
             log(f"{index}/{len(segments)} cache hit {segment.speaker} ({voice})")
@@ -482,7 +477,6 @@ def render_podcast(
                 "segment": segment,
                 "voice": voice,
                 "model": model,
-                "format_name": format_name,
                 "segment_path": segment_path,
             },
         )
