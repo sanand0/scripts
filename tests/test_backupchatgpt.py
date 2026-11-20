@@ -1272,3 +1272,85 @@ def test_raw_same_version_rename_preserves_export_transcript(tmp_path, capsys, n
         assert b.markdown_owner(collision) == other
     assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "up-to-date"
+
+
+@pytest.mark.parametrize("problem", [None, "gap", "other-tab", "new-visit", "duplicate", "bad-hash", "conflict",
+                                     "changed-branch", "hidden-message", "held-branch"])
+def test_raw_backup_recovers_only_a_proven_page_chain(tmp_path, capsys, problem):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    cid = str(uuid4())
+    versions = raw / "versions" / cid
+    observations = raw / "observations"
+    versions.mkdir(parents=True)
+    observations.mkdir()
+
+    def message(mid):
+        return dict(id=mid, author=dict(role="user"), content=dict(content_type="text", parts=[f"Message {mid}"]))
+
+    def window(ids, previous, following):
+        return dict(messages=[message(mid) for mid in ids], page_info=dict(
+            start_cursor=ids[0], end_cursor=ids[-1], has_previous_page=previous, has_next_page=following))
+
+    endpoint = f"/backend-api/conversations/{cid}"
+
+    def observe(value, start, before=None, tab=1):
+        data = b.encoded(value)
+        fingerprint = b.hashlib.sha256(data.encode()).hexdigest()
+        (versions / f"{fingerprint}.json").write_text(data)
+        query = {"num_turns": "10"}
+        if before:
+            query["before"] = before
+        meta = dict(id=cid, path=f"{endpoint}/messages" if before else endpoint, tabId=tab,
+                    startedAt=start, finishedAt=start + 1, query=query, queryKeys=list(query),
+                    hash=fingerprint, updateTime=value.get("update_time"), coverage="partial", format=1)
+        (observations / f"{start}.json").write_text(b.encoded(meta))
+        return data, meta
+
+    base = dict(window(["c", "d"], True, False), conversation_id=cid, current_node="d", update_time=30, title="Paged")
+    data, meta = observe(base, 10)
+    if problem in {"changed-branch", "hidden-message", "held-branch"}:
+        previous = {**base, **window(["a", "d"], False, False), "update_time": 20}
+        if problem == "hidden-message":
+            base["messages"][-1]["metadata"] = {"is_visually_hidden_from_conversation": True}
+            observe(base, 11)
+        else:
+            previous["messages"][0]["content"]["parts"] = ["An earlier branch"]
+        data = b.encoded(previous)
+        meta = dict(coverage="branch", updateTime=20, hash=b.hashlib.sha256(data.encode()).hexdigest())
+        (raw / "catalog.json").write_text(b.encoded({cid: 30}))
+    (raw / f"{cid}.json").write_text(data)
+    (raw / f"{cid}.backup.json").write_text(b.encoded(meta))
+    observe(window(["b"], True, True), 20, before="c")
+    if problem == "new-visit":
+        observe(base, 25)
+    if problem == "conflict":
+        observe(window(["x"], True, True), 21, before="c")
+    _, oldest = observe(window(["a", "c"] if problem == "duplicate" else ["a"], False, True),
+                        30, before="x" if problem == "gap" else "b", tab=2 if problem == "other-tab" else 1)
+    if problem == "bad-hash":
+        (versions / f"{oldest['hash']}.json").write_text("{}")
+    # A later equivalent window can update advisory metadata without invalidating an earlier chain.
+    if problem is None:
+        observe(dict(base, safe_urls=["https://example.com"]), 40)
+    if problem == "held-branch":
+        _, held = observe(dict(base, **window(["y", "z"], False, False), current_node="z", update_time=35), 40)
+        held.update(coverage="branch", decision="missing-messages")
+        (observations / "40.json").write_text(b.encoded(held))
+
+    assert b.raw_backup(raw, output, True, "jsonl", verbose=True) == 0
+    row = json.loads(capsys.readouterr().out)
+    if problem:
+        assert row["status"] == ("stale-capture" if problem in {"changed-branch", "hidden-message", "held-branch"} else "deferred")
+        if problem == "held-branch":
+            assert "preserved in version history" in row["reason"]
+        assert not output.exists()
+    else:
+        assert row["status"] == "would-create"
+        assert row["sourceType"] == "cursor-pages"
+        assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
+        text = (output / "Paged.md").read_text()
+        assert [text.index(f"Message {mid}") for mid in "abcd"] == sorted(text.index(f"Message {mid}") for mid in "abcd")
+        assert (raw / f"{cid}.json").read_text() == data
+        capsys.readouterr()
+        assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
+        assert json.loads(capsys.readouterr().out)["status"] == "up-to-date"

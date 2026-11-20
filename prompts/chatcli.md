@@ -1,6 +1,6 @@
 # chatcli
 
-## Improve backup logging, 19 Nov 2026 #TODO
+## Improve backup logging, 19 Nov 2026
 
 <!--
 cd ~/code/scripts

@@ -373,6 +373,141 @@ def raw_has_reply(snapshot: dict, prompt_ids: set[str]) -> bool:
     return False
 
 
+def unfinished_snapshot(messages: list[dict], tip: str | None) -> str | None:
+    # Older sidecars could mark an unfilled final image as a complete branch.
+    if any(m.get("author", {}).get("role") == "tool" and m.get("channel") == "final" and
+           m.get("content", {}).get("content_type") == "multimodal_text" and m["content"].get("parts") == []
+           for m in messages):
+        return "img"
+    tip_message = next((m for m in messages if m.get("id") == tip), {})
+    if tip_message.get("status") == "in_progress":
+        return "img" if "image_gen_estimated_duration_ms" in (tip_message.get("metadata") or {}) else "wip"
+    return None
+
+
+def snapshot_observations(raw_dir: Path) -> dict:
+    observations = defaultdict(list)
+    for path in (raw_dir / "observations").glob("*.json"):
+        try:
+            obs = json.loads(path.read_bytes())
+            if (obs["format"] == 1 and re.fullmatch(UUID_PATTERN, obs["id"]) and
+                re.fullmatch(r"[0-9a-f]{64}", obs["hash"]) and type(obs["tabId"]) is int and
+                type(obs["startedAt"]) is int and type(obs["finishedAt"]) is int and
+                0 < obs["startedAt"] <= obs["finishedAt"] and isinstance(obs["query"], dict) and
+                isinstance(obs["path"], str) and isinstance(obs["queryKeys"], list) and
+                all(isinstance(key, str) for key in obs["queryKeys"])):
+                observations[obs["id"]].append(obs)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return observations
+
+
+def cursor_window(raw_dir: Path, cid: str, obs: dict, *, older: bool) -> dict | None:
+    path = raw_dir / "versions" / cid / f"{obs['hash']}.json"
+    try:
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != obs["hash"]:
+            return None
+        value = json.loads(data)
+        page, messages = value["page_info"], value["messages"]
+        if (value.get("conversation_id", value.get("id", cid if older else None)) == cid and
+            not value.get("is_temporary_chat") and "mapping" not in value and
+            isinstance(messages, list) and messages and
+            all(isinstance(m.get("id"), str) and m["id"] and isinstance(m.get("content"), dict) for m in messages) and
+            page["start_cursor"] == messages[0]["id"] and page["end_cursor"] == messages[-1]["id"] and
+            type(page["has_previous_page"]) is bool and page["has_next_page"] is older):
+            return value
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return None
+
+
+def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], previous: dict, source_time: float, update: float) -> tuple[dict | None, str | None]:
+    """Reconstruct one observed active branch while preserving the native captures."""
+    base_pattern = rf"/backend-api/conversations?/{cid}"
+    bases = [obs for obs in observations if re.fullmatch(base_pattern, obs["path"])]
+    dated = [obs for obs in bases if type(obs.get("updateTime")) in (int, float) and
+             math.isfinite(obs["updateTime"]) and obs["updateTime"] > 0 and
+             obs["updateTime"] >= source_time and obs["updateTime"] + 1 >= update]
+    if not dated:
+        return None, None
+    newest = max(dated, key=lambda obs: (obs["updateTime"], obs["startedAt"]))
+    if newest.get("coverage") in {"tree", "branch"}:
+        decision = newest.get("decision")
+        held = decision and decision not in {"promote", "unchanged", "reviewed"}
+        return None, f"Newer snapshot preserved in version history ({decision})" if held else None
+    if not isinstance(previous.get("messages"), list):
+        return None, None
+    if set(newest["queryKeys"]) != newest["query"].keys() or newest["query"].keys() - {"num_turns", "include_has_versions"}:
+        return None, None
+    head = cursor_window(raw_dir, cid, newest, older=False)
+    if (not head or not head["page_info"]["has_previous_page"] or head.get("update_time") != newest["updateTime"] or
+        head.get("current_node") != head["messages"][-1]["id"]):
+        return None, None
+
+    recovered = None
+    for anchor in dated:
+        if (anchor["updateTime"] != newest["updateTime"] or set(anchor["queryKeys"]) != anchor["query"].keys() or
+            anchor["query"].keys() - {"num_turns", "include_has_versions"}):
+            continue
+        base = head if anchor["hash"] == newest["hash"] else cursor_window(raw_dir, cid, anchor, older=False)
+        # The same window may be served again with different advisory URL metadata.
+        if not base or any(base.get(k) != head.get(k) for k in ("messages", "current_node", "page_info", "update_time")):
+            continue
+        # A new base request in this tab may switch versions, even for the same conversation.
+        visit_end = min((other["startedAt"] for other in bases if other is not anchor and
+                         other["tabId"] == anchor["tabId"] and other["startedAt"] >= anchor["startedAt"]), default=math.inf)
+        pages = defaultdict(list)
+        for obs in observations:
+            if (obs["path"] == f"{anchor['path']}/messages" and obs["tabId"] == anchor["tabId"] and
+                anchor["finishedAt"] <= obs["startedAt"] <= obs["finishedAt"] < visit_end and
+                set(obs["queryKeys"]) == obs["query"].keys() and
+                {key: val for key, val in obs["query"].items() if key != "before"} == anchor["query"] and
+                isinstance(obs["query"].get("before"), str)):
+                pages[obs["query"]["before"]].append(obs)
+        windows = [base]
+        seen = {m["id"] for m in base["messages"]}
+        finished = anchor["finishedAt"]
+        while windows[-1]["page_info"]["has_previous_page"]:
+            cursor = windows[-1]["page_info"]["start_cursor"]
+            options = [p for p in pages[cursor] if p["startedAt"] >= finished]
+            if len({p["hash"] for p in options}) != 1:
+                break
+            obs = min(options, key=lambda p: p["finishedAt"])
+            page = cursor_window(raw_dir, cid, obs, older=True)
+            if (not page or page.get("current_node") not in (None, base["current_node"]) or
+                page.get("update_time") not in (None, base["update_time"])):
+                break
+            ids = {m["id"] for m in page["messages"]}
+            if len(ids) != len(page["messages"]) or ids & seen:
+                break
+            seen.update(ids)
+            windows.append(page)
+            finished = obs["finishedAt"]
+        if windows[-1]["page_info"]["has_previous_page"]:
+            continue
+        messages = [m for page in reversed(windows) for m in page["messages"]]
+        if len(seen) != len(messages) or unfinished_snapshot(messages, base["current_node"]):
+            continue
+        # Preserve the accepted branch in order, including content and attachment references.
+        before = previous["messages"]
+        before_ids = {m["id"] for m in before}
+        shared = [m for m in messages if m["id"] in before_ids]
+        attachments = ("attachments", "files", "files_v2", "sync_sources")
+        fields = ("id", "content", "author", "channel", "recipient", "status", *attachments)
+        metadata_fields = (*attachments, "is_visually_hidden_from_conversation")
+        if len(before) != len(shared) or any(
+            any(old.get(k) != new.get(k) for k in fields) or
+            any((old.get("metadata") or {}).get(k) != (new.get("metadata") or {}).get(k) for k in metadata_fields)
+            for old, new in zip(before, shared)
+        ):
+            return None, "Complete pages conflict with the accepted snapshot"
+        if recovered and recovered["messages"] != messages:
+            return None, "Conflicting older pages for the same snapshot"
+        recovered = dict(head, messages=messages, page_info=dict(has_previous_page=False, has_next_page=False))
+    return recovered, None if recovered else "No complete, consistent cursor chain in the saved pages"
+
+
 def render_snapshot(data: bytes, replay: bool) -> bytes:
     render = subprocess.run(
         ["node", "--input-type=module", "-e",
@@ -425,6 +560,7 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
         owned[owner].append(path)
     paths = {p.stem: p for p in raw_dir.glob("*.json") if re.fullmatch(UUID_PATTERN, p.stem)}
     turns = captured_turns(raw_dir / "events")
+    observations = snapshot_observations(raw_dir)
     label_width = len("would-update" if dry_run else "missing")
     failures = 0
     with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp:
@@ -453,22 +589,30 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                     snapshot_title = value.get("title")
                     if isinstance(snapshot_title, str) and snapshot_title.strip() and (not catalog_title or latest_update > update):
                         title = snapshot_title
-                    # Older sidecars could mark an unfilled final image as a complete branch.
-                    empty_image = any(m.get("author", {}).get("role") == "tool" and m.get("channel") == "final"
-                                      and m.get("content", {}).get("content_type") == "multimodal_text"
-                                      and m["content"].get("parts") == [] for m in messages)
-                    if info.get("coverage") == "partial" or empty_image:
+                    unfinished = unfinished_snapshot(messages, tip)
+                    if info.get("coverage") == "partial" or unfinished == "img":
                         status = "deferred"
-                        tip_message = next((m for m in messages if m.get("id") == tip), {})
-                        if empty_image:
-                            pending_label = "img"
-                        elif tip_message.get("status") == "in_progress":
-                            pending_label = "img" if "image_gen_estimated_duration_ms" in (tip_message.get("metadata") or {}) else "wip"
+                        pending_label = unfinished or "part"
                     elif info.get("coverage") not in {"tree", "branch"} or type(source_time) not in (int, float) or not math.isfinite(source_time) or source_time <= 0 or source_time != info.get("updateTime"):
                         raise ValueError("Snapshot has no verified coverage or server update time")
                     else:
                         status = "stale-capture" if source_time + 1 < update else ""
                         ready = not status
+                    if (not unfinished and status in {"deferred", "stale-capture"} and cid in observations and
+                        type(source_time) in (int, float) and math.isfinite(source_time)):
+                        assembled, reason = recover_cursor_pages(raw_dir, cid, observations[cid], value, source_time, update)
+                        if assembled:
+                            value = assembled
+                            data = encoded(value).encode()
+                            source_time, tip = value["update_time"], value["current_node"]
+                            latest_update = max(latest_update, source_time)
+                            title = value.get("title") or title
+                            message["sourceType"] = "cursor-pages"
+                            status, ready = "", True
+                        elif reason:
+                            message["reason"] = reason
+                            if status == "deferred" and value.get("page_info", {}).get("has_previous_page") is True:
+                                pending_label = "pages"
                 if cid in turns and status != "deferred":
                     if path is not None:
                         messages = raw_messages(value, complete=True)
@@ -480,6 +624,7 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                                      current_node=messages[-1]["id"], page_info=dict(has_previous_page=False, has_next_page=False))
                         data = encoded(value).encode()
                         latest_update = max(latest_update, source_time)
+                        message.pop("reason", None)
                         message["sourceType"] = "stream-replay"
                         ready = replay = True
                 if status == "missing" and not replay and update and any(t is not None and t >= update - .001 for t, _ in versions):
