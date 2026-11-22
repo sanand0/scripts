@@ -142,8 +142,7 @@ def discover() -> list[Entry]:
                 entries.extend(found)
                 seen_slugs.add(path.stem)
 
-    skill_paths = set((home / "code/scripts/agents").glob("**/SKILL.md"))
-    skill_paths.update((home / "code/blog/pages/skills").glob("*/SKILL.md"))
+    skill_paths = set((home / "code/skills").glob("**/SKILL.md"))
     entries.extend(skill_entry(path) for path in sorted(skill_paths))
     return entries
 

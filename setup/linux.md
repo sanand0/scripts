@@ -298,9 +298,6 @@ curl https://sh.rustup.rs -sSf | sh
 cargo install unidown
 # cargo install --locked cctop  # Real-time agent monitor
 
-# llama.cpp
-curl -LsSf https://llama.app/install.sh | sh
-
 # Set up uv environments
 mkdir -p ~/apps/global; cd ~/apps/global; uv venv --python 3.15; source .venv/bin/activate.fish; uv pip install --upgrade anyascii beautifulsoup4 click httpx llm lxml markdownify openai openpyxl pandas pdfplumber pillow pypdf reportlab requests rich ruff tenacity tqdm typer
 playwright install --with-deps chromium firefox msedge
@@ -404,6 +401,11 @@ sudo apt install nvidia-modprobe
 sudo nvidia-modprobe -u
 sudo service ollama restart
 ollama pull gemma3 qwen3-vl
+
+# llama.cpp
+curl -LsSf https://llama.app/install.sh | sh
+
+# vllm - not installed yet.
 
 # Enable Copilot on Microsoft Edge. Then restart Edge.
 # https://github.com/NixOS/nixpkgs/issues/345125#issuecomment-2440433714
