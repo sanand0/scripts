@@ -43,3 +43,9 @@ def test_scheduled_backup_and_failure_reporting(tmp_path, name, exit_code):
 @pytest.mark.parametrize("name", BACKUPS)
 def test_backup_precedes_context_rebuild(name):
     assert WRAPPER.index(BACKUP_JOBS[name]) < WRAPPER.index('run_job "context-rebuild"')
+
+
+@pytest.mark.parametrize("content_set", ["blog", "transcript"])
+def test_scheduled_summarizers_use_chatgpt_provider_default(content_set):
+    line = next(line for line in WRAPPER.splitlines() if f'run_job "summarize-{content_set}"' in line)
+    assert f"summarize.py {content_set} --provider chatgpt ||" in line

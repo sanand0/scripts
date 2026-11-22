@@ -6,6 +6,8 @@ uv run --no-project \
   --with pytest \
   --with typer \
   --with google-genai \
+  --with 'openai>=3.28' \
+  --with 'pyjwt[crypto]' \
   --with python-dotenv \
   --with ruamel.yaml \
   --with rich \
@@ -14,10 +16,19 @@ uv run --no-project \
   pytest -q tests/test_summarize_blog_tags.py
 '''
 
-from pathlib import Path
+import base64
+import hashlib
 import importlib.util
+import json
+import os
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.request import urlopen
 
+import pytest
 from typer.testing import CliRunner
 
 
@@ -232,3 +243,177 @@ def test_blog_generates_description_and_tags_in_separate_ai_calls(tmp_path, monk
 class _FakeMeta:
     description = "A useful post."
     tags = ["llms", "proposed:agent-memory"]
+
+
+def test_chatgpt_login_paste_reuses_registration_and_private_state(tmp_path, monkeypatch):
+    root = tmp_path / "chatgpt"
+    monkeypatch.setattr(summarize, "CHATGPT_STATE", root)
+    attempts = []
+    expected = {"issuer": summarize.CHATGPT_ISSUER, "subject": "user", "email": "user@example.com"}
+
+    def echo(message, *, err=False):
+        if message.startswith("Continue with ChatGPT\n"):
+            params = {k: v[0] for k, v in parse_qs(urlsplit(message.splitlines()[1]).query).items()}
+            attempts.append(params)
+
+    def callback():
+        attempt = attempts[-1]
+        params = dict(state=attempt["state"], code="code")
+        if attempt["client_id"] == summarize.CHATGPT_REGISTER:
+            params["client_id"] = "oaiapp_test"
+        return f"{attempt['redirect_uri']}?{urlencode(params)}\n"
+
+    def exchange(client_id, **grant):
+        assert client_id == "oaiapp_test"
+        assert grant["grant_type"] == "authorization_code"
+        assert grant["code"] == "code"
+        assert grant["redirect_uri"] == attempts[-1]["redirect_uri"]
+        digest = hashlib.sha256(grant["code_verifier"].encode()).digest()
+        assert base64.urlsafe_b64encode(digest).decode().rstrip("=") == attempts[-1]["code_challenge"]
+        return {"id_token": "id", "access_token": "access", "refresh_token": "refresh",
+                "scope": summarize.CHATGPT_SCOPES, "expires_in": 3600}
+
+    with monkeypatch.context() as patch:
+        patch.setattr(summarize.typer, "echo", echo)
+        patch.setattr(sys.stdin, "readline", callback)
+        patch.setattr(summarize, "chatgpt_exchange", exchange)
+        patch.setattr(summarize, "chatgpt_identity", lambda *_: expected)
+        summarize.login_chatgpt(None, True, False, False)
+        summarize.login_chatgpt(None, True, False, False)
+
+    assert attempts[0]["client_id"] == summarize.CHATGPT_REGISTER
+    assert attempts[0]["agent_name_hint"] == "summarize.py"
+    assert attempts[1]["client_id"] == "oaiapp_test"
+    assert "agent_name_hint" not in attempts[1] and "id_token_hint" not in attempts[1]
+    assert attempts[0]["state"] != attempts[1]["state"]
+    assert attempts[0]["ext_agent_host_id"] == attempts[1]["ext_agent_host_id"]
+    record = root / "user@example.com/oaiapp_test.json"
+    assert summarize.chatgpt_record(None) == record
+    assert os.stat(root).st_mode & 0o777 == 0o700
+    assert os.stat(record).st_mode & 0o777 == 0o600
+    assert summarize.chatgpt_access_token(record) == "access"
+    listed = CliRunner().invoke(summarize.app, ["login", "chatgpt", "--accounts"])
+    assert listed.stdout == "user@example.com/oaiapp_test\tactive\n"
+
+
+def test_chatgpt_login_accepts_loopback_callback(monkeypatch):
+    with ThreadPoolExecutor(1) as pool:
+        callbacks = []
+
+        def echo(message, **kwargs):
+            if message.startswith("Continue with ChatGPT\n"):
+                params = parse_qs(urlsplit(message.splitlines()[1]).query)
+                query = urlencode(dict(state=params["state"][0], code="code", client_id="oaiapp_test"))
+                callbacks.append(pool.submit(urlopen, f"{params['redirect_uri'][0]}?{query}", timeout=5))
+
+        monkeypatch.setattr(summarize.typer, "echo", echo)
+        monkeypatch.setattr(summarize, "chatgpt_exchange", lambda *_args, **_kwargs: {
+            "id_token": "id", "access_token": "access", "scope": summarize.CHATGPT_SCOPES, "expires_in": 3600,
+        })
+        monkeypatch.setattr(summarize, "chatgpt_identity", lambda *_: {"subject": "user"})
+        record = summarize.authorize_chatgpt("urn:uuid:host", {}, False)
+        with callbacks[0].result(timeout=5) as response:
+            assert response.status == 200
+            assert response.headers["Cache-Control"] == "no-store"
+    assert record["client_id"] == "oaiapp_test"
+
+
+@pytest.mark.parametrize("suffix, client_id", [
+    ("state=other&code=code&client_id=oaiapp_test", "dynamic_agent_client"),
+    ("state=state&error=access_denied", "dynamic_agent_client"),
+    ("state=state&code=code", "dynamic_agent_client"),
+    ("state=state&code=code&client_id=oaiapp_other", "oaiapp_test"),
+])
+def test_chatgpt_callback_rejects_wrong_state_client_or_decline(suffix, client_id):
+    redirect = "http://127.0.0.1:1234/auth/callback"
+    with pytest.raises(summarize.ChatGPTError):
+        summarize.chatgpt_callback(f"{redirect}?{suffix}", redirect, "state", client_id)
+
+
+def test_chatgpt_verifies_id_token_signature_and_nonce(monkeypatch):
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwks_key = jwt.PyJWK.from_dict(json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key())))
+    monkeypatch.setattr(jwt.PyJWKClient, "get_signing_key_from_jwt", lambda *_: jwks_key)
+    claims = dict(iss=summarize.CHATGPT_ISSUER, sub="user", aud="oaiapp_test", nonce="nonce",
+                  exp=int(time.time()) + 300, email="user@example.com")
+    token = jwt.encode(claims, key, algorithm="RS256")
+    assert summarize.chatgpt_identity(token, "oaiapp_test", "nonce")["email"] == claims["email"]
+    with pytest.raises(summarize.ChatGPTError, match="sign-in attempt"):
+        summarize.chatgpt_identity(token, "oaiapp_test", "other")
+    with pytest.raises(summarize.ChatGPTError, match="validate"):
+        summarize.chatgpt_identity(token, "oaiapp_other", "nonce")
+
+
+def test_chatgpt_refresh_serializes_rotation(tmp_path, monkeypatch):
+    monkeypatch.setattr(summarize, "CHATGPT_STATE", tmp_path)
+    record = tmp_path / "user@example.com/oaiapp_test.json"
+    summarize.save_chatgpt_state(record, dict(client_id="oaiapp_test", refresh_token="original",
+                                              expires_at=0, scopes=[summarize.CHATGPT_SCOPE]))
+    exchanged = []
+
+    def exchange(client_id, **grant):
+        exchanged.append((client_id, grant))
+        return dict(access_token="renewed", refresh_token="rotated", expires_in=3600,
+                    scope=summarize.CHATGPT_SCOPES)
+
+    monkeypatch.setattr(summarize, "chatgpt_exchange", exchange)
+    with ThreadPoolExecutor(4) as pool:
+        assert list(pool.map(summarize.chatgpt_access_token, [record] * 4)) == ["renewed"] * 4
+    assert exchanged == [("oaiapp_test", {"grant_type": "refresh_token", "refresh_token": "original"})]
+    assert json.loads(record.read_text())["refresh_token"] == "rotated"
+
+
+@pytest.mark.parametrize("completed", [True, False])
+def test_chatgpt_structured_stream_through_cli(tmp_path, monkeypatch, completed):
+    import httpx2
+    import openai
+
+    post = tmp_path / "post.md"
+    text = "# Title\n\nOne\nTwo\nThree\nFour\nFive\n"
+    post.write_text(text)
+    monkeypatch.setattr(summarize, "CHATGPT_STATE", tmp_path / "chatgpt")
+    account = "user@example.com/oaiapp_test"
+    summarize.save_chatgpt_state(summarize.CHATGPT_STATE / "active", account)
+    summarize.save_chatgpt_state(summarize.CHATGPT_STATE / f"{account}.json", dict(
+        scopes=[summarize.CHATGPT_SCOPE], access_token="test-oauth", expires_at=time.time() + 3600,
+    ))
+
+    def send(request):
+        assert str(request.url) == "https://api.openai.com/v1/responses"
+        assert request.headers["Authorization"] == "Bearer test-oauth"
+        params = json.loads(request.content)
+        assert params["model"] == "gpt-6-luna"
+        assert params["store"] is False and params["stream"] is True
+        assert params["input"][0]["role"] == "user" and text in params["input"][0]["content"]
+        assert params["text"]["format"]["type"] == "json_schema"
+        response = dict(id="resp_test", model="gpt-6-luna", object="response", created_at=1,
+                        status="in_progress", output=[])
+        events = [dict(type="response.created", sequence_number=0, response=response)]
+        if completed:
+            output = [dict(type="message", role="assistant", id="msg_test", status="completed", content=[
+                dict(type="output_text", text='{"description":"A short description."}', annotations=[]),
+            ])]
+            usage = dict(input_tokens=50, output_tokens=10, total_tokens=60)
+            events.append(dict(type="response.completed", sequence_number=1,
+                               response=dict(response, status="completed", output=output, usage=usage)))
+        return httpx2.Response(200, headers={"Content-Type": "text/event-stream"},
+                               text="".join(f"data: {json.dumps(event)}\n\n" for event in events))
+
+    real_client = openai.OpenAI
+    monkeypatch.setattr(openai, "OpenAI", lambda **kwargs: real_client(
+        **kwargs, http_client=httpx2.Client(transport=httpx2.MockTransport(send)),
+    ))
+    result = CliRunner().invoke(summarize.app, ["blog", str(post), "--provider", "chatgpt", "--fields",
+                                              "description", "--dry-run", "--format", "json"])
+    assert post.read_text() == text
+    row = json.loads(result.stdout)
+    if completed:
+        assert result.exit_code == 0, row
+        assert row["status"] == "dry-run" and row["tokens"]["output"] == 10
+        assert row["cost_usd"] is None
+    else:
+        assert result.exit_code == 1
+        assert "stream ended before response.completed" in row["error"]

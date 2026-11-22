@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["typer>=0.9", "google-genai", "openai", "python-dotenv", "ruamel.yaml", "rich", "pydantic", "tenacity"]
+# dependencies = ["typer>=0.9", "google-genai", "openai>=3.28", "pyjwt[crypto]", "python-dotenv", "ruamel.yaml", "rich", "pydantic", "tenacity"]
 # ///
 """
 Add AI-generated YAML metadata to content files (transcripts, blog posts, etc.).
@@ -27,23 +27,35 @@ Usage:
   uv run summarize.py --dry-run transcript "2026-04-*.md"    # preview changes
   uv run summarize.py --workers 8 transcript "*.md"          # 8 parallel workers
   uv run summarize.py --force transcript "2026-04-*.md"      # re-process all fields
+  uv run summarize.py login chatgpt --paste                   # sign in from another device
+  uv run summarize.py blog post.md --provider chatgpt         # use the saved ChatGPT plan
 """
 
+import base64
 import concurrent.futures
+import fcntl
+import getpass
 import glob as glob_module
 import hashlib
 import json
 import os
 import re
+import secrets
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import StringIO
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.request import Request, urlopen
+from uuid import uuid4
 
 import typer
 from dotenv import dotenv_values, load_dotenv
@@ -54,7 +66,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(add_completion=False, pretty_exceptions_show_locals=False)
 console = Console(stderr=True)
 _print_lock = Lock()
 MIN_CONTENT_LINES = 5
@@ -76,7 +88,260 @@ PRICING: dict[str, tuple[float, float]] = {
 }
 # Default price if user specifies a model not in PRICING dict
 DEFAULT_PRICING = (1.50,  7.50)
-DEFAULT_MODELS = {"gemini": "gemini-3.8-flash", "openai": "gpt-6-luna"}
+LUNA_MODEL = "gpt-6-luna"
+DEFAULT_MODELS = {"gemini": "gemini-3.8-flash", "openai": LUNA_MODEL, "chatgpt": LUNA_MODEL}
+
+CHATGPT_STATE = Path.home() / ".cache/sanand-scripts/summarize/chatgpt"
+CHATGPT_ISSUER = "https://auth.openai.com"
+CHATGPT_RESOURCE = "https://api.openai.com/v1"
+CHATGPT_SCOPE = "chatgpt.tokens.use.direct"
+CHATGPT_SCOPES = f"openid profile email offline_access resource.invoke {CHATGPT_SCOPE}"
+CHATGPT_REGISTER = "dynamic_agent_client"
+CHATGPT_CALLBACK = "/auth/callback"
+CHATGPT_LOGIN = "summarize.py login chatgpt"
+
+
+class ChatGPTError(ValueError):
+    pass
+
+
+class ChatGPTGrantError(ChatGPTError):
+    pass
+
+
+class ChatGPTDeniedError(ChatGPTError):
+    pass
+
+
+def save_chatgpt_state(path: Path, value: dict | str) -> None:
+    """Replace each state record atomically. NamedTemporaryFile starts at mode 0600."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as tmp:
+        pending = Path(tmp.name)
+        try:
+            json.dump(value, tmp)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp.close()
+            pending.replace(path)
+        finally:
+            pending.unlink(missing_ok=True)
+
+
+def chatgpt_records() -> dict[str, Path]:
+    return {f"{path.parent.name}/{path.stem}": path for path in CHATGPT_STATE.glob("*/*.json")}
+
+
+def chatgpt_record(account: str | None) -> Path | None:
+    if account is None:
+        active = CHATGPT_STATE / "active"
+        if not active.exists():
+            return None
+        account = json.loads(active.read_text())
+    path = chatgpt_records().get(account)
+    if path is None:
+        raise ChatGPTError(f"Unknown ChatGPT account '{account}'. Run {CHATGPT_LOGIN} --accounts.")
+    return path
+
+
+def chatgpt_exchange(client_id: str, **grant: str) -> dict:
+    request = Request(
+        f"{CHATGPT_ISSUER}/api/accounts/oauth/token",
+        data=urlencode(dict(client_id=client_id, resource=CHATGPT_RESOURCE, **grant)).encode(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            tokens = json.load(response)
+    except HTTPError as exc:
+        try:
+            code = json.load(exc).get("error")
+        except (ValueError, AttributeError):
+            code = None
+        if code in {"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired",
+                    "refresh_token_invalidated", "refresh_token_reused"}:
+            raise ChatGPTGrantError(f"ChatGPT OAuth returned {code}.") from None
+        reason = " (invalid_client)" if code == "invalid_client" else ""
+        raise ChatGPTError(f"ChatGPT token exchange returned HTTP {exc.code}{reason}.") from None
+    except (URLError, TimeoutError):
+        raise ChatGPTError("Could not reach the ChatGPT token endpoint. Try again.") from None
+    if not tokens.get("access_token") or tokens.get("token_type", "").lower() != "bearer":
+        raise ChatGPTError("ChatGPT OAuth did not return a bearer access token.")
+    return tokens
+
+
+def chatgpt_token_fields(tokens: dict) -> dict:
+    return {
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens.get("refresh_token"),
+        "scopes": tokens["scope"].split(),
+        "expires_at": time.time() + int(tokens["expires_in"]),
+    }
+
+
+def chatgpt_identity(id_token: str, client_id: str, nonce: str) -> dict:
+    import jwt
+
+    try:
+        jwks = jwt.PyJWKClient(f"{CHATGPT_ISSUER}/.well-known/jwks.json", timeout=15)
+        key = jwks.get_signing_key_from_jwt(id_token).key
+        claims = jwt.decode(id_token, key, algorithms=["RS256"], audience=client_id,
+                            issuer=CHATGPT_ISSUER, leeway=15,
+                            options={"require": ["exp", "sub", "nonce", "email"]})
+    except jwt.PyJWTError:
+        raise ChatGPTError("Could not validate the ChatGPT ID token.") from None
+    if claims["nonce"] != nonce or not isinstance(claims["email"], str) or "@" not in claims["email"]:
+        raise ChatGPTError("ChatGPT ID token did not match the sign-in attempt.")
+    return {"issuer": claims["iss"], "subject": claims["sub"], "email": claims["email"]}
+
+
+def chatgpt_callback(url: str, redirect_uri: str, state: str, client_id: str) -> tuple[str, str]:
+    received = urlsplit(url)
+    if received._replace(query="").geturl() != redirect_uri:
+        raise ChatGPTError("Paste the full callback URL shown in the browser address bar.")
+    params = parse_qs(received.query, keep_blank_values=True)
+    if params.get("state") != [state]:
+        raise ChatGPTError("ChatGPT callback state did not match this sign-in attempt.")
+    if "error" in params:
+        raise ChatGPTDeniedError("ChatGPT sign-in was declined or failed in the browser.")
+    codes = params.get("code", [""])
+    client_ids = params.get("client_id", [client_id])
+    if len(codes) != 1 or len(client_ids) != 1:
+        raise ChatGPTError("ChatGPT callback contained duplicate fields.")
+    code, issued_id = codes[0], client_ids[0]
+    if (not code or not re.fullmatch(r"[A-Za-z0-9_-]+", issued_id) or issued_id == CHATGPT_REGISTER
+            or client_id not in {issued_id, CHATGPT_REGISTER}):
+        raise ChatGPTError("ChatGPT callback did not include a valid code and client ID.")
+    return code, issued_id
+
+
+def authorize_chatgpt(host_id: str, saved: dict, paste: bool) -> dict:
+    state, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(3))
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    client_id = saved.get("client_id", CHATGPT_REGISTER)
+    callback: list[tuple[str, str]] = []
+    denied: list[ChatGPTDeniedError] = []
+
+    class Receiver(BaseHTTPRequestHandler):
+        def do_GET(self):
+            try:
+                callback.append(chatgpt_callback(f"http://127.0.0.1:{self.server.server_port}{self.path}",
+                                                 redirect_uri, state, client_id))
+            except ChatGPTDeniedError as exc:
+                denied.append(exc)
+                self.send_error(400, "ChatGPT sign-in was declined or failed in the browser.")
+                return
+            except ValueError:
+                self.send_error(400, "ChatGPT callback was not accepted. Return to the terminal.")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b"ChatGPT authorization received. Return to the terminal to finish sign-in.")
+
+        def log_message(self, *args):
+            pass  # The request URL contains the authorization code.
+
+    with HTTPServer(("127.0.0.1", 0), Receiver) as server:
+        redirect_uri = f"http://127.0.0.1:{server.server_port}{CHATGPT_CALLBACK}"
+        params = dict(client_id=client_id, ext_agent_host_id=host_id, redirect_uri=redirect_uri,
+                      scope=CHATGPT_SCOPES, resource=CHATGPT_RESOURCE, response_type="code",
+                      state=state, nonce=nonce, code_challenge=challenge, code_challenge_method="S256")
+        if not saved:
+            params["agent_name_hint"] = "summarize.py"
+        elif CHATGPT_SCOPE not in saved["scopes"]:
+            params["prompt"] = "consent"
+        # Leave out the optional ID-token hint so the URL can be relayed to another device.
+        typer.echo(f"Continue with ChatGPT\n{CHATGPT_ISSUER}/api/accounts/authorize?{urlencode(params)}", err=True)
+        if paste:
+            typer.echo("After approving, copy the full redirected URL from the address bar, even if the page cannot load.", err=True)
+            url = getpass.getpass("Callback URL: ") if sys.stdin.isatty() else sys.stdin.readline()
+            code, issued_id = chatgpt_callback(url.strip(), redirect_uri, state, client_id)
+        else:
+            typer.echo("Approve in a browser on this machine or use --paste for a browser on another device.", err=True)
+            deadline = time.monotonic() + 600
+            while not (callback or denied) and (remaining := deadline - time.monotonic()) > 0:
+                server.timeout = remaining
+                server.handle_request()
+            if denied:
+                raise denied[0]
+            if not callback:
+                raise ChatGPTError("ChatGPT sign-in timed out. Start a new sign-in.")
+            code, issued_id = callback[0]
+
+    tokens = chatgpt_exchange(issued_id, grant_type="authorization_code", code=code,
+                              code_verifier=verifier, redirect_uri=redirect_uri)
+    identity = chatgpt_identity(tokens.get("id_token", ""), issued_id, nonce)
+    if saved and saved["subject"] != identity["subject"]:
+        raise ChatGPTError("ChatGPT signed in to a different account. The saved account was kept.")
+    return {**identity, "client_id": issued_id, "ext_agent_host_id": host_id,
+            "id_token": tokens["id_token"], **chatgpt_token_fields(tokens)}
+
+
+def login_chatgpt(account: str | None, paste: bool, new: bool, accounts: bool) -> None:
+    if accounts:
+        if account or paste or new:
+            raise ChatGPTError("Use --accounts by itself to list saved accounts.")
+        active = chatgpt_record(None)
+        for label, path in sorted(chatgpt_records().items()):
+            typer.echo(f"{label}\t{'active' if path == active else 'saved'}")
+        return
+    if new and account:
+        raise ChatGPTError("Choose either --new-account or an existing --account.")
+    CHATGPT_STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (CHATGPT_STATE / ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        host_file = CHATGPT_STATE / "host-id"
+        if not host_file.exists():
+            save_chatgpt_state(host_file, f"urn:uuid:{uuid4()}")
+        host_id = json.loads(host_file.read_text())
+    existing = None if new else chatgpt_record(account)
+    saved = json.loads(existing.read_text()) if existing else {}
+    record = authorize_chatgpt(host_id, saved, paste)
+    label = f"{quote(record['email'], safe='@.+')}/{record['client_id']}"
+    path = existing or CHATGPT_STATE / f"{label}.json"
+    label = f"{path.parent.name}/{path.stem}"
+    plan_enabled = CHATGPT_SCOPE in record["scopes"]
+    with (CHATGPT_STATE / ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        save_chatgpt_state(path, record)
+        if plan_enabled:
+            save_chatgpt_state(CHATGPT_STATE / "active", label)
+    if not plan_enabled:
+        raise ChatGPTError(f"Signed in as {record['email']}. Run {CHATGPT_LOGIN} --account {label} to allow ChatGPT plan usage.")
+    typer.echo(f"Signed in with ChatGPT as {record['email']}.", err=True)
+
+
+def chatgpt_access_token(path: Path | None) -> str:
+    if path is None:
+        raise ChatGPTError(f"No ChatGPT session. Run {CHATGPT_LOGIN} first.")
+    record = json.loads(path.read_text())
+    sign_in = f"{CHATGPT_LOGIN} --account {path.parent.name}/{path.stem}"
+    if CHATGPT_SCOPE not in record["scopes"]:
+        raise ChatGPTError(f"ChatGPT plan permission is missing. Run {sign_in}.")
+    if record.get("access_token") and record["expires_at"] > time.time() + 60:
+        return record["access_token"]
+    with (CHATGPT_STATE / ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # Refresh tokens rotate, including across worker processes.
+        record = json.loads(path.read_text())
+        if CHATGPT_SCOPE not in record["scopes"]:
+            raise ChatGPTError(f"ChatGPT plan permission is missing. Run {sign_in}.")
+        if record.get("access_token") and record["expires_at"] > time.time() + 60:
+            return record["access_token"]
+        if not record.get("refresh_token"):
+            raise ChatGPTError(f"ChatGPT session expired. Run {sign_in}.")
+        try:
+            tokens = chatgpt_exchange(record["client_id"], grant_type="refresh_token",
+                                      refresh_token=record["refresh_token"])
+        except ChatGPTGrantError as exc:
+            save_chatgpt_state(path, {**record, "access_token": None, "refresh_token": None, "id_token": None})
+            raise ChatGPTError(f"{exc} Run {sign_in}.") from None
+        updated = {**record, **chatgpt_token_fields(tokens)}
+        save_chatgpt_state(path, updated)
+        if CHATGPT_SCOPE not in updated["scopes"]:
+            raise ChatGPTError(f"ChatGPT plan permission is missing. Run {sign_in}.")
+        return updated["access_token"]
 
 
 # ── Field definition ────────────────────────────────────────────────────────────
@@ -835,11 +1100,39 @@ def call_openai(client, model: str, content_set: ContentSet, text: str, fields: 
     return response.output_parsed, usage
 
 
+def call_chatgpt(client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
+    with client.responses.stream(
+        model=model,
+        input=[{"role": "user", "content": ai_input(content_set, text, fields)}],
+        text_format=response_model(fields),
+        store=False,
+    ) as stream:
+        for event in stream:
+            if event.type == "response.completed":
+                response = event.response
+                break
+            if event.type in {"response.failed", "response.incomplete"}:
+                details = event.response.error or event.response.incomplete_details
+                raise ChatGPTError(f"ChatGPT {event.type}: {details}")
+            if event.type == "error":
+                raise ChatGPTError(f"ChatGPT {event.code}: {event.message}")
+        else:
+            raise ChatGPTError("ChatGPT stream ended before response.completed.")
+    if not response.output_parsed:
+        raise ChatGPTError("ChatGPT returned no parsed output.")
+    usage = Usage()
+    if response.usage:
+        usage.add(response.usage.input_tokens or 0, response.usage.output_tokens or 0)
+    return response.output_parsed, usage
+
+
 def call_ai(provider: str, client, model: str, content_set: ContentSet, text: str, fields: list[FieldDef]):
     if provider == "gemini":
         return call_gemini(client, model, content_set, text, fields)
     if provider == "openai":
         return call_openai(client, model, content_set, text, fields)
+    if provider == "chatgpt":
+        return call_chatgpt(client, model, content_set, text, fields)
     raise ValueError(f"Unknown provider: {provider}")
 
 
@@ -856,7 +1149,7 @@ def process_file(
         "added_fields": [],
         "skipped_reason": None,
         "tokens": {"prompt": 0, "output": 0},
-        "cost_usd": 0.0,
+        "cost_usd": None if provider == "chatgpt" else 0.0,
         "proposals": [],
     }
 
@@ -912,7 +1205,8 @@ def process_file(
                     updates[fdef.name] = fdef.to_yaml(val)
                     result["added_fields"].append(fdef.name)
             result["tokens"] = usage.as_dict()
-            result["cost_usd"] = round(usage.cost(model), 6)
+            if provider != "chatgpt":
+                result["cost_usd"] = round(usage.cost(model), 6)
         except Exception as e:
             result["status"] = "error"
             result["error"] = str(e.__cause__ or e)
@@ -930,20 +1224,39 @@ def process_file(
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-@app.command()
+@app.command(epilog="Over SSH, use 'summarize.py login chatgpt --paste' to sign in on another device.")
 def main(
-    content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}"),
+    content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}, or login chatgpt"),
     patterns:  list[str] | None    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
     model:     str | None             = typer.Option(None, help="Model ID; defaults by provider"),
-    provider:  str                    = typer.Option("openai", help="Provider: gemini|openai"),
+    provider:  str                    = typer.Option("openai", help="Provider: gemini|openai|chatgpt"),
     workers:   int | None             = typer.Option(None, "--workers", help="Parallel API workers; defaults by content set"),
     dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
     fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
     verbose:   bool                   = typer.Option(False, "--verbose", "-v", help="Show skipped files"),
     fields:    str | None          = typer.Option(None, "--fields", help="Comma-separated fields to process"),
+    account:   str | None             = typer.Option(None, "--account", help="Saved ChatGPT account label from --accounts"),
+    paste:     bool                   = typer.Option(False, "--paste", help="Login: paste the callback URL from a remote browser"),
+    new:       bool                   = typer.Option(False, "--new-account", help="Login: register an additional ChatGPT account or workspace"),
+    accounts:  bool                   = typer.Option(False, "--accounts", help="Login: list saved ChatGPT accounts"),
 ) -> None:
     """Add AI-generated metadata to content files (transcripts, blog posts, etc.)."""
+    if content_set_name == "login":
+        if patterns != ["chatgpt"]:
+            raise typer.BadParameter(f"Use {CHATGPT_LOGIN}.")
+        try:
+            login_chatgpt(account, paste, new, accounts)
+        except (ChatGPTError, OSError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from None
+        return
+
+    if paste or new or accounts:
+        raise typer.BadParameter(f"Use --paste, --new-account, or --accounts with {CHATGPT_LOGIN}.")
+    if account and provider != "chatgpt":
+        raise typer.BadParameter("Use --account with --provider chatgpt.")
+
     if content_set_name not in CONTENT_SET_MAP:
         valid = ", ".join(CONTENT_SET_MAP)
         console.print(f"[red]Unknown content set '{content_set_name}'. Valid: {valid}[/red]")
@@ -961,22 +1274,19 @@ def main(
         selected_fields = requested
 
     if provider not in DEFAULT_MODELS:
-        console.print(f"[red]Unknown provider '{provider}'. Valid: gemini, openai[/red]")
+        console.print(f"[red]Unknown provider '{provider}'. Valid: {', '.join(DEFAULT_MODELS)}[/red]")
         raise typer.Exit(1)
     model = model or DEFAULT_MODELS[provider]
 
-    env_path = Path.home() / "code/scripts/.env"
-    load_dotenv(env_path)
-    if provider == "gemini":
-        key_name = "GEMINI_API_KEY"
-    else:
-        key_name = "OPENAI_API_KEY"
-    # Respect a non-empty process environment value; fall back to the scripts .env even
-    # when this runtime predefines the variable as an empty string.
-    api_key = os.environ.get(key_name) or dotenv_values(env_path).get(key_name)
-    if not api_key:
-        console.print(f"[red]{key_name} not found in environment or .env[/red]")
-        raise typer.Exit(1)
+    if provider != "chatgpt":
+        env_path = Path.home() / "code/scripts/.env"
+        load_dotenv(env_path)
+        key_name = "GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
+        # A non-empty process value wins even if the runtime predefines the variable as empty.
+        api_key = os.environ.get(key_name) or dotenv_values(env_path).get(key_name)
+        if not api_key:
+            console.print(f"[red]{key_name} not found in environment or .env[/red]")
+            raise typer.Exit(1)
 
     quiet = os.environ.get("DAILY_ACTIVITIES_QUIET") == "1"
     use_json = fmt == "json" or (fmt == "auto" and not quiet and not sys.stdout.isatty())
@@ -991,7 +1301,16 @@ def main(
         client = genai.Client(api_key=api_key)
     else:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        if provider == "chatgpt":
+            try:
+                session = chatgpt_record(account)
+            except ChatGPTError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(1) from None
+            client = OpenAI(api_key=lambda: chatgpt_access_token(session), base_url=CHATGPT_RESOURCE,
+                            organization="", project="", max_retries=0)
+        else:
+            client = OpenAI(api_key=api_key)
 
     results: list[dict] = []
     total_usage = Usage()
@@ -1017,10 +1336,10 @@ def main(
                     tag = "[yellow]DRY-RUN[/yellow]" if dry_run else "[green]UPDATED[/green]"
                     added = result["added_fields"]
                     tok = result["tokens"]
-                    cost = result["cost_usd"]
+                    cost = "ChatGPT plan" if provider == "chatgpt" else f"${result['cost_usd']:.4f}"
                     console.print(
                         f"{tag} {name} +{added} | "
-                        f"[dim]{tok['prompt']}in/{tok['output']}out tok ${cost:.4f}[/dim]"
+                        f"[dim]{tok['prompt']}in/{tok['output']}out tok {cost}[/dim]"
                     )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -1038,7 +1357,7 @@ def main(
                 on_done({
                     "file": str(path), "name": path.name, "status": "error",
                     "added_fields": [], "skipped_reason": None,
-                    "tokens": {"prompt": 0, "output": 0}, "cost_usd": 0.0,
+                    "tokens": {"prompt": 0, "output": 0}, "cost_usd": None if provider == "chatgpt" else 0.0,
                     "error": str(e),
                 })
 
@@ -1058,11 +1377,13 @@ def main(
             f"\n[bold]Done:[/bold] {n_updated} updated, {n_skipped} skipped, {n_errors} errors"
         )
         pricing = PRICING.get(model, DEFAULT_PRICING)
-        console.print(
-            f"[bold]Tokens:[/bold] {total_usage.prompt:,} in + {total_usage.output:,} out"
-            f" ({total_usage.calls} calls) | "
+        cost = "ChatGPT plan" if provider == "chatgpt" else (
             f"[bold]Cost:[/bold] ${total_usage.cost(model):.4f} "
             f"[dim](${pricing[0]}/1M in, ${pricing[1]}/1M out)[/dim]"
+        )
+        console.print(
+            f"[bold]Tokens:[/bold] {total_usage.prompt:,} in + {total_usage.output:,} out"
+            f" ({total_usage.calls} calls) | {cost}"
         )
 
     raise typer.Exit(1 if any(r["status"] == "error" for r in results) else 0)

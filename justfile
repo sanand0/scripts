@@ -130,7 +130,7 @@ test-skilluse:
 
 # Run the blog metadata summarizer tests without contacting paid APIs.
 test-summarize-blog-tags:
-    OPENAI_BASE_URL=http://127.0.0.1:9/v1 OPENAI_API_KEY=test {{ pytest }} --with typer --with google-genai --with openai --with python-dotenv --with ruamel.yaml --with rich --with pydantic --with tenacity pytest -q tests/test_summarize_blog_tags.py
+    OPENAI_BASE_URL=http://127.0.0.1:9/v1 OPENAI_API_KEY=test {{ pytest }} --with typer --with google-genai --with 'openai>=3.28' --with 'pyjwt[crypto]' --with python-dotenv --with ruamel.yaml --with rich --with pydantic --with tenacity pytest -q tests/test_summarize_blog_tags.py
 
 # Run the transcript metadata summarizer tests.
 test-summarize-transcript:

@@ -1,5 +1,21 @@
 # Summarize
 
+## Migrate to SIWC, 22 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Update summarize.py to add `chatgpt` as a login, which implements Sign in with ChatGPT: https://developers.openai.com/siwc/token-sharing-open-source.
+Test it. Pause when you need me to sign in and let me know how to - and I'll do it.
+Make sure remote non-UI flows are possible, e.g. If I ssh into this machine or want a CLI agent to log in, it should pass a URL allowing me to log in from a different device and paste the code back or approval automatically happens - that sort of thing.
+Save tokens, etc. thoughtfully in a guessable canonical location that also aligns with this repo's conventions.
+Modify `daily-activities` and `~/code/blog/justfile` to use `--provider chatgpt` and don't specify the model, so the latest default (currently GPT 6 Luna) is used.
+Update tests. Test manually to make sure common flows work.
+
+<!-- codex resume 01a203c2-92ce-7132-ba7c-1a48a2aa5316 -->
+
 ## Improve speaker identification, 02 Sep 2026
 
 <!-- Skip names like All, Unsure, Attendee, etc. in people: https://chatgpt.com/c/6a97cdc6-1dc8-83ec-89e9-a523cafe7258 -->
