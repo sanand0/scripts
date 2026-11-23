@@ -90,6 +90,20 @@ for f in *.service *.timer; do
   fi
 done
 
+# Retire links created by older versions of this setup script.
+for target in \
+  "$DEST/timers.target.wants/update-files-daily.timer" \
+  "$DEST/update-files-daily.timer" \
+  "$DEST/update-files-daily.service"; do
+  unit="${target##*/}"
+  if [[ -L "$target" && "$(readlink -f "$target")" == "$SCRIPT_DIR/$unit" ]]; then
+    if [[ "$unit" == *.timer ]] && systemctl --user is-active --quiet "$unit"; then
+      systemctl --user stop "$unit"
+    fi
+    rm -- "$target"
+  fi
+done
+
 # Reload user manager to pick up changes
 systemctl --user daemon-reload
 

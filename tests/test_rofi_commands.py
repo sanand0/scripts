@@ -24,7 +24,7 @@ class CommandTests(unittest.TestCase):
         self.registry.write_text(
             "# label\tmode\tdirectory\tcommand\n"
             "Backup\tterminal\t~/code/scripts\t./backupwhatsapp.py\n"
-            "Refresh\tbackground\t~/code/scripts\t./update-files\n"
+            "Refresh\tbackground\t~/code/scripts\t./daily-activities --refresh-file-index\n"
         )
         self.previous_registry = MODULE.REGISTRY
         MODULE.REGISTRY = self.registry
@@ -61,7 +61,7 @@ class CommandTests(unittest.TestCase):
         argv = popen.call_args.args[0]
         self.assertEqual(["bash", "-lc"], argv[:2])
         self.assertIn("cd -- ", argv[2])
-        self.assertIn("&& ./update-files", argv[2])
+        self.assertIn("&& ./daily-activities --refresh-file-index", argv[2])
         self.assertTrue((self.home / ".cache/sanand-scripts/rofi-commands.log").exists())
 
     def test_context_actions_for_panel_and_commands(self):

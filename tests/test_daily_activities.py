@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = (ROOT / "daily-activities").read_text()
-FUNCTIONS = WRAPPER[WRAPPER.index("log() {") : WRAPPER.index("find_ssh_agent() {")]
+FUNCTIONS = WRAPPER[WRAPPER.index("log() {") : WRAPPER.index("refresh_file_index()")]
 BACKUPS = {
     "wabackup": "run --script /home/sanand/code/scripts/wabackup",
     "chatcli-backup": "run --script /home/sanand/code/scripts/chatcli backup",

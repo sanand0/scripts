@@ -1,5 +1,19 @@
 # services
 
+## Merge daily prompts, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+See services/ - the update-files-daily service runs daily and so does the daily-activites service.
+I'd like to merge the two. Maybe keep only 1 service, run via the daily-activities script and service.
+Use this as an opportunity to reduce the number of scripts. For example, maybe update-files can be merged into daily-activites.
+Also, clean-up updated-files and related code to remove anything redundant, wrong, or unnecessary.
+
+<!-- codex resume 01a206c2-01f4-73c0-949f-eddbbdf11a99 -->
+
 ## Service status, 18 Nov 2026
 
 <!--

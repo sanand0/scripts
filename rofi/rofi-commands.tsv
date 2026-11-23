@@ -3,5 +3,5 @@
 # terminal: run in the existing VS Code integrated terminal, recorded in fish history.
 # background: run detached; output is appended to ~/.cache/sanand-scripts/rofi-commands.log.
 Backup WhatsApp	terminal	~/code/scripts	./wabackup
-Refresh Rofi file index	background	~/code/scripts	./update-files
+Refresh Rofi file index	background	~/code/scripts	./daily-activities --refresh-file-index
 Open scripts in VS Code	background	~/code/scripts	code --reuse-window .

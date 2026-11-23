@@ -2,7 +2,7 @@
 Description=Run daily-activities with catch-up
 
 [Timer]
-# 1:15am local time, after the other early daily timers.
+# 1:15am local time.
 OnCalendar=*-*-* 01:15
 # run on next wake if missed
 Persistent=true

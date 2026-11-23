@@ -12,6 +12,7 @@ standalone services, and can run a health check.
   appear.
 - `daily-activities.*`: runs `daily-activities` every day around 1:15am. That
   service's wrapper runs:
+  - A local refresh of the full and recent Rofi file indexes.
   - `activities.py`, which already refreshes/queries `browsing_history.py`.
   - `backupgoogle.py`, only on an unmetered connection.
   - `backupgoogle.py --config-dir /home/sanand/.config/gws-root.node@gmail.com`,
@@ -26,8 +27,6 @@ standalone services, and can run a health check.
   - `rsync` backup to `hetzner:/home/`, only on an unmetered connection.
   - `rclone bisync` for `~/r2/files`, `~/r2/private`, and `~/r2/redirect`,
     only on an unmetered connection.
-- `update-files-daily.*`: refreshes the local file index every day around
-  12:30am.
 - `trending-repo-weekly.*`: updates trending GitHub repos on Sunday mornings.
 - `vlc-history.service`: follows VLC over MPRIS using `playerctl` and appends one
   row per played track to `~/Music/music-history.tsv` as
@@ -79,6 +78,7 @@ Run from this directory:
 `setup.sh` refuses to overwrite non-symlink unit files under
 `~/.config/systemd/user/`. If systemd is running an old copied unit, move that
 file aside and re-run setup so the repo version is linked.
+Setup also retires repo-managed links for the former `update-files-daily` units.
 
 ## Hourly Plutonium Sync
 
@@ -111,6 +111,9 @@ Pausing and resuming a track does not add another row. Stopping VLC (or a track)
 resets the de-duplication state, so playing the same file again is logged again.
 
 ## Run manually
+
+To refresh just the Rofi indexes, run `daily-activities --refresh-file-index`
+or select **Refresh Rofi file index** in Rofi Commands.
 
 ```bash
 # Reload if edited

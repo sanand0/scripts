@@ -1,5 +1,5 @@
 [Unit]
-Description=Run daily activity and backup jobs
+Description=Refresh the file index and run daily activity and backup jobs
 Wants=network-online.target
 After=network-online.target
 OnFailure=timer-failure-notify@%n.service

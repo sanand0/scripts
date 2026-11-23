@@ -89,7 +89,8 @@ Here are the setup details for my laptops.
   - `chatcli backup --verbose` updates `~/Documents/chatgpt/*.md` from `~/Documents/data/anand-chrome-tools/chatgpt-raw/`. It runs in `daily-activities`.
 - [chatgpt-export](chatgpt-export) exports ChatGPT data dumps avoiding the 3-minute OpenAI server timeout via HTTP ranges in an authenticated Edge tab. Copy the export link from email, then run: `chatgpt-export`. <!-- https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9 -->
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
-- [daily-activities](daily-activities) runs daily personal activity and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp and ChatGPT backups, summarizers, and unmetered-only rsync/rclone jobs. It is normally invoked by the `daily-activities.*` systemd service.
+- [daily-activities](daily-activities) runs daily file refresh and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp and ChatGPT backups, summarizers, and unmetered-only rsync/rclone jobs. The `daily-activities` systemd timer runs it daily.
+  - `daily-activities --refresh-file-index` updates `~/.cache/sanand-scripts/files*txt` for `rofi-files.sh`.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
   - [dev.test.sh](dev.test.sh) smoke-tests the dev tool environment. By default it re-runs itself through `dev.sh`; use `--local-only` to test the current shell instead.
@@ -143,7 +144,6 @@ Here are the setup details for my laptops.
 - [meetcall](meetcall) downloads and transcribes recordings from my Google calendar using `call` to transcribe it. Usage: `meetcall "Call name"`, `meetcall --scan --days 3 --dry-run`, `meetcall TDS --after "2 months ago" --before yesterday`, `meetcall TDS --transcript gmeet-*.md`.
 - [callprompt](callprompt) updates `~/Downloads/transcribe.sh` with commands to transcribe pending calls with prompts based on recorded captions from `~/code/tools/meetcaptions/`. Typically, I run `callprompt` then edit `transcribe.sh` and then `bash ~/Downloads/transcribe.sh`. `callprompt --audio IITM --caption gkz-nrnj-vhr` matches a specific audio file and searches for the caption text in `~/{Downloads,Documents}/{gmeet*.md,teams*.md}`.
 - [timestamp.py](timestamp.py) repairs timestamps in older/ambiguous transcripts; new `call` output already uses cumulative timestamps. It idempotently makes timestamps cumulative across legacy chunks. Bare names resolve to the latest descending filename match under `~/Dropbox/notes/transcripts`; use `--chunk-starts 0,25,50` for ambiguous chunk boundaries. Examples: `timestamp.py Naveen`, `timestamp.py Naveen Ankor --dry-run`, `timestamp.py "2026-09-01 GIPCL" --chunk-starts 0,30,60,90,120`, `timestamp.py --describe | jaq .`.
-- [update-files](update-files) caches directory listings for `rofi-files.sh`. It excludes bulky generated/archive trees (e.g. HostGator backup, Go modules, MCP temp files, old GitLab copies, Hugo output), but not file types. Previously selected paths remain available through `frecent.txt`; to find a different file in an excluded tree, browse or search that directory explicitly.
 
 ## AI coding agent scripts
 
@@ -170,9 +170,8 @@ Here are the setup details for my laptops.
 
 Current services are:
 
-- `daily-activities.*`: Run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp and ChatGPT backups, and unmetered-only personal backup/sync jobs
+- `daily-activities.*`: Refresh Rofi file indexes and run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp and ChatGPT backups, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
-- `update-files-daily.*`: Update local files
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 
 [servicestatus](servicestatus) shows one 🟢/🟡/🔴 line per service + job from the journal, with the most informative error, hiding failures that repeat identically for 3+ days. The fish prompt runs `servicestatus --new --no-ok` at most hourly.
