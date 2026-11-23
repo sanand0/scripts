@@ -1,5 +1,36 @@
 # services
 
+## Speed up servicestatus, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Speed up `servicestatus` - especially in the form that appears in the fish prompt - to be almost instant.
+Sometimes, maybe after a few hours, it takes a few seconds. I'd like to avoid that.
+Optimize as much as you can. Algorithms may help more than micro-optimizations.
+I'm also OK with some feature simplification as long as it's aligned with my intent - see `prompts/services.md` to understand that.
+
+---
+
+Is there a better approach than running in the background?
+
+---
+
+What if the services themselves update the status in a log? Would that be hard to maintain and therefore not as good an idea as an hourly script? Or makes no difference? Or better? Pros and cons? What do you suggest?
+
+---
+
+Should we have an hourly-activities script similar to daily-activities, and include this and other scripts?
+Or is it better to keep them independent, even though that increases the number of files considerably (a service and timer file for each task)?
+
+---
+
+OK, implement, run and test the servicestatus timer.
+
+<!-- codex resume 01a20833-2277-7e93-b332-49e277981414 -->
+
 ## cliproxyapi, 23 Nov 2026
 
 <!--

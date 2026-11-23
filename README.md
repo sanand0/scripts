@@ -175,7 +175,7 @@ Current services are:
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 
-[servicestatus](servicestatus) shows one 🟢/🟡/🔴 line per service + job from the journal, with the most informative error, hiding failures that repeat identically for 3+ days. The fish prompt runs `servicestatus --new --no-ok` at most hourly.
+[servicestatus](servicestatus) shows one 🟢/🟡/🔴 line per service + job from the journal, with the most informative error, hiding failures that repeat identically for 3+ days. The `servicestatus.timer` user timer saves new alerts hourly for Fish to display once.
   - `servicestatus` - did last night's jobs run OK?
   - `servicestatus --days 4 --no-ok` - problems since I last looked
   - `servicestatus -d 3 --all` - complete log: every run on its own line, nothing hidden

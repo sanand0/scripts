@@ -18,7 +18,7 @@ Examples:
   servicestatus                          # last 24h, including 🟢
   servicestatus --days 4 --no-ok         # only problems in the last 4 days
   servicestatus --days 3 --all           # complete log: every run, incl. network outages
-  servicestatus --new --no-ok            # only changes since the last --new (fish prompt hook)
+  servicestatus --new --no-ok            # only changes since the last --new
   servicestatus -d 7 --format jsonl | jaq -c 'select(.level == "fail")'
 """
 
@@ -32,6 +32,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -202,24 +204,33 @@ def journal(args: list[str]):
 
 
 def journal_runs(units: dict[str, tuple[str, str]], since: dt.datetime, until: dt.datetime) -> list[Run]:
+    if not units:
+        return []
     span = [f"--since=@{int(since.timestamp())}", f"--until=@{int(until.timestamp())}"]
+    idents = {ident for _, ident in units.values()}
+    # Fields of the same name are ORed; '+' ORs the groups. Read each log entry only once.
+    matches = [
+        *(f"_SYSTEMD_USER_UNIT={u}" for u in units), "+",
+        *(f"USER_UNIT={u}" for u in units), "+",
+        *(f"SYSLOG_IDENTIFIER={i}" for i in sorted(idents)),
+    ]
     invocations: dict[str, tuple[str, list]] = {}
-    for ts, rec in journal([*span, *(f"-u{u}" for u in units)]):
+    orphans = []
+    for ts, rec in journal([*span, *matches]):
         inv = rec.get("_SYSTEMD_INVOCATION_ID") or rec.get("USER_INVOCATION_ID")
         unit = rec.get("USER_UNIT") or rec.get("_SYSTEMD_USER_UNIT")
         if inv and unit in units:
             invocations.setdefault(inv, (unit, []))[1].append((ts, rec))
-    # journald sometimes loses a stream's unit metadata (e.g. across suspend), dropping lines from `-u`.
+        elif "_SYSTEMD_USER_UNIT" not in rec and (ident := rec.get("SYSLOG_IDENTIFIER")) in idents:
+            orphans.append((ts, ident, rec))
+    # journald sometimes loses a stream's unit metadata (e.g. across suspend).
     # Re-attach those by SYSLOG_IDENTIFIER to the run of that unit whose time span contains them.
     spans = defaultdict(list)
     for unit, recs in invocations.values():
         spans[units[unit][1]].append((recs[0][0], recs[-1][0], recs))
-    idents = sorted({ident for _, ident in units.values()})
-    for ts, rec in journal([*span, *(f"-t{i}" for i in idents)]):
-        if "_SYSTEMD_USER_UNIT" not in rec:
-            ident = rec.get("SYSLOG_IDENTIFIER", "")
-            if match := next((recs for lo, hi, recs in spans[ident] if lo <= ts <= hi), None):
-                match.append((ts, rec))
+    for ts, ident, rec in orphans:
+        if match := next((recs for lo, hi, recs in spans[ident] if lo <= ts <= hi), None):
+            match.append((ts, rec))
     runs = []
     for unit, recs in invocations.values():
         recs.sort(key=lambda tr: tr[0])
@@ -249,18 +260,20 @@ def summarize(runs: list[Run], since: dt.datetime, persist_days: int) -> list[di
         if not window:
             continue
         last = window[-1]
-        streak = []
+        signature = last.sig
+        first = None
+        dates = set()
         for run in reversed(history):
-            if run.level == "ok" or run.sig != last.sig:
+            if run.level == "ok" or run.sig != signature:
                 break
-            streak.append(run)
-        days = {r.end.date() for r in streak}
+            first = run.end
+            dates.add(run.end.date())
         bad = sum(r.level != "ok" for r in window)
         rows.append(dict(
             level=last.level, time=last.end.isoformat(timespec="seconds"), service=service, job=job,
             message=last.message, runs=len(window), failed=bad,
-            since=streak[-1].end.isoformat(timespec="seconds") if streak else None,
-            persistent=persist_days > 0 and len(days) >= persist_days, _end=last.end, _sig=last.sig,
+            since=first.isoformat(timespec="seconds") if first else None,
+            persistent=persist_days > 0 and len(dates) >= persist_days, _end=last.end, _sig=signature,
         ))
     return rows
 
@@ -274,6 +287,8 @@ def every_run(runs: list[Run], since: dt.datetime) -> list[dict]:
 
 def overdue(periods: dict[str, float], now: dt.datetime) -> list[dict]:
     """Timers whose last trigger is older than their period + 1 day (laptop off, timer broken, etc.)."""
+    if not periods:
+        return []
     timers = [unit.removesuffix(".service") + ".timer" for unit in periods]
     args = ["systemctl", "--user", "show", "-p", "Id,LastTriggerUSec", *timers]
     blocks = subprocess.run(args, capture_output=True, text=True, check=True).stdout.strip().split("\n\n")
@@ -290,6 +305,27 @@ def overdue(periods: dict[str, float], now: dt.datetime) -> list[dict]:
     return rows
 
 
+def write_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as temp:
+        temp.write(content)
+    os.replace(temp.name, path)
+
+
+def text_lines(rows: list[dict], width: int, use_color: bool):
+    svc_w = max((len(r["service"]) for r in rows), default=0)
+    job_w = max((len(r["job"]) for r in rows), default=0)
+    for row in rows:
+        head = f"{EMOJI[row['level']]} {fmt_time(row['_end']):<33} {row['service']:<{svc_w}}  {row['job']:<{job_w}}"
+        tail = row["message"]
+        if row["failed"] and row["runs"] > 1:
+            tail = f"[{row['failed']}/{row['runs']} not ok] {tail}".rstrip()
+        tail = tail[: max(width - len(head) - 4, 20)] if len(head) + 3 + len(tail) > width else tail
+        if use_color and tail:
+            tail = f"{COLOR[row['level']]}{tail}\x1b[0m"
+        yield f"{head}  {tail}".rstrip()
+
+
 @app.command(help=__doc__)
 def main(
     days: float = typer.Option(1, "--days", "-d", help="Show runs that ended in the last N days."),
@@ -301,46 +337,46 @@ def main(
     until: str = typer.Option("", "--until", help="Report as of this ISO time (default: now)."),
     fmt: str = typer.Option("text", "--format", help="text | jsonl"),
     color: str = typer.Option("auto", "--color", help="auto | always | never"),
+    refresh_prompt: bool = typer.Option(False, "--refresh-prompt", hidden=True),
 ):
     now = (dt.datetime.fromisoformat(until) if until else dt.datetime.now()).astimezone()
     since = now - dt.timedelta(days=days)
     lookback = int(days) + persistent + 1
     units, periods = discover()
+    if refresh_prompt:
+        new, ok = True, False
+        periods.pop("servicestatus.service", None)  # A manual start may precede the first timer tick.
     start = now - dt.timedelta(days=lookback)
     runs = journal_runs(units, start, now)
     rows = every_run(runs, since) if show_all else summarize(runs, since, persistent)
     rows += [] if until else overdue(periods, now)
     rows = [r for r in rows if name.lower() in f"{r['service']} {r['job']}".lower()]
     hidden = [r for r in rows if r["persistent"]]
-    rows = [r for r in rows if r not in hidden]
+    rows = [r for r in rows if not r["persistent"]]
     if new:
         state = json.loads(STATE_FILE.read_text() or "{}") if STATE_FILE.exists() else {}
         current = {f"{r['service']}/{r['job']}": r["_sig"] for r in rows + hidden}
         rows = [r for r in rows if state.get(f"{r['service']}/{r['job']}") != r["_sig"]]
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps({**state, **current}, indent=1))
     rows = [r for r in rows if ok or r["level"] != "ok"]
     rows.sort(key=lambda r: (r["_end"] is None, r["_end"] or now))
 
-    if fmt == "jsonl":
+    if refresh_prompt:
+        if rows:
+            # Publish a separate batch so later refreshes preserve unread alerts.
+            report = STATE_FILE.parent / "alerts" / f"{time.time_ns()}-{os.getpid()}.txt"
+            write_atomic(report, "\n".join(text_lines(rows, 10_000, False)) + "\n")
+    elif fmt == "jsonl":
         for row in rows:
             print(json.dumps({k: v for k, v in row.items() if not k.startswith("_")}, ensure_ascii=False))
-        return
-    tty = sys.stdout.isatty()
-    use_color = color == "always" or (color == "auto" and tty)
-    width = shutil.get_terminal_size().columns if tty else 10_000
-    svc_w = max((len(r["service"]) for r in rows), default=0)
-    job_w = max((len(r["job"]) for r in rows), default=0)
-    for row in rows:
-        head = f"{EMOJI[row['level']]} {fmt_time(row['_end']):<33} {row['service']:<{svc_w}}  {row['job']:<{job_w}}"
-        tail = row["message"]
-        if row["failed"] and row["runs"] > 1:
-            tail = f"[{row['failed']}/{row['runs']} not ok] {tail}".rstrip()
-        tail = tail[: max(width - len(head) - 4, 20)] if len(head) + 3 + len(tail) > width else tail
-        if use_color and tail:
-            tail = f"{COLOR[row['level']]}{tail}\x1b[0m"
-        print(f"{head}  {tail}".rstrip(), flush=True)
-    if hidden and not new:
+    else:
+        tty = sys.stdout.isatty()
+        use_color = color == "always" or (color == "auto" and tty)
+        width = shutil.get_terminal_size().columns if tty else 10_000
+        for line in text_lines(rows, width, use_color):
+            print(line, flush=True)
+    if new:
+        write_atomic(STATE_FILE, json.dumps({**state, **current}, indent=1))
+    if hidden and not new and fmt != "jsonl":
         first = [dt.datetime.fromisoformat(r["since"]) for r in hidden]
         names = ", ".join(
             f"{r['job']} " + (f"since {f:%a %-d %b}" if f - start > dt.timedelta(days=1) else f"for {lookback}+ days")

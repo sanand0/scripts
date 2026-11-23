@@ -34,6 +34,8 @@ standalone services, and can run a health check.
   `ISO-8601 timestamp<TAB>path-or-filename<TAB>tool` (`vlc`).
 - `timer-failure-notify@.service`: records failure diagnostics for failed
   services.
+- `servicestatus.*`: checks service status hourly, including a catch-up check
+  after a missed hour. Fish displays unread alerts on the next prompt.
 - `sync-plutonium.*`: hourly, one-way rsync of the entire
   `~/Documents/` on Graphene to `C:\Documents\` on Plutonium, and
   `~/r2/` to `C:\r2\`.
@@ -270,6 +272,9 @@ they follow these log conventions (see `daily-activities` and `sync-plutonium.sh
 - Per run (optional): `END status=ok|failed|skipped` and `SKIP reason=<reason>`.
 - Print a specific error line (`ERROR ...`, `error: ...`, an exception) - it is
   what `servicestatus` shows. Network/DNS/metered failures are shown as 🟡.
+
+Check the next alert refresh with `systemctl --user list-timers servicestatus.timer`.
+Refresh alerts immediately with `systemctl --user start servicestatus.service`.
 
 Daily jobs should also be harmless to re-run. Prefer incremental updates,
 merge-by-ID writes, skip-existing archive checks, and metadata fields that mark a

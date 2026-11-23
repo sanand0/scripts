@@ -1,0 +1,8 @@
+[Unit]
+Description=Save new service warnings and failures for Fish
+OnFailure=timer-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/uv run --script %h/code/scripts/servicestatus --refresh-prompt
+TimeoutStartSec=1min

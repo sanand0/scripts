@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 loader = importlib.machinery.SourceFileLoader("servicestatus", str(Path(__file__).parents[1] / "servicestatus"))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 ss = sys.modules[loader.name] = importlib.util.module_from_spec(spec)
@@ -115,10 +117,19 @@ def test_lines_without_unit_metadata_are_reattached_by_syslog_identifier(monkeyp
                (t(9), {**sd, "MESSAGE": "sync.service: Main process exited, code=exited, status=30/n/a", "EXIT_STATUS": "30"}),
                (t(9), {**sd, "MESSAGE": "sync.service: Failed with result 'exit-code'."})]
     orphans = [(t(5), {"SYSLOG_IDENTIFIER": "sync.sh", "MESSAGE": "🔴 2026-11-16T12:20:05+08:00 DETAIL rsync error: timeout (code 30)"}),
+               (t(6), {"SYSLOG_IDENTIFIER": "sync.sh", "_SYSTEMD_USER_UNIT": "other.service", "MESSAGE": "ERROR unrelated"}),
                (t(99), {"SYSLOG_IDENTIFIER": "sync.sh", "MESSAGE": "ERROR from another run"})]
-    monkeypatch.setattr(ss, "journal", lambda args: iter(orphans if any(a.startswith("-t") for a in args) else by_unit))
+    queries = []
+
+    def journal(args):
+        queries.append(args)
+        return iter(sorted(by_unit + orphans, key=lambda record: record[0]))
+
+    monkeypatch.setattr(ss, "journal", journal)
     (run,) = ss.journal_runs({"sync.service": ("sync.sh", "sync.sh")}, T0, T0 + dt.timedelta(days=1))
     assert (run.level, run.message) == ("warn", "DETAIL rsync error: timeout (code 30)")
+    (query,) = queries
+    assert {"_SYSTEMD_USER_UNIT=sync.service", "USER_UNIT=sync.service", "SYSLOG_IDENTIFIER=sync.sh"} <= set(query)
 
 
 def test_all_lists_every_run_in_window():
@@ -126,6 +137,33 @@ def test_all_lists_every_run_in_window():
     assert [r["level"] for r in ss.every_run(runs, T0 + dt.timedelta(hours=1))] == ["warn", "ok"]
     (row,) = ss.summarize(runs, T0, persist_days=3)
     assert (row["level"], row["failed"], row["runs"]) == ("ok", 1, 3)  # a recovered failure is still counted
+
+
+def test_prompt_refresh_keeps_unread_alerts_and_skips_seen_or_ok(monkeypatch, tmp_path):
+    monkeypatch.setattr(ss, "STATE_FILE", tmp_path / "seen.json")
+    end = T0 + dt.timedelta(hours=1)
+    runs = [ss.Run("example", "backup", end, "warn", "disk almost full"),
+            ss.Run("example", "index", end, "ok")]
+    monkeypatch.setattr(ss, "journal_runs", lambda *args: runs)
+    runner = CliRunner()
+    args = ["--refresh-prompt", "--until", (end + dt.timedelta(seconds=1)).isoformat()]
+    reports = tmp_path / "alerts"
+
+    def refresh():
+        result = runner.invoke(ss.app, args)
+        assert result.exit_code == 0, result.output
+        assert not result.output
+        return sorted(reports.glob("*.txt"))
+
+    (first,) = refresh()
+    assert "disk almost full" in first.read_text()
+    assert "index" not in first.read_text()
+    assert refresh() == [first]
+
+    runs[0] = ss.Run("example", "backup", end, "fail", "disk full")
+    previous, second = refresh()
+    assert previous == first
+    assert "disk full" in second.read_text()
 
 
 def test_chatcli_backup_reports_only_actionable_diagnostics_in_job_status():

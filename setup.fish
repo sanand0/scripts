@@ -944,14 +944,18 @@ if not string match -q 'CYGWIN*' (uname -s)
     mcfly init fish | source
 end
 
-# Show new service failures/warnings (services/*.service) at most hourly, at the prompt.
-# Change `--no-ok` to `--ok` to also see 🟢 lines. Manual: `servicestatus --days 4`.
+# Show unread service alerts saved by servicestatus.timer. Manual: `servicestatus --days 4`.
 if status is-interactive; and not string match -q 'CYGWIN*' (uname -s)
     function __servicestatus_prompt --on-event fish_prompt
-        set -l seen ~/.cache/sanand-scripts/servicestatus/seen.json
-        test -e $seen; and test (math (date +%s) - (path mtime $seen)) -lt 3600; and return
-        mkdir -p (path dirname $seen); and touch $seen
-        servicestatus --new --no-ok
+        set -l cache ~/.cache/sanand-scripts/servicestatus
+        # Also pick up any unread report from the previous Fish-based refresh.
+        for report in $cache/pending $cache/alerts/*.txt
+            set -l claimed $report.$fish_pid
+            if test -s $report; and command mv -T -- $report $claimed 2>/dev/null
+                command cat -- $claimed
+                command rm -- $claimed
+            end
+        end
     end
 end
 
