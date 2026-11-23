@@ -29,6 +29,7 @@ from html import escape
 from pathlib import Path
 
 DESCRIPTION_MAX = 44
+FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
 
 @dataclass
@@ -38,6 +39,7 @@ class Entry:
     source: Path
     content: str
     search: str
+    picker_label: str | None = None  # Keep the CLI and usage log label stable.
 
     def record(self, include_content: bool = True) -> dict[str, str]:
         result = {"label": self.label, "kind": self.kind, "source": str(self.source)}
@@ -58,19 +60,19 @@ def front_matter(text: str) -> tuple[dict[str, str], str]:
     return metadata, match.group(2)
 
 
-def first_fence(text: str) -> str | None:
-    match = re.search(r"^```[^\n]*\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
-    return match[1].strip() if match else None
-
-
-def heading_fences(text: str) -> list[tuple[str, str]]:
-    """Return the first fenced block beneath every H2 that contains one."""
+def heading_fences(text: str) -> list[tuple[str, str, str]]:
+    """Return each H2 with its first fenced block and the prose before it."""
     headings = list(re.finditer(r"^##\s+(.+?)\s*$", text, re.MULTILINE))
     result = []
     for index, heading in enumerate(headings):
         end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
-        if content := first_fence(text[heading.end() : end]):
-            result.append((heading[1], content))
+        fence = FENCE.search(text, heading.end(), end)
+        if fence and (content := fence[1].strip()):
+            prose = re.sub(
+                r"<!--.*?-->", "", text[heading.end() : fence.start()], flags=re.DOTALL
+            )
+            preview = " ".join((prose.strip() or content).split())
+            result.append((heading[1], content, preview))
     return result
 
 
@@ -99,10 +101,16 @@ def prompt_entries(path: Path, allow_plain_body: bool = False) -> list[Entry]:
                 path,
                 content,
                 f"{path.stem} {title} {heading}",
+                picker_label=(
+                    f"{title} › {heading}: {label_description(preview)}"
+                    if path.stem == "fragments"
+                    else None
+                ),
             )
-            for heading, content in sections
+            for heading, content, preview in sections
         ]
-    content = first_fence(body)
+    fence = FENCE.search(body)
+    content = fence[1].strip() if fence else None
     if content is None and allow_plain_body:
         content = body.strip()
     return (
@@ -172,9 +180,10 @@ def choose(entries: list[Entry]) -> Entry | None:
         raise RuntimeError(
             "rofi is required for interactive selection; pass FILTER for terminal use"
         )
+    labels = [entry.picker_label or entry.label for entry in entries]
     result = subprocess.run(
         ["rofi", "-dmenu", "-i", "-p", "Prompt"],
-        input="\n".join(entry.label for entry in entries) + "\n",
+        input="\n".join(labels) + "\n",
         text=True,
         capture_output=True,
         check=False,
@@ -182,7 +191,7 @@ def choose(entries: list[Entry]) -> Entry | None:
     if result.returncode != 0 or not result.stdout.strip():
         return None
     choice = result.stdout.rstrip("\n")
-    return next((entry for entry in entries if entry.label == choice), None)
+    return next((entry for entry, label in zip(entries, labels) if label == choice), None)
 
 
 def copy_and_type(text: str) -> bool:

@@ -1,5 +1,21 @@
 # Prompt
 
+## Show fragment snippet, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+What's an EFFICIENT way to modify `rofi-picker` and/or `prompt` so that for fragments, Ctrl+Alt+P shows, instead of the overall fragment file description "Snippets I use ...", it shows:
+
+- The description between the heading and the Markdown block of the fragment, if present, else
+- The first few characters of the Markdown block
+
+Implement and test.
+
+<!-- codex resume 01a207a6-a1d4-7130-bf46-57931b8e75aa -->
+
 ## Add use subcommand, 28 Aug 2026
 
 <!--
