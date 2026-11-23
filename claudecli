@@ -1,0 +1,644 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["playwright>=1.52", "typer>=0.12"]
+# ///
+"""Send a prompt to Claude in your CDP browser or back up local Claude captures.
+
+Examples:
+  claudecli "Summarize this"
+  claudecli --file report.pdf --save ./answer.md "Analyze this"
+  cat prompt.md | claudecli --no-submit
+  claudecli backup --dry-run -v --format jsonl | jaq .
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from contextlib import contextmanager, nullcontext
+from datetime import UTC, datetime
+import fcntl
+import hashlib
+from html import escape
+import json
+import math
+import os
+from pathlib import Path
+import re
+import sys
+from tempfile import NamedTemporaryFile
+
+import typer
+
+from conversation_backup_cache import cache_version, cached_file, file_stamp, load_cache
+
+app = typer.Typer(add_completion=False, help=__doc__)
+backup_app = typer.Typer(add_completion=False)
+URL = "https://claude.ai"
+CDP_URL = "http://localhost:9222"
+RAW_DIR = Path.home() / "Documents/data/anand-chrome-tools/claude-raw"
+MARKDOWN_DIR = Path.home() / "Documents/claude"
+CACHE_DIR = Path.home() / ".cache/sanand-scripts/claudecli"
+UUID = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+LINK = rf"https://claude\.(?:ai|com)/(?:project/{UUID}/)?chat/({UUID})"
+ROOTS = {None, "", "00000000-0000-4000-8000-000000000000", "00000000-0000-0000-0000-000000000000"}
+HASH = r"[0-9a-f]{64}"
+MESSAGE_BODY = ("text", "attachments", "files", "files_v2")
+
+
+def checksum(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def stamp(ms: int | float) -> str:
+    return datetime.fromtimestamp(ms / 1000, UTC).isoformat().replace("+00:00", "Z")
+
+
+def version(value: str) -> float:
+    """Return milliseconds, rounding legacy minute-only export dates up."""
+    try:
+        date = datetime.fromisoformat(value)
+        if date.tzinfo:
+            return date.timestamp() * 1000
+        return 0
+    except ValueError:
+        try:
+            return (datetime.strptime(value, "%b %d, %Y, %I:%M %p").timestamp() + 60) * 1000
+        except ValueError:
+            return 0
+
+
+def read_object(data: bytes) -> dict:
+    value = json.loads(data)
+    if not isinstance(value, dict):
+        raise ValueError("Expected a JSON object")
+    return value
+
+
+def verify_info(info: dict, org: str, cid: str) -> None:
+    routes = {f"/local/claude-conversation-store/trees/{org}/{cid}",
+              f"/api/organizations/{org}/chat_conversations/{cid}"}
+    when = info.get("updateTime")
+    if (info.get("format") != 1 or info.get("organizationId") != org or info.get("id", cid) != cid
+            or info.get("path") not in routes or not re.fullmatch(HASH, info.get("hash") or "")
+            or info.get("coverage") not in {"branch", "tree", "partial"}
+            or (when is not None and (type(when) not in (int, float) or
+                                      not math.isfinite(when) or not 0 < when < 253402300800000))):
+        raise ValueError("Invalid capture metadata or organization/conversation identity")
+
+
+def active_branch(value: dict, hub: bool) -> list[dict]:
+    """Follow the explicit tip, or require one unambiguous leaf in a full cache."""
+    rows = value.get("messages" if hub else "chat_messages")
+    window = value.get("historyWindow") or {}
+    if not isinstance(rows, list) or not rows or (hub and window.get("mode") != "full"):
+        return []
+    by_id = {row["uuid"]: row for row in rows}
+    if len(by_id) != len(rows) or any(not re.fullmatch(UUID, key) for key in by_id):
+        return []
+    explicit_tip = value.get("current_leaf_message_uuid")
+    tip = explicit_tip
+    if not explicit_tip:
+        leaves = by_id.keys() - {row.get("parent_message_uuid") for row in rows}
+        if len(leaves) != 1:
+            return []
+        tip, = leaves
+    chain, seen = [], set()
+    while tip not in ROOTS:
+        if tip in seen or tip not in by_id:
+            return []
+        seen.add(tip)
+        row = by_id[tip]
+        blocks = row.get("content")
+        if (row.get("sender") not in {"human", "user", "assistant"} or row.get("truncated")
+                or (blocks is None and not any(row.get(k) for k in MESSAGE_BODY))
+                or (blocks is not None and not isinstance(blocks, list))
+                or any(b.get("stopped") is False for b in blocks or [])):
+            return []
+        chain.append(row)
+        tip = row.get("parent_message_uuid")
+    if (not chain or (not explicit_tip and len(chain) != len(rows))
+            or chain[-1].get("sender") == "assistant" or chain[0].get("sender") != "assistant"
+            or not any(chain[0].get(k) for k in ("content", *MESSAGE_BODY))
+            or chain[0].get("stop_reason") in
+            {"error", "abort", "aborted", "cancelled", "canceled", "interrupted"}):
+        return []
+    return list(reversed(chain))
+
+
+def snapshot(path: Path, info: dict, cid: str) -> tuple[dict, list[dict]]:
+    data = path.read_bytes()
+    if checksum(data) != info["hash"]:
+        raise ValueError("Snapshot hash does not match its capture metadata")
+    value = read_object(data)
+    hub = info["path"].startswith("/local/")
+    identity = value.get("conversationUuid" if hub else "uuid")
+    if identity != cid or (hub and value.get("kind") != "hub_transcript"):
+        raise ValueError("Native conversation identity does not match its capture metadata")
+    updated = value.get("updated_at")
+    if updated and abs(version(updated) - (info.get("updateTime") or 0)) >= 1:
+        raise ValueError("Native update time does not match its capture metadata")
+    if hub:
+        cache = info.get("cache") or {}
+        count = len(value.get("messages") or [])
+        if (cache.get("conversationUpdatedAt", info.get("updateTime")) != info.get("updateTime")
+                or cache.get("messageCount", count) != count or value.get("treeSize", count) < count):
+            raise ValueError("Native message count or update time does not match the cache")
+    if info["coverage"] == "partial" or value.get("is_temporary") or not info.get("updateTime"):
+        return value, []
+    return value, active_branch(value, hub)
+
+
+def details(label: str, body: str) -> str:
+    return f"<details>\n<summary>{escape(' '.join(label.split()))}</summary>\n\n{body}\n\n</details>"
+
+
+def fence(value: object, language: str = "") -> str:
+    text = value.rstrip("\n") if isinstance(value, str) else json.dumps(value, indent=2, ensure_ascii=False)
+    ticks = "`" * max(3, max((len(m[0]) + 1 for m in re.finditer(r"`+", text)), default=0))
+    return f"{ticks}{language}\n{text}\n{ticks}"
+
+
+def render_part(block: dict, result: dict | None = None) -> str:
+    kind = block.get("type")
+    text = block.get("text") or ""
+    if kind == "text":
+        links = dict.fromkeys((cite.get("details") or cite).get("url") or cite.get("url")
+                              for cite in block.get("citations") or [])
+        sources = [f"- <{url}>" for url in links if isinstance(url, str) and re.fullmatch(r"https?://[^\s<>]+", url)]
+        return "\n\n".join(filter(None, (text.rstrip("\n") if text.strip() else "", "\n".join(sources))))
+    if kind == "thinking":
+        summaries = [s["summary"] for s in block.get("summaries") or [] if s.get("summary")]
+        body = block.get("thinking") or "\n\n".join(summaries[1:])
+        return details(summaries[0] if summaries else "Thinking", body) if body or summaries else ""
+    if kind in {"tool_use", "tool_result"}:
+        name = block.get("tool_display_name") or block.get("name") or "Unknown tool"
+        body = []
+        if kind == "tool_use":
+            request = block.get("input", block.get("message"))
+            if name == "artifacts" and isinstance(request, dict) and isinstance(request.get("content"), str):
+                metadata = {key: value for key, value in request.items() if key != "content"}
+                language = re.sub(r"[^\w+-]", "", str(request.get("language") or ""))
+                body.extend(("Request", fence(metadata, "json"), fence(request["content"], language)))
+            elif request is not None:
+                body.extend(("Request", fence(request, "json" if isinstance(request, (dict, list)) else "")))
+        response = block if kind == "tool_result" else result
+        if response:
+            items = response.get("content") or []
+            # Keep reference metadata for tools that return sources, files or images.
+            items = [item.get("text", "") if isinstance(item, dict) and item.get("type") == "text"
+                     else item for item in items] if isinstance(items, list) else [items]
+            if not items and (fallback := response.get("structured_content") or response.get("message")):
+                items = [fallback]
+            if items:
+                body.extend(("Response", "\n\n".join(fence(item, "json" if isinstance(item, (dict, list)) else "")
+                                                     for item in items)))
+        return details(f"Called tool: {name}", "\n\n".join(body))
+    if kind == "voice_note":
+        return f"Voice note: {block.get('title') or 'Transcript'}\n\n{text}"
+    if kind == "document":
+        return f"Document: {block.get('title') or block.get('file_uuid') or 'Untitled'}"
+    if kind == "token_budget":
+        return f"[Token budget: {block.get('remaining', 'unknown')}]"
+    return details(str(kind or "Other content"), fence(block, "json"))
+
+
+def turn(row: dict, *, legacy: bool = False) -> str:
+    blocks = row.get("content") or []
+    text = ([b["text"].rstrip("\n") for b in blocks if isinstance(b.get("text"), str) and b["text"].strip()]
+            if legacy else [])
+    has_text = any(isinstance(b.get("text"), str) and b["text"].strip() for b in blocks
+                   if legacy or b.get("type") in {"text", "voice_note"})
+    if not has_text and isinstance(row.get("text"), str) and row["text"].strip():
+        text = [row["text"].rstrip("\n")]
+    if not legacy:
+        remaining = iter(blocks)
+        block = next(remaining, None)
+        while block is not None:
+            following = next(remaining, None)
+            paired = (block.get("type") == "tool_use" and following and following.get("type") == "tool_result"
+                      and (not block.get("id") or not following.get("tool_use_id")
+                           or block["id"] == following["tool_use_id"]))
+            text.append(render_part(block, following if paired else None))
+            block = next(remaining, None) if paired else following
+    files = {}
+    for key in ("attachments", "files", "files_v2", "sync_sources", "attachedFolders"):
+        for item in row.get(key) or []:
+            if isinstance(item, str) and not legacy:
+                files[item] = None
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("file_name") or item.get("name") or item.get("displayName")
+                       or item.get("file_uuid") or "Unnamed attachment")
+            files[name] = None
+            if not legacy and (content := item.get("extracted_content")):
+                text.append(details(f"Attachment: {name}", fence(content)))
+    if files:
+        text.append("Attachments: " + ", ".join(files))
+    if legacy:
+        tools = dict.fromkeys(str(b.get("tool_display_name") or b.get("name") or "Unknown tool")
+                              for b in blocks if b.get("type") == "tool_use")
+        if tools:
+            text.append("Tools: " + ", ".join(tools))
+    role = "Assistant" if row["sender"] == "assistant" else "User"
+    return f"## {role}\n\n" + ("\n\n".join(filter(None, text)) or "_No text in capture._")
+
+
+def read_markdown(path: Path) -> tuple[str, dict, str] | None:
+    with path.open("rb") as stream:
+        header = stream.read(8192).decode("utf-8-sig", errors="replace")
+    header = header.replace("\r\n", "\n")
+    if header.startswith("---\n"):
+        meta, separator, _ = header[4:].partition("\n---\n")
+        if separator and (link := re.search(rf'^source: "?{LINK}"?\s*$', meta, re.M)):
+            fields = dict(re.findall(r"^(title|date): (.+)$", meta, re.M))
+            title = fields.get("title", path.stem)
+            try:
+                title = json.loads(title) if title.startswith('"') else title
+            except ValueError:
+                title = path.stem
+            return link[1], {"Updated": fields.get("date", "").strip('"')}, title
+        return None
+    header = re.split(r"\r?\n(?=[^\r\n])(?!- )", header, maxsplit=1)[0]
+    if link := re.search(rf"^- Link: {LINK}\s*$", header, re.M):
+        fields = dict(re.findall(r"^- ([\w -]+): ([^\r\n]+)", header, re.M))
+        title = header.splitlines()[0].removeprefix("# ").strip()
+        return link[1], fields, title
+    return None
+
+
+def markdown_index(directory: Path, previous: dict, current: dict) -> dict:
+    index = defaultdict(list)
+    try:
+        with os.scandir(directory) as entries:
+            names = sorted(entry.name for entry in entries
+                           if entry.name.endswith(".md") and entry.is_file(follow_symlinks=False))
+    except (FileNotFoundError, NotADirectoryError):
+        return index
+    for name in names:
+        path = directory / name
+        if match := cached_file(path, previous, current, read_markdown):
+            cid, fields, title = match
+            index[cid].append((path, fields, title))
+    return index
+
+
+def atomic(path: Path, data: bytes, *, replace: bool = True) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with NamedTemporaryFile(dir=path.parent, prefix=".claudecli-", delete=False) as stream:
+        tmp = Path(stream.name)
+        try:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+            if replace:
+                tmp.replace(path)
+            else:
+                os.link(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+@contextmanager
+def lock_archive(output: Path):
+    # Lock the directory inode so competing commands and aliases share one lock.
+    fd = os.open(output, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(fd)
+
+
+def choose_snapshot(folder: Path, cid: str, current: bool, observations: list[dict], history: dict) -> tuple:
+    """Accept newer complete versions, keeping the accepted snapshot on source-time ties."""
+    eligible = defaultdict(dict)
+    for info in observations:
+        eligible[info.get("updateTime") or 0][info["hash"]] = info
+    latest = max(eligible, default=0)
+    accepted = None
+    warnings = []
+    if current:
+        try:
+            path = folder / f"{cid}.json"
+            info = read_object(path.with_suffix(".backup.json").read_bytes())
+            verify_info(info, folder.name, cid)
+            when = info.get("updateTime") or 0
+            latest = max(latest, when)
+            value, rows = snapshot(path, info, cid)
+            if rows:
+                accepted = (value, rows, info, "current")
+                eligible.setdefault(when, {})
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            warnings.append(str(exc))
+    for when in sorted(eligible, reverse=True):
+        if accepted and accepted[2]["updateTime"] == when:
+            return accepted, latest, warnings
+        choices = []
+        for hash, info in eligible[when].items():
+            if info["coverage"] == "partial":
+                continue
+            try:
+                path = folder / "versions" / cid / f"{hash}.json"
+                history[path.name] = file_stamp(path)
+                value, rows = snapshot(path, info, cid)
+                if rows:
+                    choices.append((value, rows, info, "history"))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                warnings.append(str(exc))
+        if len(choices) == 1:
+            return choices[0], latest, warnings
+        variants = {tuple((row["uuid"], turn(row, legacy=True)) for row in rows) for _, rows, _, _ in choices}
+        if len(variants) == 1:
+            return max(choices, key=lambda x: (bool(x[0].get("name")), x[2]["hash"])), latest, warnings
+    return None, latest, warnings
+
+
+def read_observation(path: Path) -> dict:
+    info = read_object(path.read_bytes())
+    cid = info["id"]
+    if not re.fullmatch(UUID, cid):
+        raise ValueError("Invalid observation conversation UUID")
+    verify_info(info, path.parent.parent.name, cid)
+    return info
+
+
+def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dry_run: bool) -> dict:
+    value, rows, info, source = selected
+    when = info["updateTime"]
+    path = matches[0][0] if matches else folder / f"{cid} [{org}].md"
+    name = value.get("name")
+    prompt = next((b["text"] for b in rows[0].get("content") or []
+                   if isinstance(b.get("text"), str) and b["text"].strip()), rows[0].get("text") or "")
+    title = (name.strip() if isinstance(name, str) else "") or (matches[0][2] if matches else "") or next(
+        iter(prompt.strip().splitlines()), "Untitled")[:100]
+    title = " ".join(title.split()) or "Untitled"
+    result = dict(title=title, source=source, file=path.name, messages=len(rows))
+    if len(matches) > 1 or (not matches and os.path.lexists(path)):
+        return dict(result, status="held", warning="Conflicting Markdown paths")
+    original = None
+    prefix = None
+    if matches:
+        metadata = matches[0][1]
+        previous = version(metadata.get("Updated", ""))
+        if not previous:
+            return dict(result, status="held", warning=f"Unknown update time in {path.name}")
+        if previous >= when - 0.001:
+            if (previous > when + 0.001 or metadata.get("Capture SHA-256") != info["hash"]
+                    or metadata.get("Renderer")):
+                return dict(result, status="up-to-date")
+            # Only refresh a body that still exactly matches the original renderer.
+            original = path.read_bytes()
+            header, sep, body = original.partition(b"\n\n## ")
+            legacy = ("\n\n".join(turn(row, legacy=True) for row in rows) + "\n").encode()
+            if not sep or b"## " + body != legacy:
+                return dict(result, status="up-to-date")
+            prefix = header
+    content = ("\n\n".join(map(turn, rows)) + "\n").encode()
+    if prefix is None:
+        created = value.get("created_at") or rows[0].get("created_at")
+        lines = [f"# {title}", "", f"- Link: {URL}/chat/{cid}", f"- Organization: {org}",
+                 f"- Updated: {stamp(when)}", f"- Capture SHA-256: {info['hash']}"]
+        if isinstance(created, str) and "\n" not in created and "\r" not in created:
+            lines.append(f"- Created: {created}")
+        if matches and (account := matches[0][1].get("Account")):
+            lines.append(f"- Account: {account}")
+        prefix = "\n".join(lines).encode()
+    elif content == legacy:
+        return dict(result, status="up-to-date")
+    if not dry_run:
+        if matches:
+            old = original if original is not None else path.read_bytes()
+            revision = folder / ".revisions" / org / cid / f"{checksum(old)}.md"
+            if not revision.is_file():
+                atomic(revision, old)
+            elif revision.read_bytes() != old:
+                raise ValueError(f"Corrupt Markdown revision: {revision}")
+        atomic(path, prefix + b"\n- Renderer: 2\n\n" + content)
+    status = ("would-update" if matches else "would-create") if dry_run else "done"
+    return dict(result, status=status)
+
+
+def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) -> int:
+    scope = checksum(json.dumps([str(raw), str(output)]).encode())
+    cache_path = CACHE_DIR / f"raw-{scope}.json"
+    revision = cache_version(Path(__file__))
+    previous = load_cache(cache_path, revision)
+    state = dict(version=revision, markdown={}, observations={}, chats={})
+    index = markdown_index(output, previous.get("markdown", {}), state["markdown"])
+    inputs = {}
+    scopes = defaultdict(set)
+    for folder in sorted(raw.iterdir()):
+        if not re.fullmatch(UUID, folder.name) or not folder.is_dir():
+            continue
+        current = {p.name.split(".", 1)[0] for p in folder.glob("*.json")
+                   if re.fullmatch(rf"{UUID}(?:\.backup)?\.json", p.name)}
+        observations = defaultdict(list)
+        observation_stamps = defaultdict(list)
+        cached = previous.get("observations", {}).get(folder.name, {})
+        observed = state["observations"][folder.name] = {}
+        for path in sorted((folder / "observations").glob("*.json")):
+            try:
+                info = cached_file(path, cached, observed, read_observation)
+                cid = info["id"]
+                observations[cid].append(info)
+                observation_stamps[cid].append([path.name, observed[path.name][0]])
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                typer.echo(f"warning[claudecli-backup]: {path.name}: {exc}", err=True)
+        for cid in sorted(current | observations.keys()):
+            inputs[folder, cid] = (cid in current, observations[cid], observation_stamps[cid])
+            scopes[cid].add(folder.name)
+    if not inputs:
+        raise ValueError(f"No Claude conversation snapshots in {raw}. Enable Claude backups in anand-chrome-tools.")
+    failures = 0
+    for (folder, cid), (current, observations, observation_stamps) in inputs.items():
+        org = folder.name
+        matches = [m for m in index[cid] if m[1].get("Organization") == org or
+                   (not m[1].get("Organization") and len(scopes[cid]) == 1)]
+        capture = folder / f"{cid}.json"
+        target = output / f"{cid} [{org}].md"
+        key = [
+            [file_stamp(capture), file_stamp(capture.with_suffix(".backup.json"))] if current else None,
+            observation_stamps,
+            [[path.name, state["markdown"][path.name][0]] for path, _, _ in matches],
+            not matches and os.path.lexists(target),
+        ]
+        name = f"{org}/{cid}"
+        version_dir = folder / "versions" / cid
+        saved = previous.get("chats", {}).get(name)
+        if saved and key == saved[0] and all(file_stamp(version_dir / path) == stamp for path, stamp in saved[1].items()):
+            state["chats"][name] = saved
+            row, severity = saved[2:]
+        else:
+            history = {}
+            selected, latest, warnings = choose_snapshot(folder, cid, current, observations, history)
+            fresh = max((version(m[1].get("Updated", "")) for m in matches), default=0)
+            result = dict(title=matches[0][2] if matches else "", status="deferred")
+            if selected:
+                try:
+                    result.update(publish(output, org, cid, selected, matches, dry_run))
+                except (ValueError, TypeError, AttributeError, KeyError) as exc:
+                    result["status"] = "error"
+                    warnings.append(str(exc))
+                if latest > max(fresh, selected[2]["updateTime"]):
+                    if result["status"] == "up-to-date":
+                        result["status"] = "stale"
+                    result["reason"] = "Newer capture is incomplete or ambiguous."
+            elif warnings:
+                result["status"] = "error"
+            elif not fresh or latest > fresh:
+                result["reason"] = "No complete Claude reply captured."
+            reusable = not warnings and result["status"] in {"up-to-date", "stale", "deferred", "held"}
+            if result.get("warning"):
+                warnings.append(result["warning"])
+            severity = None
+            if result["status"] == "error":
+                failures += 1
+            if warnings:
+                severity = "error" if result["status"] == "error" else "warning"
+                result[severity] = " ".join(" ".join(dict.fromkeys(warnings)).splitlines())
+            row = dict(organizationId=org, conversationId=cid, updated=stamp(latest) if latest else None, **result)
+            if reusable:
+                state["chats"][name] = [key, history, row, severity]
+        if severity:
+            typer.echo(f"{severity}[claudecli-backup]: {cid} {row[severity]}", err=True)
+        preview = row["status"].startswith("would-")
+        if not (severity or verbose or preview):
+            continue
+        if verbose:
+            icon, label = "🟢", row["status"] if preview else "done"
+            if severity:
+                icon, label = "🔴", "check"
+            elif row["status"] in {"deferred", "stale"}:
+                icon, label = "🟡", "part" if row["status"] == "deferred" else "stale"
+            row = dict(row, label=label, title=" ".join(row["title"].split()))
+        if format == "jsonl":
+            typer.echo(json.dumps(row, ensure_ascii=False))
+        elif verbose:
+            width = len("would-update" if dry_run else "missing")
+            typer.echo(f"{icon} {label:<{width}}\t{cid}\t{row['updated'] or '—'}\t{row['title']}")
+        elif not severity:
+            typer.echo(f"{cid}\t{row['status']}\t{row['title']}")
+    if not dry_run and state != previous:
+        try:
+            atomic(cache_path, json.dumps(state, separators=(",", ":")).encode())
+        except OSError:
+            pass  # A disposable cache must not block publication.
+    return failures
+
+
+@backup_app.command()
+def backup(
+    raw_dir: Path = typer.Option(RAW_DIR, help="Local anand-chrome-tools claude-raw directory."),
+    markdown_dir: Path = typer.Option(MARKDOWN_DIR, help="Markdown archive directory."),
+    dry_run: bool = typer.Option(False, help="Preview changes without writing files."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Report every conversation status."),
+    format: str = typer.Option("text", help="Output format: text (TSV) or jsonl."),
+) -> None:
+    """Back up complete Claude replies from passively saved conversation snapshots.
+
+    Examples:
+      claudecli backup --dry-run -v
+      claudecli backup -v --format jsonl | jaq .
+      claudecli backup --markdown-dir /tmp/claude-preview
+    """
+    if format not in {"text", "jsonl"}:
+        raise typer.BadParameter("--format must be text or jsonl")
+    raw, output = raw_dir.expanduser().resolve(), markdown_dir.expanduser().resolve()
+    try:
+        if not raw.is_dir() or output.is_relative_to(raw) or raw.is_relative_to(output):
+            raise ValueError("Choose an existing raw directory and a separate Markdown directory")
+        if not dry_run:
+            output.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with nullcontext() if dry_run else lock_archive(output):
+            failed = archive(raw, output, dry_run, verbose, format)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"error[claudecli-backup]: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if failed:
+        raise typer.Exit(1)
+
+
+def browser_prompt(prompt: str, files: list[str], cdp_url: str, submit: bool, save: Path | None) -> dict:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(cdp_url, timeout=15000)
+        page = browser.contexts[0].new_page()
+        session = page.context.new_cdp_session(page)
+        cdp_id = session.send("Target.getTargetInfo")["targetInfo"]["targetId"]
+        session.detach()
+        typer.echo(f"claudecli: cdp_id={cdp_id}", err=True)
+        page.goto(f"{URL}/new", wait_until="domcontentloaded", timeout=60000)
+        composer = page.get_by_role("textbox", name="Write your prompt to Claude").or_(page.get_by_test_id("chat-input")).filter(visible=True)
+        composer.fill(prompt)
+        if files:
+            page.locator("input[data-testid='file-upload'], input[type=file][aria-label='Upload files']").set_input_files(files)
+        if submit:
+            page.get_by_test_id("chat-input-send").or_(page.get_by_role("button", name="Send message", exact=True)).filter(visible=True).click()
+        if save:
+            page.wait_for_url(re.compile(LINK), timeout=60000)
+            answer = page.get_by_test_id("assistant-message").and_(page.locator("[data-is-streaming='false']")).last
+            copy = answer.get_by_role("button", name="Copy", exact=True)
+            # Capture the page's Markdown without changing the user's system clipboard.
+            page.evaluate("""() => {
+                navigator.clipboard.writeText = async text => { window.claudecliCopy = text; };
+            }""")
+            copy.click(timeout=300000)
+            response = page.wait_for_function("window.claudecliCopy || false", timeout=5000).json_value()
+            transcript = f"- Link: {page.url}\n\n## User\n\n{prompt}\n\n## Assistant\n\n{response.rstrip()}\n"
+            atomic(save, transcript.encode(), replace=False)
+        return dict(url=page.url, cdp_id=cdp_id, submitted=submit, save=str(save) if save else None)
+
+
+@app.command(help=__doc__)
+def prompt_command(
+    words: list[str] = typer.Argument(None, help="Prompt words. Reads stdin when omitted."),
+    file: list[Path] = typer.Option(None, "--file", help="Attach a local file. Repeatable."),
+    no_submit: bool = typer.Option(False, "--no-submit", help="Fill the composer and leave the tab open."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the request without opening a browser."),
+    save: Path | None = typer.Option(None, help="Save the completed response to a file or existing directory."),
+    cdp_url: str = typer.Option(CDP_URL, envvar="CLAUDECLI_CDP_URL", help="Chrome DevTools Protocol endpoint."),
+    format: str = typer.Option("text", help="Output format: text or json."),
+    describe: bool = typer.Option(False, "--describe", help="Print the CLI schema as JSON."),
+) -> None:
+    if describe:
+        typer.echo(json.dumps(dict(name="claudecli", default_cdp_url=CDP_URL,
+            prompt=dict(input=["arguments", "stdin"], flags=["--file", "--no-submit", "--dry-run", "--save", "--cdp-url", "--format"], formats=["text", "json"]),
+            backup=dict(flags=["--raw-dir", "--markdown-dir", "--dry-run", "--verbose", "--format"], formats=["text", "jsonl"]))))
+        return
+    if format not in {"text", "json"}:
+        raise typer.BadParameter("--format must be text or json")
+    if save and no_submit:
+        raise typer.BadParameter("--save requires submission")
+    prompt = (" ".join(words) if words else "" if sys.stdin.isatty() else sys.stdin.read()).strip()
+    if not prompt:
+        raise typer.BadParameter("Supply a prompt as arguments or stdin. See claudecli --help.")
+    files = [p.expanduser().resolve() for p in file or []]
+    for path in files:
+        if not path.is_file():
+            raise typer.BadParameter(f"File not found: {path}")
+    if save:
+        save = save.expanduser()
+        if save.is_dir():
+            save /= f"claude-{datetime.now():%Y-%m-%d-%H-%M-%S}.md"
+        if os.path.lexists(save):
+            raise typer.BadParameter(f"Save target already exists: {save}")
+    if dry_run:
+        typer.echo(json.dumps(dict(prompt=prompt, files=list(map(str, files)), cdp_url=cdp_url,
+                                   submit=False, save=str(save) if save else None), ensure_ascii=False))
+        return
+    from playwright.sync_api import Error as BrowserError
+
+    try:
+        result = browser_prompt(prompt, list(map(str, files)), cdp_url, not no_submit, save)
+    except (BrowserError, OSError) as exc:
+        typer.echo(f"claudecli: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(json.dumps(result) if format == "json" else result["save"] or result["url"])
+
+
+if __name__ == "__main__":
+    if sys.argv[1:2] == ["backup"]:
+        backup_app(args=sys.argv[2:], prog_name="claudecli backup")
+    else:
+        app()

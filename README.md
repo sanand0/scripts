@@ -87,9 +87,11 @@ Here are the setup details for my laptops.
 - [chars](chars) lists non-ASCII characters in files.
 - [chatcli](chatcli) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatcli --inspect --format json | jaq .` before relying on current UI labels; examples: `chatcli --save "Draft this"`, `chatcli --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatcli --connector "Google Drive" --format json`.
   - `chatcli backup --verbose` updates `~/Documents/chatgpt/*.md` from `~/Documents/data/anand-chrome-tools/chatgpt-raw/`. It runs in `daily-activities`.
+- [claudecli](claudecli) sends prompts and optional files through the signed-in Claude browser at CDP port 9222. Use `--no-submit` to leave a draft or `--save TARGET` to save the reply as Markdown.
+  - `claudecli backup --verbose` updates `~/Documents/claude/*.md` from `~/Documents/data/anand-chrome-tools/claude-raw/`. It runs in `daily-activities`.
 - [chatgpt-export](chatgpt-export) exports ChatGPT data dumps avoiding the 3-minute OpenAI server timeout via HTTP ranges in an authenticated Edge tab. Copy the export link from email, then run: `chatgpt-export`. <!-- https://chatgpt.com/c/6aed288f-c17c-83e8-91de-bc294d1654f9 -->
 - [clean_markdown.py](clean_markdown.py) normalizes Markdown list spacing (removes extra blank lines inside lists while preserving paragraph breaks). Supports file, clipboard (`--xclip`), and self-tests (`--test`).
-- [daily-activities](daily-activities) runs daily file refresh and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google backups, WhatsApp and ChatGPT backups, summarizers, and unmetered-only rsync/rclone jobs. The `daily-activities` systemd timer runs it daily.
+- [daily-activities](daily-activities) runs daily file refresh and backup jobs under a lock, including `activities.py`, open tab snapshots in `~/Documents/data/open-tabs/`, Google, WhatsApp, ChatGPT, and Claude backups, summarizers, and unmetered-only rsync/rclone jobs. The `daily-activities` systemd timer runs it daily.
   - `daily-activities --refresh-file-index` updates `~/.cache/sanand-scripts/files*txt` for `rofi-files.sh`.
 - [dev.sh](dev.sh) runs a development container for safer experimentation.
   - [dev.dockerfile](dev.dockerfile) contains the image spec.
@@ -171,7 +173,7 @@ Here are the setup details for my laptops.
 
 Current services are:
 
-- `daily-activities.*`: Refresh Rofi file indexes and run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp and ChatGPT backups, and unmetered-only personal backup/sync jobs
+- `daily-activities.*`: Refresh Rofi file indexes and run daily activity reports, open tab snapshots, metadata summarizers, WhatsApp, ChatGPT, and Claude backups, and unmetered-only personal backup/sync jobs
 - `trending-repo-weekly.*`: Update trending GitHub repos
 - `vlc-history.service`: Log VLC playback paths with timestamps to `~/Music/music-history.tsv`
 

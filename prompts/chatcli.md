@@ -1,5 +1,28 @@
 # chatcli
 
+## Optimize chatcli backup, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+`chatcli backup` is WAY too slow, from two perspectives. One, it re-processes every file. Let's process only what needs to be processed. Second, the processing is slow. What's the FASTEST way to process these files for the same functional output? I'm OK with minor changes.
+
+---
+
+Apply equivalent optimizations applicable to `claudecli backup` too.
+
+---
+
+This approach adds `conversation_backup_cache.py` in addition to `chatgpt_streams.py`. If possible and only if it's a good idea and has clear benefits, merge these into a single file.
+
+---
+
+Incorporate `claudecli backup` into `daily-activities` too.
+
+<!-- codex resume 01a208cd-2a37-76f0-be0e-b2281feaf552 -->
+
 ## Improve backup logging, 19 Nov 2026
 
 <!--

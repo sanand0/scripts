@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 import datetime as dt
 import fcntl
 import hashlib
@@ -40,6 +40,7 @@ import math
 import os
 from pathlib import Path
 import re
+from select import select as wait_readable
 import subprocess
 import sys
 import time
@@ -52,7 +53,9 @@ import typer
 import websockets
 
 from archive.backupwhatsapp import CDPPage, cdp_http_base
+import chatgpt_streams
 from chatgpt_streams import ROOT, captured_turns, replay_branch
+from conversation_backup_cache import cache_version, cached_file, file_stamp, load_cache
 import sanand_observability as obs
 
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -385,28 +388,39 @@ def unfinished_snapshot(messages: list[dict], tip: str | None) -> str | None:
     return None
 
 
-def snapshot_observations(raw_dir: Path) -> dict:
+def read_observation(path: Path) -> dict | None:
+    try:
+        obs = json.loads(path.read_bytes())
+        if (obs["format"] == 1 and re.fullmatch(UUID_PATTERN, obs["id"]) and
+            re.fullmatch(r"[0-9a-f]{64}", obs["hash"]) and type(obs["tabId"]) is int and
+            type(obs["startedAt"]) is int and type(obs["finishedAt"]) is int and
+            0 < obs["startedAt"] <= obs["finishedAt"] and isinstance(obs["query"], dict) and
+            isinstance(obs["path"], str) and isinstance(obs["queryKeys"], list) and
+            all(isinstance(key, str) for key in obs["queryKeys"])):
+            return obs
+    except (ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def snapshot_observations(raw_dir: Path, previous: dict, current: dict) -> tuple[dict, dict]:
     observations = defaultdict(list)
+    stamps = defaultdict(list)
     for path in (raw_dir / "observations").glob("*.json"):
         try:
-            obs = json.loads(path.read_bytes())
-            if (obs["format"] == 1 and re.fullmatch(UUID_PATTERN, obs["id"]) and
-                re.fullmatch(r"[0-9a-f]{64}", obs["hash"]) and type(obs["tabId"]) is int and
-                type(obs["startedAt"]) is int and type(obs["finishedAt"]) is int and
-                0 < obs["startedAt"] <= obs["finishedAt"] and isinstance(obs["query"], dict) and
-                isinstance(obs["path"], str) and isinstance(obs["queryKeys"], list) and
-                all(isinstance(key, str) for key in obs["queryKeys"])):
-                observations[obs["id"]].append(obs)
-        except (OSError, ValueError, KeyError, TypeError):
+            obs = cached_file(path, previous, current, read_observation)
+        except OSError:
             continue
-    return observations
+        if obs is not None:
+            observations[obs["id"]].append(obs)
+            stamps[obs["id"]].append([path.name, current[path.name][0]])
+    return observations, stamps
 
 
-def cursor_window(raw_dir: Path, cid: str, obs: dict, *, older: bool) -> dict | None:
-    path = raw_dir / "versions" / cid / f"{obs['hash']}.json"
+def cursor_window(path: Path, cid: str, *, older: bool) -> dict | None:
     try:
         data = path.read_bytes()
-        if hashlib.sha256(data).hexdigest() != obs["hash"]:
+        if hashlib.sha256(data).hexdigest() != path.stem:
             return None
         value = json.loads(data)
         page, messages = value["page_info"], value["messages"]
@@ -422,7 +436,8 @@ def cursor_window(raw_dir: Path, cid: str, obs: dict, *, older: bool) -> dict | 
     return None
 
 
-def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], previous: dict, source_time: float, update: float) -> tuple[dict | None, str | None]:
+def recover_cursor_pages(version_dir: Path, cid: str, observations: list[dict], previous: dict,
+                         source_time: float, update: float, dependencies: dict) -> tuple[dict | None, str | None]:
     """Reconstruct one observed active branch while preserving the native captures."""
     base_pattern = rf"/backend-api/conversations?/{cid}"
     bases = [obs for obs in observations if re.fullmatch(base_pattern, obs["path"])]
@@ -440,7 +455,18 @@ def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], prev
         return None, None
     if set(newest["queryKeys"]) != newest["query"].keys() or newest["query"].keys() - {"num_turns", "include_has_versions"}:
         return None, None
-    head = cursor_window(raw_dir, cid, newest, older=False)
+    windows_by_hash = {}
+
+    def load_window(obs, *, older):
+        fingerprint = obs["hash"]
+        key = fingerprint, older
+        if key not in windows_by_hash:
+            path = version_dir / f"{fingerprint}.json"
+            dependencies[path.name] = file_stamp(path)
+            windows_by_hash[key] = cursor_window(path, cid, older=older)
+        return windows_by_hash[key]
+
+    head = load_window(newest, older=False)
     if (not head or not head["page_info"]["has_previous_page"] or head.get("update_time") != newest["updateTime"] or
         head.get("current_node") != head["messages"][-1]["id"]):
         return None, None
@@ -450,7 +476,7 @@ def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], prev
         if (anchor["updateTime"] != newest["updateTime"] or set(anchor["queryKeys"]) != anchor["query"].keys() or
             anchor["query"].keys() - {"num_turns", "include_has_versions"}):
             continue
-        base = head if anchor["hash"] == newest["hash"] else cursor_window(raw_dir, cid, anchor, older=False)
+        base = load_window(anchor, older=False)
         # The same window may be served again with different advisory URL metadata.
         if not base or any(base.get(k) != head.get(k) for k in ("messages", "current_node", "page_info", "update_time")):
             continue
@@ -474,7 +500,7 @@ def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], prev
             if len({p["hash"] for p in options}) != 1:
                 break
             obs = min(options, key=lambda p: p["finishedAt"])
-            page = cursor_window(raw_dir, cid, obs, older=True)
+            page = load_window(obs, older=True)
             if (not page or page.get("current_node") not in (None, base["current_node"]) or
                 page.get("update_time") not in (None, base["update_time"])):
                 break
@@ -508,21 +534,60 @@ def recover_cursor_pages(raw_dir: Path, cid: str, observations: list[dict], prev
     return recovered, None if recovered else "No complete, consistent cursor chain in the saved pages"
 
 
-def render_snapshot(data: bytes, replay: bool) -> bytes:
-    render = subprocess.run(
-        ["node", "--input-type=module", "-e",
-         "import fs from 'node:fs'; const {renderSnapshot} = await import(process.argv[1]);"
-         "process.stdout.write(renderSnapshot(JSON.parse(fs.readFileSync(0, 'utf8'))));",
-         CONVERTER.as_uri()],
-        input=data, capture_output=True, timeout=30,
-    )
-    if render.returncode:
-        lines = render.stderr.decode(errors="replace").splitlines()
-        detail = next((line for line in lines if line.startswith(("Error:", "TypeError:", "SyntaxError:"))), "No renderer diagnostic")
-        raise ValueError(f"Markdown rendering failed: {detail}")
-    if replay:
-        return render.stdout.replace(b'\n---\n', b'\ncapture: "stream-replay"\n---\n', 1)
-    return render.stdout
+@contextmanager
+def snapshot_renderer(directory: Path):
+    """Start one converter on demand and give each render the same timeout as before."""
+    source, target = directory / "input.json", directory / "render.md"
+    process = None
+
+    def stop():
+        nonlocal process
+        if process is not None:
+            process.kill()
+            process.communicate()
+            process = None
+
+    def render(data: bytes, replay: bool) -> Path:
+        nonlocal process
+        source.write_bytes(data)
+        if process is None:
+            process = subprocess.Popen(
+                ["node", "--input-type=module", "-e", r"""
+import fs from 'node:fs';
+import readline from 'node:readline';
+for await (const mode of readline.createInterface({input: process.stdin})) {
+  try {
+    const {renderSnapshot} = await import(process.argv[1]);
+    let markdown = renderSnapshot(JSON.parse(fs.readFileSync('input.json', 'utf8')));
+    if (mode === 'replay') markdown = markdown.replace('\n---\n', '\ncapture: "stream-replay"\n---\n');
+    fs.writeFileSync('render.md', markdown);
+    process.stdout.write('1');
+  } catch (error) {
+    fs.writeFileSync('render.md', String(error).split('\n', 1)[0]);
+    process.stdout.write('0');
+  }
+}
+""", CONVERTER.as_uri()], cwd=directory, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, bufsize=0,
+            )
+        try:
+            process.stdin.write(b"replay\n" if replay else b"native\n")
+            if not wait_readable([process.stdout], [], [], 30)[0]:
+                raise subprocess.TimeoutExpired("ChatGPT Markdown renderer", 30)
+            result = process.stdout.read(1)
+            if result == b"0":
+                raise ValueError(f"Markdown rendering failed: {target.read_text()}")
+            if result != b"1":
+                raise OSError("Markdown renderer exited without a result")
+        except (OSError, subprocess.TimeoutExpired):
+            stop()
+            raise
+        return target
+
+    try:
+        yield render
+    finally:
+        stop()
 
 
 def preserves_transcript(path: Path, rendered: bytes) -> bool:
@@ -533,7 +598,8 @@ def preserves_transcript(path: Path, rendered: bytes) -> bool:
     return bool(original.startswith(b"---\n") and prefix and (body == prefix or body.startswith(prefix + b"\n\n# ")))
 
 
-def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: str, *, verbose: bool = False) -> int:
+def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: str, *,
+               verbose: bool = False, cache_path: Path | None = None) -> int:
     if not raw_dir.is_dir():
         raise ValueError(f"Raw capture directory is missing: {raw_dir}")
     if raw_dir.resolve() == markdown_dir.resolve():
@@ -554,16 +620,25 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
         title = entry.get("title") if isinstance(entry, dict) else None
         if isinstance(title, str) and title.strip():
             catalog_titles[cid] = title
-    index = markdown_index(markdown_dir)
+    version = cache_version(Path(__file__), Path(chatgpt_streams.__file__),
+                            CONVERTER, CONVERTER.with_name("scraper-format.js"))
+    previous = load_cache(cache_path, version)
+    current = dict(version=version, markdown={}, streams={}, observations={}, chats={})
+    index = {
+        path: cached_file(path, previous.get("markdown", {}), current["markdown"], markdown_owner)
+        for path in sorted(markdown_dir.glob("*.md"))
+    }
     owned = defaultdict(list)
     for path, owner in index.items():
         owned[owner].append(path)
     paths = {p.stem: p for p in raw_dir.glob("*.json") if re.fullmatch(UUID_PATTERN, p.stem)}
-    turns = captured_turns(raw_dir / "events")
-    observations = snapshot_observations(raw_dir)
+    turns = captured_turns(raw_dir / "events", previous.get("streams", {}), current["streams"])
+    observations, observation_stamps = snapshot_observations(
+        raw_dir, previous.get("observations", {}), current["observations"]
+    )
     label_width = len("would-update" if dry_run else "missing")
     failures = 0
-    with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp, snapshot_renderer(Path(tmp)) as render_snapshot:
         for cid in sorted(paths.keys() | catalog_times.keys() | turns.keys()):
             path = paths.get(cid)
             matches = owned[cid]
@@ -572,105 +647,128 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             title = catalog_title or (matches[0].stem if matches else "—")
             pending_label = "part"
             update = latest_update = catalog_times.get(cid, 0)
-            try:
-                versions = [markdown_version(p) for p in matches]
-                replay = False
-                ready = False
-                if path is None:
-                    status = "missing"
-                    value, messages, source_time, tip = {}, [], 0, ROOT
-                else:
-                    data, value, info = raw_snapshot(path)
-                    messages = raw_messages(value)
-                    tip = value.get("current_node")
-                    source_time = value.get("update_time")
-                    if type(source_time) in (int, float) and math.isfinite(source_time):
-                        latest_update = max(latest_update, source_time)
-                    snapshot_title = value.get("title")
-                    if isinstance(snapshot_title, str) and snapshot_title.strip() and (not catalog_title or latest_update > update):
-                        title = snapshot_title
-                    unfinished = unfinished_snapshot(messages, tip)
-                    if info.get("coverage") == "partial" or unfinished == "img":
-                        status = "deferred"
-                        pending_label = unfinished or "part"
-                    elif info.get("coverage") not in {"tree", "branch"} or type(source_time) not in (int, float) or not math.isfinite(source_time) or source_time <= 0 or source_time != info.get("updateTime"):
-                        raise ValueError("Snapshot has no verified coverage or server update time")
-                    else:
-                        status = "stale-capture" if source_time + 1 < update else ""
-                        ready = not status
-                    if (not unfinished and status in {"deferred", "stale-capture"} and cid in observations and
-                        type(source_time) in (int, float) and math.isfinite(source_time)):
-                        assembled, reason = recover_cursor_pages(raw_dir, cid, observations[cid], value, source_time, update)
-                        if assembled:
-                            value = assembled
-                            data = encoded(value).encode()
-                            source_time, tip = value["update_time"], value["current_node"]
-                            latest_update = max(latest_update, source_time)
-                            title = value.get("title") or title
-                            message["sourceType"] = "cursor-pages"
-                            status, ready = "", True
-                        elif reason:
-                            message["reason"] = reason
-                            if status == "deferred" and value.get("page_info", {}).get("has_previous_page") is True:
-                                pending_label = "pages"
-                if cid in turns and status != "deferred":
-                    if path is not None:
-                        messages = raw_messages(value, complete=True)
-                    recovered = replay_branch(turns[cid], messages, tip, source_time, update)
-                    if recovered:
-                        messages, stream_title, source_time = recovered
-                        title = catalog_title or stream_title or (title if title != "—" else cid)
-                        value = dict(conversation_id=cid, title=title, update_time=source_time, messages=messages,
-                                     current_node=messages[-1]["id"], page_info=dict(has_previous_page=False, has_next_page=False))
-                        data = encoded(value).encode()
-                        latest_update = max(latest_update, source_time)
-                        message.pop("reason", None)
-                        message["sourceType"] = "stream-replay"
-                        ready = replay = True
-                if status == "missing" and not replay and update and any(t is not None and t >= update - .001 for t, _ in versions):
+            known_turns = turns.get(cid, [])
+            versions_dir = raw_dir / "versions" / cid
+            key = [update, catalog_title, None if path is None else
+                   [file_stamp(path), file_stamp(path.with_suffix(".backup.json"))],
+                   [[p.name, current["markdown"][p.name][0]] for p in matches],
+                   [list(turn.signature) for turn in known_turns]]
+            saved_key, saved_pages, saved_result = previous.get("chats", {}).get(cid, (None, None, None))
+            if key == saved_key and (saved_pages is None or (
+                saved_pages[0] == observation_stamps.get(cid, []) and
+                all(file_stamp(versions_dir / name) == stamp for name, stamp in saved_pages[1].items())
+            )):
+                current["chats"][cid] = [key, saved_pages, saved_result]
+                if saved_result is None:
                     continue
-                if ready:
-                    if any(markdown_blocks(v, source_time, native=not replay) for v in versions):
-                        if replay:
-                            status = "up-to-date" if all(t is not None for t, _ in versions) else "replay-held"
-                            if status == "up-to-date" and not any(
-                                is_replay and abs(t - source_time) <= .001 for t, is_replay in versions
-                            ):
-                                replay = False
-                                del message["sourceType"]
-                        else:
-                            result = publish_markdown(path, cid, value.get("title") or "", markdown_dir, index, {},
-                                                      source_time=source_time, rename_only=True, dry_run=dry_run)
-                            if result["changed"]:
-                                status = "would-rename" if dry_run else "renamed"
-                                message["file"] = result["file"]
-                            else:
-                                status = "up-to-date" if all(t is not None for t, _ in versions) else "unknown-markdown-version"
-                                if status == "unknown-markdown-version":
-                                    files = ", ".join(p.name for p, (t, _) in zip(matches, versions) if t is None)
-                                    message["warning"] = f"Check the update date in {files} before replacing the Markdown."
+                message, replay, latest_update, title, pending_label = saved_result
+                status = message["status"]
+            else:
+                replay = False
+                page_dependencies = None
+                try:
+                    versions = [markdown_version(p) for p in matches]
+                    ready = False
+                    if path is None:
+                        status = "missing"
+                        value, messages, source_time, tip = {}, [], 0, ROOT
                     else:
-                        output = render_snapshot(data, replay)
-                        rendered = Path(tmp) / "render.md"
-                        rendered.write_bytes(output)
-                        if markdown_owner(rendered) != cid:
-                            raise ValueError("Rendered Markdown identity mismatch")
-                        if replay and not all(preserves_transcript(p, output) for p in matches):
-                            status = "replay-held"
-                            message["reason"] = "Existing Markdown does not match the recovered transcript prefix"
-                        elif dry_run:
-                            status = "would-update" if matches else "would-create"
+                        data, value, info = raw_snapshot(path)
+                        messages = raw_messages(value)
+                        tip = value.get("current_node")
+                        source_time = value.get("update_time")
+                        if type(source_time) in (int, float) and math.isfinite(source_time):
+                            latest_update = max(latest_update, source_time)
+                        snapshot_title = value.get("title")
+                        if isinstance(snapshot_title, str) and snapshot_title.strip() and (not catalog_title or latest_update > update):
+                            title = snapshot_title
+                        unfinished = unfinished_snapshot(messages, tip)
+                        if info.get("coverage") == "partial" or unfinished == "img":
+                            status = "deferred"
+                            pending_label = unfinished or "part"
+                        elif info.get("coverage") not in {"tree", "branch"} or type(source_time) not in (int, float) or not math.isfinite(source_time) or source_time <= 0 or source_time != info.get("updateTime"):
+                            raise ValueError("Snapshot has no verified coverage or server update time")
                         else:
-                            result = publish_markdown(rendered, cid, value.get("title") or cid, markdown_dir, index, {},
-                                                      source_time=source_time, native=not replay)
-                            status = "up-to-date" if result.get("held") else "updated" if matches else "created"
-                            if result.get("file"):
-                                message["file"] = result["file"]
-            except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
-                failures += 1
-                status = "error"
-                message["error"] = str(exc)
-            message["status"] = status
+                            status = "stale-capture" if source_time + 1 < update else ""
+                            ready = not status
+                        if (not unfinished and status in {"deferred", "stale-capture"} and
+                            type(source_time) in (int, float) and math.isfinite(source_time)):
+                            page_dependencies = [observation_stamps.get(cid, []), {}]
+                            assembled, reason = recover_cursor_pages(
+                                versions_dir, cid, observations.get(cid, []), value, source_time, update, page_dependencies[1]
+                            )
+                            if assembled:
+                                value = assembled
+                                data = None
+                                source_time, tip = value["update_time"], value["current_node"]
+                                latest_update = max(latest_update, source_time)
+                                title = value.get("title") or title
+                                message["sourceType"] = "cursor-pages"
+                                status, ready = "", True
+                            elif reason:
+                                message["reason"] = reason
+                                if status == "deferred" and value.get("page_info", {}).get("has_previous_page") is True:
+                                    pending_label = "pages"
+                    if known_turns and status != "deferred":
+                        if path is not None:
+                            messages = raw_messages(value, complete=True)
+                        recovered = replay_branch(known_turns, messages, tip, source_time, update)
+                        if recovered:
+                            messages, stream_title, source_time = recovered
+                            title = catalog_title or stream_title or (title if title != "—" else cid)
+                            value = dict(conversation_id=cid, title=title, update_time=source_time, messages=messages,
+                                         current_node=messages[-1]["id"], page_info=dict(has_previous_page=False, has_next_page=False))
+                            data = None
+                            latest_update = max(latest_update, source_time)
+                            message.pop("reason", None)
+                            message["sourceType"] = "stream-replay"
+                            ready = replay = True
+                    if status == "missing" and not replay and update and any(t is not None and t >= update - .001 for t, _ in versions):
+                        current["chats"][cid] = [key, page_dependencies, None]
+                        continue
+                    if ready:
+                        if any(markdown_blocks(v, source_time, native=not replay) for v in versions):
+                            if replay:
+                                status = "up-to-date" if all(t is not None for t, _ in versions) else "replay-held"
+                                if status == "up-to-date" and not any(
+                                    is_replay and abs(t - source_time) <= .001 for t, is_replay in versions
+                                ):
+                                    replay = False
+                                    del message["sourceType"]
+                            else:
+                                result = publish_markdown(path, cid, value.get("title") or "", markdown_dir, index, {},
+                                                          source_time=source_time, rename_only=True, dry_run=dry_run)
+                                if result["changed"]:
+                                    status = "would-rename" if dry_run else "renamed"
+                                    message["file"] = result["file"]
+                                else:
+                                    status = "up-to-date" if all(t is not None for t, _ in versions) else "unknown-markdown-version"
+                                    if status == "unknown-markdown-version":
+                                        files = ", ".join(p.name for p, (t, _) in zip(matches, versions) if t is None)
+                                        message["warning"] = f"Check the update date in {files} before replacing the Markdown."
+                        else:
+                            rendered = render_snapshot(data if data is not None else encoded(value).encode(), replay)
+                            if markdown_owner(rendered) != cid:
+                                raise ValueError("Rendered Markdown identity mismatch")
+                            output = rendered.read_bytes() if replay and matches else b""
+                            if replay and not all(preserves_transcript(p, output) for p in matches):
+                                status = "replay-held"
+                                message["reason"] = "Existing Markdown does not match the recovered transcript prefix"
+                            elif dry_run:
+                                status = "would-update" if matches else "would-create"
+                            else:
+                                result = publish_markdown(rendered, cid, value.get("title") or cid, markdown_dir, index, {},
+                                                          source_time=source_time, native=not replay)
+                                status = "up-to-date" if result.get("held") else "updated" if matches else "created"
+                                if result.get("file"):
+                                    message["file"] = result["file"]
+                except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+                    failures += 1
+                    status = "error"
+                    message["error"] = str(exc)
+                message["status"] = status
+                if status in {"up-to-date", "unknown-markdown-version", "deferred", "missing", "stale-capture", "replay-held"}:
+                    current["chats"][cid] = [key, page_dependencies, [message, replay, latest_update, title, pending_label]]
             severity = "error" if "error" in message else "warning" if "warning" in message else None
             if severity:
                 detail = " ".join(message[severity].splitlines())
@@ -689,13 +787,18 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                     updated_at = dt.datetime.fromtimestamp(latest_update, dt.UTC).isoformat().replace("+00:00", "Z") if latest_update else None
                 except (OverflowError, OSError, ValueError):
                     updated_at = None
-                message.update(label=label, updatedAt=updated_at, title=" ".join(title.split()))
+                message = dict(message, label=label, updatedAt=updated_at, title=" ".join(title.split()))
             if output_format == "jsonl":
                 print(encoded(message), flush=True)
             elif verbose:
                 print(f"{icon} {label:<{label_width}}\t{cid}\t{updated_at or '—'}\t{message['title']}", flush=True)
             elif not severity:
                 print(f"{cid}\t{status}\t{message.get('file', '')}", flush=True)
+    if cache_path is not None and not dry_run and current != previous:
+        try:
+            atomic(cache_path, encoded(current) + "\n")
+        except OSError:
+            pass  # A disposable cache must not block publication.
     return failures
 
 
@@ -1356,14 +1459,17 @@ def backup_raw(
         raise typer.BadParameter("--format must be text or jsonl")
     os.umask(0o077)
     try:
+        raw_dir, markdown_dir = raw_dir.expanduser(), markdown_dir.expanduser()
+        lock_dir = Path.home() / ".cache/sanand-scripts/backupchatgpt"
+        scope = digest([str(raw_dir.resolve()), str(markdown_dir.resolve())])
+        cache_path = lock_dir / f"raw-{scope}.json"
         if dry_run:
-            failed = raw_backup(raw_dir.expanduser(), markdown_dir.expanduser(), True, format, verbose=verbose)
+            failed = raw_backup(raw_dir, markdown_dir, True, format, verbose=verbose, cache_path=cache_path)
         else:
-            lock_dir = Path.home() / ".cache/sanand-scripts/backupchatgpt"
             lock_dir.mkdir(parents=True, exist_ok=True)
             with (lock_dir / "run.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                failed = raw_backup(raw_dir.expanduser(), markdown_dir.expanduser(), False, format, verbose=verbose)
+                failed = raw_backup(raw_dir, markdown_dir, False, format, verbose=verbose, cache_path=cache_path)
     except (OSError, ValueError) as exc:
         print(f"error[chatcli-backup]: {exc}", file=sys.stderr)
         raise typer.Exit(1) from exc

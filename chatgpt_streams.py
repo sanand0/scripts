@@ -1,15 +1,21 @@
 """Recover complete, linked ChatGPT turns from the extension's saved SSE records."""
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
+import hashlib
 import json
 import math
 from pathlib import Path
 import re
 
+from conversation_backup_cache import file_stamp
+
 
 ROOT = "client-created-root"
 UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.I)
+StartRecord = tuple[dict, float, dict, str | None]
 
 
 @dataclass(frozen=True)
@@ -161,51 +167,113 @@ def has_visible_reply(message: dict) -> bool:
             and any(isinstance(part, dict) or isinstance(part, str) and part.strip() for part in parts))
 
 
-def captured_turns(events_dir: Path) -> dict[str, list[tuple[float, Turn | None]]]:
-    """Read generation captures once. Known incomplete captures block older replay."""
-    turns = defaultdict(list)
-    for start in events_dir.glob("*/00000.json"):
-        try:
-            record = json.loads(start.read_bytes())
-            if record["method"] != "POST" or record["path"] not in {"/backend-api/f/conversation", "/backend-api/conversation"}:
-                continue
-            started = record["startedAt"] / 1000
+def read_start(start: Path) -> StartRecord | None:
+    try:
+        record = json.loads(start.read_bytes())
+        if record["method"] == "POST" and record["path"] in {"/backend-api/f/conversation", "/backend-api/conversation"}:
             request = record.get("request") or {}
             known_id = request.get("conversation_id") or record.get("pageConversationId")
-        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            started = record["startedAt"] / 1000
+            if timestamp(started):
+                return record, started, request, known_id if isinstance(known_id, str) and UUID.fullmatch(known_id) else None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        pass
+    return None
+
+
+def read_capture(start_record: StartRecord, files: list[Path]) -> tuple[str | None, Turn | None]:
+    record, started, request, known_id = start_record
+    try:
+        fragments = [record, *(json.loads(p.read_bytes()) for p in files[1:])]
+        if (not all(r["index"] == i and all(r[k] == record[k] for k in ("captureId", "path", "method", "startedAt"))
+                    for i, r in enumerate(fragments))
+                or record["kind"] != "start" or fragments[-1]["kind"] != "end"
+                or not any(r["kind"] == "headers" and r["status"] == 200
+                           and "text/event-stream" in r["contentType"] for r in fragments)):
+            raise ValueError("Incomplete stream capture")
+        finished = fragments[-1]["finishedAt"] / 1000
+        if not (timestamp(started) and timestamp(finished) and started <= finished):
+            raise ValueError("Invalid capture times")
+        body = "".join(r["text"] for r in fragments if r["kind"] == "chunk")
+        return stream_turn(request, body, started, finished)
+    except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+        return known_id, None
+
+
+def reload_turn(start: Path, files: list[Path], cid: str, started: float) -> Turn | None:
+    record = read_start(start)
+    if record is not None and record[1] == started:
+        owner, turn = read_capture(record, files)
+        if owner == cid:
+            return turn
+    return None
+
+
+@dataclass(frozen=True)
+class CapturedTurn:
+    started: float
+    signature: tuple[str, str]
+    load: Callable[[], Turn | None]
+
+
+def captured_turns(events_dir: Path, previous: dict, current: dict) -> dict[str, list[CapturedTurn]]:
+    """Index by conversation without storing message bodies or replaying settled streams."""
+    turns = defaultdict(list)
+    for start in events_dir.glob("*/00000.json"):
+        name = start.parent.name
+        stamp = file_stamp(start)
+        old = previous.get(name)
+        same_start = old is not None and old[0] == stamp
+        try:
+            record = None if same_start else read_start(start)
+        except OSError:
+            continue
+        if not (old[1] if same_start else record):
+            current[name] = [stamp, None, None]
             continue
         try:
             files = sorted(p for p in start.parent.iterdir() if re.fullmatch(r"\d{5}\.json", p.name))
-            fragments = [record, *(json.loads(p.read_bytes()) for p in files[1:])]
-            if (not all(r["index"] == i and all(r[k] == record[k] for k in ("captureId", "path", "method", "startedAt"))
-                        for i, r in enumerate(fragments))
-                    or record["kind"] != "start" or fragments[-1]["kind"] != "end"
-                    or not any(r["kind"] == "headers" and r["status"] == 200
-                               and "text/event-stream" in r["contentType"] for r in fragments)):
-                raise ValueError("Incomplete stream capture")
-            finished = fragments[-1]["finishedAt"] / 1000
-            if not (timestamp(started) and timestamp(finished) and started <= finished):
-                raise ValueError("Invalid capture times")
-            body = "".join(r["text"] for r in fragments if r["kind"] == "chunk")
-            cid, turn = stream_turn(request, body, started, finished)
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
-            if isinstance(known_id, str) and UUID.fullmatch(known_id) and timestamp(started):
-                turns[known_id].append((started, None))
-        else:
-            turns[cid].append((started, turn))
+        except FileNotFoundError:
+            continue
+        signature = hashlib.sha256(repr([stamp, [(p.name, file_stamp(p)) for p in files[1:]]]).encode()).hexdigest()
+        if same_start and old[1] == signature:
+            current[name] = old
+            if old[2] is not None:
+                cid, started = old[2]
+                turns[cid].append(CapturedTurn(started, (name, signature), partial(reload_turn, start, files, cid, started)))
+            continue
+        try:
+            record = record or read_start(start)
+            if record is None:
+                continue
+            _, started, request, known_id = record
+            if known_id is not None and request.get("conversation_id") == known_id:
+                # A verified reply must use this ID. An incomplete capture blocks this same ID.
+                cid, load = known_id, partial(reload_turn, start, files, known_id, started)
+            else:
+                cid, turn = read_capture(record, files)
+                load = lambda turn=turn: turn
+        except OSError:
+            continue
+        current[name] = [stamp, signature, [cid, started] if cid is not None else None]
+        if cid is not None:
+            turns[cid].append(CapturedTurn(started, (name, signature), load))
     return turns
 
 
-def replay_branch(turns: list[tuple[float, Turn | None]], messages: list[dict], tip: str,
+def replay_branch(turns: list[CapturedTurn], messages: list[dict], tip: str,
                   snapshot_time: float, catalog_time: float) -> tuple[list[dict], str, float] | None:
     """Extend only the active tip. An unlinked or unfinished later turn blocks publication."""
     seen = {msg["id"] for msg in messages}
     added = []
     last = None
     title = ""
-    for started, turn in sorted(turns, key=lambda item: item[0]):
+    for capture in sorted(turns, key=lambda item: item.started):
         # Older captures, including the original stream for a saved snapshot, are superseded.
-        if started <= snapshot_time or (turn and turn.messages[-1]["id"] in seen):
+        if capture.started <= snapshot_time:
+            continue
+        turn = capture.load()
+        if turn and turn.messages[-1]["id"] in seen:
             continue
         if turn is None or turn.parent != tip or seen.intersection(msg["id"] for msg in turn.messages):
             return None

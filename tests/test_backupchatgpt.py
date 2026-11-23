@@ -1,6 +1,7 @@
 """Backup contracts; scraper semantics remain tested in tools/aiscrapers."""
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -1035,7 +1036,7 @@ def test_discovery_failure_is_reported_and_explicit_run_ignores_old_error(tmp_pa
     assert result['status'] == 'partial' and result['discovery_error'] is None
 
 
-def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
+def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys, monkeypatch):
     raw, output = tmp_path / "raw", tmp_path / "md"
     raw.mkdir()
     output.mkdir()
@@ -1079,8 +1080,10 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
     (output / "Same title.md").write_text(newer)
     (output / "Undated.md").write_text(f'---\nsource: "https://chatgpt.com/c/{unknown}"\n---\n\nKeep this.\n')
 
+    cache = tmp_path / "cache.json"
+
     def statuses(dry_run, *, verbose=True):
-        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=verbose) == 1
+        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=verbose, cache_path=cache) == 1
         out, err = capsys.readouterr()
         rows = {row["conversationId"]: row for row in map(json.loads, out.splitlines())}
         assert sorted(err.splitlines()) == [
@@ -1127,6 +1130,33 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys):
     assert {"🟢 done   ", "🟡 missing"} <= labels
     assert {len(label) for label in labels} == {len("🟡 missing")}
     assert rendered.stat().st_mtime_ns == stamp
+
+    checked = []
+    read_snapshot = b.raw_snapshot
+
+    def track_snapshot(path):
+        checked.append(path.stem)
+        return read_snapshot(path)
+
+    monkeypatch.setattr(b, "raw_snapshot", track_snapshot)
+    assert statuses(True)[released] == "up-to-date"
+    assert checked == [corrupt]  # Integrity errors still get retried.
+    unchanged = raw / f"{current}.json"
+    original_stat = unchanged.stat()
+    original_bytes = unchanged.read_bytes()
+    unchanged.write_bytes(original_bytes.replace(b"Recovered prompt", b"Corrupted prompt"))
+    os.utime(unchanged, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    assert unchanged.stat().st_size == original_stat.st_size
+    assert b.raw_backup(raw, output, True, "jsonl", verbose=True, cache_path=cache) == 2
+    rows = {row["conversationId"]: row for row in map(json.loads, capsys.readouterr().out.splitlines())}
+    assert rows[current]["status"] == "error"
+    unchanged.write_bytes(original_bytes)
+    assert statuses(False)[current] == "up-to-date"
+    rendered.unlink()
+    checked.clear()
+    assert statuses(True)[released] == "would-create"
+    assert sorted(checked) == sorted([released, corrupt])
+    assert not rendered.exists()
 
 
 def test_raw_backup_replays_linked_streams_and_preserves_conflicts(tmp_path, capsys):
@@ -1178,8 +1208,10 @@ def test_raw_backup_replays_linked_streams_and_preserves_conflicts(tmp_path, cap
                                         content=dict(content_type="text", parts=[f"Full reply {start}"]),
                                         metadata=dict(parent_id=user_id))
 
+    cache = tmp_path / "cache.json"
+
     def run(dry_run):
-        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=True) == 0
+        assert b.raw_backup(raw, output, dry_run, "jsonl", verbose=True, cache_path=cache) == 0
         return json.loads(capsys.readouterr().out)
 
     _, prompt, reply = stream("client-created-root", prompt_id, reply_id, 20)
@@ -1193,6 +1225,14 @@ def test_raw_backup_replays_linked_streams_and_preserves_conflicts(tmp_path, cap
 
     incomplete, _, _ = stream(reply_id, follow_id, answer_id, 30, terminal=False)
     assert run(False)["status"] == "missing"
+    assert path.read_text() == first
+    fragment = incomplete / "00003.json"
+    partial_fragment = json.loads(fragment.read_bytes())
+    complete_fragment = dict(partial_fragment, text=partial_fragment["text"] + (
+        f'data: {b.encoded(dict(type="message_stream_complete", conversation_id=cid))}\n\ndata: [DONE]\n\n'
+    ))
+    fragment.write_text(b.encoded(complete_fragment))
+    assert run(True)["status"] == "would-update"
     assert path.read_text() == first
     incomplete.rename(tmp_path / "incomplete")
     branch, _, _ = stream(prompt_id, follow_id, answer_id, 30)
@@ -1325,10 +1365,11 @@ def test_raw_backup_recovers_only_a_proven_page_chain(tmp_path, capsys, problem)
         observe(base, 25)
     if problem == "conflict":
         observe(window(["x"], True, True), 21, before="c")
-    _, oldest = observe(window(["a", "c"] if problem == "duplicate" else ["a"], False, True),
+    oldest_data, oldest = observe(window(["a", "c"] if problem == "duplicate" else ["a"], False, True),
                         30, before="x" if problem == "gap" else "b", tab=2 if problem == "other-tab" else 1)
+    oldest_path = versions / f"{oldest['hash']}.json"
     if problem == "bad-hash":
-        (versions / f"{oldest['hash']}.json").write_text("{}")
+        oldest_path.write_text("{}")
     # A later equivalent window can update advisory metadata without invalidating an earlier chain.
     if problem is None:
         observe(dict(base, safe_urls=["https://example.com"]), 40)
@@ -1344,6 +1385,16 @@ def test_raw_backup_recovers_only_a_proven_page_chain(tmp_path, capsys, problem)
         if problem == "held-branch":
             assert "preserved in version history" in row["reason"]
         assert not output.exists()
+        if problem in {"bad-hash", "gap"}:
+            cache = tmp_path / "cache.json"
+            assert b.raw_backup(raw, output, False, "jsonl", verbose=True, cache_path=cache) == 0
+            assert json.loads(capsys.readouterr().out) == row
+            if problem == "bad-hash":
+                oldest_path.write_text(oldest_data)
+            else:
+                observe(window(["a"], False, True), 35, before="b")
+            assert b.raw_backup(raw, output, True, "jsonl", verbose=True, cache_path=cache) == 0
+            assert json.loads(capsys.readouterr().out)["status"] == "would-create"
     else:
         assert row["status"] == "would-create"
         assert row["sourceType"] == "cursor-pages"

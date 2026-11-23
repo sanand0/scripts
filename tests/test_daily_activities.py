@@ -12,6 +12,7 @@ FUNCTIONS = WRAPPER[WRAPPER.index("log() {") : WRAPPER.index("refresh_file_index
 BACKUPS = {
     "wabackup": "run --script /home/sanand/code/scripts/wabackup",
     "chatcli-backup": "run --script /home/sanand/code/scripts/chatcli backup",
+    "claudecli-backup": "run --script /home/sanand/code/scripts/claudecli backup",
 }
 BACKUP_JOBS = {
     name: next(line for line in WRAPPER.splitlines() if line.strip().startswith(f'run_job "{name}" '))

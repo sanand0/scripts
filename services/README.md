@@ -23,7 +23,7 @@ standalone services, and can run a health check.
   - `/home/sanand/code/summary.py`.
   - `summarize.py blog`.
   - `summarize.py transcript`.
-  - `chatcli backup`, publishing local ChatGPT captures before the context rebuild.
+  - `chatcli backup` and `claudecli backup`, publishing local ChatGPT and Claude captures before the context rebuild.
   - `rsync` backup to `hetzner:/home/`, only on an unmetered connection.
   - `rclone bisync` for `~/r2/files`, `~/r2/private`, and `~/r2/redirect`,
     only on an unmetered connection.

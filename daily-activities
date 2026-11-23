@@ -255,6 +255,7 @@ else
   run_job "summarize-blog" "$UV" run /home/sanand/code/scripts/summarize.py blog --provider chatgpt || failures=$((failures + 1))
   run_job "summarize-transcript" "$UV" run /home/sanand/code/scripts/summarize.py transcript --provider chatgpt || failures=$((failures + 1))
   run_job "chatcli-backup" "$UV" run --script /home/sanand/code/scripts/chatcli backup || failures=$((failures + 1))
+  run_job "claudecli-backup" "$UV" run --script /home/sanand/code/scripts/claudecli backup || failures=$((failures + 1))
   run_job "context-rebuild" "$UV" run /home/sanand/code/scripts/context.py rebuild || failures=$((failures + 1))
   run_unmetered_job "rclone-files" "$RCLONE" bisync "$HOME/r2/files" r2:files "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
   run_unmetered_job "rclone-private" "$RCLONE" bisync "$HOME/r2/private" r2:private "${RCLONE_BISYNC_ARGS[@]}" || failures=$((failures + 1))
