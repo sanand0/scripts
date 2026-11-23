@@ -27,6 +27,7 @@ standalone services, and can run a health check.
   - `rsync` backup to `hetzner:/home/`, only on an unmetered connection.
   - `rclone bisync` for `~/r2/files`, `~/r2/private`, and `~/r2/redirect`,
     only on an unmetered connection.
+- `cli-proxy-api.service` runs the local model gateway via the mise shim.
 - `trending-repo-weekly.*`: updates trending GitHub repos on Sunday mornings.
 - `vlc-history.service`: follows VLC over MPRIS using `playerctl` and appends one
   row per played track to `~/Music/music-history.tsv` as
@@ -109,6 +110,47 @@ tail -f ~/Music/music-history.tsv
 
 Pausing and resuming a track does not add another row. Stopping VLC (or a track)
 resets the de-duplication state, so playing the same file again is logged again.
+
+## CLIProxyAPI
+
+The service uses the globally configured mise tool
+(`mise use -g github:router-for-me/CLIProxyAPI`) and reads
+`~/Dropbox/scripts/cli-proxy-api/config.yaml`. Keep the config private. The
+proxy listens on `127.0.0.1:8317`, and credentials are stored separately in
+`~/.cli-proxy-api/`. The unit starts with the user systemd session and skips
+startup if the config or shim is missing. It retries unexpected exits after
+10 seconds, including startup errors for which CLIProxyAPI exits successfully.
+
+```bash
+systemctl --user enable --now "$HOME/code/scripts/services/cli-proxy-api.service"
+systemctl --user status cli-proxy-api.service
+journalctl --user -u cli-proxy-api.service -f
+```
+
+To add a provider, run the shim interactively with the same config. For example:
+
+```bash
+"$HOME/.local/share/mise/shims/cli-proxy-api" \
+  --config "$HOME/Dropbox/scripts/cli-proxy-api/config.yaml" --codex-login
+```
+
+Log in via:
+
+```bash
+cli-proxy-api --antigravity-login --config ~/Dropbox/scripts/cli-proxy-api/config.yaml
+cli-proxy-api --codex-login       --config ~/Dropbox/scripts/cli-proxy-api/config.yaml
+cli-proxy-api --copilot-login     --config ~/Dropbox/scripts/cli-proxy-api/config.yaml
+# ... etc.
+```
+
+Use API key from `access.api-keys` and `http://127.0.0.1:8317/v1` as the OpenAI base URL.
+
+```bash
+curl http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $(secret CLI_PROXY_API_KEY)"
+```
+
+After a mise upgrade, run `systemctl --user restart cli-proxy-api.service` to reload.
+After editing the unit, run `systemctl --user daemon-reload` before restarting.
 
 ## Run manually
 

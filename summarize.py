@@ -29,6 +29,8 @@ Usage:
   uv run summarize.py --force transcript "2026-04-*.md"      # re-process all fields
   uv run summarize.py login chatgpt --paste                   # sign in from another device
   uv run summarize.py blog post.md --provider chatgpt         # use the saved ChatGPT plan
+  uv run summarize.py blog post.md --proxy                    # OpenAI via local CLIProxyAPI
+  uv run summarize.py transcript --provider gemini --proxy   # Gemini via local CLIProxyAPI
 """
 
 import base64
@@ -90,6 +92,8 @@ PRICING: dict[str, tuple[float, float]] = {
 DEFAULT_PRICING = (1.50,  7.50)
 LUNA_MODEL = "gpt-6-luna"
 DEFAULT_MODELS = {"gemini": "gemini-3.8-flash", "openai": LUNA_MODEL, "chatgpt": LUNA_MODEL}
+PROXY_URL = "http://localhost:8317"
+PROXY_MODELS = {"gemini": "gemini-3.5-flash-lite", "openai": LUNA_MODEL}
 
 CHATGPT_STATE = Path.home() / ".cache/sanand-scripts/summarize/chatgpt"
 CHATGPT_ISSUER = "https://auth.openai.com"
@@ -1140,7 +1144,7 @@ def call_ai(provider: str, client, model: str, content_set: ContentSet, text: st
 
 def process_file(
     path: Path, provider: str, client, model: str, dry_run: bool, force: bool, content_set: ContentSet,
-    selected_fields: set[str] | None = None,
+    selected_fields: set[str] | None = None, *, estimate_cost: bool = True,
 ) -> dict:
     result: dict = {
         "file": str(path),
@@ -1149,7 +1153,7 @@ def process_file(
         "added_fields": [],
         "skipped_reason": None,
         "tokens": {"prompt": 0, "output": 0},
-        "cost_usd": None if provider == "chatgpt" else 0.0,
+        "cost_usd": 0.0 if estimate_cost and provider != "chatgpt" else None,
         "proposals": [],
     }
 
@@ -1205,7 +1209,7 @@ def process_file(
                     updates[fdef.name] = fdef.to_yaml(val)
                     result["added_fields"].append(fdef.name)
             result["tokens"] = usage.as_dict()
-            if provider != "chatgpt":
+            if result["cost_usd"] is not None:
                 result["cost_usd"] = round(usage.cost(model), 6)
         except Exception as e:
             result["status"] = "error"
@@ -1228,10 +1232,11 @@ def process_file(
 def main(
     content_set_name: str             = typer.Argument(..., help=f"Content set: {', '.join(CONTENT_SET_MAP)}, or login chatgpt"),
     patterns:  list[str] | None    = typer.Argument(None, help="Glob patterns; relative resolved from ., absolute start with /"),
-    model:     str | None             = typer.Option(None, help="Model ID; defaults by provider"),
+    model:     str | None             = typer.Option(None, help="Model ID; defaults by provider and route"),
     provider:  str                    = typer.Option("openai", help="Provider: gemini|openai|chatgpt"),
+    proxy:     bool                   = typer.Option(False, "--proxy", help="Use CLIProxyAPI at localhost:8317 with CLI_PROXY_API_KEY"),
     workers:   int | None             = typer.Option(None, "--workers", help="Parallel API workers; defaults by content set"),
-    dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Show changes without writing"),
+    dry_run:   bool                   = typer.Option(False, "--dry-run",   help="Generate metadata without writing files"),
     force:     bool                   = typer.Option(False, "--force",    help="Re-process all fields via API"),
     fmt:       str                    = typer.Option("auto", "--format",   help="Output: text|json|auto"),
     verbose:   bool                   = typer.Option(False, "--verbose", "-v", help="Show skipped files"),
@@ -1242,6 +1247,8 @@ def main(
     accounts:  bool                   = typer.Option(False, "--accounts", help="Login: list saved ChatGPT accounts"),
 ) -> None:
     """Add AI-generated metadata to content files (transcripts, blog posts, etc.)."""
+    if proxy and (provider not in PROXY_MODELS or content_set_name == "login"):
+        raise typer.BadParameter("--proxy requires --provider openai or gemini for summarizing.")
     if content_set_name == "login":
         if patterns != ["chatgpt"]:
             raise typer.BadParameter(f"Use {CHATGPT_LOGIN}.")
@@ -1276,12 +1283,15 @@ def main(
     if provider not in DEFAULT_MODELS:
         console.print(f"[red]Unknown provider '{provider}'. Valid: {', '.join(DEFAULT_MODELS)}[/red]")
         raise typer.Exit(1)
-    model = model or DEFAULT_MODELS[provider]
+    model = model or (PROXY_MODELS if proxy else DEFAULT_MODELS)[provider]
+    cost_label = f"CLIProxyAPI ({model})" if proxy else ("ChatGPT plan" if provider == "chatgpt" else None)
 
     if provider != "chatgpt":
         env_path = Path.home() / "code/scripts/.env"
         load_dotenv(env_path)
         key_name = "GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
+        if proxy:
+            key_name = "CLI_PROXY_API_KEY"
         # A non-empty process value wins even if the runtime predefines the variable as empty.
         api_key = os.environ.get(key_name) or dotenv_values(env_path).get(key_name)
         if not api_key:
@@ -1298,7 +1308,10 @@ def main(
 
     if provider == "gemini":
         from google import genai
-        client = genai.Client(api_key=api_key)
+        options = {}
+        if proxy:
+            options = {"vertexai": False, "http_options": {"base_url": PROXY_URL, "api_version": "v1beta"}}
+        client = genai.Client(api_key=api_key, **options)
     else:
         from openai import OpenAI
         if provider == "chatgpt":
@@ -1309,6 +1322,8 @@ def main(
                 raise typer.Exit(1) from None
             client = OpenAI(api_key=lambda: chatgpt_access_token(session), base_url=CHATGPT_RESOURCE,
                             organization="", project="", max_retries=0)
+        elif proxy:
+            client = OpenAI(api_key=api_key, base_url=f"{PROXY_URL}/v1", organization="", project="")
         else:
             client = OpenAI(api_key=api_key)
 
@@ -1336,7 +1351,7 @@ def main(
                     tag = "[yellow]DRY-RUN[/yellow]" if dry_run else "[green]UPDATED[/green]"
                     added = result["added_fields"]
                     tok = result["tokens"]
-                    cost = "ChatGPT plan" if provider == "chatgpt" else f"${result['cost_usd']:.4f}"
+                    cost = cost_label or f"${result['cost_usd']:.4f}"
                     console.print(
                         f"{tag} {name} +{added} | "
                         f"[dim]{tok['prompt']}in/{tok['output']}out tok {cost}[/dim]"
@@ -1345,7 +1360,8 @@ def main(
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(
-                process_file, path, provider, client, model, dry_run, force, content_set, selected_fields
+                process_file, path, provider, client, model, dry_run, force, content_set, selected_fields,
+                estimate_cost=cost_label is None,
             ): path
             for path in files
         }
@@ -1357,7 +1373,7 @@ def main(
                 on_done({
                     "file": str(path), "name": path.name, "status": "error",
                     "added_fields": [], "skipped_reason": None,
-                    "tokens": {"prompt": 0, "output": 0}, "cost_usd": None if provider == "chatgpt" else 0.0,
+                    "tokens": {"prompt": 0, "output": 0}, "cost_usd": None if cost_label else 0.0,
                     "error": str(e),
                 })
 
@@ -1377,7 +1393,7 @@ def main(
             f"\n[bold]Done:[/bold] {n_updated} updated, {n_skipped} skipped, {n_errors} errors"
         )
         pricing = PRICING.get(model, DEFAULT_PRICING)
-        cost = "ChatGPT plan" if provider == "chatgpt" else (
+        cost = cost_label or (
             f"[bold]Cost:[/bold] ${total_usage.cost(model):.4f} "
             f"[dim](${pricing[0]}/1M in, ${pricing[1]}/1M out)[/dim]"
         )

@@ -181,6 +181,7 @@ mise use -g github:openclaw/wacli     # wacli - WhatsApp CLI client
 mise use -g github:pdfcpu/pdfcpu      # pdfcpu - PDF manipulation (split, merge, encrypt)
 mise use -g github:pnpm/pnpm          # pnpm - Fast, disk space efficient package manager (npm/yarn alternative)
 mise use -g github:qpdf/qpdf          # qpdf - PDF manipulation (split, merge, encrypt)
+mise use -g github:router-for-me/CLIProxyAPI  # cli-proxy-api - route API calls via coding agent logins.
 mise use -g github:rtk-ai/rtk         # rtk - CLI tool proxy that reduces token consumption
 mise use -g github:sinelaw/fresh      # fresh - Text editor
 mise use -g github:walles/moor        # moor - pager with syntax highlighting
@@ -252,7 +253,9 @@ npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest  # pi - c
 
 # Install pi extensions
 pi install npm:@ollama/pi-web-search
-pi install npm:pi-llama-cpp
+pi install npm:@router-for-me/pi-cliproxyapi-provider
+pi install npm:pi-claude-subscription
+# pi install npm:pi-llama-cpp
 
 # Install tools that cannot be set up with mise without compilation (Dec 2025)
 sudo apt install -y antigravity                   # Google agentic code editor

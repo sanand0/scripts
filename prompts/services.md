@@ -1,5 +1,44 @@
 # services
 
+## cliproxyapi, 23 Nov 2026
+
+<!--
+cd ~/code/private-research/cli-proxy-api  # Migrated
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+I'd like to set up CLIProxyAPI using mise. For now, without installation. This command works:
+
+```bash
+mise x github:router-for-me/CLIProxyAPI -- cli-proxy-api
+```
+
+... but reports "failed to load config".
+
+I'd like to keep a config file in this directory for now, and then move it later.
+
+Set this up. Tell me how I can log in with different coding agents, and how I can use it after moving the config file to a different directory.
+
+---
+
+FYI: this worked, and I logged in via Antigravity.
+I ran `mise use -g github:router-for-me/CLIProxyAPI` - so `/home/sanand/.local/share/mise/shims/cli-proxy-api` is available.
+I would like the config.yaml to reside at `~/Dropbox/scripts/cli-proxy-api/config.yaml`. `~/.cli-proxy-api/` to store the logged-in keys, etc. is fine.
+The installation script for Linux is at https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer but I'd rather not use that directly, but rather, learn from it.
+I'd like to run this as a service on my system in a simple, elegant, minimal and robust way.
+Implement this in `~/code/scripts/services/`
+
+---
+
+What's the default path cli-proxy-api looks for the config.yaml? Let me know, and create a symlink from `~/Dropbox/scripts/cli-proxy-api/config.yaml` to that path.
+Update the service script to not require the `--config` option.
+
+---
+
+Woah, ~/config.yaml isn't a good idea. Undo that change: delete the symlink, restore the unit.
+
+<!-- codex resume 01a2076e-b24f-7bf3-97a9-a96b1d49eea1 -->
+
 ## Merge daily prompts, 23 Nov 2026
 
 <!--

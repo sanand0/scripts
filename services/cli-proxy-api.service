@@ -1,0 +1,16 @@
+[Unit]
+Description=CLIProxyAPI local model gateway
+ConditionFileNotEmpty=%h/Dropbox/scripts/cli-proxy-api/config.yaml
+ConditionFileIsExecutable=%h/.local/share/mise/shims/cli-proxy-api
+
+[Service]
+Type=exec
+WorkingDirectory=%h
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=%h/.local/share/mise/shims/cli-proxy-api --config "%h/Dropbox/scripts/cli-proxy-api/config.yaml"
+Restart=always
+RestartSec=10s
+UMask=0077
+
+[Install]
+WantedBy=default.target

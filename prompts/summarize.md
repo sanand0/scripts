@@ -1,5 +1,31 @@
 # Summarize
 
+## CLIProxyAPI support, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+cli-proxy-api runs as a service at http://localhost:8317/ providing an OpenAI/Gemini/Claude/Codex/Grok compatible API using coding agent logins.
+CLI_PROXY_API_KEY is available in .env for you to test.
+I believe we can use this to modify summarize.py to optionally use this base URL for the Gemini as well as OpenAI APIs.
+Is the best way to add a new provider? Or an option to provide a base URL? Or something else?
+Given that different models are available on cli-proxy-api, and their cost is (practically) free, how do we handle models?
+Given the actual use of summarize.py (see logs, fish history, etc. and also `~/code/blog/justfile` and other ways of infering usage), what scripts / aliases / defaults (provider, model, base URL, etc.) would you recommend changing?
+Test it out. See what works well and feels natural.
+Implement the changes in summarize.py and any other changes within this repo that you're SURE about. List the rest for me to review.
+
+---
+
+Test again with Gemini 3.8 Flash.
+
+---
+
+Try gemini-4-hydrogen on Copilot. Does that work for the audio?
+
+<!-- codex resume 01a207a7-c5b0-76e2-9f83-dc2a154dbe75 -->
+
 ## Migrate to SIWC, 22 Nov 2026
 
 <!--

@@ -19,9 +19,13 @@ def prompt_home(tmp_path: Path) -> Path:
         "---\ntitle: Git commit\ndescription: Write a commit message\n---\n\n```text\nCommit clearly.\n```\n"
     )
     (prompts / "fragments.md").write_text(
-        "---\ntitle: Fragments\n---\n\n## Explain code\n\n```\nExplain this code.\n```\n\n## Review code\n\n```\nReview this code.\n```\n"
+        "---\ntitle: Fragments\ndescription: Snippets I use together\n---\n\n"
+        "## Explain code\n\nA short\nexplanation.\n<!-- source note -->\n\n"
+        "```markdown\nExplain this code.\n```\n\n"
+        "## Review code\n\n<!-- source note\nacross lines -->\n\n"
+        "```\nReview this code.\nInclude performance and readability.\n```\n"
     )
-    skill = tmp_path / "code/scripts/agents/code/SKILL.md"
+    skill = tmp_path / "code/skills/code/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(
         '---\nname: code\ndescription: Use <simple> & "clear" code\n---\n\nKeep it clear.\n'
@@ -51,7 +55,7 @@ def test_filter_can_select_heading(prompt_home: Path) -> None:
     result = run_prompts(prompt_home, "review")
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "Review this code.\n"
+    assert result.stdout == "Review this code.\nInclude performance and readability.\n"
 
 
 def test_filter_includes_custom_prompts_used_by_fish(prompt_home: Path) -> None:
@@ -74,7 +78,7 @@ def test_json_output_includes_selection_metadata(prompt_home: Path) -> None:
     assert json.loads(result.stdout) == {
         "content": "Explain this code.",
         "kind": "prompt",
-        "label": "Fragments › Explain code",
+        "label": "Fragments › Explain code: Snippets I use together",
         "source": str(prompt_home / "code/blog/pages/prompts/fragments.md"),
     }
 
@@ -95,19 +99,39 @@ def test_list_jsonl_streams_machine_readable_index(prompt_home: Path) -> None:
     assert result.returncode == 0, result.stderr
     rows = [json.loads(line) for line in result.stdout.splitlines()]
     assert [row["label"] for row in rows] == [
-        "Fragments › Explain code",
-        "Fragments › Review code",
+        "Fragments › Explain code: Snippets I use together",
+        "Fragments › Review code: Snippets I use together",
         "Git commit: Write a commit message",
         'Skill › code: Use <simple> & "clear" code',
     ]
 
 
+@pytest.mark.parametrize(
+    ("row", "content", "logged_label"),
+    [
+        (
+            "Git commit: Write a commit message",
+            "Commit clearly.",
+            "Git commit: Write a commit message",
+        ),
+        (
+            "Fragments › Explain code: A short explanation.",
+            "Explain this code.",
+            "Fragments › Explain code: Snippets I use together",
+        ),
+        (
+            "Fragments › Review code: Review this code. Include performance and re...",
+            "Review this code.\nInclude performance and readability.",
+            "Fragments › Review code: Snippets I use together",
+        ),
+    ],
+)
 def test_interactive_selection_copies_and_logs(
-    prompt_home: Path, tmp_path: Path
+    prompt_home: Path, tmp_path: Path, row: str, content: str, logged_label: str
 ) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "rofi").write_text("#!/bin/sh\ngrep '^Git commit:'\n")
+    (bin_dir / "rofi").write_text(f"#!/bin/sh\ngrep -Fx '{row}'\n")
     (bin_dir / "wl-copy").write_text(f"#!/bin/sh\ncat > {tmp_path}/copied\n")
     (bin_dir / "wtype").write_text(
         f"#!/bin/sh\nprintf '%s' \"$1\" > {tmp_path}/typed\n"
@@ -118,10 +142,10 @@ def test_interactive_selection_copies_and_logs(
     result = run_prompts(prompt_home, path=bin_dir)
 
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / "copied").read_text() == "Commit clearly."
-    assert (tmp_path / "typed").read_text() == "Commit clearly."
+    assert (tmp_path / "copied").read_text() == content
+    assert (tmp_path / "typed").read_text() == content
     log = prompt_home / ".local/share/sanand-scripts/rofi-prompts-log.tsv"
-    assert log.read_text().split("\t", 1)[1] == "Git commit: Write a commit message\n"
+    assert log.read_text().split("\t", 1)[1] == f"{logged_label}\n"
 
 
 def test_interactive_cancellation_does_not_log(

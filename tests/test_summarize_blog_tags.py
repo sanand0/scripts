@@ -245,6 +245,67 @@ class _FakeMeta:
     tags = ["llms", "proposed:agent-memory"]
 
 
+@pytest.mark.parametrize(("provider", "override", "expected_model"), [
+    ("openai", None, "gpt-6-luna"),
+    ("gemini", None, "gemini-3.5-flash-lite"),
+    ("openai", "gpt-6.2-sol", "gpt-6.2-sol"),
+])
+def test_proxy_routes_structured_summaries_with_its_own_key(tmp_path, monkeypatch, provider, override, expected_model):
+    post = tmp_path / "post.md"
+    post.write_text("# Title\n\nOne\nTwo\nThree\nFour\nFive\n")
+    env_path = tmp_path / "code/scripts/.env"
+    env_path.parent.mkdir(parents=True)
+    env_path.write_text("CLI_PROXY_API_KEY=proxy-from-file\n")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "direct-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "direct-gemini")
+    monkeypatch.setenv("CLI_PROXY_API_KEY", "proxy-from-env" if override else "")
+    client_options = {}
+
+    def make_client(**kwargs):
+        client_options.update(kwargs)
+        return object()
+
+    def fake_call_ai(actual_provider, client, model, content_set, text, fields):
+        assert actual_provider == provider
+        assert model == expected_model
+        return _FakeMeta(), summarize.Usage(prompt=10, output=2, calls=1)
+
+    monkeypatch.setattr("openai.OpenAI", make_client)
+    monkeypatch.setattr("google.genai.Client", make_client)
+    monkeypatch.setattr(summarize, "call_ai", fake_call_ai)
+    args = ["blog", str(post), "--provider", provider, "--proxy", "--dry-run", "--format", "json"]
+    if override:
+        args += ["--model", override]
+    result = CliRunner().invoke(summarize.app, args)
+
+    assert result.exit_code == 0, result.output
+    assert client_options["api_key"] == ("proxy-from-env" if override else "proxy-from-file")
+    if provider == "gemini":
+        assert client_options["vertexai"] is False
+        assert client_options["http_options"] == {"base_url": "http://localhost:8317", "api_version": "v1beta"}
+    else:
+        assert client_options["base_url"] == "http://localhost:8317/v1"
+    row = json.loads(result.stdout)
+    assert row["cost_usd"] is None
+    assert row["tokens"] == {"prompt": 20, "output": 4, "calls": 2}
+
+
+def test_proxy_rejects_chatgpt_provider():
+    result = CliRunner().invoke(summarize.app, ["blog", "--provider", "chatgpt", "--proxy"])
+    assert result.exit_code == 2
+    assert "--proxy requires --provider openai or gemini" in result.output
+
+
+def test_proxy_requires_proxy_key_even_with_direct_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("CLI_PROXY_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "direct-openai")
+    result = CliRunner().invoke(summarize.app, ["blog", "--proxy"])
+    assert result.exit_code == 1
+    assert "CLI_PROXY_API_KEY not found" in result.output
+
+
 def test_chatgpt_login_paste_reuses_registration_and_private_state(tmp_path, monkeypatch):
     root = tmp_path / "chatgpt"
     monkeypatch.setattr(summarize, "CHATGPT_STATE", root)

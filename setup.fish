@@ -200,6 +200,9 @@ abbr --add codexlog 'agentlog.py codex'
 abbr --add codexsession 'agentlog.py codex ls | head -20'
 abbr --add copilotlog 'agentlog.py copilot'
 
+# Run CLI Proxy API with the default config file
+abbr --add cliproxyapi 'cli-proxy-api --config ~/Dropbox/scripts/cli-proxy-api/config.yaml'
+
 # Count number of open tabs on Edge
 abbr --add counttabs "edge tabs --json | jaq -c '.timestamp as \$t | .windows[] | .id as \$w | .tabs[] | {timestamp:\$t, window:\$w, title, url}' | wc -l"
 

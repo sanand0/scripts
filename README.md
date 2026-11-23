@@ -134,6 +134,7 @@ Here are the setup details for my laptops.
   - New transcripts: `summarize.py transcript "/home/sanand/Dropbox/notes/transcripts/2026-04-*.md"` (edit `2026-04` to the target month)
   - New blog posts: `ug -rl '^date: "?2026-04' /home/sanand/code/blog/posts/ | xargs summarize.py blog` (edit `2026-04` to the target month)
   - Use ChatGPT plan with `summarize.py blog post.md --provider chatgpt`. `summarize.py login chatgpt` logs in. Session saved at `~/.cache/sanand-scripts/summarize/chatgpt/`.
+  - Use [local CLIProxyAPI](services/README.md#cliproxyapi) with `summarize.py blog post.md --proxy` (GPT-6 Luna) or `summarize.py transcript transcript.md --provider gemini --proxy` (Gemini 3.5 Flash-Lite). The proxy uses `CLI_PROXY_API_KEY` from the environment or `~/code/scripts/.env`. Use `--model` to select another model ID from the proxy catalog. Proxy runs report tokens with `cost_usd: null` in JSON.
 - [timers](timers) picks a systemd user timer with `fzf`, sorted by its most recent run, then follows the activated service's journal.
 - [transcribe](transcribe) transcribes audio files into adjacent `.md` files, skipping existing files. Example: `transcribe a.mp3 /x/b.opus`. Supports `--prompt`, `--model`. Retries empty responses at `medium`, then `high` thinking
 - [translate](translate) creates a virtual mic that translates what I say into any other language. Useful for Google Meet, etc.
