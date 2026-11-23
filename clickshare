@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: clickshare [--force] [--dry-run] [SSID]\nConnect to the room for Chrome Cast while keeping regular Wi-Fi online.\n--force skips the system-freeze warning and confirmation.\nDefault SSID: ClickShare-1862756298\n'
+}
+
+die() {
+  printf 'clickshare: %s\n' "$1" >&2
+  exit 1
+}
+
+dry_run=0
+force=0
+while (( $# )); do
+  case "$1" in
+    -h|--help) usage; exit ;;
+    --dry-run) dry_run=1 ;;
+    --force) force=1 ;;
+    *) break ;;
+  esac
+  shift
+done
+(( $# <= 1 )) || { usage >&2; exit 2; }
+ssid=${1-ClickShare-1862756298}
+ssid_bytes=$(printf '%s' "$ssid" | wc -c)
+[[ -n "$ssid" && "$ssid" != -* && "$ssid" != *[[:cntrl:]]* && "$ssid_bytes" -le 32 ]] || die "Enter a valid Wi-Fi SSID."
+
+iw=$(command -v iw) || die "Install iw with sudo apt install iw."
+command -v nmcli >/dev/null || die "NetworkManager (nmcli) is required."
+
+cast_iface=castwifi0
+profile="ClickShare Local $ssid"
+wifi=$(LC_ALL=C nmcli -t -f DEVICE,TYPE,STATE device status |
+  awk -F: -v cast_iface="$cast_iface" '$1 != cast_iface && $2 == "wifi" && $3 == "connected" && !found++ { print $1 }')
+[[ -n "$wifi" ]] || die "Connect to your regular Wi-Fi first."
+
+phy=$(LC_ALL=C "$iw" dev "$wifi" info | awk '$1 == "wiphy" {print "phy" $2}')
+if ! LC_ALL=C "$iw" phy "$phy" info | awk '
+  /valid interface combinations:/ { combinations=1; next }
+  combinations && /#\{ managed \} <=/ && /managed \} <= ([2-9]|[1-9][0-9]+),/ { supported=1 }
+  END { exit !supported }
+'; then
+  die "$wifi does not report support for two Wi-Fi client connections."
+fi
+
+if (( dry_run )); then
+  printf 'Regular Wi-Fi: %s\nRoom Wi-Fi: %s on %s, with no default route or DNS override.\n' "$wifi" "$ssid" "$cast_iface"
+  exit
+fi
+
+if (( ! force )); then
+  printf '%s\n' \
+    'Warning: Connecting to ClickShare through a second Wi-Fi interface has frozen Graphene.' \
+    'See ~/code/infra/system-crash/README.md.' >&2
+  printf 'Are you sure you want to continue? [y/N] ' >&2
+  if ! read -r answer || [[ ${answer,,} != y && ${answer,,} != yes ]]; then
+    die "Cancelled. Use --force to skip confirmation."
+  fi
+fi
+
+if [[ ! -e "/sys/class/net/$cast_iface" ]]; then
+  printf 'Creating %s on %s (administrator approval required).\n' "$cast_iface" "$wifi" >&2
+  mac="02:$(od -An -N5 -tx1 /dev/urandom | xargs | tr ' ' ':')"
+  if [[ -t 0 ]] || ! command -v pkexec >/dev/null; then
+    sudo "$iw" dev "$wifi" interface add "$cast_iface" type managed addr "$mac"
+  else
+    pkexec --disable-internal-agent "$iw" dev "$wifi" interface add "$cast_iface" type managed addr "$mac"
+  fi
+  for attempt in {1..20}; do
+    if nmcli -g GENERAL.DEVICE device show "$cast_iface" >/dev/null 2>&1; then break; fi
+    sleep 0.1
+  done
+fi
+
+nmcli device set "$cast_iface" autoconnect no
+new_profile=0
+if ! nmcli -g connection.id connection show id "$profile" >/dev/null 2>&1; then
+  read -rsp "Wi-Fi password for $ssid: " password || die "A room Wi-Fi password is required on the first run."
+  printf '\n' >&2
+  nmcli connection add type wifi ifname "$cast_iface" con-name "$profile" ssid "$ssid" \
+    connection.autoconnect no wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$password" \
+    ipv4.never-default yes ipv4.ignore-auto-dns yes ipv6.method disabled
+  unset password
+  new_profile=1
+fi
+
+if [[ "$(nmcli -g GENERAL.STATE device show "$cast_iface")" != 100* ||
+      "$(nmcli -g GENERAL.CONNECTION device show "$cast_iface")" != "$profile" ]]; then
+  printf 'Connecting %s to %s.\n' "$cast_iface" "$ssid" >&2
+  if ! nmcli --wait 15 connection up id "$profile" ifname "$cast_iface"; then
+    nmcli device disconnect "$cast_iface" >/dev/null 2>&1 || true
+    if (( new_profile )); then nmcli connection delete id "$profile" >/dev/null; fi
+    die "Could not connect to $ssid. Check that the room network is in range and the password is correct."
+  fi
+fi
+
+printf 'Ready. In Chrome, choose Cast → ClickShare. In your meeting app, select Room Camera and Room Camera Analog Stereo.\n'

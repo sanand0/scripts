@@ -41,6 +41,7 @@ and only add yourself with full permissions.
 Here are the setup details for my laptops.
 
 - [Linux](setup/linux.md)
+  - [ClickShare](clickshare) keeps regular Wi-Fi online while connecting Chrome Cast to the room.
   - [Media Keys](setup/media-keys.dconf): Gnome keybindings
 - [Windows](setup/windows.md)
 - [Android](setup/android.md)
