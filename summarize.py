@@ -401,6 +401,7 @@ def make_yaml() -> YAML:
     y.preserve_quotes = True
     y.default_flow_style = False
     y.width = 100000
+    y.indent(mapping=2, sequence=4, offset=2)  # block lists as "key:\n  - item", matching blog front matter
     y.representer.add_representer(
         type(None),
         lambda d, _: d.represent_scalar("tag:yaml.org,2002:null", ""),
