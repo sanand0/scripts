@@ -134,6 +134,41 @@ def test_newer_observed_branch_replaces_and_revisions_preserve_exact_bytes(cli, 
     assert target.read_bytes() == latest
 
 
+def test_catalog_titles_update_warm_backups_without_replacing_transcripts(cli, tmp_path):
+    raw, output = tmp_path / "raw", tmp_path / "out"
+    capture(raw)
+    capture(raw, org=OTHER, hub=False)
+    assert backup(cli, raw, output).exit_code == 0
+    assert backup(cli, raw, output).exit_code == 0  # Warm per-chat cache.
+    target = output / f"{CID} [{ORG}].md"
+    other = output / f"{CID} [{OTHER}].md"
+    original = target.read_bytes() + b"\nLocal notes\n"
+    target.write_bytes(original)
+    catalog = raw / ORG / "catalog.json"
+    catalog.write_text(json.dumps({CID: dict(updateTime=1795000000000, title="  T3 Code\nuse cases  ")}))
+    (raw / OTHER / "catalog.json").write_text(json.dumps({
+        CID: dict(updateTime=1794999999000, title="Stale title"),
+    }))
+    before = other.read_bytes()
+    dry_run = backup(cli, raw, output, "--dry-run")
+    assert dry_run.exit_code == 0, dry_run.output
+    assert json.loads(dry_run.stdout)["title"] == "T3 Code use cases"
+    assert target.read_bytes() == original
+    assert backup(cli, raw, output).exit_code == 0
+    assert target.read_bytes() == b"# T3 Code use cases\n" + original.split(b"\n", 1)[1]
+    assert other.read_bytes() == before
+    revision, = (output / ".revisions").rglob("*.md")
+    assert revision.read_bytes() == original
+    assert backup(cli, raw, output).exit_code == 0
+    renamed = target.read_bytes()
+    catalog.write_text(json.dumps({CID: dict(updateTime=1795000001000, title="Renamed in Claude")}))
+    assert backup(cli, raw, output).exit_code == 0
+    assert target.read_bytes() == b"# Renamed in Claude\n" + renamed.split(b"\n", 1)[1]
+    fresh = tmp_path / "fresh"
+    assert backup(cli, raw, fresh).exit_code == 0
+    assert (fresh / target.name).read_text().startswith("# Renamed in Claude\n")
+
+
 @pytest.mark.parametrize("issue", ["partial", "unfinished", "dangling", "ambiguous", "truncated", "empty"])
 def test_incomplete_newer_snapshot_preserves_published_markdown(cli, tmp_path, issue):
     raw, output = tmp_path / "raw", tmp_path / "out"

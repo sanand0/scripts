@@ -362,39 +362,55 @@ def read_observation(path: Path) -> dict:
     return info
 
 
-def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dry_run: bool) -> dict:
+def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dry_run: bool,
+            catalog_entry: dict | None = None) -> dict:
     value, rows, info, source = selected
     when = info["updateTime"]
     path = matches[0][0] if matches else folder / f"{cid} [{org}].md"
     name = value.get("name")
+    native_title = name.strip() if isinstance(name, str) else ""
+    catalog_title = ""
+    if isinstance(catalog_entry, dict):
+        title_time, candidate = catalog_entry.get("updateTime"), catalog_entry.get("title")
+        if (type(title_time) in (int, float) and 0 < title_time < 253402300800000
+                and isinstance(candidate, str) and (not native_title or title_time >= when)):
+            catalog_title = candidate.strip()
     prompt = next((b["text"] for b in rows[0].get("content") or []
                    if isinstance(b.get("text"), str) and b["text"].strip()), rows[0].get("text") or "")
-    title = (name.strip() if isinstance(name, str) else "") or (matches[0][2] if matches else "") or next(
+    title = catalog_title or native_title or (matches[0][2] if matches else "") or next(
         iter(prompt.strip().splitlines()), "Untitled")[:100]
     title = " ".join(title.split()) or "Untitled"
     result = dict(title=title, source=source, file=path.name, messages=len(rows))
     if len(matches) > 1 or (not matches and os.path.lexists(path)):
         return dict(result, status="held", warning="Conflicting Markdown paths")
     original = None
-    prefix = None
+    replacement = None
     if matches:
         metadata = matches[0][1]
         previous = version(metadata.get("Updated", ""))
         if not previous:
             return dict(result, status="held", warning=f"Unknown update time in {path.name}")
         if previous >= when - 0.001:
+            retitle = catalog_title and title != matches[0][2]
             if (previous > when + 0.001 or metadata.get("Capture SHA-256") != info["hash"]
-                    or metadata.get("Renderer")):
+                    or (metadata.get("Renderer") and not retitle)):
                 return dict(result, status="up-to-date")
-            # Only refresh a body that still exactly matches the original renderer.
             original = path.read_bytes()
-            header, sep, body = original.partition(b"\n\n## ")
-            legacy = ("\n\n".join(turn(row, legacy=True) for row in rows) + "\n").encode()
-            if not sep or b"## " + body != legacy:
+            if retitle:
+                heading, newline, rest = original.partition(b"\n")
+                if newline and heading.startswith(b"# "):
+                    replacement = f"# {title}".encode() + (b"\r" if heading.endswith(b"\r") else b"") + newline + rest
+            if not metadata.get("Renderer"):
+                # Only refresh a body that still exactly matches the original renderer.
+                header, sep, body = (replacement or original).partition(b"\n\n## ")
+                legacy = ("\n\n".join(turn(row, legacy=True) for row in rows) + "\n").encode()
+                if sep and b"## " + body == legacy:
+                    content = ("\n\n".join(map(turn, rows)) + "\n").encode()
+                    if content != legacy:
+                        replacement = header + b"\n- Renderer: 2\n\n" + content
+            if replacement is None:
                 return dict(result, status="up-to-date")
-            prefix = header
-    content = ("\n\n".join(map(turn, rows)) + "\n").encode()
-    if prefix is None:
+    if replacement is None:
         created = value.get("created_at") or rows[0].get("created_at")
         lines = [f"# {title}", "", f"- Link: {URL}/chat/{cid}", f"- Organization: {org}",
                  f"- Updated: {stamp(when)}", f"- Capture SHA-256: {info['hash']}"]
@@ -402,9 +418,8 @@ def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dr
             lines.append(f"- Created: {created}")
         if matches and (account := matches[0][1].get("Account")):
             lines.append(f"- Account: {account}")
-        prefix = "\n".join(lines).encode()
-    elif content == legacy:
-        return dict(result, status="up-to-date")
+        content = "\n\n".join(map(turn, rows)) + "\n"
+        replacement = ("\n".join(lines) + "\n- Renderer: 2\n\n" + content).encode()
     if not dry_run:
         if matches:
             old = original if original is not None else path.read_bytes()
@@ -413,7 +428,7 @@ def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dr
                 atomic(revision, old)
             elif revision.read_bytes() != old:
                 raise ValueError(f"Corrupt Markdown revision: {revision}")
-        atomic(path, prefix + b"\n- Renderer: 2\n\n" + content)
+        atomic(path, replacement)
     status = ("would-update" if matches else "would-create") if dry_run else "done"
     return dict(result, status=status)
 
@@ -423,13 +438,22 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
     cache_path = CACHE_DIR / f"raw-{scope}.json"
     revision = cache_version(Path(__file__))
     previous = load_cache(cache_path, revision)
-    state = dict(version=revision, markdown={}, observations={}, chats={})
+    state = dict(version=revision, markdown={}, observations={}, catalogs={}, chats={})
     index = markdown_index(output, previous.get("markdown", {}), state["markdown"])
     inputs = {}
     scopes = defaultdict(set)
     for folder in sorted(raw.iterdir()):
         if not re.fullmatch(UUID, folder.name) or not folder.is_dir():
             continue
+        catalog_path = folder / "catalog.json"
+        catalog = {}
+        if catalog_path.is_file():
+            try:
+                catalog = cached_file(catalog_path, previous.get("catalogs", {}).get(folder.name, {}),
+                                      state["catalogs"].setdefault(folder.name, {}),
+                                      lambda path: read_object(path.read_bytes()))
+            except (OSError, ValueError) as exc:
+                typer.echo(f"warning[claudecli-backup]: {catalog_path}: {exc}", err=True)
         current = {p.name.split(".", 1)[0] for p in folder.glob("*.json")
                    if re.fullmatch(rf"{UUID}(?:\.backup)?\.json", p.name)}
         observations = defaultdict(list)
@@ -445,12 +469,12 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 typer.echo(f"warning[claudecli-backup]: {path.name}: {exc}", err=True)
         for cid in sorted(current | observations.keys()):
-            inputs[folder, cid] = (cid in current, observations[cid], observation_stamps[cid])
+            inputs[folder, cid] = (cid in current, observations[cid], observation_stamps[cid], catalog.get(cid))
             scopes[cid].add(folder.name)
     if not inputs:
         raise ValueError(f"No Claude conversation snapshots in {raw}. Enable Claude backups in anand-chrome-tools.")
     failures = 0
-    for (folder, cid), (current, observations, observation_stamps) in inputs.items():
+    for (folder, cid), (current, observations, observation_stamps, catalog_entry) in inputs.items():
         org = folder.name
         matches = [m for m in index[cid] if m[1].get("Organization") == org or
                    (not m[1].get("Organization") and len(scopes[cid]) == 1)]
@@ -461,6 +485,7 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
             observation_stamps,
             [[path.name, state["markdown"][path.name][0]] for path, _, _ in matches],
             not matches and os.path.lexists(target),
+            catalog_entry,
         ]
         name = f"{org}/{cid}"
         version_dir = folder / "versions" / cid
@@ -475,7 +500,7 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
             result = dict(title=matches[0][2] if matches else "", status="deferred")
             if selected:
                 try:
-                    result.update(publish(output, org, cid, selected, matches, dry_run))
+                    result.update(publish(output, org, cid, selected, matches, dry_run, catalog_entry))
                 except (ValueError, TypeError, AttributeError, KeyError) as exc:
                     result["status"] = "error"
                     warnings.append(str(exc))
@@ -535,6 +560,8 @@ def backup(
     format: str = typer.Option("text", help="Output format: text (TSV) or jsonl."),
 ) -> None:
     """Back up complete Claude replies from passively saved conversation snapshots.
+
+    The local Claude conversation catalog supplies titles for cached transcripts.
 
     Examples:
       claudecli backup --dry-run -v
