@@ -28,33 +28,33 @@ def message(id, parent, sender, text, **kwargs):
 
 
 def capture(raw, text="First answer", *, org=ORG, when=1795000000000, current=True,
-            coverage="branch", hub=True, messages=None, tip=ANSWER, mode="full"):
+            coverage="branch", hub=True, messages=None, tip=ANSWER, mode="full", cid=CID):
     folder = raw / org
     folder.mkdir(parents=True, exist_ok=True)
     if messages is None:
         messages = [message(HUMAN, ROOT, "human", "The prompt", files=[{"file_name": "report.pdf"}]),
                     message(ANSWER, HUMAN, "assistant", text, stop_reason="end_turn")]
     if hub:
-        value = dict(kind="hub_transcript", conversationUuid=CID, historyWindow=dict(mode=mode),
+        value = dict(kind="hub_transcript", conversationUuid=cid, historyWindow=dict(mode=mode),
                      treeSize=len(messages), messages=messages)
-        path = f"/local/claude-conversation-store/trees/{org}/{CID}"
+        path = f"/local/claude-conversation-store/trees/{org}/{cid}"
     else:
-        value = dict(uuid=CID, name="Official title", chat_messages=messages, current_leaf_message_uuid=tip)
-        path = f"/api/organizations/{org}/chat_conversations/{CID}"
+        value = dict(uuid=cid, name="Official title", chat_messages=messages, current_leaf_message_uuid=tip)
+        path = f"/api/organizations/{org}/chat_conversations/{cid}"
     data = json.dumps(value).encode()
     hash = hashlib.sha256(data).hexdigest()
     info = dict(format=1, organizationId=org, hash=hash, coverage=coverage, updateTime=when, path=path)
     if current:
-        (folder / f"{CID}.json").write_bytes(data)
-        (folder / f"{CID}.backup.json").write_text(json.dumps(info))
+        (folder / f"{cid}.json").write_bytes(data)
+        (folder / f"{cid}.backup.json").write_text(json.dumps(info))
     else:
-        versions = folder / "versions" / CID
+        versions = folder / "versions" / cid
         versions.mkdir(parents=True, exist_ok=True)
         (versions / f"{hash}.json").write_bytes(data)
         observations = folder / "observations"
         observations.mkdir(exist_ok=True)
-        (observations / f"{hash}.json").write_text(json.dumps(dict(info, id=CID)))
-    return folder / f"{CID}.json"
+        (observations / f"{hash}.json").write_text(json.dumps(dict(info, id=cid)))
+    return folder / f"{cid}.json"
 
 
 def backup(cli, raw, output, *opts):
@@ -80,10 +80,6 @@ def test_dry_run_publish_and_idempotence(cli, tmp_path, monkeypatch):
     assert "report.pdf" in target.read_text()
     assert "## Assistant\n\nFirst answer" in target.read_text()
     previous = target.stat().st_mtime_ns
-    result = backup(cli, raw, output, "--verbose")
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "up-to-date"
-    assert target.stat().st_mtime_ns == previous
 
     reads = []
     snapshot = cli["snapshot"]
@@ -99,7 +95,10 @@ def test_dry_run_publish_and_idempotence(cli, tmp_path, monkeypatch):
 
     monkeypatch.setitem(snapshot.__globals__, "snapshot", track_snapshot)
     monkeypatch.setitem(snapshot.__globals__, "read_markdown", track_markdown)
-    assert json.loads(backup(cli, raw, output, "--dry-run", "--verbose").stdout)["status"] == "up-to-date"
+    result = backup(cli, raw, output, "--verbose")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "up-to-date"
+    assert target.stat().st_mtime_ns == previous
     assert not reads
     target.unlink()
     assert json.loads(backup(cli, raw, output, "--dry-run").stdout)["status"] == "would-create"
@@ -107,7 +106,37 @@ def test_dry_run_publish_and_idempotence(cli, tmp_path, monkeypatch):
     assert not target.exists()
 
 
-def test_newer_observed_branch_replaces_and_revisions_preserve_exact_bytes(cli, tmp_path):
+def test_backup_processes_oldest_update_first(cli, tmp_path, monkeypatch):
+    raw, output = tmp_path / "raw", tmp_path / "out"
+    when = 1795000000000
+    capture(raw, when=when - 1000)
+    capture(raw, current=False, when=when + 2000)
+    capture(raw, text="Partial", current=False, when=when + 3000, coverage="partial")
+    capture(raw, org=OTHER, current=False, when=when)
+    capture(raw, cid=HUMAN, when=when + 1000)
+    capture(raw, cid=REGEN, when=when, coverage="partial")
+    capture(raw, cid=ANSWER, when=None)
+    calls = []
+    publish = cli["publish"]
+
+    def track_publish(folder, org, cid, *args):
+        calls.append((org, cid))
+        return publish(folder, org, cid, *args)
+
+    monkeypatch.setitem(publish.__globals__, "publish", track_publish)
+    order = [(ORG, REGEN), (OTHER, CID), (ORG, HUMAN), (ORG, CID), (ORG, ANSWER)]
+    for opts in [("--dry-run",), (), ("--dry-run",)]:
+        result = backup(cli, raw, output, "--verbose", *opts)
+        assert result.exit_code == 0, result.output
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        assert [(row["organizationId"], row["conversationId"]) for row in rows] == order
+        assert rows[-2]["updated"] == "2026-11-18T11:06:43Z"
+        assert rows[-1]["updated"] is None
+    assert calls == [(OTHER, CID), (ORG, HUMAN), (ORG, CID)] * 2
+    assert rows[-2]["status"] == "stale"
+
+
+def test_newer_observed_branch_replaces_and_revisions_preserve_exact_bytes(cli, tmp_path, monkeypatch):
     raw, output = tmp_path / "raw", tmp_path / "out"
     capture(raw)
     assert backup(cli, raw, output).exit_code == 0
@@ -124,7 +153,23 @@ def test_newer_observed_branch_replaces_and_revisions_preserve_exact_bytes(cli, 
     assert "Old branch" not in target.read_text()
     revision, = (output / ".revisions").rglob("*.md")
     assert revision.read_bytes() == old
-    assert backup(cli, raw, output).exit_code == 0
+
+    observation, = (raw / ORG / "observations").glob("*.json")
+    repeated = dict(json.loads(observation.read_bytes()), finishedAt=1795000002000)
+    observation.with_name("repeated.json").write_text(json.dumps(repeated))
+    reads = []
+    snapshot = cli["snapshot"]
+
+    def track_snapshot(path, info, cid):
+        reads.append(path)
+        return snapshot(path, info, cid)
+
+    monkeypatch.setitem(snapshot.__globals__, "snapshot", track_snapshot)
+    unchanged = backup(cli, raw, output, "--verbose")
+    assert unchanged.exit_code == 0, unchanged.output
+    assert json.loads(unchanged.stdout)["status"] == "up-to-date"
+    assert not reads
+
     history, = (raw / ORG / "versions" / CID).glob("*.json")
     latest = target.read_bytes()
     history.write_text("{}")

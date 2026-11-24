@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 
 
-def file_stamp(path: Path) -> list[int] | None:
+def file_stamp(path: Path | os.DirEntry) -> list[int] | None:
     """Detect edits, atomic replacements, and timestamp-preserving copies."""
     try:
         st = path.stat()
@@ -15,10 +15,11 @@ def file_stamp(path: Path) -> list[int] | None:
     return [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns]
 
 
-def cached_file(path: Path, previous: dict, current: dict, read):
+def cached_file(path: Path | os.DirEntry, previous: dict, current: dict, read):
     stamp = file_stamp(path)
-    old = previous.get(path.name)
-    entry = old if old is not None and old[0] == stamp else [stamp, read(path)]
+    entry = previous.get(path.name)
+    if entry is None or entry[0] != stamp:
+        entry = [stamp, read(Path(path) if isinstance(path, os.DirEntry) else path)]
     current[path.name] = entry
     return entry[1]
 

@@ -245,10 +245,10 @@ def turn(row: dict, *, legacy: bool = False) -> str:
 
 def read_markdown(path: Path) -> tuple[str, dict, str] | None:
     with path.open("rb") as stream:
-        header = stream.read(8192).decode("utf-8-sig", errors="replace")
-    header = header.replace("\r\n", "\n")
-    if header.startswith("---\n"):
-        meta, separator, _ = header[4:].partition("\n---\n")
+        data = stream.read(8192).removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n")
+    if data.startswith(b"---\n"):
+        frontmatter, separator, _ = data[4:].partition(b"\n---\n")
+        meta = frontmatter.decode("utf-8", errors="replace")
         if separator and (link := re.search(rf'^source: "?{LINK}"?\s*$', meta, re.M)):
             fields = dict(re.findall(r"^(title|date): (.+)$", meta, re.M))
             title = fields.get("title", path.stem)
@@ -258,27 +258,29 @@ def read_markdown(path: Path) -> tuple[str, dict, str] | None:
                 title = path.stem
             return link[1], {"Updated": fields.get("date", "").strip('"')}, title
         return None
-    header = re.split(r"\r?\n(?=[^\r\n])(?!- )", header, maxsplit=1)[0]
+    header = re.split(rb"\r?\n(?=[^\r\n])(?!- )", data, maxsplit=1)[0].decode("utf-8", errors="replace")
     if link := re.search(rf"^- Link: {LINK}\s*$", header, re.M):
-        fields = dict(re.findall(r"^- ([\w -]+): ([^\r\n]+)", header, re.M))
+        fields = dict(re.findall(r"^- (Updated|Account|Organization|Capture SHA-256|Renderer): ([^\r\n]+)", header, re.M))
         title = header.splitlines()[0].removeprefix("# ").strip()
         return link[1], fields, title
     return None
 
 
-def markdown_index(directory: Path, previous: dict, current: dict) -> dict:
-    index = defaultdict(list)
+def scan(directory: Path, suffix: str) -> list[os.DirEntry]:
     try:
         with os.scandir(directory) as entries:
-            names = sorted(entry.name for entry in entries
-                           if entry.name.endswith(".md") and entry.is_file(follow_symlinks=False))
+            return sorted((entry for entry in entries if entry.name.endswith(suffix)), key=lambda entry: entry.name)
     except (FileNotFoundError, NotADirectoryError):
-        return index
-    for name in names:
-        path = directory / name
-        if match := cached_file(path, previous, current, read_markdown):
+        return []
+
+
+def markdown_index(directory: Path, scopes: dict, previous: dict, current: dict) -> dict:
+    index = defaultdict(list)
+    for entry in scan(directory, ".md"):
+        if entry.is_file(follow_symlinks=False) and (match := cached_file(entry, previous, current, read_markdown)):
             cid, fields, title = match
-            index[cid].append((path, fields, title))
+            if cid in scopes:
+                index[cid].append((Path(entry.path), fields, title))
     return index
 
 
@@ -309,30 +311,21 @@ def lock_archive(output: Path):
         os.close(fd)
 
 
-def choose_snapshot(folder: Path, cid: str, current: bool, observations: list[dict], history: dict) -> tuple:
+def choose_snapshot(folder: Path, cid: str, info: dict | None, eligible: dict, history: dict) -> tuple:
     """Accept newer complete versions, keeping the accepted snapshot on source-time ties."""
-    eligible = defaultdict(dict)
-    for info in observations:
-        eligible[info.get("updateTime") or 0][info["hash"]] = info
-    latest = max(eligible, default=0)
     accepted = None
     warnings = []
-    if current:
+    if info:
         try:
             path = folder / f"{cid}.json"
-            info = read_object(path.with_suffix(".backup.json").read_bytes())
-            verify_info(info, folder.name, cid)
-            when = info.get("updateTime") or 0
-            latest = max(latest, when)
             value, rows = snapshot(path, info, cid)
             if rows:
                 accepted = (value, rows, info, "current")
-                eligible.setdefault(when, {})
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             warnings.append(str(exc))
     for when in sorted(eligible, reverse=True):
-        if accepted and accepted[2]["updateTime"] == when:
-            return accepted, latest, warnings
+        if accepted and accepted[2]["updateTime"] >= when:
+            break
         choices = []
         for hash, info in eligible[when].items():
             if info["coverage"] == "partial":
@@ -346,20 +339,23 @@ def choose_snapshot(folder: Path, cid: str, current: bool, observations: list[di
             except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 warnings.append(str(exc))
         if len(choices) == 1:
-            return choices[0], latest, warnings
+            return choices[0], warnings
         variants = {tuple((row["uuid"], turn(row, legacy=True)) for row in rows) for _, rows, _, _ in choices}
         if len(variants) == 1:
-            return max(choices, key=lambda x: (bool(x[0].get("name")), x[2]["hash"])), latest, warnings
-    return None, latest, warnings
+            return max(choices, key=lambda x: (bool(x[0].get("name")), x[2]["hash"])), warnings
+    return accepted, warnings
 
 
-def read_observation(path: Path) -> dict:
+def read_capture_info(path: Path) -> dict:
     info = read_object(path.read_bytes())
-    cid = info["id"]
+    if path.parent.name == "observations":
+        org, cid = path.parent.parent.name, info["id"]
+    else:
+        org, cid = path.parent.name, path.name.partition(".")[0]
     if not re.fullmatch(UUID, cid):
         raise ValueError("Invalid observation conversation UUID")
-    verify_info(info, path.parent.parent.name, cid)
-    return info
+    verify_info(info, org, cid)
+    return dict(id=cid, **{key: info.get(key) for key in ("hash", "path", "coverage", "updateTime", "cache")})
 
 
 def publish(folder: Path, org: str, cid: str, selected: tuple, matches: list, dry_run: bool,
@@ -438,9 +434,8 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
     cache_path = CACHE_DIR / f"raw-{scope}.json"
     revision = cache_version(Path(__file__))
     previous = load_cache(cache_path, revision)
-    state = dict(version=revision, markdown={}, observations={}, catalogs={}, chats={})
-    index = markdown_index(output, previous.get("markdown", {}), state["markdown"])
-    inputs = {}
+    state = dict(version=revision, markdown={}, observations={}, sidecars={}, catalogs={}, chats={})
+    inputs = []
     scopes = defaultdict(set)
     for folder in sorted(raw.iterdir()):
         if not re.fullmatch(UUID, folder.name) or not folder.is_dir():
@@ -456,46 +451,61 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
                 typer.echo(f"warning[claudecli-backup]: {catalog_path}: {exc}", err=True)
         current = {p.name.split(".", 1)[0] for p in folder.glob("*.json")
                    if re.fullmatch(rf"{UUID}(?:\.backup)?\.json", p.name)}
-        observations = defaultdict(list)
-        observation_stamps = defaultdict(list)
+        observations = defaultdict(lambda: defaultdict(dict))
         cached = previous.get("observations", {}).get(folder.name, {})
         observed = state["observations"][folder.name] = {}
-        for path in sorted((folder / "observations").glob("*.json")):
+        for entry in scan(folder / "observations", ".json"):
             try:
-                info = cached_file(path, cached, observed, read_observation)
-                cid = info["id"]
-                observations[cid].append(info)
-                observation_stamps[cid].append([path.name, observed[path.name][0]])
+                info = cached_file(entry, cached, observed, read_capture_info)
+                observations[info["id"]][info["updateTime"] or 0][info["hash"]] = info
             except (OSError, ValueError, TypeError, KeyError) as exc:
-                typer.echo(f"warning[claudecli-backup]: {path.name}: {exc}", err=True)
+                typer.echo(f"warning[claudecli-backup]: {entry.name}: {exc}", err=True)
+        cached = previous.get("sidecars", {}).get(folder.name, {})
+        sidecars = state["sidecars"][folder.name] = {}
         for cid in sorted(current | observations.keys()):
-            inputs[folder, cid] = (cid in current, observations[cid], observation_stamps[cid], catalog.get(cid))
+            capture = folder / f"{cid}.json"
+            info, warning = None, None
+            if cid in current:
+                try:
+                    info = cached_file(capture.with_suffix(".backup.json"), cached, sidecars, read_capture_info)
+                except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                    warning = str(exc)
+            eligible = observations[cid]
+            latest = max(max(eligible, default=0), (info and info["updateTime"]) or 0)
+            inputs.append((latest, folder, cid, info, eligible, warning, catalog.get(cid),
+                           file_stamp(capture) if info else None))
             scopes[cid].add(folder.name)
     if not inputs:
         raise ValueError(f"No Claude conversation snapshots in {raw}. Enable Claude backups in anand-chrome-tools.")
+    # Sort by the timestamp reported in each status row, placing unknown dates last.
+    inputs.sort(key=lambda item: item[0] or math.inf)
+    index = markdown_index(output, scopes, previous.get("markdown", {}), state["markdown"])
     failures = 0
-    for (folder, cid), (current, observations, observation_stamps, catalog_entry) in inputs.items():
+    for latest, folder, cid, info, eligible, warning, catalog_entry, capture_stamp in inputs:
         org = folder.name
         matches = [m for m in index[cid] if m[1].get("Organization") == org or
                    (not m[1].get("Organization") and len(scopes[cid]) == 1)]
-        capture = folder / f"{cid}.json"
         target = output / f"{cid} [{org}].md"
-        key = [
-            [file_stamp(capture), file_stamp(capture.with_suffix(".backup.json"))] if current else None,
-            observation_stamps,
-            [[path.name, state["markdown"][path.name][0]] for path, _, _ in matches],
-            not matches and os.path.lexists(target),
-            catalog_entry,
-        ]
+        # Repeated observations of the same version do not change snapshot selection.
+        key = dict(
+            current=[capture_stamp, info],
+            observations=[eligible[when][hash] for when in sorted(eligible) for hash in sorted(eligible[when])],
+            markdown=[[path.name, state["markdown"][path.name][0]] for path, _, _ in matches],
+            conflict=not matches and os.path.lexists(target),
+            catalog=catalog_entry,
+        )
         name = f"{org}/{cid}"
         version_dir = folder / "versions" / cid
         saved = previous.get("chats", {}).get(name)
-        if saved and key == saved[0] and all(file_stamp(version_dir / path) == stamp for path, stamp in saved[1].items()):
+        if (not warning and saved and key == saved[0]
+                and all(file_stamp(version_dir / path) == stamp for path, stamp in saved[1].items())):
             state["chats"][name] = saved
             row, severity = saved[2:]
         else:
             history = {}
-            selected, latest, warnings = choose_snapshot(folder, cid, current, observations, history)
+            selected, warnings = choose_snapshot(folder, cid, info, eligible, history)
+            if warning:
+                warnings.insert(0, warning)
             fresh = max((version(m[1].get("Updated", "")) for m in matches), default=0)
             result = dict(title=matches[0][2] if matches else "", status="deferred")
             if selected:
@@ -524,6 +534,26 @@ def archive(raw: Path, output: Path, dry_run: bool, verbose: bool, format: str) 
             row = dict(organizationId=org, conversationId=cid, updated=stamp(latest) if latest else None, **result)
             if reusable:
                 state["chats"][name] = [key, history, row, severity]
+            if row["status"] == "done" and not warnings:
+                # Cache the state after publication so the next run can skip this snapshot.
+                path = output / row["file"]
+                try:
+                    match = cached_file(path, {}, state["markdown"], read_markdown)
+                except OSError:
+                    match = None
+                if match:
+                    written_cid, fields, title = match
+                    published = version(fields.get("Updated", ""))
+                    selected_time = selected[2]["updateTime"]
+                    if (written_cid == cid and fields.get("Organization") == org and title == row["title"]
+                            and fields.get("Renderer") and fields.get("Capture SHA-256") == selected[2]["hash"]
+                            and abs(published - selected_time) <= 0.001):
+                        key["markdown"] = [[path.name, state["markdown"][path.name][0]]]
+                        key["conflict"] = False
+                        cached_row = dict(row, status="stale" if latest > max(published, selected_time) else "up-to-date")
+                        if cached_row["status"] == "up-to-date":
+                            cached_row.pop("reason", None)
+                        state["chats"][name] = [key, history, cached_row, None]
         if severity:
             typer.echo(f"{severity}[claudecli-backup]: {cid} {row[severity]}", err=True)
         preview = row["status"].startswith("would-")
@@ -562,6 +592,7 @@ def backup(
     """Back up complete Claude replies from passively saved conversation snapshots.
 
     The local Claude conversation catalog supplies titles for cached transcripts.
+    Conversations are processed in ascending order of their latest captured update.
 
     Examples:
       claudecli backup --dry-run -v
