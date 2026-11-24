@@ -320,6 +320,7 @@ cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files
 cd ~/.local/bin; curl -L 'https://bitwarden.com/download/?app=cli&platform=linux' -o bw.zip && unzip -jo bw.zip && rm bw.zip  # Bitwarden - Password manager
 cd ~/.local/bin; curl -L https://github.com/storytold/pdfcraft/releases/download/v0.13.0/pdfcraft-0.13.0-linux-x86_64.AppImage -o pdfcraft && chmod +x pdfcraft  # pdfcraft - Adobe Acrobat rewrite
 cd ~/.local/bin; curl -L https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-0.11.1-linux-x86_64.AppImage -o gridcraft && chmod +x gridcraft  # pdfcraft - Adobe Acrobat rewrite
+cd ~/.local/bin; curl -L https://anoma.ly/hex/download/linux-x64 -o hex && chmod +x hex  # hex - dictation
 curl -fsSL https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz | tar -xz -C ~/.local/opt; ln -sfn ~/.local/opt/scrcpy-linux-x86_64-v5.0.1/scrcpy ~/.local/bin/scrcpy
 
 # Install OpenAI Tunnel Client and Cloudflared for secure tunneling. Update: rerun to update
