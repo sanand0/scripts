@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 import sys
@@ -184,6 +185,35 @@ def test_root_app_routes_backend_subcommands() -> None:
     assert result.exit_code == 0, result.stdout
     assert backend.calls == ["stream"]
     assert "streamed-session" in result.stdout
+
+
+@pytest.mark.parametrize("flags", [[], ["--search", "needle"], ["--since", "2026-09-02"]])
+def test_claude_ls_surfaces_recent_sessions_before_applying_limit(
+    tmp_path: Path, flags: list[str]
+) -> None:
+    for index, (project, session, day) in enumerate([
+        ("a-project", "old", "09-01"),
+        ("z-project", "a-recent", "11-23"),
+        ("z-project", "z-newest", "11-24"),
+    ], start=1):
+        path = tmp_path / project / f"{session}.jsonl"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps({
+            "sessionId": session,
+            "type": "user",
+            "timestamp": f"2026-{day}T00:00:00Z",
+            "message": {"content": "Find the needle"},
+        }) + "\n")
+        os.utime(path, (index, index))
+
+    result = RUNNER.invoke(
+        build_app(ClaudeBackend()), ["ls", "--root", str(tmp_path), "--limit", "2", *flags]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [line.split()[1] for line in result.stdout.splitlines() if line.startswith("# ")] == [
+        "z-newest", "a-recent"
+    ]
 
 
 def test_parse_kind_filters_accepts_commas_and_repeated_values() -> None:

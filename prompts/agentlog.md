@@ -1,5 +1,16 @@
 # Prompts
 
+## Update claudelog, 24 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+`agentlog.py claude ls` doesn't list Claude sessions after 2026-09-01 though I've had several. Fix this and any related issues.
+
+<!-- codex resume 01a20cec-68a6-72d3-b764-a1e328fdbc5d -->
+
 ## Prompts sub-command, 03 Nov 2026
 
 <!--

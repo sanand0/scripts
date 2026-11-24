@@ -15,6 +15,7 @@ import sqlite3
 import sys
 from collections.abc import Iterable
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any, Protocol
 
 import typer
@@ -465,23 +466,29 @@ class ClaudeBackend:
     name = "claude"
     default_root = Path("~/.claude/projects").expanduser()
 
-    def _iter_files(self, root: Path, stats: Stats) -> Iterable[Path]:
+    def _iter_files(
+        self, root: Path, stats: Stats, *, recent_first: bool = False
+    ) -> Iterable[Path]:
         if not root.exists():
             return []
-        files: list[Path] = []
+        files: list[tuple[int, Path]] = []
         for project_dir in sorted(entry for entry in root.iterdir() if entry.is_dir()):
             for path in project_dir.rglob("*.jsonl"):
-                if not path.is_file():
+                try:
+                    info = path.stat()
+                except OSError:
+                    continue
+                if not S_ISREG(info.st_mode):
                     continue
                 stats.files_scanned += 1
-                try:
-                    if path.stat().st_size == 0:
-                        stats.files_empty += 1
-                        continue
-                except Exception:
-                    pass
-                files.append(path)
-        return files
+                if info.st_size == 0:
+                    stats.files_empty += 1
+                    continue
+                files.append((-info.st_mtime_ns, path))
+        if recent_first:
+            # UUID filenames carry no date. Use mtimes to start streaming without reading every log.
+            files.sort()
+        return [path for _, path in files]
 
     def _normalize_text(self, content: Any) -> str:
         if content is None:
@@ -612,7 +619,7 @@ class ClaudeBackend:
             sessions: dict[str, SessionSummary] = {}
             emitted: set[str] = set()
             emitted_count = 0
-            for path in self._iter_files(root, stats):
+            for path in self._iter_files(root, stats, recent_first=True):
                 file_sessions: set[str] = set()
                 for _, event in read_jsonl(path, strict=strict, stats=stats):
                     stats.events_scanned += 1
