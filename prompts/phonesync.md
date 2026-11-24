@@ -1,5 +1,24 @@
 # Phone sync
 
+## Add apps
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Update phonesync to back up:
+
+- App usage history (dumpsys usagestats, or the UsageStatsManager events via the helper)
+- AntennaPod data: I think it has an automated database export. See if you can get the subscriptions, history, etc. in a human-readable format.
+- ReadEra data: highlights, progress, usage, ...
+
+--- <!-- steering -->
+
+My preference is to implement what's possible without having to read the screen, etc. Is that possible?
+
+<!-- codex resume 01a20c59-99f8-7521-8b22-0710c9db644d -->
+
 ## Initial version, created in infra/phone-sync, 25 Oct 2026
 
 <!--

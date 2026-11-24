@@ -18,6 +18,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import sqlite3
@@ -27,6 +28,8 @@ import tarfile
 import tempfile
 import threading
 import uuid
+import zipfile
+from collections import Counter
 from collections.abc import Iterable, Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -696,6 +699,263 @@ class ADB:
         self.run(self.helper_args("read", uri), output=output)
 
 
+APP_EXPORTS = {
+    "antennapod": (("/sdcard/Documents/PhoneSync/AntennaPod",), "*.db"),
+    "readera": (
+        ("/sdcard/Documents/PhoneSync/ReadEra", "/sdcard/ReadEra/BackUps"),
+        "*.bak",
+    ),
+}
+DEVICE_SOURCES = ("app_usage", *APP_EXPORTS)
+
+
+def usage_rows(adb: ADB) -> Iterator[dict]:
+    """Merge persisted intervals and live stats; matching events may occur in both."""
+    fields = re.compile(r"(\w+)=(.*?)(?= \w+=|$)")
+    intervals = ("daily", "weekly", "monthly", "yearly")
+    stats = {}
+    events = {}
+    for command in (("file", "0"), ("-c",)):
+        persisted = command[0] == "file"
+        owner, interval, begin, event_section = persisted, None, None, False
+        recognized = False
+        occurrences = Counter()
+        for line in adb.shell("dumpsys", "usagestats", *command).splitlines():
+            line = line.strip()
+            if line.startswith("user="):
+                owner = line == "user=0"
+            if not owner:
+                continue
+            if line.startswith(("interval=", "In-memory ")):
+                interval = line.removeprefix("interval=")
+                if line.startswith("In-memory "):
+                    interval = line.split()[1]
+                recognized |= interval in intervals
+                begin, event_section = None, False
+            elif line.startswith("file="):
+                begin, event_section = None, False
+            elif line == "events" or (
+                line.startswith("Last ") and " hour events (" in line
+            ):
+                event_section = True
+            elif line.startswith("time=") and event_section:
+                event = dict(fields.findall(line))
+                timestamp = int(event.pop("time"))
+                if not {"type", "package"} <= event.keys():
+                    raise SyncError("Unexpected Android usage event format")
+                event["timestamp_ms"] = timestamp
+                event["timestamp"] = dt.datetime.fromtimestamp(
+                    timestamp / 1000, dt.UTC
+                ).isoformat()
+                fingerprint = hashlib.sha256(canonical(event).encode()).hexdigest()
+                occurrences[fingerprint] += 1
+                key = f"event:{timestamp}:{fingerprint}:{occurrences[fingerprint]}"
+                events[key] = {"key": key, "kind": "event", **event}
+            elif line.startswith("beginTime="):
+                begin = int(line.split()[0].split("=", 1)[1])
+            elif (
+                begin is not None
+                and interval in intervals
+                and line.startswith("package=")
+            ):
+                values = dict(fields.findall(line))
+                package = values.pop("package")
+                if "totalTimeUsed" not in values:
+                    continue
+                key = f"summary:{interval}:{begin}:{package}"
+                stats[key] = {
+                    "key": key,
+                    "kind": "summary",
+                    "interval": interval,
+                    "begin_ms": begin,
+                    "package": package,
+                    **{name: int(value) for name, value in values.items()},
+                }
+        if not recognized and not persisted:
+            raise SyncError("Android usage stats unavailable or unrecognized")
+    yield from events.values()
+    yield from stats.values()
+
+
+def antennapod_rows(path: Path) -> Iterator[dict]:
+    """Expose app tables, with episode and podcast titles alongside playback state."""
+    tables = {
+        "Feeds": "subscription",
+        "FeedItems": "episode",
+        "FeedMedia": "playback",
+        "Queue": "queue",
+        "Favorites": "favorite",
+        "SimpleChapters": "chapter",
+        "DownloadLog": "download",
+    }
+    with contextlib.closing(
+        sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)
+    ) as db:
+        db.row_factory = sqlite3.Row
+        if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise SyncError("AntennaPod database did not pass SQLite quick_check")
+        existing = {
+            r[0]
+            for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        if not {"Feeds", "FeedItems", "FeedMedia"} <= existing:
+            raise SyncError("Export is missing core AntennaPod tables")
+        for table, kind in tables.items():
+            if table not in existing:
+                continue
+            query = f"SELECT * FROM {table}"
+            if table == "FeedMedia":
+                query = (
+                    "SELECT m.*, i.title AS episode_title, f.title AS podcast_title "
+                    "FROM FeedMedia m LEFT JOIN FeedItems i ON i.id = m.feeditem "
+                    "LEFT JOIN Feeds f ON f.id = i.feed"
+                )
+            for record in db.execute(query):
+                data = {
+                    field: {"$blob_base64": base64.b64encode(value).decode()}
+                    if isinstance(value, bytes)
+                    else value
+                    for field, value in dict(record).items()
+                }
+                yield {"key": f"{kind}:{data['id']}", "kind": kind, "record": data}
+
+
+def readera_rows(path: Path) -> Iterator[dict]:
+    """Read both ReadEra library layouts while keeping native citation and position fields."""
+    with zipfile.ZipFile(path) as backup:
+        if backup.testzip() is not None:
+            raise SyncError("ReadEra backup failed ZIP integrity check")
+        members = {
+            PurePosixPath(member).name: member
+            for member in backup.namelist()
+            if not member.endswith("/")
+        }
+        if len(members) != sum(not name.endswith("/") for name in backup.namelist()):
+            raise SyncError("ReadEra backup contains duplicate member names")
+        parts = {
+            int(match[1]): name
+            for name in members
+            if (match := re.fullmatch(r"docs_(\d+)\.json", name))
+        }
+        documents = []
+        if parts:
+            if sorted(parts) != list(range(1, len(parts) + 1)):
+                raise SyncError("ReadEra backup is missing document parts")
+            for name in sorted(parts):
+                part = json.loads(backup.read(members[parts[name]]))
+                if not isinstance(part, list):
+                    raise SyncError("Invalid ReadEra document part")
+                documents.extend(part)
+        elif "library.json" in members:
+            library = json.loads(backup.read(members["library.json"]))
+            if not isinstance(library, dict) or not isinstance(
+                library.get("docs"), list
+            ):
+                raise SyncError("Invalid ReadEra library")
+            documents = library.pop("docs")
+            yield {"key": "library", "kind": "library", "record": library}
+        elif (
+            "stats.json" not in members
+            or json.loads(backup.read(members["stats.json"])).get("docs") != 0
+        ):
+            raise SyncError("ReadEra backup contains no readable library")
+        for document in documents:
+            uri = document.get("uri") if isinstance(document, dict) else None
+            if (
+                not isinstance(uri, str)
+                or not uri
+                or not isinstance(document.get("data"), dict)
+            ):
+                raise SyncError("Invalid ReadEra document")
+            yield {"key": f"book:{uri}", "kind": "book", "record": document}
+        for name in ("stats.json", "colls.json", "words.json"):
+            if name in members:
+                key = Path(name).stem
+                yield {
+                    "key": key,
+                    "kind": key,
+                    "record": json.loads(backup.read(members[name])),
+                }
+
+
+def app_export(
+    adb: ADB, name: str, archive: Archive | None, run: str | None = None
+) -> dict:
+    """Use the newest app-created export and retain its original bytes alongside JSONL."""
+    folders, pattern = APP_EXPORTS[name]
+    candidates = []
+    for folder in folders:
+        command = shlex.join(
+            (
+                "find",
+                folder,
+                "-maxdepth",
+                "1",
+                "-type",
+                "f",
+                "-name",
+                pattern,
+                "-exec",
+                "stat",
+                "-c",
+                "%Y %s %n",
+                "{}",
+                "+",
+            )
+        )
+        listing = adb.run(
+            ["shell", "-T", f"if [ -d {shlex.quote(folder)} ]; then {command}; fi"]
+        ).decode()
+        candidates.extend(
+            (int(stamp), path, int(size))
+            for stamp, size, path in (row.split(" ", 2) for row in listing.splitlines())
+        )
+    if not candidates:
+        return {
+            "status": "unavailable",
+            "error": f"Save an app export under {folders[0]}",
+        }
+    stamp, remote, size = max(candidates)
+    if archive is not None:
+        previous = archive.manifest["sources"].get(name, {})
+        if stamp < previous.get("export_mtime", 0):
+            return {
+                "status": "unavailable",
+                "error": "Only exports older than the archived snapshot are available",
+            }
+    with tempfile.TemporaryDirectory(prefix="phonesync-export-") as tmp:
+        path = Path(tmp) / Path(remote).name
+        with path.open("wb") as handle:
+            adb.run(["shell", "-T", shlex.join(("cat", remote))], output=handle)
+        if (
+            path.stat().st_size != size
+            or adb.shell("stat", "-c", "%Y %s", remote) != f"{stamp} {size}"
+        ):
+            raise SyncError(
+                f"{name} export changed during capture; retry after the app finishes writing"
+            )
+        rows = list((antennapod_rows if name == "antennapod" else readera_rows)(path))
+        if archive is None:
+            return {"status": "ok", "rows": len(rows), "export": remote}
+        with path.open("rb") as handle:
+            ref = archive.assets.put_file(handle, hint=path.name)
+        rows.append(
+            {
+                "key": "export",
+                "kind": "export",
+                "path": remote,
+                "mtime": stamp,
+                "file": ref,
+            }
+        )
+        result = archive.update_source(name, "key", rows, run)
+        archive.manifest["sources"][name]["export_mtime"] = stamp
+        return result | {
+            "status": "ok",
+            "export": remote,
+        }
+
+
 def tar_path(name: str) -> str:
     path = PurePosixPath(name)
     if (
@@ -922,6 +1182,7 @@ def provider_config(path: Path | None) -> dict:
         for name, value in config.get("providers", {}).items():
             if (
                 not name.replace("_", "").isalnum()
+                or name in DEVICE_SOURCES
                 or not isinstance(value, dict)
                 or set(value) != {"uri", "key"}
             ):
@@ -1588,6 +1849,9 @@ phonesync --files all --attachments
 phonesync status        # counts, paths, last report; no phone required
 phonesync verify        # hashes, keys, revision chains, and referenced files
 phonesync export --source sms
+phonesync export --source app_usage
+phonesync export --source antennapod
+phonesync export --source readera
 phonesync --describe
 
 CLI readers hold a shared publication lock while pinning a manifest. Editors
@@ -1610,6 +1874,7 @@ def execute_sync(
     adb = ADB(args.serial, args.timeout)
     identity = adb.identity()
     root = args.data_dir or default_root(identity["device_id"])
+    provider_sources = [name for name in sources if name in providers]
     if args.dry_run:
         return {
             "dry_run": True,
@@ -1625,16 +1890,34 @@ def execute_sync(
         }, 0
     if args.command == "probe":
         result = {"device": identity, "sources": {}}
-        with adb.deployed():
+        with adb.deployed() if provider_sources else contextlib.nullcontext():
             for name in sources:
                 log(f"Probing {name}")
                 try:
-                    count = sum(1 for _ in adb.provider_rows(providers[name][0]))
-                    result["sources"][name] = {"status": "ok", "rows": count}
-                except (SyncError, subprocess.TimeoutExpired) as exc:
+                    if name in APP_EXPORTS:
+                        result["sources"][name] = app_export(adb, name, None)
+                    else:
+                        rows = (
+                            adb.provider_rows(providers[name][0])
+                            if name in providers
+                            else usage_rows(adb)
+                        )
+                        result["sources"][name] = {
+                            "status": "ok",
+                            "rows": sum(1 for _ in rows),
+                        }
+                except (
+                    SyncError,
+                    subprocess.TimeoutExpired,
+                    ValueError,
+                    KeyError,
+                    sqlite3.Error,
+                    zipfile.BadZipFile,
+                ) as exc:
                     result["sources"][name] = {"status": "blocked", "error": str(exc)}
+        failures = {"blocked", "unavailable"} if args.sources else {"blocked"}
         return result, 2 if any(
-            v["status"] != "ok" for v in result["sources"].values()
+            v["status"] in failures for v in result["sources"].values()
         ) else 0
     with archive_lock(root):
         migration = None
@@ -1672,7 +1955,7 @@ def execute_sync(
         if migration:
             report["migration"] = migration
         with adb.deployed():
-            for name in sources:
+            for name in provider_sources:
                 log(f"Syncing {name}")
                 try:
                     uri, key = providers[name]
@@ -1714,7 +1997,13 @@ def execute_sync(
             if args.attachments:
                 log("Syncing MMS attachments and full-resolution contact photos")
                 report["attachments"] = sync_attachments(
-                    adb, archive, root, identity["device_id"], run, sources, args.verify
+                    adb,
+                    archive,
+                    root,
+                    identity["device_id"],
+                    run,
+                    provider_sources,
+                    args.verify,
                 )
                 report["errors"].extend(report["attachments"]["errors"])
             if args.files != "none":
@@ -1754,6 +2043,31 @@ def execute_sync(
                     report["errors"].append(
                         {"source": "shared_files", "error": str(exc)}
                     )
+        for name in sources:
+            if name in providers:
+                continue
+            log(f"Syncing {name}")
+            try:
+                if name == "app_usage":
+                    result = archive.update_source(
+                        name, "key", usage_rows(adb), run, reconcile=False
+                    ) | {"status": "ok"}
+                else:
+                    result = app_export(adb, name, archive, run)
+            except (
+                SyncError,
+                subprocess.TimeoutExpired,
+                ValueError,
+                KeyError,
+                sqlite3.Error,
+                zipfile.BadZipFile,
+            ) as exc:
+                result = {"status": "blocked", "error": str(exc)}
+            report["sources"][name] = result
+            if result["status"] == "blocked" or (
+                result["status"] == "unavailable" and args.sources
+            ):
+                report["errors"].append({"source": name, "error": result["error"]})
         report["status"] = "partial" if report["errors"] else "ok"
         report["finished"] = now()
         log("Publishing the completed run atomically")
@@ -1848,7 +2162,7 @@ def describe() -> dict:
         "record_format": "One JSON object per line: data, _sync, history (distinct superseded payloads), changes (hash references)",
         "commands": {
             "sync": "Default: reconcile records and shared-file inventory; opt-in byte copying",
-            "probe": "Read provider availability/counts; no archive writes; transient shell helper only",
+            "probe": "Read source availability/counts; no archive writes; transient shell helper for providers",
             "status": "Show archive counts, source paths and latest run, without a phone",
             "verify": "Verify all current/history/source/asset hashes, without a phone",
             "migrate": "Verify and replace legacy SQLite with JSONL/images, without a phone",
@@ -1858,7 +2172,7 @@ def describe() -> dict:
         "options": {
             "--data-dir": "Default ~/Documents/data/phone-DEVICE-ID/, or PHONESYNC_DIR",
             "--serial": "ADB transport serial, or ANDROID_SERIAL; require explicit choice for multiple phones",
-            "--sources": "Comma-separated provider names; default all; omitted sources are not reconciled",
+            "--sources": "Comma-separated provider and device source names; default all; omitted sources are not reconciled",
             "--files": "inventory (default), all, documents (Documents/Download/Recordings), none",
             "--attachments": "Copy binary MMS parts and full-resolution contact photos (opt-in)",
             "--verify": "Hash local shared-file objects before skipping; re-fetch provider attachments",
@@ -1871,6 +2185,11 @@ def describe() -> dict:
             "--timeout": "Seconds per ADB operation, default 300",
         },
         "providers": PROVIDERS,
+        "device_sources": {
+            "app_usage": "Android usage events and per-app interval totals via dumpsys; retained as Android rolls old intervals out",
+            "antennapod": "Latest database export in /sdcard/Documents/PhoneSync/AntennaPod, with readable subscriptions, episodes, playback, queue and favorites",
+            "readera": "Latest ReadEra .bak in /sdcard/Documents/PhoneSync/ReadEra or /sdcard/ReadEra/BackUps, with documents, citations, bookmarks and reading positions",
+        },
         "output": "JSON; export is NDJSON. Progress on stderr. No message content in logs.",
         "exit_codes": {
             "0": "success",
@@ -1881,6 +2200,7 @@ def describe() -> dict:
             "Owner user 0 only; work/private/secondary profiles excluded",
             "Only data exposed to ADB shell; no app-private databases, RCS, cloud-only history, deleted items, passwords or keys",
             "Provider scans read all rows to detect old edits; only changed versions are stored",
+            "Optional app exports are reported unavailable until present. App export freshness depends on each app's backup schedule",
             "Shared files use size/mtime; same-size same-mtime edits require --refresh-files",
         ],
     }
@@ -2075,12 +2395,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
         return 0
     providers = provider_config(args.config)
-    sources = args.sources.split(",") if args.sources else list(providers)
-    if len(set(sources)) != len(sources) or set(sources) - providers.keys():
+    sources = args.sources.split(",") if args.sources else [*providers, *DEVICE_SOURCES]
+    if len(set(sources)) != len(sources) or set(sources) - (
+        providers.keys() | set(DEVICE_SOURCES)
+    ):
         raise SyncError(
-            "Unknown/duplicate sources; use --describe to list available providers"
+            "Unknown/duplicate sources; use --describe to list available sources"
         )
-    log(f"phonesync {args.command}: {len(sources)} providers; files={args.files}")
+    log(f"phonesync {args.command}: {len(sources)} sources; files={args.files}")
     report, code = execute_sync(args, providers, sources)
     print(canonical(report))
     return code
