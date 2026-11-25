@@ -2,6 +2,58 @@
 
 Prompts for setup.{fish,bash}.
 
+## Improve plutoniun setup, 25 Nov 2026
+
+The Herdr app in installed on this Windows machine. Remove it, and all related data, settings, etc.
+
+---
+
+How many Claude Codes are installed on this system? I think there's one installed via winget, one installed via npm somehwere, many multiple npm installations. Locate all and identify their versions. Similarly for codex, agy, copilot (GitHub) and pi.
+
+---
+
+Implement your suggestion #1 - delete old mise folder, etc. Remove C:\Apps\nodejs. Re-install pi and copilot CLI with Node A's npm as you suggested. Delete the two leftover .codex-* folders. Give me the command to remove the winget Claude code and I'll do that. Update ~/code/scripts/setup/windows.md with the instructions to set up this configuration on a new laptop.
+
+---
+
+I ran step 1. Check if that worked. After that, I'll exit this process and run winget uninstall --id Anthropic.ClaudeCode --exact
+
+---
+
+PS C:\Windows\System32> winget uninstall --id Anthropic.ClaudeCode --exact
+Found Claude Code [Anthropic.ClaudeCode]
+Starting package uninstall...
+An unexpected error occurred while executing the command:
+remove: Access is denied.: "C:\Users\Anand\AppData\Local\Microsoft\WinGet\Packages\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\claude.exe"
+Uninstall failed with exit code: 0x8a150003 : Executing command failed
+
+But now you're a different Claude instance. See if you can uninstall the winget one.
+
+---
+
+On VS Code when I run `bash` from Cygwin's fish, I get this error: `Error: cannot operate on non-existent file "C:\\c\\Dropbox\\scripts\\.env"`.
+How do I fix this? Ideally, I want to use C:\Dropbox\scripts\.env. And it should continue working on graphene - my Linux machine - as it currently is.
+
+---
+
+I'll fix the copilot and opencode abbreviations myself.
+I added $env:APPDATA/sops/age/keys.txt and was able to decrypt the Dropbox/scripts/.env file.
+But now bash reports this error:
+could not read config file: open /home/Anand/Dropbox/scripts/.sops.yaml: The system cannot find the path specified.
+
+<!-- claude --resume d5799600-2d53-4f21-99ed-0476c31e6421 -->
+
+## Remove herdr, 25 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Herdr was installed via `curl -fsSL https://releases.herdr.dev/app/install.sh | sh` and run. Remove the app and all related settings, data, etc.
+
+<!-- claude --resume 1dd0ac47-b8b3-432d-a271-9b436f915369 -->
+
 ## Plutonium skills, 25 Nov 2026
 
 <!--

@@ -323,7 +323,6 @@ cd ~/.local/bin; curl -L https://github.com/pingdotgg/t3code/releases/download/v
 cd ~/.local/bin; curl -L https://anoma.ly/hex/download/linux-x64 -o hex && chmod +x hex  # hex - dictation
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 curl -fsSL https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz | tar -xz -C ~/.local/opt; ln -sfn ~/.local/opt/scrcpy-linux-x86_64-v5.0.1/scrcpy ~/.local/bin/scrcpy
-curl -fsSL https://releases.herdr.dev/app/install.sh | sh
 
 # Install OpenAI Tunnel Client and Cloudflared for secure tunneling. Update: rerun to update
 mkdir -p ~/.local/share/tunnel-client ~/.local/bin

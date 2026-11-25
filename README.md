@@ -149,7 +149,7 @@ Here are the setup details for my laptops.
 - [timestamp.py](timestamp.py) repairs timestamps in older/ambiguous transcripts; new `call` output already uses cumulative timestamps. It idempotently makes timestamps cumulative across legacy chunks. Bare names resolve to the latest descending filename match under `~/Dropbox/notes/transcripts`; use `--chunk-starts 0,25,50` for ambiguous chunk boundaries. Examples: `timestamp.py Naveen`, `timestamp.py Naveen Ankor --dry-run`, `timestamp.py "2026-09-01 GIPCL" --chunk-starts 0,30,60,90,120`, `timestamp.py --describe | jaq .`.
 - [transcribe](transcribe) transcribes audio files into adjacent `.md` files, skipping existing files. Example: `transcribe a.mp3 /x/b.opus`. Supports `--prompt`, `--model`. Retries empty responses at `medium`, then `high` thinking
 - [translate](translate) creates a virtual mic that translates what I say into any other language. Useful for Google Meet, etc.
-- [vscode.cmd](vscode.cmd) launches VS Code from inside psmux if `.psmux.conf` has `set -ga update-environment VSCODE_IPC_HOOK_CLI`. `code $FILE` doesn't work inside `psmux`. Use `vscode $FILE`.
+- [vscode.cmd](vscode.cmd) launches VS Code on remote server via IPC. E.g. Open Plutonium as a VS Code remote SSH window from graphene with a psmux terminal. Type `vscode.cmd $FILE` inside psmux to open the file on graphene's VS Code session.
 
 ## AI coding agent scripts
 

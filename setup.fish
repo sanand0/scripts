@@ -32,11 +32,16 @@ abbr unset 'set --erase'
 # Secrets configuration with sops and age
 export SOPS_EDITOR='code --wait'
 export SOPS_CONFIG="$HOME/Dropbox/scripts/.sops.yaml"
+# Cygwin: sops is a native Windows exe, so it needs C:\Dropbox\... rather than /home/Anand/Dropbox/...
+string match -q 'CYGWIN*' (uname); and export SOPS_CONFIG=(cygpath -w (realpath $SOPS_CONFIG))
 
 # uv configuration to allow Codex, etc. to use uv
-export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
-export UV_CACHE_DIR="$HOME/.cache/uv"
-export XDG_DATA_HOME="$HOME/.local/share"
+# Not on Cygwin: native Windows tools (mise, uv) read /home/Anand as C:\home\Anand, creating stray copies there
+if not string match -q 'CYGWIN*' (uname)
+    export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
+    export UV_CACHE_DIR="$HOME/.cache/uv"
+    export XDG_DATA_HOME="$HOME/.local/share"
+end
 
 # Allow Claude Code to generate large HTML files. https://code.claude.com/docs/en/settings
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
@@ -282,7 +287,9 @@ abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
 function secret --description "Extract secret from .env"
-    sops --decrypt "$HOME/Dropbox/scripts/.env" | awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' | string trim -c '"'
+    set -l env_file "$HOME/Dropbox/scripts/.env"
+    string match -q 'CYGWIN*' (uname); and set env_file (cygpath -w (realpath $env_file))   # native sops needs C:\Dropbox\...
+    sops --decrypt "$env_file" | awk -F= -v k="$argv[1]" '$1==k{print substr($0,index($0,"=")+1);exit}' | string trim -c '"'
 end
 
 function claudeuse --description "Toggle Claude settings between Anthropic and MiniMax"

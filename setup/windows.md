@@ -70,7 +70,13 @@ Check with `uv run $HOME\code\scripts\context.py status`.
 
 ## PATH
 
-Install mise first, then keep User PATH small. Keep `C:\Apps\nodejs` in Machine PATH until Remote Desktop Commander no longer depends on it. Until then, `node` remains the legacy install, while mise shims expose the other installed CLIs.
+Install mise first, then keep User PATH small. mise provides `node`, `npm`, `npx` and every npm-installed CLI through its shims. Don't install a separate Node.js; an old portable one in `C:\Apps\nodejs` was removed on 25 Nov 2026.
+
+Pin mise's data directory. Some processes, e.g. Remote Desktop Commander's, inherit `XDG_DATA_HOME=/home/Anand/.local/share`, which native mise reads as `C:\home\Anand\.local\share` and so silently builds a second, separate mise there. `MISE_DATA_DIR` overrides it:
+
+```powershell
+[Environment]::SetEnvironmentVariable('MISE_DATA_DIR', "$env:LOCALAPPDATA\mise", 'User')
+```
 
 ```powershell
 $user = @(
@@ -241,12 +247,16 @@ $tools = @(
 foreach ($tool in $tools) { & $mise use --global $tool }
 
 $npm = @(
-  '@googleworkspace/cli@latest'          # gws
+  '@anthropic-ai/claude-code@latest'     # claude
   '@openai/codex@latest'
+  '@github/copilot@latest'               # GitHub Copilot CLI
+  '@googleworkspace/cli@latest'          # gws
+  'cf'                                   # Cloudflare CLI
   'opencode-ai'
   'agent-browser@latest'
 )
-& $mise exec -- npm install -g $npm
+# npm blocks install scripts by default. Claude Code's installs its native binary; workerd's is needed by cf
+& $mise exec -- npm install -g --allow-scripts=@anthropic-ai/claude-code,workerd $npm
 & $mise exec -- npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 & $mise reshim   # expose npm-installed CLIs via mise shims
 
@@ -266,18 +276,26 @@ uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
 # Long scrollback
 set -g history-limit 100000
 set -g mouse on
-
-# Use Cygwin bash as the default shell
-set -g default-shell C:/cygwin/bin/bash.exe
+set -g default-shell C:/cygwin/bin/fish.exe
 
 # Use ~/code/scripts/vscode.cmd to launch VSCode from psmux
 set -ga update-environment VSCODE_IPC_HOOK_CLI
 '@ | Set-Content ~/.psmux.conf
 ```
 
-Run `mise` from plain PowerShell. Remote Desktop Commander's processes on Plutonium inherit `XDG_DATA_HOME=/home/Anand/.local/share`. mise run there installs into `C:\home\Anand\.local\share\mise` instead of `%LOCALAPPDATA%\mise`, whose shims are on PATH. If a tool works in one shell but not another, run `Remove-Item Env:XDG_DATA_HOME; mise install; mise reshim`.
+Each agent CLI should exist exactly once, under mise's Node. Check with `Get-Command claude,codex,copilot,pi,agy -All`: each should resolve only to `%LOCALAPPDATA%\mise\shims` (or `%LOCALAPPDATA%\agy\bin` for agy). Other copies are fine and not on PATH: the Codex desktop app's under `~\.codex` and `%LOCALAPPDATA%\OpenAI\Codex`, and VS Code's bundled Copilot CLI. VS Code's `copilot` wrapper under `globalStorage\github.copilot-chat\copilotCli` is on PATH, but the mise shim comes earlier.
 
-Herdr starts Windows PowerShell when `pwsh.exe` is unavailable. Add `mise activate pwsh | Out-String | Invoke-Expression` to `$HOME\Documents\WindowsPowerShell\profile.ps1` (linked to `C:\Documents\WindowsPowerShell\profile.ps1`). This activates mise in each new pane so npm CLIs installed under its Node version, such as `copilot`, are on PATH.
+If a tool works in one shell but not another, check `mise doctor` shows `~\AppData\Local\mise\shims`. If `C:\home\Anand\.local\share\mise` reappears, the shell lacks `MISE_DATA_DIR`. Delete that folder and restart the shell.
+
+Secrets in `C:\Dropbox\scripts\.env` are sops-encrypted with age. Cygwin bash and fish decrypt it at startup with the native Windows `sops`, which looks for the age key at `%APPDATA%\sops\age\keys.txt`. graphene keeps it at `~/.config/sops/age/keys.txt`. Copy it once, over SSH, rather than via Dropbox:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:APPDATA\sops\age" | Out-Null
+scp graphene:.config/sops/age/keys.txt "$env:APPDATA\sops\age\keys.txt"
+sops --decrypt C:\Dropbox\scripts\.env > $null; if ($?) { 'sops OK' }
+```
+
+`setup.bash` and `setup.fish` convert the `.env` and `SOPS_CONFIG` paths with `cygpath -w` under Cygwin only, since native `sops` reads `/c/...` as `C:\c\...` and `/home/Anand/...` as `C:\home\Anand\...`.
 
 ## Remote Desktop Commander
 
@@ -285,7 +303,7 @@ To keep Plutonium remotely accessible after reboot, first pair it with `npx @won
 
 ```powershell
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
-  -Argument '-NoProfile -NonInteractive -WindowStyle Hidden -Command "& ''C:\Apps\nodejs\npx.cmd'' -y ''@wonderwhy-er/desktop-commander@latest'' remote"' `
+  -Argument '-NoProfile -NonInteractive -WindowStyle Hidden -Command "$env:MISE_DATA_DIR = ''C:\Users\Anand\AppData\Local\mise''; & ''C:\Users\Anand\AppData\Local\Microsoft\WinGet\Links\mise.exe'' exec -- npx -y ''@wonderwhy-er/desktop-commander@latest'' remote"' `
   -WorkingDirectory 'C:\Users\Anand'
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $trigger.Delay = 'PT1M'
@@ -296,7 +314,7 @@ Register-ScheduledTask -TaskName 'DesktopCommanderRemote' -Action $action `
   -Trigger $trigger -Settings $settings -Principal $principal
 ```
 
-This uses the stable `C:\Apps\nodejs\npx.cmd` rather than mise's versioned Node path. S4U avoids the local account password (password-based registration failed). The task starts one minute after boot, runs elevated, and retries failures. Registration succeeded; connectivity **after a reboot is not yet verified**, and S4U's network restrictions may prevent the remote connection.
+This runs `npx` through WinGet's stable `mise.exe` link, so Node upgrades don't break the task. Earlier versions used a separate portable `C:\Apps\nodejs`, which was removed on 25 Nov 2026. If the task already exists, update it with `Set-ScheduledTask -TaskName DesktopCommanderRemote -Action $action` instead of registering it again. S4U avoids the local account password (password-based registration failed). The task starts one minute after boot, runs elevated, and retries failures. Registration succeeded; connectivity **after a reboot is not yet verified**, and S4U's network restrictions may prevent the remote connection.
 
 After reboot, check `Get-ScheduledTaskInfo -TaskName DesktopCommanderRemote` and verify Plutonium is online at [Desktop Commander](https://mcp.desktopcommander.app/).
 
@@ -338,9 +356,9 @@ Encrypted credentials may not decrypt across machines, so run `gws auth login` l
 On Plutonium, log back in from PowerShell. Open the fresh URL, select **s.anand@straive.com**, and keep the command running until it succeeds:
 
 ```powershell
-$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
-$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-anand@study.iitm.ac.in"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
-$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-root.node@gmail.com"; & 'C:/home/Anand/.local/share/mise/installs/node/26.10.0/gws.cmd' auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws"; & "$env:LOCALAPPDATA/mise/shims/gws.exe" auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-anand@study.iitm.ac.in"; & "$env:LOCALAPPDATA/mise/shims/gws.exe" auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
+$env:GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "$env:USERPROFILE/.config/gws-root.node@gmail.com"; & "$env:LOCALAPPDATA/mise/shims/gws.exe" auth login --scopes 'https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/userinfo.email'
 ```
 
 Remote Desktop Commander: use the same config and full `gws.cmd` path; its PATH may be stale. Straive Gmail, Calendar, Drive and Chat verified on 11 Nov 2026.
@@ -349,11 +367,7 @@ Remote Desktop Commander: use the same config and full `gws.cmd` path; its PATH 
 
 Run in native PowerShell as Anand. Use Developer Mode or an elevated PowerShell for file symlinks. This is the Windows setup for the shared [skills checkout](https://github.com/sanand0/skills/blob/main/INSTALLATION.md).
 
-Codex and Pi are installed in [CLI tools](#cli-tools). Install Claude Code with WinGet and Antigravity with Google's [Windows CLI installer](https://antigravity.google/docs/getting-started?tab=cli). Reopen PowerShell after installing the CLIs so it picks up PATH changes.
-
-```powershell
-winget install --id Anthropic.ClaudeCode --exact --source winget
-```
+Claude Code, Codex, GitHub Copilot CLI and Pi are installed with npm under mise's Node in [CLI tools](#cli-tools). Don't also install Claude Code with WinGet; two copies on PATH run different versions. Install Antigravity with Google's [Windows CLI installer](https://antigravity.google/docs/getting-started?tab=cli). Reopen PowerShell after installing the CLIs so it picks up PATH changes.
 
 The skills checkout supplies the global instructions and skills for every project. If a destination already contains a different file or directory, inspect it and move it aside before retrying. Keep any third-party skills you use.
 

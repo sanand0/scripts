@@ -154,7 +154,11 @@ fi
 
 # Load all environment variables
 # source "/c/Dropbox/scripts/.env"
-eval "$(sops --decrypt /c/Dropbox/scripts/.env)"
+env_file=/c/Dropbox/scripts/.env
+# Cygwin: sops is a native Windows exe, which reads /c/... as C:\c\... So pass it C:\Dropbox\scripts\.env
+[[ $OSTYPE == cygwin ]] && env_file=$(cygpath -w "$env_file")
+eval "$(sops --decrypt "$env_file")"
+unset env_file
 
 ## Aliases
 # ---------------------------------------------------------------------
