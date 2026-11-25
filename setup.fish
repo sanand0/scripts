@@ -243,8 +243,9 @@ abbr --add filessync     rclone bisync ~/r2/files r2:files $_RCLONE_BISYNC_OPTIO
 abbr --add mediasync     rclone bisync ~/r2/media r2:media $_RCLONE_BISYNC_OPTIONS
 abbr --add redirectsync  rclone bisync ~/r2/redirect r2:redirect $_RCLONE_BISYNC_OPTIONS
 
-# Sync files to Plutonium (my Windows machine) via rsync over SSH. See ~/.ssh/config for plutonium host config.
-abbr --add plutoniumsync rsync -avzP --rsync-path=\'C:/cygwin/bin/rsync.exe -e "\$ssh_cmd"\' plutonium:~/...
+# Connect to plutonium via rsync, tmux, VS Code, etc.
+abbr --add plutonium 'ssh -t plutonium tmux new -As main'
+abbr --add codepl 'code --folder-uri "vscode-remote://ssh-remote+plutonium/C:/code/scripts"'
 
 # Back up files to Hetzner Storage Box. See ~/.ssh/config for hetzner host config.
 # Set up SSH key via https://docs.hetzner.com/storage/storage-box/backup-space-ssh-keys
@@ -332,10 +333,6 @@ function claudeuse --description "Toggle Claude settings between Anthropic and M
 
     jq -r '.env.ANTHROPIC_BASE_URL // "", .env.ANTHROPIC_MODEL // ""' $settings
 end
-
-# SaaS utilities
-# -----------------------------------------------
-abbr --add hs 'npx -y --package @hubspot/cli hs'
 
 # File Utilities
 # -----------------------------------------------

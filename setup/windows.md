@@ -140,7 +140,7 @@ gh auth login
 Set up Plutonium as an SSH server via Tailscale. After logging into Tailscale as `root.node@gmail.com`, run as Admin PowerShell:
 
 ```powershell
-winget install --exact --id Tailscale.Tailscale --source winget
+winget install--id Tailscale.Tailscale
 
 # Private HTTPS: keep file browsing separate from the Tailrun command API
 tailscale set --unattended=true
@@ -188,6 +188,11 @@ New-NetFirewallRule `
   -RemoteAddress '100.120.219.30' `
   -Action Allow
 
+# Allow SSH multiplexing for multiple VS Code windows
+$cfg = "$env:ProgramData\ssh\sshd_config"
+(Get-Content $cfg -Raw) -replace '(?m)^#?MaxSessions \d+', 'MaxSessions 50' | Set-Content $cfg -Encoding ascii
+& 'C:\Program Files\OpenSSH\sshd.exe' -t
+
 # Start SSH
 Start-Service sshd
 
@@ -202,8 +207,10 @@ ssh-keygen -lf "$env:ProgramData\ssh\ssh_host_ed25519_key.pub"
 ## CLI tools
 
 ```powershell
-winget install --id jdx.mise --exact
-winget install --id Wilfred.difftastic --exact   # mise 2026.9.5 picks the wrong Windows asset for difftastic
+winget install --id Microsoft.PowerShell  # Latest powershell
+winget install --id marlocarlo.psmux      # tmux for Windows
+winget install --id Wilfred.difftastic    # mise 2026.9.5 picks the wrong Windows asset for difftastic
+winget install --id jdx.mise              # Use mise for most other tools
 $mise = "$env:LOCALAPPDATA\Microsoft\WinGet\Links\mise.exe"
 $tools = @(
   'age'
@@ -253,6 +260,19 @@ $llmPlugins = @(
   'llm-groq-whisper'
 )
 uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
+
+# Configure psmux scrollback
+@'
+# Long scrollback
+set -g history-limit 100000
+set -g mouse on
+
+# Use Cygwin bash as the default shell
+set -g default-shell C:/cygwin/bin/bash.exe
+
+# Use ~/code/scripts/vscode.cmd to launch VSCode from psmux
+set -ga update-environment VSCODE_IPC_HOOK_CLI
+'@ | Set-Content ~/.psmux.conf
 ```
 
 Run `mise` from plain PowerShell. Remote Desktop Commander's processes on Plutonium inherit `XDG_DATA_HOME=/home/Anand/.local/share`. mise run there installs into `C:\home\Anand\.local\share\mise` instead of `%LOCALAPPDATA%\mise`, whose shims are on PATH. If a tool works in one shell but not another, run `Remove-Item Env:XDG_DATA_HOME; mise install; mise reshim`.
