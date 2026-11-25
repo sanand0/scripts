@@ -257,6 +257,8 @@ uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
 
 Run `mise` from plain PowerShell. Remote Desktop Commander's processes on Plutonium inherit `XDG_DATA_HOME=/home/Anand/.local/share`. mise run there installs into `C:\home\Anand\.local\share\mise` instead of `%LOCALAPPDATA%\mise`, whose shims are on PATH. If a tool works in one shell but not another, run `Remove-Item Env:XDG_DATA_HOME; mise install; mise reshim`.
 
+Herdr starts Windows PowerShell when `pwsh.exe` is unavailable. Add `mise activate pwsh | Out-String | Invoke-Expression` to `$HOME\Documents\WindowsPowerShell\profile.ps1` (linked to `C:\Documents\WindowsPowerShell\profile.ps1`). This activates mise in each new pane so npm CLIs installed under its Node version, such as `copilot`, are on PATH.
+
 ## Remote Desktop Commander
 
 To keep Plutonium remotely accessible after reboot, first pair it with `npx @wonderwhy-er/desktop-commander@latest remote`. Then run in **Admin PowerShell**:
