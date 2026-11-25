@@ -180,6 +180,16 @@ New-NetFirewallRule `
   -RemoteAddress '100.120.62.1' `
   -Action Allow
 
+# Permit Redmi Note 14 Pro 5G
+New-NetFirewallRule `
+  -Name 'SSH-redmi-note-14-pro-5g' `
+  -DisplayName 'SSH from redmi-note-14-pro-5g' `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 22 `
+  -RemoteAddress '100.120.219.30' `
+  -Action Allow
+
 # Start SSH
 Start-Service sshd
 
