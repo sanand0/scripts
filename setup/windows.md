@@ -27,10 +27,7 @@ Each home contains:
 - `.ssh/` → `C:\Dropbox\scripts\.ssh`
 - `.gitconfig` → `C:\code\scripts\.gitconfig`
 
-The Windows home also contains:
-
-- `.codex/AGENTS.md` → `C:\code\skills\AGENTS.md`
-- `.config/gws*/`: one Google Workspace CLI config per account
+The Windows home also contains one Google Workspace CLI config per account under `.config/gws*/`.
 
 ## Folders
 
@@ -79,6 +76,7 @@ Install mise first, then keep User PATH small. Keep `C:\Apps\nodejs` in Machine 
 $user = @(
   "$env:LOCALAPPDATA\Microsoft\WindowsApps"
   "$env:LOCALAPPDATA\Microsoft\WinGet\Links"              # winget CLIs, e.g. mise, duckdb
+  "$env:LOCALAPPDATA\agy\bin"                              # Antigravity CLI
   "$env:LOCALAPPDATA\mise\shims"                          # mise CLIs
   "$env:USERPROFILE\.local\bin"                           # uv tools, e.g. llm
   'C:\code\scripts'
@@ -238,7 +236,6 @@ foreach ($tool in $tools) { & $mise use --global $tool }
 $npm = @(
   '@googleworkspace/cli@latest'          # gws
   '@openai/codex@latest'
-  '@anthropic-ai/claude-code@latest'
   'opencode-ai'
   'agent-browser@latest'
 )
@@ -328,9 +325,63 @@ Remote Desktop Commander: use the same config and full `gws.cmd` path; its PATH 
 
 ## Agent instructions
 
+Run in native PowerShell as Anand. Use Developer Mode or an elevated PowerShell for file symlinks. This is the Windows setup for the shared [skills checkout](https://github.com/sanand0/skills/blob/main/INSTALLATION.md).
+
+Codex and Pi are installed in [CLI tools](#cli-tools). Install Claude Code with WinGet and Antigravity with Google's [Windows CLI installer](https://antigravity.google/docs/getting-started?tab=cli). Reopen PowerShell after installing the CLIs so it picks up PATH changes.
+
 ```powershell
-cmd /c mklink "$env:USERPROFILE\.codex\AGENTS.md" C:\code\skills\AGENTS.md   # Codex reads global rules here; file symlinks need Admin PowerShell or Developer Mode
+winget install --id Anthropic.ClaudeCode --exact --source winget
 ```
+
+The skills checkout supplies the global instructions and skills for every project. If a destination already contains a different file or directory, inspect it and move it aside before retrying. Keep any third-party skills you use.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$skills = 'C:\code\skills'
+if (-not (Test-Path $skills)) {
+  gh repo clone sanand0/skills $skills
+  if ($LASTEXITCODE -ne 0) { throw 'Could not clone the skills repository.' }
+}
+$rules = Join-Path $skills 'AGENTS.md'
+if (-not (Test-Path $rules -PathType Leaf)) { throw "Missing $rules" }
+
+$links = [ordered]@{
+  '.agents\skills'           = $skills  # Codex and Pi
+  '.claude\skills'           = $skills  # Claude Code
+  '.gemini\config\skills'    = $skills  # Antigravity
+  '.codex\AGENTS.md'         = $rules
+  '.gemini\config\AGENTS.md' = $rules
+  '.pi\agent\AGENTS.md'      = $rules
+}
+foreach ($entry in $links.GetEnumerator()) {
+  $path = Join-Path $env:USERPROFILE $entry.Key
+  $type = if ($entry.Value -eq $skills) { 'Junction' } else { 'SymbolicLink' }
+  $existing = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  if ($existing) {
+    if ($existing.LinkType -ne $type -or $existing.Target -notcontains $entry.Value) {
+      throw "Inspect and move aside $path before retrying."
+    }
+    continue
+  }
+  New-Item -ItemType Directory -Path (Split-Path $path) -Force | Out-Null
+  New-Item -ItemType $type -Path $path -Target $entry.Value | Out-Null
+}
+
+$claude = Join-Path $env:USERPROFILE '.claude\CLAUDE.md'
+$imports = "@$($rules.Replace('\', '/'))", '@AGENTS.md'
+foreach ($line in $imports) {
+  if (!(Test-Path $claude) -or (Get-Content -LiteralPath $claude -Encoding UTF8) -cnotcontains $line) {
+    Add-Content -LiteralPath $claude -Value "`n$line" -Encoding UTF8
+  }
+}
+```
+
+Check each CLI from a folder outside a repository to isolate the global configuration. Run the sign-in checks in Anand's interactive Windows session. On Plutonium, `agy models` and `claude auth status` can report that you're signed out over SSH even when both work from the Windows desktop.
+
+- **Codex.** Run `codex login status`. In the output of `codex debug prompt-input`, look for `anand-laptops` and the global instruction about prefixing high-output commands with `rtk`.
+- **Antigravity.** Run `agy models` to check sign-in, then check `/skills` for `anand-laptops`. Launch `agy` to sign in if needed.
+- **Claude Code.** Run `claude auth status`, then use `/memory` to check the global import and `/skills` to find `anand-laptops`. Sign in with `claude auth login` if needed.
+- **Pi.** Run `pi auth check --provider openai-codex`, then check that `/skill:anand-laptops` appears in Pi's command suggestions. Sign in with `pi auth login openai-codex` if needed.
 
 ## GitHub repos
 

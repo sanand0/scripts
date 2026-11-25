@@ -2,6 +2,27 @@
 
 Prompts for setup.{fish,bash}.
 
+## Plutonium skills, 25 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+You can `ssh plutonium` to the Plutonium server.
+See ~/code/skills/INSTALLATION.md for how to set up agents.
+Update `setup/windows.md` with the agent setup instructions for Windows on Plutonium.
+Apply the instructions and verify for codex, agy, claude, and pi. (If you're actually using agents, choose the cheapest models - gpt-6-luna, claude-haiku-5.5, etc.)
+
+---
+
+FYI: I deleted the plugin (just to test), renamed it to "Anand Skills", and added it again.
+https://chatgpt.com/plugins/Plugin_250a6b65220081918c8ddc5236fff181
+This has an upload new version button. To use that, does the ZIP need to have a different version number? If so, `just new-version zip` should increment the version number (just the minor version) and create the zip.
+Test it.
+
+<!-- codex resume 01a2104b-74c9-73f1-92bd-16a6362aa03d -->
+
 ## Avif fix, 16 Nov 2026
 
 <!--
