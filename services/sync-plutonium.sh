@@ -340,3 +340,26 @@ for relative in "${WEB_SYNC_DIRS[@]}"; do
   web_paths+=("$HOME/./$relative/")
 done
 run_sync web-paths --relative --chmod=g+rX "${web_paths[@]}" "Anand@plutonium:/cygdrive/c/"
+
+# Plutonium's Twitter CLI can't decrypt its own browser cookies (Windows DPAPI),
+# so export Graphene's auth_token + ct0 and install them as ~/.twitter-auth.
+# Non-fatal: a logged-out browser should not fail the backup.
+if [[ "$mode" == apply ]]; then
+  if uv run --quiet --no-project --with twitter-cli python - "$work/twitter-auth" \
+    >"$work/twitter.log" 2>&1 <<'PY_TWITTER'
+import shlex, sys
+from twitter_cli.auth import get_cookies
+
+cookies = get_cookies()
+with open(sys.argv[1], "x") as f:
+    for key in ("auth_token", "ct0"):
+        f.write(f"export TWITTER_{key.upper()}={shlex.quote(cookies[key])}\n")
+PY_TWITTER
+  then
+    $ssh_cmd Anand@plutonium 'C:/cygwin/bin/bash.exe -lc "umask 077 && cat >~/.twitter-auth.new && chmod 600 ~/.twitter-auth.new && mv -f ~/.twitter-auth.new ~/.twitter-auth"' \
+      <"$work/twitter-auth"
+    log '🟢' "SYNC group=twitter-auth status=ok"
+  else
+    log '🟠' "WARN group=twitter-auth reason=cookie-export-failed detail=$(tail -n 3 "$work/twitter.log" | tr '\n' ' ' | head -c 250)"
+  fi
+fi

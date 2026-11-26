@@ -1,5 +1,16 @@
 # services
 
+## Sync Twitter CLI auth to Plutonium
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+Read `~/Documents/chatgpt/Check Twitter CLI Plutonium.md` and update services/sync-plutonium.sh to use twitter-cli to generate a .twitter-auth file in some temp directory and copy it to plutonium:~ with the right permissions.
+
+<!-- claude --resume 894cb793-b01a-4684-b74f-ffae69b25ffd -->
+
 ## Speed up servicestatus, 23 Nov 2026
 
 <!--

@@ -43,6 +43,9 @@ standalone services, and can run a health check.
   `C:\graphene\`, takes a consistent snapshot of Copilot's SQLite store, and
   copies the selected private code directories and environment files listed in
   `sync-plutonium.sh` under `C:\code\`.
+  It also exports Graphene's X/Twitter `auth_token` and `ct0` cookies via
+  `twitter-cli` into Plutonium's `~/.twitter-auth` (mode 600); this step only
+  warns on failure and is skipped by `--dry-run`.
   New and changed files are copied from Graphene; **Plutonium-only files are
   never deleted**. Windows-invalid names and case collisions are checked;
   colon-containing Documents filenames are copied with Windows-safe names.
