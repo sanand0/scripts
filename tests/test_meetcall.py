@@ -106,6 +106,68 @@ def test_download_uses_opus_settings_and_reuses_file(tmp_path, monkeypatch):
     assert len(commands) == 1
 
 
+def test_download_caches_embedded_captions_for_retry(tmp_path, monkeypatch):
+    m = load()
+    downloads = []
+    monkeypatch.setattr(m, 'gws', lambda *args: downloads.append(args))
+    monkeypatch.setattr(m, 'recording_captions', lambda video: '[00:00:01] Anand: Hello.')
+    monkeypatch.setattr(m, 'run', lambda args: Path(args[-1]).write_bytes(b'opus'))
+    audio, cache = tmp_path/'call.opus', tmp_path/'cache/captions.txt'
+    recordings = [{'fileId': 'first', 'mimeType': 'video/mp4'}, {'fileId': 'second', 'mimeType': 'video/mp4'}]
+    captions = m.download_audio('profile', recordings, audio, cache)
+    assert 'Recording 1' in captions and 'Recording 2' in captions
+    assert captions.count('[00:00:01] Anand: Hello.') == 2
+    assert m.download_audio('profile', recordings, audio, cache) == captions
+    assert len(downloads) == 2
+
+
+def test_recording_captions_skip_chat_and_preserve_multiline_cues(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    m = load()
+    streams = [
+        {'index': 2, 'codec_name': 'mov_text', 'tags': {'handler_name': 'Meeting Chat'}, 'disposition': {'default': 1}},
+        {'index': 3, 'codec_name': 'dvd_subtitle'},
+        {'index': 4, 'codec_name': 'mov_text'},
+        {'index': 5, 'codec_name': 'mov_text', 'disposition': {'default': 1}},
+    ]
+    requests = []
+    def run(args, **kwargs):
+        if args[0] == 'ffprobe':
+            return SimpleNamespace(stdout=json.dumps({'streams': streams}))
+        requests.append(args[args.index('-map') + 1])
+        return SimpleNamespace(stdout='1\n00:00:02,500 --> 00:00:05,000\n(Anand)\nHello.\n-\n\n(Bob)\nHi.\n\n2\n00:00:07,500 --> 00:00:08,000\n(Bob)\nGo ahead.\n')
+    monkeypatch.setattr(m, 'run', run)
+    assert m.recording_captions(tmp_path/'recording.mp4') == '[00:00:02] (Anand)\nHello.\n-\n\n(Bob)\nHi.\n\n[00:00:07] (Bob)\nGo ahead.'
+    assert requests == ['0:5']
+    del streams[2:]
+    assert m.recording_captions(tmp_path/'recording.mp4') == ''
+    assert requests == ['0:5']
+
+
+@pytest.mark.parametrize('transcript_source', ['captions', 'document', 'local'])
+def test_recording_context_source_precedence(tmp_path, monkeypatch, transcript_source):
+    m = load()
+    meeting = event(attachments=[{'fileId': 'video', 'mimeType': 'video/mp4'}, {'fileId': 'doc', 'mimeType': 'application/vnd.google-apps.document'}], _profile='p', _account='me')
+    local = tmp_path/'transcript.txt' if transcript_source == 'local' else None
+    doc_turns = 'Document speaker turns' if transcript_source == 'document' else ''
+    monkeypatch.setattr(m, 'CACHE', tmp_path/'cache')
+    monkeypatch.setattr(m, 'export_documents', lambda *a: ('Summary', doc_turns, 'Raw document'))
+    def download(profile, recordings, audio, cache):
+        assert bool(cache) == (transcript_source == 'captions')
+        return '[00:00:01] Anand: Caption words.' if cache else ''
+    monkeypatch.setattr(m, 'download_audio', download)
+    monkeypatch.setattr(m.call, 'load_system_prompt', lambda *a: 'Default instructions')
+    inputs, commands = [], []
+    monkeypatch.setattr(m, 'context_prompt', lambda original, account: inputs.append(original) or 'Speaker context')
+    monkeypatch.setattr(m, 'run', lambda args: commands.append(args))
+    m.process_meeting(meeting, tmp_path/'audio', tmp_path, False, transcript_file=local, local_transcript='Local words' if local else '')
+    expected = {'captions': 'Caption words', 'document': 'Raw document', 'local': 'Local words'}
+    assert len(inputs) == 1 and expected[transcript_source] in inputs[0]
+    assert commands[0][-2:] == ['--prompt', 'Speaker context']
+
+
 def test_dry_run_has_no_writes_or_model_requests(tmp_path, monkeypatch):
     m = load()
     e = event(attachments=[{'fileId': 'doc', 'mimeType': 'application/vnd.google-apps.document'}], _profile='p', _account='me')
@@ -627,7 +689,7 @@ def test_scan_processes_through_shared_pipeline_then_rerun_is_empty(tmp_path, mo
     e = event('New meeting', attachments=[{'fileId': 'recording', 'mimeType': 'video/mp4'}], _profile='p', _account='me')
     monkeypatch.setattr(m, 'search', lambda *a, **kw: [e, {**e, '_profile': 'other-account'}])
     requests = []
-    def download(profile, recordings, path):
+    def download(profile, recordings, path, caption_cache):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'fixture audio; call subprocess is mocked')
     monkeypatch.setattr(m, 'download_audio', download)

@@ -1,5 +1,17 @@
 # meetcall
 
+## Use captions where available, 23 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Some Google Meet recordings have embedded captions. If `--transcript` is not specified, I think we can use these captions.
+Update `meetcall` to do this appropriately. Search my calendar for such recordings, test it out, and implement in the best possible way.
+
+<!-- codex resume 01a216ed-e99f-7be2-ae75-4214ae5bf657 -->
+
 ## Transcript access, 18 Nov 2026
 
 <!--

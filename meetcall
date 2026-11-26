@@ -19,6 +19,8 @@ stop before searching more calendars/accounts. --date is a local calendar day;
 --before excludes that day, --after excludes that day. Future/ongoing calls are excluded.
 --scan checks all calendars for recordings without completed local transcripts;
 --days defaults to 7. Explicit --date/--after override that default window.
+Speaker context comes from --transcript, an attached Google Docs transcript,
+or embedded speech captions, in that order.
 """
 from __future__ import annotations
 
@@ -269,26 +271,74 @@ def save_note(path: Path, title: str, summary: str, transcript: str, sources: li
     call.atomic_write(path, updated)
 
 
-def download_audio(profile: str, recordings: list[dict], target: Path) -> None:
-    if target.exists() and target.stat().st_size:
+def recording_captions(video: Path) -> str:
+    """Extract a text subtitle stream, preserving Meet's multiline speaker labels."""
+    probe = run(['ffprobe', '-v', 'error', '-select_streams', 's', '-show_entries', 'stream=index,codec_name:stream_tags=title,handler_name:stream_disposition=default', '-of', 'json', str(video)], capture_output=True, text=True)
+    streams = json.loads(probe.stdout)['streams']
+    streams.sort(key=lambda stream: stream.get('disposition', {}).get('default', 0), reverse=True)
+    for stream in streams:
+        tags = stream.get('tags', {})
+        label = f"{tags.get('title', '')} {tags.get('handler_name', '')}"
+        if stream.get('codec_name') not in ('mov_text', 'webvtt', 'subrip', 'ass', 'ssa') or 'chat' in label.casefold():
+            continue
+        try:
+            result = run(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(video), '-map', f"0:{stream['index']}", '-f', 'srt', '-'], capture_output=True, text=True, encoding='utf-8')
+        except subprocess.CalledProcessError:
+            log(f"WARNING skipping unreadable subtitle stream {stream['index']}.")
+            continue
+        # A Meet cue may contain blank lines between speakers. Split at cue headers only.
+        parts = re.split(r'(?m)^\d+\n(\d{2,}:\d{2}:\d{2}),\d{3} --> [^\n]+\n', result.stdout)
+        captions = '\n\n'.join(f'[{start}] {body.strip()}' for start, body in zip(parts[1::2], parts[2::2]) if body.strip())
+        if captions:
+            return captions
+    return ''
+
+
+def download_audio(profile: str, recordings: list[dict], target: Path, caption_cache: Path | None = None) -> str:
+    reuse_audio = target.exists() and target.stat().st_size > 0
+    cached = caption_cache is not None and caption_cache.exists()
+    if reuse_audio:
         log(f'Reusing {target}')
-        return
-    call.preflight_write(target)
+        if cached or caption_cache is None:
+            return caption_cache.read_text() if caption_cache else ''
+    else:
+        call.preflight_write(target)
+    if caption_cache is not None and not cached:
+        call.preflight_write(caption_cache)
+    captions = []
     with tempfile.TemporaryDirectory(prefix='.meetcall-', dir=target.parent) as temp:
         audios = []
         for index, recording in enumerate(recordings):
+            needs_captions = caption_cache is not None and not cached and recording.get('mimeType', '').startswith('video/')
+            if reuse_audio and not needs_captions:
+                continue
             log(f'Downloading recording {index + 1}/{len(recordings)}…')
             video, audio = Path(temp)/f'{index}.mp4', Path(temp)/f'{index}.opus'
-            gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': recording['fileId'], 'alt': 'media'}), '--output', video.name], profile, Path(temp))
+            try:
+                gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': recording['fileId'], 'alt': 'media'}), '--output', video.name], profile, Path(temp))
+            except subprocess.CalledProcessError as exc:
+                if not reuse_audio:
+                    raise
+                unavailable_file(exc, 'recording for embedded captions', attachment=recording.get('title') or recording['fileId'])
+                continue
+            if needs_captions and (text := recording_captions(video)):
+                captions.append(f'### Recording {index + 1}\n\n{text}' if len(recordings) > 1 else text)
+            if reuse_audio:
+                continue
             run(['ffmpeg', '-nostdin', '-hide_banner', '-v', 'warning', '-i', str(video), '-vn', '-c:a', 'libopus', '-b:a', '12k', '-ac', '1', '-application', 'voip', '-vbr', 'on', '-compression_level', '10', str(audio)])
             audios.append(audio)
-        combined = audios[0]
-        if len(audios) > 1:
+        if caption_cache is not None and not cached:
+            # Cache empty results too, so old audio only needs one caption lookup.
+            call.atomic_write(caption_cache, '\n\n'.join(captions))
+        if len(audios) == 1:
+            os.replace(audios[0], target)
+        elif audios:
             listing = Path(temp)/'concat.txt'
             listing.write_text(''.join(f"file '{audio.name}'\n" for audio in audios))
             combined = Path(temp)/'combined.opus'
             run(['ffmpeg', '-nostdin', '-v', 'warning', '-f', 'concat', '-safe', '0', '-i', str(listing), '-c', 'copy', str(combined)])
-        os.replace(combined, target)
+            os.replace(combined, target)
+    return caption_cache.read_text() if caption_cache else ''
 
 
 def context_prompt(original: str, account: str) -> str:
@@ -379,13 +429,26 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
         summary, transcript, original = '', local_transcript, local_transcript
     else:
         summary, transcript, original = export_documents(event['_profile'], documents) if documents else ('', '', '')
-    if chat:
-        original += f'\n\n## Meeting chat\n\n{chat}'
     if recordings:
-        download_audio(event['_profile'], recordings, audio)
+        # Reuse saved context on a failed call. A default-only scaffold may precede a failed Luna request.
+        prompt = None if chat_file or transcript_file else call.extract_prompt_metadata(existing)
+        if prompt and not call.note_metadata(existing).get('transcription_status') and prompt == call.load_system_prompt(call.DEFAULT_PROMPT_FILE):
+            prompt = None
+        caption_cache = None
+        if not (transcript_file or transcript or prompt) and any(recording['mimeType'].startswith('video/') for recording in recordings):
+            digest = hashlib.sha256(json.dumps([r['fileId'] for r in recordings]).encode()).hexdigest()
+            caption_cache = CACHE/event['_account']/f'captions-{digest}.txt'
+        captions = download_audio(event['_profile'], recordings, audio, caption_cache)
+        if captions:
+            log('Using embedded recording captions for speaker context.')
+            transcript = captions
+            original = f'## Embedded Google Meet speech captions\n\nMeet may place speaker names on their own lines in parentheses. Attribute speech only where a speaker is identified.\n\n{captions}'
+            if summary:
+                original += f'\n\n## Meeting notes\n\n{summary}'
+        if chat:
+            original += f'\n\n## Meeting chat\n\n{chat}'
         scaffold_note(note, title)
-        # call persists the generated context, so interrupted reruns reuse it.
-        prompt = (None if chat_file or transcript_file else call.extract_prompt_metadata(existing)) or (context_prompt(original, event['_account']) if transcript else None)
+        prompt = prompt or (context_prompt(original, event['_account']) if transcript else None)
         scaffold_note(note, title, prompt)
         args = [str(Path(__file__).with_name('call')), str(audio), '--out', str(out_dir)]
         if prompt:
@@ -429,10 +492,10 @@ def main(
     scan: Annotated[bool, typer.Option('--scan', help='Process recordings without completed local transcripts across all calendars.')] = False,
     days: Annotated[int, typer.Option(min=1, help='Scan lookback in days; --date or --after overrides it.')] = 7,
     limit: Annotated[int | None, typer.Option('--limit', '-n', min=1, help='Maximum pending meetings to process with --scan.')] = None,
-    transcript_file: Annotated[Path | None, typer.Option('--transcript', exists=True, dir_okay=False, readable=True, help='Use a local UTF-8 transcript instead of downloading notes; supplies Luna speaker context for recordings.')] = None,
+    transcript_file: Annotated[Path | None, typer.Option('--transcript', exists=True, dir_okay=False, readable=True, help='Use a local UTF-8 transcript for speaker context, overriding Google Docs and recording captions.')] = None,
 ):
     if describe:
-        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'transcript': 'local UTF-8 file; replaces downloaded notes and supplies Luna speaker context for recordings; without a recording, saves the supplied transcript', 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
+        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'transcript': 'local UTF-8 file; overrides Google Docs and embedded captions for speaker context; without a recording, saves the supplied transcript', 'speaker_context_sources': ['--transcript', 'Google Docs transcript', 'embedded recording captions'], 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
         return
     if not scan and not phrase.strip():
         raise ValueError('Provide a meeting phrase. Example: meetcall TDS --dry-run')
