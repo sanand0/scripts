@@ -269,6 +269,11 @@ $llmPlugins = @(
   'llm-whisper-api'
   'llm-groq-whisper'
 )
+# uv from Astral's installer into ~\.local\bin, like graphene. An old portable uv (0.4.29) in C:\Apps\utils didn't know Python 3.14, so every `just test-*` failed; it's renamed to uv.exe.old-0.4.29 (26 Nov 2026). Update with `uv self update`.
+$env:UV_NO_MODIFY_PATH = '1'; powershell -ExecutionPolicy ByPass -NoProfile -c 'irm https://astral.sh/uv/install.ps1 | iex'
+[Environment]::SetEnvironmentVariable('PYTHONUTF8', '1', 'User')   # UTF-8 stdio/files like Linux; avoids 'charmap' UnicodeEncodeError in tests
+[Environment]::SetEnvironmentVariable('PLAYWRIGHT_BROWSERS_PATH', "$env:USERPROFILE\.cache\ms-playwright", 'User')   # same ~/.cache/ms-playwright as graphene; tests/test_linkedin.mjs looks there
+
 uv tool install llm ($llmPlugins | ForEach-Object { '--with'; $_ })
 
 # Configure psmux scrollback

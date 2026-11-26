@@ -1,5 +1,26 @@
 # tests
 
+## Run on plutonium, 26 Nov 2026
+
+<!--
+cd ~/code/scripts
+claude --model opus --effort medium
+-->
+
+The tests in this repo run mostly fine on graphene (one test is skipped) but fails on plutonium.
+See ~/code/scripts/setup/{windows,linux}.md for the setup. Feel free to use @Remote Desktop Commander to inspect the setup on graphene. You're running on plutonium.
+
+What changes in the environment are required to get the tests to run?
+This is a step towards my aim to have the plutonium environment match graphene - even though plutonium is Windows and graphene is Linux. I prefer native Windows stuff where possible, over Cygwin, over WSL, over Docker, etc.
+
+Fix what you’re sure about and list the rest for me to review.
+
+---
+
+I don't care about testing Linux-only code on plutonium - like rofi, xclip, etc. So I guess the rest of it is skippable for now. No action required.
+
+<!-- claude --model opus --effort medium --resume 465c91c9-b1bd-42ae-80da-bd97a0999b69 # plutonium -->
+
 ## Fix all tests, 11 Aug 2026
 
 <!--
