@@ -19,6 +19,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,7 @@ TRANSCRIPT_LINE_RE = re.compile(
     r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[(?P<timestamp>\d{2}:\d{2}(?::\d{2})?)\])? .+"
 )
 SPEAKER_LINE_RE = re.compile(r"^\*\*(?P<speaker>[^*\n]+?)(?:\*\*:?|:\*\*)")
+CLOCK_RESET_WARNING = "Non-monotonic timestamps. A speaker turn reset to 00:00. Review the saved text or use --patch."
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?\n?)---\n?", re.DOTALL)
 TRANSCRIPT_SECTION_RE = re.compile(
     r"(?ms)^##\s+Transcript\s*$\n?(?P<body>.*?)(?=^##\s+|\Z)"
@@ -103,6 +105,7 @@ class TranscriptionResult:
     saved_cost_usd: float | None = 0.0
     chunk_costs: tuple[float | None, ...] = ()
     finish_reasons: tuple[str, ...] = ()
+    retryable: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,10 @@ class InvalidTranscriptWarning:
     section_count: int
     matching_lines: int
     reason: str = "Model response is not a transcript"
+
+
+class IncompleteTranscriptError(RuntimeError):
+    """An incomplete note was saved and can be patched in place."""
 
 
 @dataclass(frozen=True)
@@ -333,6 +340,13 @@ def timestamp_tools() -> Any:
     return timestamp
 
 
+def speaker_timecode_pattern() -> re.Pattern[str]:
+    """Match a speaker label and its leading timecode, including timestamp ranges."""
+    speaker = SPEAKER_LINE_RE.pattern.removeprefix("^")
+    timecode = timestamp_tools().TIMESTAMP_BRACKET_RE.pattern
+    return re.compile(rf"(?m)(^[ \t]*{speaker})[ \t]+{timecode}(?=[ \t]|$)")
+
+
 def render_chunk_timestamps(transcript: str, start_seconds: float) -> str:
     """Shift known-local timestamps by the exact overlapping audio-window start."""
     return timestamp_tools().shift_chunk(transcript, round(start_seconds))[0]
@@ -346,6 +360,7 @@ TRANSCRIPT_PREAMBLE = (
     r"thought$",  # Thinking-mode marker emitted as plain text, not as an API thought part.
     r"The user wants ",
     r"An accurate and verbatim transcript ",
+    r"presentableId me focus on transcribing every single turn faithfully\b",
     r"Let's (?:carefully (?:listen|transcribe)|(?:listen|transcribe) (?:carefully|meticulously))",  # Not "Let's transcribe that".
 )
 # FILLER: drops just the matching lines; any other line is kept and reported.
@@ -361,16 +376,24 @@ TRANSCRIPT_FILLER = (
     r"This is (?:a |the )?(?:transcript|transcription|part \d)",
     r"This (?:call recording features|meeting is a discussion) ",
 )
+TRANSCRIPT_DRAFT_BEFORE_TURN = (
+    r"Double[- ]checking every single word and making sure the bold rules are followed\b[^\n]*"
+    r"\bThe transcription is complete and accurate\."
+)
 
 
 def repair_transcript_formatting(transcript: str) -> str:
-    """Separate timed speaker turns and remove known model-only text before the first turn.
+    """Separate timed speaker turns and remove recognizable model drafts.
 
     Untimed bold labels and chunk-boundary fragments can be speech, so unrecognized lines are kept and reported.
     This changes neither the spoken text nor any timestamps.
     """
     marker = r"\*\*[^*\n]+(?:\*\*:?|:\*\*)[ \t]+\[\d{2}:\d{2}(?::\d{2})?(?:\s*-\s*\d{2}:\d{2}(?::\d{2})?)?\]"
     cleaned = re.sub(r"(?<=[^\n])(?=" + marker + r")", "\n\n", transcript.strip())
+    cleaned = re.sub(
+        rf"(?im)^[ \t]*{TRANSCRIPT_DRAFT_BEFORE_TURN}[ \t]*\n+(?={marker})",
+        "", cleaned,
+    )
     first = re.search(marker, cleaned)
     if not first:
         return cleaned
@@ -408,6 +431,9 @@ def normalize_chunk(transcript: str, window: tuple[float, float]) -> tuple[str, 
             return cleaned, "No timestamps; text preserved. Add timestamps manually or use --patch."
         return cleaned, None
     if any(current < previous for previous, current in zip(values, values[1:])):
+        turns = [tools.timestamp_values(f"[{match['body']}]") for match in speaker_timecode_pattern().finditer(cleaned)]
+        if any(current[0] == 0 < previous[-1] for previous, current in zip(turns, turns[1:])):
+            return cleaned, CLOCK_RESET_WARNING
         return cleaned, "Non-monotonic timestamps; text preserved. Review manually or use --patch."
     # Normalize global output only when its first timestamp clearly identifies the boundary.
     if start > 0 and values[0] >= round(start) and abs(values[0] - start) <= CHUNK_OVERLAP_SECONDS:
@@ -973,13 +999,16 @@ def split_audio_chunks(
     audio_path: Path,
     temp_dir: Path,
     windows: list[tuple[float, float]],
+    section: int | None = None,
 ) -> list[Path]:
-    """Split a long audio file into overlapping chunks with ffmpeg."""
+    """Extract the requested section, or all overlapping windows, with ffmpeg."""
     if len(windows) == 1:
         return [audio_path]
 
     chunk_paths: list[Path] = []
-    for index, (start, length) in enumerate(windows, start=1):
+    targets = [section] if section is not None else range(1, len(windows) + 1)
+    for index in targets:
+        start, length = windows[index - 1]
         chunk_path = temp_dir / f"{audio_path.stem}.part{index:03d}.opus"
         started = time.monotonic()
         append_run(None, "split_start", audio=str(audio_path), chunk=index, window=(start, length), output=str(chunk_path))
@@ -1052,12 +1081,13 @@ def extract_speaker_labels(transcript: str) -> list[str]:
 
 
 def transcript_tail(transcript: str) -> str:
-    """Return a bounded recent transcript excerpt for chunk-to-chunk continuity."""
+    """Return a bounded excerpt for continuity without the earlier turns' timecodes."""
     lines = [line.rstrip() for line in transcript.splitlines() if line.strip()]
     line_limit, char_limit = context_limits()
     if not line_limit or not char_limit:
         return ""
-    tail = "\n".join(lines[-line_limit:])
+    # Strip only the timecode after a speaker label, preserving times spoken in the turn.
+    tail = speaker_timecode_pattern().sub(r"\1", "\n".join(lines[-line_limit:]))
     if len(tail) <= char_limit:
         return tail
     return tail[-char_limit:].lstrip()
@@ -1104,8 +1134,7 @@ def emit_remaining_warnings(
     """Log transcript sections that still look invalid after an automatic retry."""
     for warning in warnings:
         typer.echo(
-            f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count}: "
-            f"{warning.reason} Run call {str(audio_path)!r} --patch to re-transcribe it.", err=True,
+            f"WARNING {audio_path.name}: section {warning.section_index}/{warning.section_count}: {warning.reason}", err=True,
         )
 
 
@@ -1163,6 +1192,7 @@ def transcribe_single_audio(
     usage = calculate_usage_cost(response, requested_model=model, pricing=pricing)
     transcript = (response.text or "").strip()
     candidates = getattr(response, "candidates", None) or []
+    feedback = getattr(response, "prompt_feedback", None)
     reasons = [str(getattr(candidate, "finish_reason", "unknown")) for candidate in candidates]
     raw_usage = getattr(response, "usage_metadata", None)
     try:
@@ -1172,11 +1202,13 @@ def transcribe_single_audio(
         rates = None
     append_run(None, "response", audio=str(audio_path), elapsed_seconds=time.monotonic() - started,
         response_id=getattr(response, "response_id", None), model_version=getattr(response, "model_version", None),
-        finish_reasons=reasons, prompt_feedback=str(getattr(response, "prompt_feedback", None)),
+        finish_reasons=reasons, prompt_feedback=str(feedback),
         usage=asdict(usage), raw_usage=raw_usage.model_dump(mode="json") if hasattr(raw_usage, "model_dump") else None,
         pricing=rates, transcript_chars=len(transcript))
-    error = response_error(transcript, reasons, str(getattr(response, "prompt_feedback", None)))
-    return TranscriptionResult(transcript, usage, error=error, finish_reasons=tuple(reasons))
+    error = response_error(transcript, reasons, str(feedback))
+    # Gemini can return an unexplained block for a request that succeeds on replay.
+    retryable = not transcript and not candidates and getattr(feedback, "block_reason", None) == "OTHER"
+    return TranscriptionResult(transcript, usage, error=error, finish_reasons=tuple(reasons), retryable=retryable)
 
 
 def transcribe_audio(
@@ -1230,8 +1262,10 @@ def transcribe_audio(
             usages: list[UsageCost] = []
             failure = None
             local = ""
-            for attempt in range(2 if retry_invalid else 1):
-                if result is None:
+            reset_state = None
+            for attempt in range(2):
+                fresh_response = result is None
+                if fresh_response:
                     # API construction and pricing are deferred until the first cache miss.
                     if client is None:
                         client = build_client()
@@ -1241,8 +1275,8 @@ def transcribe_audio(
                         chunk_path = audio_path
                     else:
                         if chunk_paths is None:
-                            chunk_paths = split_audio_chunks(audio_path, Path(directory), windows)
-                        chunk_path = chunk_paths[index - 1]
+                            chunk_paths = split_audio_chunks(audio_path, Path(directory), windows, section=patch_section)
+                        chunk_path = chunk_paths[0 if patch_section else index - 1]
                     append_run(cache_dir, "attempt_start", audio=str(audio_path), chunk=index, cache=str(cache_path))
                     try:
                         result = transcribe_single_audio(chunk_path, system_prompt=system_prompt,
@@ -1276,17 +1310,28 @@ def transcribe_audio(
                 if valid and not failure:
                     state.update(status="complete", transcript=local, error=None)
                     break
-                if failure:
-                    state.update(status="needs_review" if timestamp_warning and not result.error else "failed", transcript=local, error=result.error)
+                clock_reset = timestamp_warning == CLOCK_RESET_WARNING and not result.error
+                retry = result.retryable or (retry_invalid and not failure) or (fresh_response and clock_reset)
+                if not failure:
+                    failure = "Model response contains no speaker lines. Check the saved raw response/prompt."
+                needs_review = timestamp_warning and not result.error
+                state.update(status="needs_review" if needs_review else "failed", transcript=local,
+                    error=None if needs_review else failure)
+                if attempt or not retry:
                     break
-                failure = "Model response contains no speaker lines. Check the saved raw response/prompt or run --patch."
-                if attempt == 0 and retry_invalid:
-                    typer.echo(f"WARNING {audio_path.name}: retrying section {index}/{len(windows)}: {failure}", err=True)
-                    result = None
-                    if progress_callback:
-                        progress_callback(index, len(windows))
-                else:
-                    state.update(status="failed", transcript=local, error=failure)
+                if clock_reset:
+                    reset_state = state.copy()
+                if cache_path:
+                    write_chunk_state(cache_path, state)
+                typer.echo(f"WARNING {audio_path.name}: retrying section {index}/{len(windows)}: {failure}", err=True)
+                result = None
+                if progress_callback:
+                    progress_callback(index, len(windows))
+            if reset_state is not None and failure and not looks_like_transcript(local):
+                # Keep the reviewable response and the billing history of both attempts.
+                state = {**reset_state, "attempts": state["attempts"]}
+                local = state["transcript"]
+                failure += " Earlier text was preserved for review."
             if cache_path:
                 write_chunk_state(cache_path, state)
             costs = [item["usage"]["cost_usd"] if item.get("usage") else None for item in state["attempts"]]
@@ -1298,7 +1343,7 @@ def transcribe_audio(
             if failure:
                 warnings.append(InvalidTranscriptWarning(index, len(windows), count_matching_transcript_lines(local),
                     f"{failure} Raw response: {cache_path}" if cache_path else failure))
-                # Never alter ambiguous timestamps or conceal failed text; only explicit patches re-request it.
+                # Preserve unresolved text and timestamps for review or an explicit patch.
                 rendered.append(local or "[Transcription failed: no usable text; rerun call or use --patch.]")
                 stopped = True
             else:
@@ -1480,11 +1525,28 @@ def process_audio(
     append_run(cache_dir, "saved", audio=str(audio_path), output=str(output_path), status="incomplete" if failed else "complete",
         usage=asdict(usage), saved_cost_usd=saved_cost, failed_chunks=failed)
     if failed:
-        raise RuntimeError(f"Saved incomplete transcript {output_path}; failed/pending sections {failed}. Rerun to resume, or use --patch for timestamp review.")
+        raise IncompleteTranscriptError(f"Saved incomplete transcript {output_path}; failed/pending sections {failed}.")
     if patch:
         typer.echo(f"patched section(s) {','.join(str(section) for section in targets)}: {output_path.name}")
     else:
         typer.echo(f"{'updated' if had_output else 'created'} {output_path.name}")
+
+
+def retry_command(args: list[str], number: int, prompt: str | None) -> str:
+    """Quote a one-recording retry, keeping explicit prompts out of the console."""
+    overrides = [f"{key}={os.environ[key]}" for key in (
+        "TRANSCRIBE_CALLS_CACHE_DIR", "TRANSCRIBE_CALLS_THINKING",
+        "TRANSCRIBE_CALLS_CONTEXT_LINES", "TRANSCRIBE_CALLS_CONTEXT_CHARS",
+    ) if key in os.environ]
+    command = f"cd {shlex.quote(os.getcwd())} && " + shlex.join([
+        *(["env", *overrides] if overrides else []), str(Path(__file__).resolve()),
+        *args, *(["--prompt", prompt] if prompt is not None else []),
+    ])
+    if RUN_DIR and (prompt is not None or "\n" in command):
+        script = (RUN_DIR / f"retry-{number}.sh").absolute()
+        atomic_write(script, command + "\n")
+        return shlex.join(["sh", str(script)])
+    return command
 
 
 @app.command(help=__doc__, context_settings={"allow_extra_args": False, "ignore_unknown_options": False})
@@ -1557,9 +1619,10 @@ def main(
 
     # Resolve every argument before any work, so a stray word (e.g. a prompt without `--prompt`) fails fast.
     missing = []
+    resolved = []
     for audio_arg in audio:
         try:
-            resolve_audio_path(audio_arg, DEFAULT_INPUT_DIR)
+            resolved.append(resolve_audio_path(audio_arg, DEFAULT_INPUT_DIR).absolute())
         except typer.BadParameter as exc:
             missing.append(f"  {audio_arg!r}: {exc}")
     if missing:
@@ -1567,10 +1630,10 @@ def main(
         raise typer.BadParameter(f"{len(missing)}/{len(audio)} audio argument(s) not found; nothing processed.{hint}\n" + "\n".join(missing))
 
     failed_audio: list[str] = []
-    for audio_arg in audio:
+    for audio_arg, audio_path in zip(audio, resolved):
         try:
             process_audio(
-                audio_arg,
+                str(audio_path),
                 user_prompt=user_prompt,
                 force=force,
                 patch=patch,
@@ -1590,14 +1653,25 @@ def main(
             elif isinstance(exc, OSError):
                 action = f"Check filesystem access/free space for {exc.filename}; choose a writable --out or TRANSCRIBE_CALLS_CACHE_DIR/TRANSCRIBE_CALLS_PRICES_CACHE."
             elif isinstance(exc, RuntimeError):
-                action = "Correct the reported cause, then rerun without --force to reuse successful cached chunks."
+                action = "Correct the reported cause if it persists, then retry."
             elif isinstance(exc, json.JSONDecodeError):
                 action = f"Repair malformed JSON near line {exc.lineno}, column {exc.colno}; move the affected cache file aside and rerun."
             else:
-                action = "Save this traceback and the command and report the bug; rerun without --force to reuse successful cached chunks."
+                action = "Save this traceback and the command and report the bug."
                 traceback.print_exc()
-            append_run(None, "error", audio=audio_arg, exception_type=type(exc).__name__, reason=str(exc), action=action)
+            retry = [str(audio_path), "--out", str(out_dir.absolute()), "--model", model, "--chunk", str(chunk_minutes),
+                "--system-prompt", str(system_prompt_file.absolute())]
+            if patch or isinstance(exc, IncompleteTranscriptError):
+                retry.append("--patch")
+            elif force:
+                retry.append("--force")
+            if dry_run:
+                retry.append("--dry-run")
+            command = retry_command(retry, len(failed_audio) + 1, user_prompt)
+            append_run(None, "error", audio=audio_arg, exception_type=type(exc).__name__, reason=str(exc), action=action,
+                retry_command=command)
             typer.echo(f"ERROR {audio_arg}: {type(exc).__name__}: {exc} Action: {action}", err=True)
+            typer.echo(f"Retry: {command}", err=True)
             failed_audio.append(audio_arg)
             continue
     if failed_audio:

@@ -1,5 +1,37 @@
 # meetcall
 
+## Improve re-runnability
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+See the `meetcall` run at `/.cache/sanand-scripts/transcribe_calls/runs/20261126T084614.966621Z-8eaa755c/`.
+Such errors are frequent.
+How do we (a) prevent such errors in the future, and (b) if a command needs to be re-run, provide the command easily and explicitly so I can just copy-paste it?
+Maybe `call` and/or `meetcall` should be modified. Revise and test.
+
+---
+
+Apply this to the '2026-11-26 Innovation Team Meeting' transcript and see if it does work.
+
+---
+
+"Section 3 came back with timestamps that run backward..." - how do we prevent / reduce such things?
+
+---
+
+Fix what you’re sure about and list the rest for me to review.
+
+---
+
+Implement the mid-section clock resets as you suggested - i.e. with one automatic retry.
+Implement narrow cleanup roles to remove recognizable draft text.
+Do not switch models yet.
+
+<!-- codex resume 01a21715-5cd6-7931-ba0e-fe5987f9d1b1 -->
+
 ## Use captions where available, 23 Nov 2026
 
 <!--

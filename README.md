@@ -87,7 +87,7 @@ Here are the setup details for my laptops.
 - [call](call) transcribes matching paths from `~/Documents/calls` into `~/Dropbox/notes/transcripts/*.md` with cumulative timestamps. Uses [timestamp.py](timestamp.py) helpers.
   - Transcribe/resume: `call "Meeting"`; add context with `call "Meeting" --prompt "Speaker names and context"`.
   - Plan: `call "Meeting" --dry-run`; list pending/incomplete notes: `call --list-changes | moor`. Both save logs.
-  - Logs in `~/.cache/sanand-scripts/transcribe_calls/run.jsonl`
+  - Logs are under `~/.cache/sanand-scripts/transcribe_calls/`
 - [callprompt](callprompt) updates `~/Downloads/transcribe.sh` with commands to transcribe pending calls with prompts based on recorded captions from `~/code/tools/meetcaptions/`. Typically, I run `callprompt` then edit `transcribe.sh` and then `bash ~/Downloads/transcribe.sh`. `callprompt --audio IITM --caption gkz-nrnj-vhr` matches a specific audio file and searches for the caption text in `~/{Downloads,Documents}/{gmeet*.md,teams*.md}`.
 - [chars](chars) lists non-ASCII characters in files.
 - [chatcli](chatcli) opens ChatGPT through a CDP browser, prepares prompts with optional files, model URL, project, connector mentions, reasoning selection, submit/no-submit modes, and `--save [TARGET]` Markdown capture. Use `chatcli --inspect --format json | jaq .` before relying on current UI labels; examples: `chatcli --save "Draft this"`, `chatcli --file report.pdf --project "Transcripts" "Analyze this"`, `cat prompt.md | chatcli --connector "Google Drive" --format json`.

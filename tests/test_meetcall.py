@@ -165,7 +165,8 @@ def test_recording_context_source_precedence(tmp_path, monkeypatch, transcript_s
     m.process_meeting(meeting, tmp_path/'audio', tmp_path, False, transcript_file=local, local_transcript='Local words' if local else '')
     expected = {'captions': 'Caption words', 'document': 'Raw document', 'local': 'Local words'}
     assert len(inputs) == 1 and expected[transcript_source] in inputs[0]
-    assert commands[0][-2:] == ['--prompt', 'Speaker context']
+    assert '--prompt' not in commands[0]
+    assert m.call.extract_prompt_metadata((tmp_path/'2026-11-04 TDS.md').read_text()) == 'Speaker context'
 
 
 def test_dry_run_has_no_writes_or_model_requests(tmp_path, monkeypatch):
@@ -220,7 +221,7 @@ def test_local_transcript_reaches_luna_and_overrides_saved_context(tmp_path, mon
             assert args[args.index('-s')+1] == 'Identify speakers'
             assert kwargs['input'] == 'Alice: Local speaker turns.'
             return SimpleNamespace(stdout='New local speaker context')
-        assert args[-2:] == ['--prompt', 'New local speaker context']
+        assert '--prompt' not in args
         assert m.call.extract_prompt_metadata(note.read_text()) == 'New local speaker context'
     monkeypatch.setattr(m, 'run', request)
     flags = ['TDS', '--transcript', str(transcript), '--out-dir', str(tmp_path)]
@@ -417,7 +418,8 @@ def test_chat_is_in_luna_input_and_final_recording_note(tmp_path, monkeypatch, l
     monkeypatch.setattr(m, 'context_prompt', lambda original, account: prompts.append(original) or 'Context')
     note = tmp_path/'notes/2026-11-04 TDS.md'
     def fake_call(*args, **kwargs):
-        note.write_text('# TDS\n\n## Transcript\n\n**A**: Spoken\n')
+        assert '## Chat' in note.read_text()
+        note.write_text(m.call.upsert_transcript_section(note.read_text(), 'TDS', '**A**: Spoken'))
     monkeypatch.setattr(m, 'run', fake_call)
     chat_file = tmp_path/'messages.txt'
     chat_file.write_text('00:01 A: The shared link')
@@ -547,7 +549,8 @@ def test_incomplete_note_resumes_with_stored_context_instead_of_skipping(tmp_pat
     calls = []
     monkeypatch.setattr(m, 'run', lambda args, **kwargs: calls.append(args))
     m.main('TDS', date=None, before=None, after=None, account=[], dry_run=False, input_dir=tmp_path/'audio', out_dir=tmp_path, describe=False)
-    assert len(calls) == 1 and calls[0][-2:] == ['--prompt', 'Stored speaker context']
+    assert len(calls) == 1 and '--prompt' not in calls[0]
+    assert m.call.extract_prompt_metadata(note.read_text()) == 'Stored speaker context'
 
 
 
@@ -778,8 +781,9 @@ def test_generated_context_is_saved_before_call_and_existing_notes_are_preserved
         text = note.read_text()
         assert m.call.extract_prompt_metadata(text) == 'Speaker context from Luna'
         assert 'tags: [important]' in text and '# My title' in text and 'Keep these actions.' in text
+        assert '> A: Keep this chat' in text
         assert not m.call.has_transcript_content(text)
         raise RuntimeError('Call failed')
     monkeypatch.setattr(m, 'run', fail_call)
     with pytest.raises(RuntimeError, match='Call failed'):
-        m.process_meeting(e, tmp_path/'audio', tmp_path, False)
+        m.process_meeting(e, tmp_path/'audio', tmp_path, False, local_chat='A: Keep this chat')

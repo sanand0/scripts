@@ -450,15 +450,17 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
         scaffold_note(note, title)
         prompt = prompt or (context_prompt(original, event['_account']) if transcript else None)
         scaffold_note(note, title, prompt)
-        args = [str(Path(__file__).with_name('call')), str(audio), '--out', str(out_dir)]
-        if prompt:
-            args += ['--prompt', prompt]
-        run(args)
+        add_chat(note, chat, replace=bool(chat_file))
+        try:
+            run([str(Path(__file__).with_name('call')), str(audio), '--out', str(out_dir)])
+        except subprocess.CalledProcessError as exc:
+            # call already reported the failure and recovery command to stderr.
+            raise typer.Exit(exc.returncode) from exc
     else:
         sources = [str(transcript_file.resolve())] if transcript_file else [d.get('fileUrl', f"https://docs.google.com/document/d/{d['fileId']}/edit") for d in documents]
         save_note(note, title, summary, transcript, sources)
         log(f'Saved {note}')
-    add_chat(note, chat, replace=bool(chat_file))
+        add_chat(note, chat, replace=bool(chat_file))
 
 
 def pending_meetings(events: list[dict], out_dir: Path) -> list[dict]:

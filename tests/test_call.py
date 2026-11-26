@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -165,6 +166,10 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         )
                     )
                     response_by_file = json.loads(os.environ.get("FAKE_GENAI_RESPONSE_BY_FILE", "{}"))
+                    block_file = os.environ.get("FAKE_GENAI_BLOCK_FILE")
+                    blocked = Path(audio.file).name == block_file
+                    if blocked and os.environ.get("FAKE_GENAI_BLOCK_ONCE"):
+                        blocked = Path(log_path).read_text().count("/" + block_file + "\\n") == 1
                     default_text = "\\n".join(
                         f"**Speaker**: [00:0{index}] Transcript for {Path(audio.file).name} line {index}"
                         for index in range(1, 6)
@@ -186,12 +191,16 @@ def write_fake_google_genai(package_root: Path) -> Path:
                         "Response",
                         (),
                         {
-                            "text": response_by_file.get(
+                            "text": None if blocked else response_by_file.get(
                                 Path(audio.file).name,
                                 os.environ.get("FAKE_GENAI_TRANSCRIPT_TEXT", default_text),
                             ),
                             "usage_metadata": usage,
                             "model_version": model,
+                            "candidates": [],
+                            "prompt_feedback": type("Feedback", (), {
+                                "block_reason": os.environ.get("FAKE_GENAI_BLOCK_REASON", "OTHER"),
+                            })() if blocked else None,
                         },
                     )()
 
@@ -1376,6 +1385,9 @@ def test_script_chunks_long_audio_and_joins_chunk_transcripts(tmp_path: Path) ->
     assert "USER_PROMPT\tThis audio is part 1/3 of a longer recording." in genai_log
     assert "This audio is part 2/3 of a longer recording." in genai_log
     assert "This audio is part 3/3 of a longer recording." in genai_log
+    assert "**Speaker**: Transcript for long.part001.opus line 1" in genai_log
+    assert "**Speaker**: [00:01] Transcript for long.part001.opus line 1" not in genai_log
+    assert "**Speaker**: [00:01] Transcript for long.part001.opus line 1" in transcript
     assert "Spurious continuation" not in genai_log
 
 
@@ -1793,7 +1805,10 @@ def test_trim_global_chunk_timestamps_without_removing_real_audio() -> None:
     assert preserved == "**Speaker**: [25:00] Ambiguous" and "Ambiguous" in warning
 
 
-@pytest.mark.parametrize("bad", ["Not a transcript"])
+@pytest.mark.parametrize("bad", [
+    "Not a transcript",
+    "**Speaker**: [00:00] Start\n**Speaker**: [13:21] Later\n**Speaker**: [00:00] Restart",
+])
 def test_retry_final_chunk_before_joining_and_cache_recovery(tmp_path, monkeypatch, capsys, bad) -> None:
     module = load_module()
     audio = tmp_path / "call.opus"
@@ -1802,6 +1817,7 @@ def test_retry_final_chunk_before_joining_and_cache_recovery(tmp_path, monkeypat
     responses = iter([valid, bad, valid])
     requests = []
     def transcribe(path, **kwargs):
+        assert kwargs["model"] == "test"
         requests.append(kwargs["user_prompt"])
         return module.TranscriptionResult(next(responses), module.UsageCost(1, 1, 2, 0.1))
     monkeypatch.setattr(module, "transcribe_single_audio", transcribe)
@@ -1990,6 +2006,52 @@ def test_revision_ambiguous_timestamps_preserve_text_without_retry(revision_case
     assert 'transcription_status: incomplete' in c.note.read_text()
 
 
+def test_persistent_clock_reset_retries_once_also_when_patching(revision_case):
+    c = revision_case
+    reset = '**A**: [00:00 - 13:21] Earlier speech\n**B**: [00:00] Restarted'
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': reset})
+    for flags, expected_requests, expected_retries in [((), 3, 1), ((), 3, 0), (('--patch',), 5, 1)]:
+        result = c.run(*flags, '--model', 'gemini-3-flash-preview')
+        assert result.returncode == 1, result.stderr
+        assert result.stderr.count('retrying section 2/2') == expected_retries
+        assert 'Retry: ' in result.stderr
+        assert 'failed_chunks: [2]' in c.note.read_text()
+        assert reset in c.note.read_text()
+        requests = (c.root / 'requests.log').read_text()
+        assert requests.count('AUDIO\t') == expected_requests
+        assert requests.count('MODEL\tgemini-3-flash-preview') == expected_requests
+
+
+def test_empty_clock_reset_retry_preserves_first_attempt_for_review(tmp_path, monkeypatch):
+    module = load_module()
+    audio = tmp_path / 'meeting.opus'
+    audio.write_bytes(b'audio')
+    reset = '**A**: [00:10] Later\n**B**: [00:00] Restart'
+    usage = module.UsageCost(1, 1, 2, 0.1)
+    responses = iter([module.TranscriptionResult(reset, usage),
+                      module.TranscriptionResult('', usage, error='Gemini returned empty output')])
+    monkeypatch.setattr(module, 'transcribe_single_audio', lambda *args, **kwargs: next(responses))
+    result = module.transcribe_audio(audio, 'Transcribe', None, 'test', object(), {}, 20,
+        windows=[(0, 20)], cache_dir=tmp_path / 'cache')
+    assert result.transcript == reset
+    assert 'Gemini returned empty output' in result.warnings[0].reason
+    cache, = (tmp_path / 'cache').glob('chunk-*.json')
+    state = json.loads(cache.read_text())
+    assert state['status'] == 'needs_review' and state['raw_transcript'] == reset
+    assert len(state['attempts']) == 2
+
+
+@pytest.mark.parametrize('turn', ['**A**: [00:05] Earlier', '**A**: [00:11] They said [00:00].'])
+def test_backward_timestamp_without_turn_clock_reset_stays_for_review(revision_case, turn):
+    c = revision_case
+    c.env['FAKE_GENAI_RESPONSE_BY_FILE'] = json.dumps({'meeting.part002.opus': f'**A**: [00:10] Later\n{turn}'})
+    result = c.run()
+    assert result.returncode == 1
+    assert 'Non-monotonic timestamps' in result.stderr
+    assert 'retrying' not in result.stderr
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+
+
 def test_revision_preflight_output_failure_makes_no_paid_request(revision_case, monkeypatch):
     from typer.testing import CliRunner
     c = revision_case
@@ -2069,6 +2131,71 @@ def test_revision_empty_response_keeps_paid_usage_and_does_not_retry(revision_ca
     c.env['FAKE_GENAI_TRANSCRIPT_TEXT'] = '**A**: [00:01] Recovered'
     assert c.run().returncode == 0
     assert 'cost: 0.001600' in c.note.read_text()
+
+
+def test_other_block_retries_only_failed_chunk_then_continues(revision_case):
+    c = revision_case
+    c.env.update(FAKE_FFPROBE_DURATION='3900', FAKE_GENAI_BLOCK_FILE='meeting.part002.opus',
+                 FAKE_GENAI_BLOCK_ONCE='1')
+    result = c.run()
+    assert result.returncode == 0, result.stderr
+    assert 'retrying section 2/3' in result.stderr
+    requests = (c.root / 'requests.log').read_text().splitlines()
+    assert [Path(row.split('\t')[1]).name for row in requests if row.startswith('AUDIO\t')] == [
+        'meeting.part001.opus', 'meeting.part002.opus', 'meeting.part002.opus', 'meeting.part003.opus',
+    ]
+    assert 'transcription_status: complete' in c.note.read_text()
+    assert 'cost: 0.003200' in c.note.read_text()
+
+
+@pytest.mark.parametrize('reason, attempts', [('OTHER', 3), ('SAFETY', 2)])
+def test_blocked_run_prints_working_patch_command(revision_case, reason, attempts):
+    c = revision_case
+    c.env.update(FAKE_FFPROBE_DURATION='3900', FAKE_GENAI_BLOCK_FILE='meeting.part002.opus',
+                 FAKE_GENAI_BLOCK_REASON=reason, TRANSCRIBE_CALLS_THINKING='medium',
+                 TRANSCRIBE_CALLS_CONTEXT_LINES='12', FAKE_FFMPEG_LOG=str(c.root / 'splits.log'))
+    failed = c.run('--model', 'gemini-3-flash-preview', '--chunk', '25')
+    assert failed.returncode == 1, failed.stderr
+    assert (c.root / 'requests.log').read_text().count('AUDIO\t') == attempts
+    original = c.note.read_text()
+    assert 'failed_chunks: [2, 3]' in original
+    command = next(line.removeprefix('Retry: ') for line in failed.stderr.splitlines() if line.startswith('Retry: '))
+    assert '--patch' in shlex.split(command)
+    summary, = (c.root / 'cache' / 'runs').glob('*/summary.json')
+    assert json.loads(summary.read_text())['errors'][-1]['retry_command'] == command
+    c.env.pop('FAKE_GENAI_BLOCK_FILE')
+    c.env.pop('TRANSCRIBE_CALLS_THINKING')
+    c.env.pop('TRANSCRIBE_CALLS_CONTEXT_LINES')
+    resumed = subprocess.run(['sh', '-c', command], env=c.env, cwd=c.root.parent, capture_output=True, text=True)
+    assert resumed.returncode == 0, resumed.stderr
+    requests = (c.root / 'requests.log').read_text()
+    assert requests.count('AUDIO\t') == attempts + 2
+    assert requests.count('MODEL\tgemini-3-flash-preview') == attempts + 2
+    assert requests.count('THINKING\tmedium') == attempts + 2
+    assert requests.count('SYSTEM_PROMPT\tTranscribe every turn') == attempts + 2
+    splits = (c.root / 'splits.log').read_text()
+    assert [splits.count(f'.part{index:03d}.opus') for index in (1, 2, 3)] == [1, 2, 2]
+    assert 'transcription_status: complete' in c.note.read_text()
+    module = load_module()
+    before = module.split_transcript_parts(module.TRANSCRIPT_SECTION_RE.search(original)['body'])
+    after = module.split_transcript_parts(module.TRANSCRIPT_SECTION_RE.search(c.note.read_text())['body'])
+    assert before[0] == after[0]
+
+
+def test_retry_script_round_trips_multiline_prompt_and_quoted_paths(revision_case):
+    c = revision_case
+    output = c.root / "team's notes"
+    prompt = "Alice's context\nDo not expand $(echo this)."
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.part002.opus'
+    failed = c.run('--out', str(output), '--prompt', prompt)
+    assert failed.returncode == 1, failed.stderr
+    command = next(line.removeprefix('Retry: ') for line in failed.stderr.splitlines() if line.startswith('Retry: '))
+    assert 'Alice' not in command and command.startswith('sh ')
+    assert Path(shlex.split(command)[1]).stat().st_mode & 0o777 == 0o600
+    c.env.pop('FAKE_GENAI_ERROR_FILES')
+    resumed = subprocess.run(['sh', '-c', command], env=c.env, cwd=c.root.parent, capture_output=True, text=True)
+    assert resumed.returncode == 0, resumed.stderr
+    assert load_module().extract_prompt_metadata((output / c.note.name).read_text()) == prompt
 
 
 def test_revision_force_replacement_cost_excludes_previous_generation(revision_case):
@@ -2201,16 +2328,24 @@ def test_revision_missing_timestamp_helper_fails_before_any_request(revision_cas
     assert not (c.root / 'requests.log').exists()
 
 
-def test_revision_failed_force_resumes_and_promotes_candidate(revision_case):
+@pytest.mark.parametrize('use_printed_command', [False, True])
+def test_revision_failed_force_resumes_and_promotes_candidate(revision_case, use_printed_command):
     c = revision_case
     c.env['FAKE_FFPROBE_DURATION'] = '20'
     assert c.run().returncode == 0
     c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
-    assert c.run('--force').returncode == 1
+    failed = c.run('--force')
+    assert failed.returncode == 1
     candidate = c.note.with_suffix('.incomplete.md')
     assert 'replacement_for:' in candidate.read_text()
     del c.env['FAKE_GENAI_ERROR_FILES']
-    assert c.run().returncode == 0
+    if use_printed_command:
+        command = next(line.removeprefix('Retry: ') for line in failed.stderr.splitlines() if line.startswith('Retry: '))
+        assert '--force' not in shlex.split(command)
+        result = subprocess.run(['sh', '-c', command], env=c.env, capture_output=True, text=True)
+    else:
+        result = c.run()
+    assert result.returncode == 0, result.stderr
     assert not candidate.exists()
     assert 'transcription_status: complete' in c.note.read_text()
 
@@ -2369,10 +2504,16 @@ def test_invalid_thinking_setting_fails_before_request(revision_case):
 
 def test_context_limits_bound_prior_prompt_and_allow_no_context(monkeypatch):
     module = load_module()
-    text = '\n'.join(f'**A**: [00:{i:02}] Turn {i}' for i in range(10))
+    text = (
+        '**A**: [00:07] Turn 7\n'
+        '  **A:** [01:00:00 - 01:00:01] Turn 8\n'
+        '**B**: [29:53] Turn 9 mentions [10:30].'
+    )
     monkeypatch.setenv('TRANSCRIBE_CALLS_CONTEXT_LINES', '2')
     context = module.build_prior_chunk_context([text])
-    assert 'Turn 9' in context and 'Turn 8' in context and 'Turn 7' not in context
+    assert 'Known speaker labels so far: A, B' in context
+    assert '  **A:** Turn 8' in context and '**B**: Turn 9 mentions [10:30].' in context
+    assert 'Turn 7' not in context and '01:00:00' not in context and '29:53' not in context
     monkeypatch.setenv('TRANSCRIBE_CALLS_CONTEXT_LINES', '0')
     assert module.build_prior_chunk_context([text]) is None
 
@@ -2495,3 +2636,20 @@ def test_leaked_reasoning_marker_anywhere_drops_whole_preamble(capsys) -> None:
     draft = "The user wants a transcript.\nRules:\n- Drop fillers.\n00:00 - Anand: \"Hi\"\n**Anand**: [00:00] Hi."
     assert module.repair_transcript_formatting(draft) == "**Anand**: [00:00] Hi."
     assert capsys.readouterr().err == ""
+
+
+def test_cleanup_removes_recognizable_draft_text_around_timed_speaker_turns():
+    module = load_module()
+    opening_draft = (
+        'presentableId me focus on transcribing every single turn faithfully and translating the Hindi section.\n\n'
+        'Checking details:\n- End of chunk 2: [29:53]\n\n'
+        'So chunk 3 starts at 00:00:\n'
+    )
+    inline_draft = (
+        'Double checking every single word and making sure the bold rules are followed appropriately '
+        'on memorable key points / takeaways. The transcription is complete and accurate.'
+    )
+    first = '**A**: [00:00] Checking details: we need a test.'
+    second = f'**B**: [00:03] {inline_draft}'
+    raw = f'{opening_draft}{first}\n\n{inline_draft}{second}'
+    assert module.normalize_chunk(raw, (0, 20)) == (f'{first}\n\n{second}', None)
