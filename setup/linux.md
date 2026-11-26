@@ -321,6 +321,7 @@ cd ~/.local/bin; curl -L https://github.com/storytold/pdfcraft/releases/download
 cd ~/.local/bin; curl -L https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-0.11.1-linux-x86_64.AppImage -o gridcraft && chmod +x gridcraft  # pdfcraft - Adobe Acrobat rewrite
 cd ~/.local/bin; curl -L https://github.com/pingdotgg/t3code/releases/download/v0.1.11/T3-Code-x86_64.AppImage -o t3code && chmod +x t3code && t3code && desktop-file-install --dir=$HOME/.local/share/applications --vendor=local --remove-key=NoDisplay ~/.local/share/applications/com.t3tools.T3Code.desktop # T3-Code - AI agent orchestrator. Create persistent icon after running t3code
 cd ~/.local/bin; curl -L https://anoma.ly/hex/download/linux-x64 -o hex && chmod +x hex  # hex - dictation
+cd ~/.local/bin; curl -L https://telegram.org/dl/desktop/linux | tar -xJ; ln -s ~/.local/bin/Telegram/Telegram ~/.local/bin/telegram  # Telegram - Messaging app
 cd ~/.local/share; curl -L -o - "https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.47.tar.gz/download" | tar -xz; ln -s ~/.local/share/Image-ExifTool-13.47/exiftool ~/.local/bin/exiftool  # exiftool - Image metadata tool
 curl -fsSL https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz | tar -xz -C ~/.local/opt; ln -sfn ~/.local/opt/scrcpy-linux-x86_64-v5.0.1/scrcpy ~/.local/bin/scrcpy
 
