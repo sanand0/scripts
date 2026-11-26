@@ -1,5 +1,17 @@
 # phonemusic
 
+## Include m3u, 26 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Update `phonemusic sync` to also sync any .m3u files from `~/Music` to the phone.
+Run and test.
+
+<!-- codex resume 01a2152c-d4b1-7783-bc38-053fb444d87a -->
+
 ## Build sync script, 14 Oct 2026
 
 <!--

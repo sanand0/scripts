@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["typer"]
 # ///
-"""Sync top-level ~/Music MP3s and music metadata to a mounted Android phone.
+"""Sync MP3s, M3U playlists, and music metadata to a mounted Android phone.
 
 Examples:
   phonemusic sync
@@ -125,7 +125,7 @@ def path() -> None:
 def sync(
     delete: bool = typer.Option(False, "--delete", help="Delete extra phone MP3s after syncing."),
 ) -> None:
-    """Copy top-level MP3s and sync musicdump.csv and music-history.tsv."""
+    """Sync top-level MP3s, M3U playlists, musicdump.csv, and music-history.tsv."""
     try:
         if not MUSIC.is_dir():
             raise RuntimeError(f"Music folder is unavailable: {MUSIC}")
@@ -171,6 +171,22 @@ def sync(
             copied_bytes += fingerprint["size"]
             if source_fingerprint(source) == fingerprint:
                 save_checkpoint(checkpoint, "done", fingerprint)
+
+        for source in sorted(MUSIC.rglob("*.m3u", case_sensitive=False)):
+            if not source.is_file():
+                continue
+            relative = source.relative_to(MUSIC)
+            target = folder / relative
+            try:
+                phone_data = target.read_bytes()
+            except FileNotFoundError:
+                if not target.parent.is_dir():
+                    run_gio("mkdir", "-p", str(target.parent))
+            else:
+                if phone_data == source.read_bytes():
+                    continue
+            typer.echo(f"Copying {relative}", err=True)
+            run_gio("copy", "-T", str(source), str(target))
 
         dump = MUSIC / "musicdump.csv"
         typer.echo("Copying musicdump.csv", err=True)
