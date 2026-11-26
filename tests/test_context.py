@@ -253,7 +253,24 @@ def test_atomic_rebuild_failure_leaves_live_database_untouched(corpus, monkeypat
         context.rebuild_database(db, config)
 
     assert db.read_bytes() == before
-    assert not db.with_suffix(db.suffix + ".tmp").exists()
+    assert not list(db.parent.glob(".context-rebuild-*"))
+
+
+def test_overlapping_rebuilds_publish_independent_databases(corpus, monkeypatch) -> None:
+    _, config, db, _ = corpus
+    original_index = context.index_sources
+
+    def overlap(connection, config, built_at):
+        original_index(connection, config, built_at)
+        connection.execute("UPDATE items SET body='outer build' WHERE native_id='chat-123:1'")
+        monkeypatch.setattr(context, "index_sources", original_index)
+        context.rebuild_database(db, config)
+        assert rows(db, "SELECT body FROM items WHERE native_id='chat-123:1'")[0]["body"] != "outer build"
+
+    monkeypatch.setattr(context, "index_sources", overlap)
+    context.rebuild_database(db, config)
+    assert rows(db, "SELECT body FROM items WHERE native_id='chat-123:1'")[0]["body"] == "outer build"
+    assert not list(db.parent.glob(".context-rebuild-*"))
 
 
 def test_rebuild_is_deterministic_and_fts_matches(corpus) -> None:
@@ -267,6 +284,21 @@ def test_rebuild_is_deterministic_and_fts_matches(corpus) -> None:
     assert rows(db, "PRAGMA integrity_check")[0]["integrity_check"] == "ok"
     assert rows(db, "SELECT count(*) n FROM items WHERE native_id='not-a-date.md'")[0]["n"] == 0
     assert rows(db, "SELECT count(*) n FROM items WHERE native_id='2026-08-02-Bob Project.md'")[0]["n"] == 1
+
+
+def test_validation_checks_fts_postings(corpus) -> None:
+    _, _, db, _ = corpus
+    with sqlite3.connect(db) as connection:
+        connection.execute("UPDATE items SET body='unindexed text' WHERE source='chatgpt'")
+        with pytest.raises(sqlite3.DatabaseError):
+            context.validate_database(connection)
+
+
+def test_database_path_with_uri_characters(corpus) -> None:
+    _, config, db, _ = corpus
+    renamed = db.with_name("context #100%.sqlite")
+    db.rename(renamed)
+    assert context.status_database(renamed, config)["sources"]["chatgpt"]["row_count"] == 2
 
 
 def test_monthly_google_archives_preserve_records_and_locators(corpus) -> None:
@@ -391,6 +423,178 @@ def test_chat_roles_style_and_assets(corpus) -> None:
     assert context.assets_results(db, "Cobalt Story", config=config, log_path=log)[0]["native_id"].endswith("#story-a")
 
 
+def test_timestamped_chatgpt_markdown(corpus) -> None:
+    home, config, db, log = corpus
+    write(home / "Documents/chatgpt/export.md", """\ufeff---
+title: "An exported conversation"
+date: 2026-11-26T12:45:08.324+08:00
+source: "https://chatgpt.com/c/export-123/?ref=copy#turn"
+---
+
+# User
+
+_2026-11-25T23:49:17.478Z_
+
+Example with role headings in the message.
+
+## Assistant
+
+~~~markdown
+# ChatGPT
+~~~
+
+# ChatGPT
+
+_2026-11-26T08:50:06.531+08:00_
+
+Response includes independent evidence.
+
+# User
+
+Next question without a timestamp.
+""")
+    context.rebuild_database(db, config)
+    turns = rows(db, """SELECT native_id,title,timestamp,role,body,locator FROM items
+                        WHERE conversation_id='export-123' ORDER BY id""")
+    assert [(turn["native_id"], turn["role"], turn["timestamp"]) for turn in turns] == [
+        ("export-123:1", "user", "2026-11-25T23:49:17.478000+00:00"),
+        ("export-123:2", "assistant", "2026-11-26T00:50:06.531000+00:00"),
+        ("export-123:3", "user", ""),
+    ]
+    assert {turn["title"] for turn in turns} == {"An exported conversation"}
+    assert [turn["locator"].rsplit("#L", 1)[1] for turn in turns] == ["7", "19", "25"]
+    assert "## Assistant\n\n~~~markdown\n# ChatGPT\n~~~" in turns[0]["body"]
+    assert turns[1]["body"] == "Response includes independent evidence."
+    hits = context.search_database(db, "independent evidence", sources=["chatgpt"], since="2026-11-26", config=config, log_path=log)
+    assert [hit["native_id"] for hit in hits] == ["export-123:2"]
+
+
+def test_legacy_chat_markdown_keeps_nested_headings_and_uses_header_metadata(corpus) -> None:
+    home, config, db, _ = corpus
+    write(home / "Documents/chatgpt/older.md", """# ChatGPT
+
+- Link: https://chatgpt.com/c/older-123
+- Created: 2026-11-24T10:00:00Z
+
+## User
+
+```markdown
+## ChatGPT
+```
+
+# User
+
+- Link: https://chatgpt.com/c/quoted-link
+
+## ChatGPT
+
+Older response.
+
+```text
+An unterminated fence in a captured message.
+
+## User
+
+The next archived turn.
+""")
+    context.rebuild_database(db, config)
+    turns = rows(db, "SELECT title,role,body,timestamp FROM items WHERE conversation_id='older-123' ORDER BY id")
+    assert len(turns) == 3
+    assert turns[0] == {
+        "title": "ChatGPT", "role": "user", "timestamp": "2026-11-24T10:00:00+00:00",
+        "body": "```markdown\n## ChatGPT\n```\n\n# User\n\n- Link: https://chatgpt.com/c/quoted-link",
+    }
+    assert turns[1]["role"] == "assistant" and turns[1]["body"].startswith("Older response.")
+    assert turns[2]["role"] == "user" and turns[2]["body"] == "The next archived turn."
+
+
+def test_native_archive_protects_role_headings_in_message_bodies(corpus) -> None:
+    _, config, db, log = corpus
+    body = "A literal transcript example.\n\n## User\n\nThis heading belongs to the answer."
+    write(config.claude / "duplicate-a.md", f"# Example\n\n- Link: https://claude.ai/chat/example\n\n## User\n\nReal question.\n\n## Assistant\n\n{body}\n\n## User\n\nNext question.\n")
+    write(config.claude / "duplicate-b.md", (config.claude / "duplicate-a.md").read_text().replace("# Example", "# Retitledsample", 1))
+    write(config.claude / "conversations.json", json.dumps([{
+        "uuid": "example", "chat_messages": [{"sender": "assistant", "text": body}],
+    }]))
+    modern = "A second transcript.\n\n# User\n\n_2026-11-25T12:00:00Z_\n\nCopied heading."
+    write(config.chatgpt / "modern.md", f'---\nsource: "https://chatgpt.com/c/modern"\n---\n\n# ChatGPT\n\n{modern}\n\n# User\n\nActual turn.\n')
+    node = {"author": {"role": "assistant"}, "content": {"content_type": "text", "parts": [modern]}}
+    write(config.chatgpt / "conversations-000.json", json.dumps([{
+        "id": "modern", "current_node": "tip", "mapping": {"tip": {"parent": None, "message": node}},
+    }]))
+    context.rebuild_database(db, config)
+    turns = rows(db, "SELECT native_id,body,role,extra FROM items WHERE conversation_id IN ('example','modern') ORDER BY native_id")
+    assert [row["native_id"] for row in turns] == ["example:1", "example:2", "example:3", "modern:1", "modern:2"]
+    assert turns[1]["body"] == body and turns[1]["role"] == "assistant"
+    assert len(json.loads(turns[1]["extra"])["alternate_locators"]) == 1
+    assert turns[3]["body"] == modern
+    hits = context.search_database(db, "retitledsample", sources=["claude"], config=config, log_path=log)
+    assert len(hits) == 3 and {hit["conversation_id"] for hit in hits} == {"example"}
+
+
+def test_whatsapp_deduplication_prefers_current_and_requires_verified_alias(corpus, monkeypatch) -> None:
+    _, config, db, log = corpus
+    for file, chat, text, cli in [
+        ("legacy", "101@lid", "Old text", False),
+        ("copy", "101@lid", "Old text", False),
+        ("current", "999@s.whatsapp.net", "New text", True),
+        ("unrelated", "777@lid", "Distinct chat", False),
+    ]:
+        row = {"messageId": "repeated-id", "conversationId": chat, "text": text}
+        if cli:
+            row["wacli"] = {"Text": text, "Edited": True}
+        jsonl(config.whatsapp / f"{file}.jsonl", [row])
+    monkeypatch.setattr(context, "whatsapp_aliases", lambda *_: {"101@lid": "999@s.whatsapp.net"})
+    context.rebuild_database(db, config)
+    copies = rows(db, "SELECT conversation_id,body,locator,extra FROM items WHERE native_id='repeated-id' ORDER BY conversation_id")
+    assert [(row["conversation_id"], row["body"]) for row in copies] == [
+        ("777@lid", "Distinct chat"), ("999@s.whatsapp.net", "New text"),
+    ]
+    assert json.loads(copies[1]["extra"])["alternate_locators"] == [
+        "~/Documents/data/whatsapp/copy.jsonl#L1", "~/Documents/data/whatsapp/legacy.jsonl#L1",
+    ]
+    assert len(context.search_database(db, "New text", sources=["whatsapp"], config=config, log_path=log)) == 1
+
+
+def test_style_applies_authorship_filter_before_ranking(corpus) -> None:
+    _, config, db, log = corpus
+    with sqlite3.connect(db) as connection:
+        for number in range(100):
+            context.add_item(connection, source="chatgpt", role="assistant", title="Authorshiptest", locator=f"fixture:{number}")
+        context.add_item(connection, source="chatgpt", role="user", body="Authorshiptest", native_id="authored", locator="fixture:user")
+        connection.execute("INSERT INTO item_fts(item_fts) VALUES('rebuild')")
+    hits = context.style_results(db, "Authorshiptest", limit=1, config=config, log_path=log)
+    assert [hit["native_id"] for hit in hits] == ["authored"]
+    assert json.loads(log.read_text().splitlines()[-1])["result_count"] == 1
+
+
+def test_mail_authorship_matches_sender_address(corpus) -> None:
+    home, config, db, log = corpus
+    jsonl(home / "Documents/data/me@example.com/mail.jsonl", [
+        {"id": "sent", "from": "My Name <ME@example.com>", "body": "senderauthorship"},
+        {"id": "received", "from": '"me@example.com" <other@example.com>', "body": "senderauthorship"},
+    ])
+    context.rebuild_database(db, config)
+    assert [hit["native_id"] for hit in context.style_results(db, "senderauthorship", config=config, log_path=log)] == ["sent"]
+
+
+def test_unknown_tokens_cannot_occupy_all_lexical_candidate_terms(corpus) -> None:
+    _, config, db, log = corpus
+    query = "unindexedone unindexedtwo unindexedthree unindexedfour unindexedfive unindexedsix unindexedseven unindexedeight cobalt"
+    assert context.search_database(db, query, config=config, log_path=log)
+
+
+def test_entity_candidates_are_filtered_before_the_cutoff(corpus) -> None:
+    _, config, db, log = corpus
+    with sqlite3.connect(db) as connection:
+        entity_id = connection.execute("SELECT entity_id FROM entities WHERE canonical_name='Alice Example Organization'").fetchone()[0]
+        for number in range(100):
+            item_id = context.add_item(connection, source="mail", timestamp="2026-08-20", locator=f"fixture:{number}")
+            connection.execute("INSERT INTO item_entities VALUES(?,?,?)", (item_id, entity_id, "recipient"))
+    hits = context.search_database(db, "Alice Example", sources=["calendar"], config=config, log_path=log)
+    assert any("entity" in hit["why"] for hit in hits)
+
+
 def test_routing_reasons_recency_and_as_of(corpus) -> None:
     _, config, db, log = corpus
     subject = context.search_database(db, "Subject: Project Update", config=config, log_path=log)
@@ -432,6 +636,13 @@ def test_non_action_intent_phrases_do_not_route_actions(corpus, phrase) -> None:
     assert all("action" not in hit["why"] for hit in hits)
 
 
+@pytest.mark.parametrize("phrase", ["open loops", "follow-up"])
+def test_intent_only_search_finds_actions(corpus, phrase) -> None:
+    _, config, db, log = corpus
+    hits = context.search_database(db, phrase, config=config, log_path=log)
+    assert any("action" in hit["why"] for hit in hits)
+
+
 def test_guardrail_boilerplate_cannot_trigger_routing_modes(corpus) -> None:
     _, config, db, log = corpus
     hits = context.search_database(
@@ -461,6 +672,12 @@ def test_historical_mail_is_part_of_logical_mail_source(corpus, sources) -> None
         config=config, log_path=log,
     )
     assert [hit["source"] for hit in hits] == ["historical_mail"]
+
+
+def test_explicit_historical_mail_search_handles_email_addresses(corpus) -> None:
+    _, config, db, log = corpus
+    hits = context.search_database(db, "ada@example.com", sources=["historical_mail"], config=config, log_path=log)
+    assert [hit["native_id"] for hit in hits] == ["<old-1@example.com>"]
 
 
 def test_realistic_long_prompt_search_is_fast_and_ignores_boilerplate(corpus) -> None:

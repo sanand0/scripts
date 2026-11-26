@@ -70,7 +70,7 @@ test-codextags:
 
 # Run the deterministic cross-source context index tests.
 test-context:
-    {{ pytest }} --with pyyaml --with typer pytest -q tests/test_context.py
+    {{ pytest }} --with ijson --with pyyaml --with typer pytest -q tests/test_context.py
 
 # Run daily backup scheduling and failure reporting tests without live jobs.
 test-daily-activities:

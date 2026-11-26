@@ -1,5 +1,25 @@
 # context.py
 
+## Fix parser issues, 26 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Fix `~/code/scripts/context.py` parser to handle the newer timetsamped `# User` and `# ChatGPT` format.
+This issue was identified by `~/Documents/chatgpt/Personal memory for agents.md`.
+See if there are any other fixes required to `context.py`.
+You are the owner and long-term maintainer of this codebase. Its design is up to you.
+Find everything that’s broken, inconsistent, inefficient, or no longer needed.
+Fix what you’re sure about and list the rest for me to review.
+
+---
+
+Resolve the duplicate records and Markdown ambituity using your discretion.
+
+<!-- codex resume 01a2164d-53d9-7773-9da4-f101897ecf51 -->
+
 ## Add agent logs, 12 Nov 2026
 
 <!--

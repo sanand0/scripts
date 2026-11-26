@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pyyaml>=6", "typer>=0.12"]
+# dependencies = ["ijson", "pyyaml>=6", "typer>=0.12"]
 # ///
 """Build and query a deterministic, source-preserving local context index.
 
@@ -22,22 +22,33 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 from collections import defaultdict
 from collections.abc import Iterable
+from contextlib import closing
+from email.utils import parseaddr
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Annotated, Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
+import ijson
 import typer
 import yaml
 
 app = typer.Typer(add_completion=False, help=__doc__)
 DEFAULT_DB = Path("~/Documents/data/context/context.sqlite").expanduser()
-DEFAULT_LOG = Path("~/.cache/sanand-scripts/context/query-log.jsonl").expanduser()
 DATE_FILE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:[ -]|$)")
 WORD = re.compile(r"[^\W_]+(?:[._+@/-][^\W_]+)*", re.UNICODE)
+CHAT_ROLE_HEADING = r"(#{1,2})[ \t]+(User|Assistant|ChatGPT|human|assistant)[ \t]*$"
+CHAT_ROLE = re.compile(rf"^{CHAT_ROLE_HEADING}", re.MULTILINE)
+CHAT_MARKER = re.compile(rf"^(?:{CHAT_ROLE_HEADING}| {{0,3}}(`{{3,}}|~{{3,}})([^\n]*))", re.MULTILINE)
+CHAT_TIMESTAMP = re.compile(r"^_(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))_[ \t]*(?:\n|$)")
+CHAT_URL = re.compile(r'^(?:- Link:|source:|link:)[ \t]+"?(https://(?:chatgpt\.com|chat\.openai\.com|claude\.ai)/[^\s"#]+)', re.MULTILINE)
+WHITESPACE = re.compile(r"\s*")
+ChatWitnesses = dict[str, dict[str, set[str]]]
 # Keep action routing explicit: recognize concrete requests without treating bare "action" or "what happened" as action queries.
 ACTION_INTENT = re.compile(
     r"\b(pending|open loops?|follow[- ]?up|commit|action items?|next steps?|meeting prep|prepare(?: me)? for (?:the )?meeting|briefing|last meeting)\b",
@@ -56,9 +67,12 @@ yesterday week month year please feel free skills skill research online guardrai
 )
 ACTION_STOP = {
     "what", "should", "could", "would", "about", "with", "from", "action", "item", "items", "todo", "follow",
-    "open", "loop", "next", "step", "steps", "agenda", "need", "have", "there", "that", "this",
-    "pending", "commit", "meeting", "prep", "prepare", "briefing", "last",
+    "open", "loop", "loops", "follow-up", "followup", "show", "list", "next", "step", "steps", "agenda", "need",
+    "have", "there", "that", "this", "pending", "commit", "meeting", "prep", "prepare", "briefing", "last",
 }
+PositiveLimit = Annotated[int, typer.Option(min=1)]
+SEARCH_FIELDS = "i.id,i.source,i.native_id,i.timestamp,i.title,i.locator,i.thread_id,i.conversation_id,i.author,i.role"
+SEARCH_SNIPPET = "i.summary,substr(i.body,1,300) body"
 
 
 class SourceConfig:
@@ -103,7 +117,7 @@ def display_path(path: Path, home: Path) -> str:
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if not text.startswith("---\n"):
         return {}, text
-    end = text.find("\n---\n", 4)
+    end = text.find("\n---\n", 3)
     if end < 0:
         return {}, text
     data = yaml.safe_load(text[4:end]) or {}
@@ -131,16 +145,15 @@ def normalize_timestamp(value: Any) -> str:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
         return text
     try:
-        parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(text)
     except ValueError:
         for pattern in ("%b %d, %Y, %I:%M %p", "%B %d, %Y, %I:%M %p"):
             try:
-                parsed = dt.datetime.strptime(text, pattern).replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
-                break
+                local = dt.datetime.strptime(text, pattern)
+                return local.astimezone(dt.UTC).isoformat()
             except ValueError:
                 continue
-        else:
-            return text
+        return text
     if parsed.tzinfo:
         return parsed.astimezone(dt.UTC).isoformat()
     return parsed.isoformat()
@@ -174,10 +187,11 @@ CREATE TABLE items (
   timestamp TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '', locator TEXT NOT NULL, thread_id TEXT NOT NULL DEFAULT '',
   conversation_id TEXT NOT NULL DEFAULT '', account TEXT NOT NULL DEFAULT '',
-  author TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', extra TEXT NOT NULL DEFAULT '{}'
+  author TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', extra TEXT NOT NULL DEFAULT '{}',
+  title_aliases TEXT NOT NULL DEFAULT ''
 );
 CREATE VIRTUAL TABLE item_fts USING fts5(
-  title, body, summary, author, content='items', content_rowid='id',
+  title, body, summary, author, title_aliases, content='items', content_rowid='id',
   tokenize='unicode61 remove_diacritics 2'
 );
 CREATE VIRTUAL TABLE item_vocab USING fts5vocab(item_fts, 'row');
@@ -203,6 +217,7 @@ CREATE INDEX items_thread_idx ON items(thread_id);
 CREATE INDEX items_conversation_idx ON items(conversation_id);
 CREATE INDEX actions_fingerprint_idx ON actions(fingerprint);
 CREATE INDEX aliases_alias_idx ON aliases(alias COLLATE NOCASE);
+CREATE INDEX item_entities_entity_idx ON item_entities(entity_id, item_id);
 """
 
 
@@ -312,6 +327,248 @@ def file_mtime(paths: Iterable[Path]) -> str:
     return dt.datetime.fromtimestamp(max(values), dt.UTC).isoformat() if values else ""
 
 
+def native_chat_messages(source: str, record: dict) -> Iterable[tuple[str | None, str | None]]:
+    if source == "claude":
+        for message in record.get("chat_messages") or record.get("messages") or ():
+            role = "user" if message.get("sender") in {"human", "user"} else message.get("sender")
+            text_parts = [block["text"] for block in message.get("content") or ()
+                          if block.get("type") in {"text", "voice_note"} and isinstance(block.get("text"), str)]
+            yield from ((role, text) for text in dict.fromkeys((message.get("text"), "\n\n".join(text_parts), *text_parts)))
+        return
+
+    if isinstance(mapping := record.get("mapping"), dict):
+        messages = []
+        node_id = record.get("current_node")
+        seen = set()
+        while node_id and node_id not in seen and node_id in mapping:
+            seen.add(node_id)
+            node = mapping[node_id]
+            if node.get("message"):
+                messages.append(node["message"])
+            node_id = node.get("parent")
+        if node_id:
+            return
+    else:
+        messages = record.get("messages") or ()
+    for message in messages:
+        content = message.get("content") or {}
+        role = (message.get("author") or {}).get("role")
+        if content.get("content_type") in {"text", "multimodal_text"}:
+            parts = [part for part in content.get("parts") or () if isinstance(part, str)]
+            yield from ((role, text) for text in dict.fromkeys(("\n".join(parts), "\n\n".join(parts), *parts)))
+
+
+def chat_witnesses(source: str, directory: Path, capture_root: Path, paths: list[Path]) -> ChatWitnesses:
+    """Collect native text that can corroborate a role-like heading inside a Markdown body."""
+    ids = set()
+    for path in paths:
+        with path.open(encoding="utf-8-sig", errors="replace") as stream:
+            header = stream.read(8192)
+        # Resolve only exported conversation identities, never links copied into message text.
+        if header.startswith("---\n"):
+            header = header.partition("\n---\n")[0]
+        elif marker := re.search(r"^##[ \t]+(?:User|ChatGPT|Assistant|human|assistant)[ \t]*$", header, re.MULTILINE):
+            header = header[:marker.start()]
+        if match := CHAT_URL.search(header):
+            ids.add(urlsplit(match[1]).path.rstrip("/").rsplit("/", 1)[-1])
+
+    witnesses = defaultdict(lambda: defaultdict(set))
+
+    def collect(record: dict) -> None:
+        if not isinstance(record, dict):
+            return
+        cid = record.get("conversation_id") or record.get("conversationUuid") or record.get("uuid") or record.get("id")
+        if cid not in ids:
+            return
+        for role, text in native_chat_messages(source, record):
+            if role not in {"user", "assistant"} or not isinstance(text, str):
+                continue
+            body = text.replace("\r\n", "\n").strip()
+            if CHAT_ROLE.search(body):
+                witnesses[cid][role].add(body)
+
+    if not ids:
+        return witnesses
+    for path in sorted({directory / "conversations.json", *directory.glob("conversations-*.json")}):
+        if not path.is_file():
+            continue
+        try:
+            with path.open("rb") as stream:
+                for record in ijson.items(stream, "item"):
+                    collect(record)
+        except (ijson.JSONError, OSError) as error:
+            typer.echo(f"warning: could not read native chat evidence {path}: {type(error).__name__}", err=True)
+    raw = capture_root / f"{source}-raw"
+    for folder in ([raw] if source == "chatgpt" else raw.glob("*")):
+        for path in folder.glob("*.json"):
+            if path.stem not in ids:
+                continue
+            try:
+                record = json.loads(path.read_bytes())
+                collect(record)
+            except (ValueError, OSError) as error:
+                typer.echo(f"warning: could not read native chat evidence {path}: {type(error).__name__}", err=True)
+    return witnesses
+
+
+def chat_turns(path: Path, witnesses: ChatWitnesses | None = None) -> Iterable[dict[str, Any]]:
+    """Parse exported Markdown using its role heading level and original line numbers."""
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    metadata, transcript = parse_frontmatter(text)
+    first_line = transcript.lstrip("\n").partition("\n")[0].rstrip()
+    # A legacy export can have a conversation title of "User" or "ChatGPT".
+    legacy_header = re.match(r"\A\n*# [^\n]+\n\n(?:- [^\n]+\n)*- (?:Link|Created):", transcript)
+    modern = first_line in {"# User", "# ChatGPT"} and (metadata.get("source") or not legacy_header)
+    level = "#" if modern else "##"
+    fence = ""
+    markers = []
+    fenced_markers = []
+    for match in CHAT_MARKER.finditer(transcript):
+        hashes, label, delimiter, tail = match.groups()
+        if delimiter:
+            if not fence and (delimiter[0] == "~" or "`" not in tail):
+                fence = delimiter
+            elif fence and delimiter.startswith(fence) and not tail.strip():
+                fence = ""
+                fenced_markers.clear()
+        elif hashes == level and (not modern or label in {"User", "ChatGPT"}):
+            (fenced_markers if fence else markers).append(match)
+    # An unterminated fence can come from a truncated message. Preserve subsequent turn boundaries.
+    markers.extend(fenced_markers)
+    if not markers:
+        return
+
+    header = transcript[:markers[0].start()]
+    title = re.search(r"^#[ \t]+(.+)$", header, re.MULTILINE)
+    created = re.search(r"^- Created:[ \t]*(.+)$", header, re.MULTILINE)
+    link = re.search(r"^- Link:[ \t]*(\S+)", header, re.MULTILINE)
+    title = str(metadata.get("title") or (title[1] if title else "")).strip() or path.stem
+    url = metadata.get("source") or metadata.get("link") or (link[1] if link else "")
+    conversation_id = urlsplit(str(url)).path.rstrip("/").rsplit("/", 1)[-1] or path.stem
+    if evidence := (witnesses or {}).get(conversation_id):
+        boundaries = []
+        body_end = 0
+        for marker in markers:
+            if marker.start() < body_end:
+                continue
+            boundaries.append(marker)
+            start = WHITESPACE.match(transcript, marker.end()).end()
+            if modern and (stamp := CHAT_TIMESTAMP.match(transcript[start:start + 80])):
+                start = WHITESPACE.match(transcript, start + stamp.end()).end()
+            role = "user" if marker[2] in {"User", "human"} else "assistant"
+            # Only matching native text anchored at a role boundary can hide interior headings.
+            for body in evidence.get(role, ()):
+                end = start + len(body)
+                if transcript.startswith(body, start) and transcript[end:end + 1] in {"", "\n"}:
+                    body_end = max(body_end, end)
+        markers = boundaries
+    # The modern frontmatter date describes the export. The legacy Created field describes the conversation.
+    created_at = normalize_timestamp(created[1]) if created else ""
+    line = text.count("\n", 0, len(text) - len(transcript)) + 1
+    previous = 0
+    for turn, marker in enumerate(markers, 1):
+        start = marker.start()
+        line += transcript.count("\n", previous, start)
+        previous = start
+        end = markers[turn].start() if turn < len(markers) else len(transcript)
+        body = transcript[marker.end():end].strip()
+        timestamp = created_at
+        if modern and (stamp := CHAT_TIMESTAMP.match(body)):
+            try:
+                timestamp = dt.datetime.fromisoformat(stamp[1]).astimezone(dt.UTC).isoformat()
+            except ValueError:
+                pass  # Preserve malformed timestamps as message text.
+            else:
+                body = body[stamp.end():].lstrip()
+        yield {
+            "native_id": f"{conversation_id}:{turn}", "title": title, "timestamp": timestamp,
+            "body": body, "conversation_id": conversation_id, "line": line,
+            "role": "user" if marker[2] in {"User", "human"} else "assistant",
+        }
+
+
+def whatsapp_aliases(config: SourceConfig, lids: set[str]) -> dict[str, str]:
+    """Resolve candidate LIDs through the same local store used to build the archive."""
+    if not lids:
+        return {}
+    cache_root = Path(os.environ.get("WABACKUP_CACHE_DIR", config.home / ".cache/sanand-scripts/wabackup"))
+    archive_key = hashlib.sha256(str(config.whatsapp.resolve()).encode()).hexdigest()[:16]
+    state = cache_root / archive_key / "state.json"
+    if not state.is_file():
+        return {}
+    try:
+        store = json.loads(state.read_text(encoding="utf-8"))["source"]["store_dir"]
+        if not store or not Path(store).is_dir():
+            return {}
+        result = subprocess.run(
+            ["wacli", "--read-only", "--store", store, "--json", "contacts", "resolve", *sorted(lids)],
+            text=True, capture_output=True, check=True, timeout=10,
+        )
+        response = json.loads(result.stdout)
+        if response.get("success") is not True:
+            return {}
+        matches = response["data"]
+        return {
+            row["input"]: phone + "@s.whatsapp.net" for row in matches
+            if isinstance(row, dict) and row.get("resolved") is True and row.get("input") in lids
+            and (phone := str(row.get("phone", "")).removeprefix("+")).isascii() and phone.isdecimal()
+        }
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        typer.echo(f"warning: could not verify WhatsApp direct-chat aliases: {type(error).__name__}", err=True)
+        return {}
+
+
+def collapse_archive_copies(connection: sqlite3.Connection, config: SourceConfig) -> None:
+    # Before ANALYZE, keep items outermost so SQLite probes the repeated-ID lookup once per item.
+    rows = connection.execute("""
+        WITH repeated AS (
+          SELECT source,native_id FROM items
+          WHERE source IN ('chatgpt','claude','whatsapp') AND native_id<>'' AND conversation_id<>''
+          GROUP BY source,native_id HAVING count(*)>1
+        )
+        SELECT i.id,i.source,i.native_id,i.conversation_id,i.role,i.timestamp,i.body,i.locator,i.extra,i.title
+        FROM items i CROSS JOIN repeated r USING(source,native_id) ORDER BY i.id
+    """).fetchall()
+    chats_by_message = defaultdict(set)
+    for _, source, native_id, chat, *_ in rows:
+        if source == "whatsapp":
+            chats_by_message[native_id].add(chat)
+    lids = {chat for chats in chats_by_message.values() if len(chats) > 1 for chat in chats if re.fullmatch(r"[0-9]+@lid", chat)}
+    aliases = whatsapp_aliases(config, lids)
+
+    groups = defaultdict(list)
+    for item_id, source, native_id, chat, role, timestamp, body, locator, raw_extra, title in rows:
+        extra = json.loads(raw_extra)
+        if source == "whatsapp":
+            if re.fullmatch(r"[0-9]+@c\.us", chat):
+                chat = chat.partition("@")[0] + "@s.whatsapp.net"
+            key = (source, aliases.get(chat, chat), native_id)
+            quality = ("deletedForMe" in extra, bool(extra.get("isRecalled") or extra.get("deletedForMe")),
+                       bool(extra.get("isEdited")), normalize_timestamp(extra.get("scrapedAt")), bool(body))
+        else:
+            # Legacy Markdown uses ordinal IDs. Require an exact turn match before merging copies.
+            key = (source, chat, native_id, role, timestamp, body)
+            quality = ()
+        groups[key].append((quality, item_id, locator, extra, title))
+
+    for copies in groups.values():
+        if len(copies) == 1:
+            continue
+        _, kept, _, extra, title = max(copies, key=lambda row: (row[0], -row[1]))
+        extra["alternate_locators"] = [locator for _, item_id, locator, _, _ in copies if item_id != kept]
+        title_aliases = "\n".join(sorted({alias for *_, alias in copies if alias and alias != title}))
+        connection.execute("UPDATE items SET extra=?,title_aliases=? WHERE id=?", (compact_json(extra), title_aliases, kept))
+        for _, item_id, _, _, _ in copies:
+            if item_id == kept:
+                continue
+            connection.execute(
+                "INSERT OR IGNORE INTO item_entities SELECT ?,entity_id,role FROM item_entities WHERE item_id=?",
+                (kept, item_id),
+            )
+            connection.execute("DELETE FROM item_entities WHERE item_id=?", (item_id,))
+            connection.execute("DELETE FROM items WHERE id=?", (item_id,))
+
+
 def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at: str) -> None:
     source_paths: dict[str, list[Path]] = defaultdict(list)
     transcript_ids: dict[str, int] = {}
@@ -406,7 +663,7 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
                 locator = f"{display_path(path, config.home)}#L{line_number}"
                 if source == "mail":
                     author = str(row.get("from", ""))
-                    role = "user" if account.casefold() in author.casefold() else "other"
+                    role = "user" if parseaddr(author)[1].casefold() == account.casefold() else "other"
                     extra_keys = ("to", "cc", "bcc", "attachments", "size")
                     item_id = add_item(
                         connection, source=source, native_id=row.get("id", ""),
@@ -450,7 +707,7 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
         if drive.exists():
             for line_number, row in json_lines(drive):
                 extra = {key: value for key, value in row.items() if key not in {"id", "name", "modifiedTime", "webViewLink"}}
-                item_id = add_item(
+                add_item(
                     connection, source="drive", native_id=row.get("id", ""),
                     timestamp=normalize_timestamp(row.get("modifiedTime")), title=row.get("name", ""),
                     locator=row.get("webViewLink") or f"{display_path(drive, config.home)}#L{line_number}",
@@ -506,25 +763,14 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
     for source, directory in (("chatgpt", config.chatgpt), ("claude", config.claude)):
         if not directory.is_dir():
             continue
-        for path in sorted(directory.glob("*.md")):
-            text = path.read_text(encoding="utf-8", errors="replace")
-            title_match = re.search(r"^#\s*(.*?)\s*$", text, re.MULTILINE)
-            title = (title_match.group(1) if title_match else path.stem).strip() or path.stem
-            created_match = re.search(r"^- Created:\s*(.+)$", text, re.MULTILINE)
-            timestamp = normalize_timestamp(created_match.group(1)) if created_match else ""
-            link_match = re.search(r"^- Link:\s*(\S+)", text, re.MULTILINE)
-            conversation_id = (link_match.group(1).rstrip("/").rsplit("/", 1)[-1] if link_match else path.stem)
-            heading = re.compile(r"^##\s+(User|Assistant|human|assistant)\s*$", re.MULTILINE)
-            matches = list(heading.finditer(text))
-            for turn, match in enumerate(matches, 1):
-                body = text[match.end() : matches[turn].start() if turn < len(matches) else len(text)].strip()
-                role = "user" if match.group(1).casefold() in {"user", "human"} else "assistant"
-                line_number = text.count("\n", 0, match.start()) + 1
+        paths = sorted(directory.glob("*.md"))
+        witnesses = chat_witnesses(source, directory, config.data / "anand-chrome-tools", paths)
+        for path in paths:
+            location = display_path(path, config.home)
+            for turn in chat_turns(path, witnesses):
+                line = turn.pop("line")
                 add_item(
-                    connection, source=source, native_id=f"{conversation_id}:{turn}",
-                    timestamp=timestamp, title=title, body=body,
-                    locator=f"{display_path(path, config.home)}#L{line_number}",
-                    conversation_id=conversation_id, role=role,
+                    connection, source=source, locator=f"{location}#L{line}", **turn,
                 )
             source_paths[source].append(path)
 
@@ -563,13 +809,18 @@ def index_sources(connection: sqlite3.Connection, config: SourceConfig, built_at
                 )
         source_paths["asset_registry"].append(path)
 
+    collapse_archive_copies(connection, config)
     all_sources = ("transcript", "about", "mail", "calendar", "gchat", "whatsapp", "chatgpt", "claude", "drive", "asset_registry")
     for source in all_sources:
         paths = source_paths[source]
         row = connection.execute(
             "SELECT count(*),coalesce(max(timestamp),'') FROM items WHERE source=?", (source,)
         ).fetchone()
-        warning = "" if paths else "source missing or no production input found"
+        warning = ""
+        if not paths:
+            warning = "source missing or no production input found"
+        elif not row[0] and source in {"chatgpt", "claude"}:
+            warning = f"no chat turns found in {len(paths)} Markdown files"
         connection.execute(
             "INSERT INTO source_status VALUES(?,?,?,?,?,?)",
             (source, row[1], file_mtime(paths), row[0], built_at, warning),
@@ -580,50 +831,40 @@ def validate_database(connection: sqlite3.Connection) -> None:
     integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
     if integrity != "ok":
         raise RuntimeError(f"SQLite integrity check failed: {integrity}")
-    items = connection.execute("SELECT count(*) FROM items").fetchone()[0]
-    fts = connection.execute("SELECT count(*) FROM item_fts").fetchone()[0]
-    if items != fts:
-        raise RuntimeError(f"FTS count mismatch: {items} items, {fts} FTS rows")
+    # Counting an external-content FTS table reads items and cannot detect missing postings.
+    connection.execute("INSERT INTO item_fts(item_fts,rank) VALUES('integrity-check',1)")
     missing = connection.execute("SELECT count(*) FROM items WHERE locator='' OR locator IS NULL").fetchone()[0]
     if missing:
         raise RuntimeError(f"{missing} indexed items have no locator")
 
 
 def rebuild_database(database: Path, config: SourceConfig | None = None) -> dict[str, Any]:
-    """Build a validated sibling temp DB and atomically replace the live DB."""
+    """Build privately and atomically publish the last successfully completed rebuild."""
     config = config or SourceConfig.for_home(Path.home())
     database = Path(database).expanduser()
-    temp = database.with_suffix(database.suffix + ".tmp")
     database.parent.mkdir(parents=True, exist_ok=True)
-    temp.unlink(missing_ok=True)
     started = time.perf_counter()
     built_at = dt.datetime.now(dt.UTC).isoformat()
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(temp)
-        connection.executescript(SCHEMA)
-        index_sources(connection, config, built_at)
-        connection.execute("INSERT INTO item_fts(item_fts) VALUES('rebuild')")
-        connection.execute("PRAGMA optimize")
-        connection.commit()
-        validate_database(connection)
-        counts = dict(connection.execute("SELECT source,row_count FROM source_status ORDER BY source"))
-        connection.close()
-        connection = None
+    with TemporaryDirectory(prefix=".context-rebuild-", dir=database.parent) as directory:
+        temp = Path(directory) / database.name
+        with closing(sqlite3.connect(temp)) as connection:
+            connection.executescript(SCHEMA)
+            index_sources(connection, config, built_at)
+            connection.execute("INSERT INTO item_fts(item_fts) VALUES('rebuild')")
+            connection.execute("PRAGMA optimize")
+            validate_database(connection)
+            connection.commit()
+            counts = dict(connection.execute("SELECT source,row_count FROM source_status ORDER BY source"))
+        database_bytes = temp.stat().st_size
         os.replace(temp, database)
-    except BaseException:
-        if connection is not None:
-            connection.close()
-        temp.unlink(missing_ok=True)
-        raise
     return {
-        "database": str(database), "counts": counts, "database_bytes": database.stat().st_size,
+        "database": str(database), "counts": counts, "database_bytes": database_bytes,
         "built_at": built_at, "rebuild_seconds": round(time.perf_counter() - started, 3),
     }
 
 
 def connect(database: Path) -> sqlite3.Connection:
-    uri = f"file:{Path(database).expanduser()}?mode=ro&immutable=1"
+    uri = f"{Path(database).expanduser().absolute().as_uri()}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
     connection.row_factory = sqlite3.Row
     return connection
@@ -639,10 +880,10 @@ def intent_text(query: str) -> str:
     return text[:min(cuts)] if cuts else text[:1800]
 
 
-def query_tokens(query: str) -> list[str]:
+def query_tokens(text: str) -> list[str]:
     seen: set[str] = set()
     tokens = []
-    for token in WORD.findall(intent_text(query)):
+    for token in WORD.findall(text):
         folded = token.casefold().strip("./-")
         if len(folded) > 2 and folded not in seen and folded not in QUERY_STOP and folded not in {"subject", "from"}:
             seen.add(folded)
@@ -650,9 +891,9 @@ def query_tokens(query: str) -> list[str]:
     return tokens[:18]
 
 
-def fts_expression(query: str, column: str = "", tokens: list[str] | None = None) -> str:
+def fts_expression(tokens: list[str], column: str = "") -> str:
     prefix = f"{column}:" if column else ""
-    return " OR ".join(f'{prefix}"{token.replace(chr(34), "")}"' for token in (tokens or query_tokens(query)))
+    return " OR ".join(f'{prefix}"{token}"' for token in tokens)
 
 
 def cue(query: str, name: str) -> str:
@@ -688,7 +929,7 @@ def database_alias_entities(connection: sqlite3.Connection) -> dict[str, set[int
 
 def unique_query_entities(connection: sqlite3.Connection, query: str) -> list[int]:
     alias_entities = database_alias_entities(connection)
-    folded = " ".join(intent_text(query).casefold().split())
+    folded = " ".join(query.casefold().split())
     exact_matches: list[tuple[int, int]] = []
     for alias, ids in alias_entities.items():
         normalized_alias = " ".join(alias.split())
@@ -705,43 +946,49 @@ def unique_query_entities(connection: sqlite3.Connection, query: str) -> list[in
         for prefix, ids in prefix_entities.items()
         if len(ids) == 1 and re.search(rf"(?<!\w){re.escape(prefix)}(?!\w)", folded)
     ]
-    matches = sorted(exact_matches, reverse=True) + sorted(prefix_matches, reverse=True)
+    matches = exact_matches + prefix_matches
     return list(dict.fromkeys(entity_id for _, entity_id in sorted(matches, reverse=True)))
 
 
+def item_filters(sources: list[str] | None, since: str, until: str, role: str) -> tuple[str, list[str]]:
+    sql = ""
+    params = []
+    if sources:
+        sql += f" AND i.source IN ({','.join('?' for _ in sources)})"
+        params.extend(sources)
+    for clause, value in (("i.timestamp>=?", since), ("i.timestamp<?", until), ("i.role=?", role)):
+        if value:
+            sql += f" AND {clause}"
+            params.append(value)
+    return sql, params
+
+
 def ranked_fts(
-    connection: sqlite3.Connection, query: str, *, column: str = "", sources: list[str] | None,
-    since: str, until: str, limit: int,
+    connection: sqlite3.Connection, tokens: list[str], filters: tuple[str, list[str]], *, column: str = "", limit: int,
 ) -> list[sqlite3.Row]:
-    tokens = query_tokens(query)
     if not column and len(tokens) > 8:
         placeholders = ",".join("?" for _ in tokens)
         frequencies = dict(connection.execute(
             f"SELECT term,doc FROM item_vocab WHERE term IN ({placeholders})", tokens
         ))
+        # Compound terms and some Unicode spellings may match FTS without an exact vocabulary key.
+        tokens = [token for token in tokens if token in frequencies or connection.execute(
+            "SELECT 1 FROM item_fts WHERE item_fts MATCH ? LIMIT 1", (fts_expression([token]),),
+        ).fetchone()]
         selected = set(sorted(tokens, key=lambda token: (frequencies.get(token, 0), -len(token), token))[:8])
         tokens = [token for token in tokens if token in selected]
-    if not (expression := fts_expression(query, column, tokens)):
+    if not (expression := fts_expression(tokens, column)):
         return []
-    sql = """SELECT i.*,bm25(item_fts,6,1,4,5) rank
-             FROM item_fts JOIN items i ON i.id=item_fts.rowid WHERE item_fts MATCH ?"""
-    params: list[Any] = [expression]
-    if sources:
-        local_sources = [source for source in sources if source != "historical_mail"]
-        if not local_sources:
-            sql += " AND 0"
-        else:
-            sql += f" AND i.source IN ({','.join('?' for _ in local_sources)})"
-            params.extend(local_sources)
-    if since:
-        sql += " AND i.timestamp>=?"
-        params.append(since)
-    if until:
-        sql += " AND i.timestamp<?"
-        params.append(until)
-    sql += " ORDER BY rank,i.id LIMIT ?"
-    params.append(limit)
-    return connection.execute(sql, params).fetchall()
+    where, params = filters
+    # Rank lightweight IDs before retrieving snippets so SQLite need not sort full message bodies.
+    sql = f"""WITH ranked AS (
+                SELECT i.id,bm25(item_fts,6,1,4,5,4) rank
+                FROM item_fts JOIN items i ON i.id=item_fts.rowid WHERE item_fts MATCH ?{where}
+                ORDER BY rank,i.id LIMIT ?
+             )
+             SELECT {SEARCH_FIELDS},{SEARCH_SNIPPET} FROM ranked JOIN items i USING(id)
+             ORDER BY ranked.rank,i.id"""
+    return connection.execute(sql, [expression, *params, limit]).fetchall()
 
 
 def needs_historical(query: str, since: str, until: str, as_of: str) -> bool:
@@ -750,16 +997,16 @@ def needs_historical(query: str, since: str, until: str, as_of: str) -> bool:
     return any(year < 2026 for year in years) or any(value[:4].isdigit() and int(value[:4]) < 2026 for value in dates) or bool(re.search(r"\b(historical|archive|old email|years ago)\b", query, re.IGNORECASE))
 
 
-def historical_hits(config: SourceConfig, query: str, since: str, until: str, limit: int) -> list[dict[str, Any]]:
-    if not config.mail_index.exists() or not (expression := fts_expression(query)):
+def historical_hits(config: SourceConfig, tokens: list[str], since: str, until: str, limit: int) -> list[dict[str, Any]]:
+    # The mbox FTS index uses detail=column, which supports terms but not phrase queries.
+    clauses = [" AND ".join(f'"{part}"' for part in re.findall(r"[^\W_]+", token)) for token in tokens]
+    if not config.mail_index.exists() or not clauses:
         return []
-    connection = sqlite3.connect(f"file:{config.mail_index}?mode=ro&immutable=1", uri=True)
-    connection.row_factory = sqlite3.Row
     sql = """SELECT m.date_utc timestamp,m.subject title,m.sender author,m.message_id native_id,
                     s.path, m.byte_offset,m.byte_length,bm25(search) rank
              FROM search JOIN messages m ON m.id=search.rowid JOIN sources s ON s.id=m.source_id
              WHERE search MATCH ?"""
-    params: list[Any] = [expression]
+    params: list[Any] = [" OR ".join(clauses)]
     if since:
         sql += " AND m.date_utc>=?"
         params.append(since)
@@ -769,11 +1016,11 @@ def historical_hits(config: SourceConfig, query: str, since: str, until: str, li
     sql += " ORDER BY rank,m.id LIMIT ?"
     params.append(limit)
     try:
-        rows = connection.execute(sql, params).fetchall()
-    except sqlite3.DatabaseError:
-        rows = []
-    finally:
-        connection.close()
+        with closing(connect(config.mail_index)) as connection:
+            rows = connection.execute(sql, params).fetchall()
+    except sqlite3.DatabaseError as error:
+        typer.echo(f"warning: could not search historical mail index {config.mail_index}: {error}", err=True)
+        return []
     hits = []
     for row in rows:
         source_path = Path(row["path"])
@@ -820,70 +1067,61 @@ def search_database(
     if as_of and (not until or as_of < until):
         until = (dt.date.fromisoformat(as_of) + dt.timedelta(days=1)).isoformat()
     intent = intent_text(query)
-    if not fts_expression(intent):
+    tokens = query_tokens(intent)
+    if not tokens:
         return []
     connection = connect(database)
     candidates: dict[int, dict[str, Any]] = {}
+    filters = item_filters(sources, since, until, "user" if mode == "style" else "")
+    where, params = filters
 
     def add_ranking(rows: Iterable[sqlite3.Row], reason: str, weight: float) -> None:
         for rank, row in enumerate(rows, 1):
             candidate = candidates.setdefault(row["id"], {
                 "row": row, "score": 0.0, "why": set(),
-                "snippet": row["summary"] or row["body"][:300] or row["title"],
+                "snippet": row["summary"] or row["body"] or row["title"],
             })
             candidate["score"] += weight / (40 + rank)
             candidate["why"].add(reason)
 
     lexical_limit = max(limit * 6, 80)
     add_ranking(
-        ranked_fts(connection, intent, sources=sources, since=since, until=until, limit=lexical_limit),
+        ranked_fts(connection, tokens, filters, limit=lexical_limit),
         "broad", 1.0,
     )
     subject, sender = cue(query, "Subject"), cue(query, "From")
     if subject:
         add_ranking(
-            ranked_fts(connection, subject, column="title", sources=sources, since=since, until=until, limit=lexical_limit),
+            ranked_fts(connection, query_tokens(intent_text(subject)), filters, column="title", limit=lexical_limit),
             "subject", 1.5,
         )
     if sender:
         add_ranking(
-            ranked_fts(connection, sender, column="author", sources=sources, since=since, until=until, limit=lexical_limit),
+            ranked_fts(connection, query_tokens(intent_text(sender)), filters, column="author", limit=lexical_limit),
             "sender", 1.2,
         )
 
     query_entities = unique_query_entities(connection, intent)
     for entity_id in query_entities:
         entity_rows = connection.execute(
-            """SELECT i.*,ie.role entity_role FROM item_entities ie JOIN items i ON i.id=ie.item_id
-               WHERE ie.entity_id=? ORDER BY i.timestamp DESC,i.id LIMIT 100""", (entity_id,)
+            f"""SELECT {SEARCH_FIELDS},{SEARCH_SNIPPET},max(ie.role='evidence') about_link
+                FROM item_entities ie JOIN items i ON i.id=ie.item_id
+                WHERE ie.entity_id=?{where} GROUP BY i.id ORDER BY i.timestamp DESC,i.id LIMIT 100""",
+            [entity_id, *params],
         ).fetchall()
-        for rank, row in enumerate(entity_rows, 1):
-            if sources and row["source"] not in sources:
-                continue
-            if since and row["timestamp"] < since or until and row["timestamp"] >= until:
-                continue
-            candidate = candidates.setdefault(row["id"], {"row": row, "score": 0.0, "why": set(), "snippet": row["summary"] or row["body"][:300] or row["title"]})
-            candidate["score"] += 1.4 / (40 + rank)
-            candidate["why"].add("entity")
-            if row["entity_role"] == "evidence":
+        add_ranking(entity_rows, "entity", 1.4)
+        for row in entity_rows:
+            if row["about_link"]:
+                candidate = candidates[row["id"]]
                 candidate["score"] += 0.025
                 candidate["why"].add("about-link")
 
     if ACTION_INTENT.search(intent):
-        action_sql = "SELECT i.*,a.action_text FROM actions a JOIN items i ON i.id=a.item_id WHERE 1"
-        action_params: list[Any] = []
-        if sources:
-            action_sql += f" AND i.source IN ({','.join('?' for _ in sources)})"
-            action_params.extend(sources)
-        if since:
-            action_sql += " AND i.timestamp>=?"
-            action_params.append(since)
-        if until:
-            action_sql += " AND i.timestamp<?"
-            action_params.append(until)
-        action_sql += " ORDER BY i.timestamp DESC,a.id"
-        action_rows = connection.execute(action_sql, action_params).fetchall()
-        action_terms = {token for token in query_tokens(intent) if token not in ACTION_STOP}
+        action_rows = connection.execute(
+            f"""SELECT {SEARCH_FIELDS},a.action_text FROM actions a JOIN items i ON i.id=a.item_id
+                WHERE 1{where} ORDER BY i.timestamp DESC,a.id""", params,
+        )
+        action_terms = set(tokens).difference(ACTION_STOP)
         action_items: set[int] = set()
         for rank, row in enumerate(action_rows, 1):
             haystack = f'{row["action_text"]} {row["title"]}'.casefold()
@@ -906,8 +1144,11 @@ def search_database(
                     candidate["why"].add("recent")
 
     hits = [hit_from_row(value["row"], value["snippet"], value["score"], value["why"]) for value in candidates.values()]
-    if needs_historical(intent, since, until, as_of) and (not sources or "mail" in sources or "historical_mail" in sources):
-        history = historical_hits(config, intent, since, until, max(limit * 3, 30))
+    explicit_history = sources and "historical_mail" in sources
+    if mode != "style" and (explicit_history or (
+        (not sources or "mail" in sources) and needs_historical(intent, since, until, as_of)
+    )):
+        history = historical_hits(config, tokens, since, until, max(limit * 3, 30))
         for rank, hit in enumerate(history, 1):
             hit["score"] = round(1 / (60 + rank), 8)
         hits.extend(history)
@@ -934,6 +1175,8 @@ def direct_item_hit(row: sqlite3.Row, why: str) -> dict[str, Any]:
 
 
 def thread_results(database: Path, thread_id: str) -> list[dict[str, Any]]:
+    if not thread_id.strip():
+        raise typer.BadParameter("Thread ID must be non-empty")
     connection = connect(database)
     rows = connection.execute("SELECT * FROM items WHERE thread_id=? ORDER BY timestamp,id", (thread_id,)).fetchall()
     connection.close()
@@ -1025,9 +1268,7 @@ def open_loop_results(database: Path, entity: str = "", limit: int = 50) -> list
 
 
 def style_results(database: Path, query: str, *, limit: int = 20, config: SourceConfig | None = None, log_path: Path | None = None) -> list[dict[str, Any]]:
-    config = config or SourceConfig.for_home(Path.home())
-    hits = search_database(database, query, sources=["chatgpt", "claude", "mail"], limit=limit * 5, config=config, log_path=log_path, mode="style")
-    return [hit for hit in hits if hit["role"] == "user"][:limit]
+    return search_database(database, query, sources=["chatgpt", "claude", "mail"], limit=limit, config=config, log_path=log_path, mode="style")
 
 
 def assets_results(database: Path, query: str, *, limit: int = 20, config: SourceConfig | None = None, log_path: Path | None = None) -> list[dict[str, Any]]:
@@ -1081,10 +1322,10 @@ def describe() -> dict[str, Any]:
         "commands": {
             "rebuild": {},
             "search": {"query": "string", "source": "repeatable string", "since": "date", "until": "date", "as_of": "date", "limit": "integer"},
-            "entity": {"person": "string", "since": "date"},
-            "recent": {"query": "string", "days": "positive integer"},
-            "open-loops": {"entity": "string?"}, "thread": {"thread_id": "string"},
-            "style": {"query": "string"}, "assets": {"query": "string"},
+            "entity": {"person": "string", "since": "date", "limit": "positive integer"},
+            "recent": {"query": "string", "days": "positive integer", "limit": "positive integer"},
+            "open-loops": {"entity": "string?", "limit": "positive integer"}, "thread": {"thread_id": "string"},
+            "style": {"query": "string", "limit": "positive integer"}, "assets": {"query": "string", "limit": "positive integer"},
             "status": {"identities": "boolean"},
         },
     }
@@ -1118,6 +1359,7 @@ def main(
 @app.command()
 def rebuild(ctx: typer.Context) -> None:
     """Rebuild, validate, and atomically replace the entire index."""
+    typer.echo(f"Rebuilding context index at {ctx.obj['database']}", err=True)
     emit(rebuild_database(ctx.obj["database"]))
 
 
@@ -1126,27 +1368,27 @@ def search_command(
     ctx: typer.Context, query: str,
     source: Annotated[list[str] | None, typer.Option("--source")] = None,
     since: str = "", until: str = "",
-    as_of: Annotated[str, typer.Option("--as-of")] = "", limit: int = 20,
+    as_of: Annotated[str, typer.Option("--as-of")] = "", limit: PositiveLimit = 20,
 ) -> None:
     """Find cross-source lexical candidates with explained deterministic routing."""
     emit(search_database(ctx.obj["database"], query, sources=source or None, since=since, until=until, as_of=as_of, limit=limit))
 
 
 @app.command()
-def entity(ctx: typer.Context, person: str, since: str = "", limit: int = 50) -> None:
+def entity(ctx: typer.Context, person: str, since: str = "", limit: PositiveLimit = 50) -> None:
     """Show evidence explicitly connected to one unambiguous About identity."""
     emit(entity_results(ctx.obj["database"], person, since, limit))
 
 
 @app.command()
-def recent(ctx: typer.Context, query: str, days: int = typer.Option(..., min=1), limit: int = 20) -> None:
+def recent(ctx: typer.Context, query: str, days: int = typer.Option(..., min=1), limit: PositiveLimit = 20) -> None:
     """Search within the last N days and apply the deterministic recency signal."""
     now = dt.datetime.now(dt.UTC)
     emit(search_database(ctx.obj["database"], query, since=f"{days}d", as_of=now.date().isoformat(), limit=limit, mode="recent"))
 
 
 @app.command("open-loops")
-def open_loops(ctx: typer.Context, entity: str = "", limit: int = 50) -> None:
+def open_loops(ctx: typer.Context, entity: str = "", limit: PositiveLimit = 50) -> None:
     """Group explicit transcript actions without inferring pending or done state."""
     emit(open_loop_results(ctx.obj["database"], entity, limit))
 
@@ -1158,13 +1400,13 @@ def thread(ctx: typer.Context, thread_id: str) -> None:
 
 
 @app.command()
-def style(ctx: typer.Context, query: str, limit: int = 20) -> None:
+def style(ctx: typer.Context, query: str, limit: PositiveLimit = 20) -> None:
     """Find user-authored chat turns and sent mail; exclude assistant prose."""
     emit(style_results(ctx.obj["database"], query, limit=limit))
 
 
 @app.command()
-def assets(ctx: typer.Context, query: str, limit: int = 20) -> None:
+def assets(ctx: typer.Context, query: str, limit: PositiveLimit = 20) -> None:
     """Find entries in existing asset registries."""
     emit(assets_results(ctx.obj["database"], query, limit=limit))
 
