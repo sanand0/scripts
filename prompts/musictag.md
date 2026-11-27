@@ -1,5 +1,83 @@
 # musictag.py
 
+## Improve search, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Though https://en.wikipedia.org/?curid=63423336 has the release date as "14 November 2020", `musictag.py search` wasn't able to get the year. The lyricist was mentioned in the page, but not in a structured way, perhaps, and `musictag.py search` didn't find it.
+
+There are probably several such instances. How can we fix these to improve the search reliably?
+
+For example, should we look in more fields for the year? Or might that be misleading? Research and find examples.
+Should we look to see if specific lyricists, composers, artists, etc. are mentioned in the page? How do we ensure they're tagged properly (e.g. some composers are also artists, etc.)?
+
+--- <!-- steering -->
+
+Refer session 01a21cb2-5e5c-7ca2-bd21-1721a0a479de for more context
+
+<!-- codex resume 01a21d35-1b40-7683-b879-95f76a5e1e47 -->
+
+## Enable search, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Enable `musictag.py search a.mp3 b.mp3 ...` which should update tags for the specified files.
+
+If all required tags already exists for any file, it skips the file.
+If any metadata can be deterministically filled, e.g. via search or lookups, it fills it for that file.
+In case a metadata search reveals options that require me to guess something, e.g. between a few choices, print the musictag.py fix --write ... commands that will set the metadata for that file, one line per option, so I can pick the right ones.
+
+For example: `musictag.py search Yuva.Badal.mp3 Next.Song.mp3` might print:
+
+```bash
+musictag.py fix --write 'Yuva.Badal.mp3'
+  --genre Hindi
+  --year 2004
+  --year 2024
+  --composer ARR
+  --artist SPB,Harini
+  --artist Hariharan,Nithyashri
+musictag.py fix --write "Next.Song.mp3"
+  ...
+```
+
+To see examples of how you might discover songs, here are some chats that have worked in the past. Use these to identify strategies for finding the tags:
+
+- `~/Documents/chatgpt/GV Prakash Song Recommendations.md`
+- `~/Documents/chatgpt/Download Truncated Tamil Songs from MassTamilan.md`
+- `agentlog.py codex md 01a2024b-fe9e-7db3-909f-6401b55cab28`
+
+Test this on a wide variety of songs and pick the strategy that leads to no mistakes AND the least work for me (not having to run any commands, or if I do, just a few options to choose from and the last amount of copy-paste.)
+
+--- <!-- steering -->
+
+~/Downloads/songs/AGENTS.md and the .py file there might help, too.
+
+--- <!-- steering -->
+
+Generate the `musictag.py fix ...` command output so that if I blindly copy-paste it, it will set the most likely correct values for the song.
+That is, if there are multiple options, order them so that the most likely option is placed where `musictag.py fix ...` will end up applying it.
+
+--- <!-- steering -->
+
+When printing the options, prefer printing one per line, indented, just for where I need to choose, and keep the tags you're sure about on the first line, e.g.
+
+```bash
+musictag.py fix --write 'Yuva.Badal.mp3' --genre Hindi --composer ARR \
+  --year 2004 \
+  --year 2024 \
+  --artist SPB,Harini \
+  --artist Hariharan,Nithyashri
+```
+
+<!-- codex resume 01a21cb2-5e5c-7ca2-bd21-1721a0a479de -->
+
 ## Delete descriptions, 09 Oct 2026
 
 <!--

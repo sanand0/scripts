@@ -110,7 +110,7 @@ test-mcpserver:
 
 # Run the music tag tests.
 test-musictag:
-    {{ pytest }} --with mutagen --with typer pytest -q tests/test_musictag.py
+    {{ pytest }} --with beautifulsoup4 --with mutagen --with typer pytest -q tests/test_musictag.py
 
 # Run the podcast tests.
 test-podcast:
