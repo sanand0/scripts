@@ -74,6 +74,14 @@ matches:
       codex --model gpt-6.2-sol --config model_reasoning_effort=medium
       -->
 
+  - trigger: "-copilot "
+    force_clipboard: true
+    replace: |
+      <!--
+      cd $PWD
+      copilot --model fusion
+      -->
+
   - trigger: "-steer "
     force_clipboard: true
     replace: |

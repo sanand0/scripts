@@ -2,6 +2,17 @@
 
 Prompts for setup.{fish,bash}.
 
+## Improve actions, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+copilot --model fusion
+-->
+
+Convert the `actions` abbreviation in setup.fish into a function that accepts a filter. For example, `actions Anand:` will show only actions with "Anand:" in them. Use relevant skills.
+
+<!-- copilot --resume=cb36d77e-a412-4117-804f-cb6b8e7b2c3f -->
+
 ## Improve plutoniun setup, 25 Nov 2026
 
 The Herdr app in installed on this Windows machine. Remove it, and all related data, settings, etc.

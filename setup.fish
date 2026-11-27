@@ -380,8 +380,28 @@ end
 
 # Notes utilities
 # -----------------------------------------------
-abbr actions 'for file in (string match -r \'.*/202.*\.md$\' $HOME/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.actions\' $file; end'
-# ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
+abbr --query actions; and abbr --erase actions
+function actions --description "Show recent transcript actions, optionally matching a substring"
+    if test (count $argv) -gt 1
+        echo "Usage: actions [FILTER]" >&2
+        return 2
+    end
+
+    for file in (string match -r '.*/202.*\.md$' $HOME/Dropbox/notes/transcripts/* | sort -r | head -n 30)
+        if test (count $argv) -eq 0
+            echo (basename $file)
+            yq --front-matter=extract '.actions' $file; or return $status
+        else
+            set -l matches (env ACTIONS_FILTER="$argv[1]" yq --front-matter=extract \
+                '.actions | map(select(contains(strenv(ACTIONS_FILTER)))) | select(length > 0)' $file)
+            or return $status
+            if test (count $matches) -gt 0
+                echo (basename $file)
+                printf '%s\n' $matches
+            end
+        end
+    end
+end
 abbr ideas 'for file in (string match -r \'.*/202.*\.md$\' $HOME/Dropbox/notes/transcripts/* | sort -r | head -n 30); echo (basename $file); yq --front-matter=extract \'.ideas\' $file; end'
 # ' # - add quote (') in a comment because VS Codes syntax highlighting messes up the previous line.
 
