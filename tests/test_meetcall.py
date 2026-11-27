@@ -30,6 +30,85 @@ def event(title='TDS', start='2026-11-04T09:30:00+05:30', **extra):
     return dict(summary=title, start={'dateTime': start}, end={'dateTime': start}, **extra)
 
 
+@pytest.mark.parametrize('mode', ['default', 'keep', 'dry-run', 'call-fails'])
+def test_keep_preserves_raw_drive_downloads_and_separate_final_outputs(tmp_path, monkeypatch, mode):
+    import json
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    m = load()
+    monkeypatch.setattr(m.Path, 'home', lambda: tmp_path)
+    downloads = tmp_path/'Downloads'
+    title = '2026-11-04 TDS Planning'
+    doc = b'# Meeting notes\n\nThe unprocessed Google Docs export.\n'
+    chat = b'\xef\xbb\xbf00:01 Anand: Hello.\n'
+    assets = {'video': b'video', 'audio': b'audio', 'doc': doc, 'chat': chat, 'blocked': b'partial download'}
+    attachments = [
+        {'fileId': 'video', 'mimeType': 'video/mp4'},
+        {'fileId': 'audio', 'mimeType': 'audio/mpeg'},
+        {'fileId': 'doc', 'mimeType': 'application/vnd.google-apps.document'},
+        {'fileId': 'chat', 'mimeType': 'text/plain', 'title': 'Meeting Chat'},
+        {'fileId': 'blocked', 'mimeType': 'text/plain', 'title': 'Older Chat'},
+    ]
+    monkeypatch.setattr(m, 'search', lambda *a: [event('TDS / Planning', attachments=attachments, _profile='p', _account='me')])
+    monkeypatch.setattr(m, 'gws_json', lambda *a, **kw: {'capabilities': {'canDownload': True}})
+    monkeypatch.setattr(m, 'CACHE', tmp_path/'cache')
+    monkeypatch.setattr(m, 'recording_captions', lambda *a: '')
+    monkeypatch.setattr(m.call, 'load_system_prompt', lambda *a: 'Default instructions')
+    audio_dir, note_dir = tmp_path/'Documents/calls', tmp_path/'Dropbox/notes/transcripts'
+    note = note_dir/f'{title}.md'
+    staged = []
+
+    def run(args, **kwargs):
+        if args[0] == 'gws':
+            file_id = json.loads(args[args.index('--params') + 1])['fileId']
+            staged.append(kwargs['cwd']/args[-1])
+            staged[-1].write_bytes(assets[file_id])
+            if file_id == 'blocked':
+                raise subprocess.CalledProcessError(1, args, json.dumps({'error': {'code': 404}}))
+        elif args[0] == 'ffmpeg':
+            Path(args[-1]).write_bytes(b'opus')
+        else:
+            assert args[1:] == [str(audio_dir/f'{title}.opus'), '--out', str(note_dir)]
+            if mode == 'call-fails':
+                raise subprocess.CalledProcessError(7, args)
+            m.call.atomic_write(note, note.read_text().replace('## Transcript\n', '## Transcript\n\n**A**: Transcribed.\n'))
+
+    monkeypatch.setattr(m, 'run', run)
+    if mode == 'keep':
+        downloads.mkdir()
+        (downloads/f'{title} - Recording.mp4').write_bytes(b'existing download')
+    flags = ['TDS', '--input-dir', str(audio_dir), '--out-dir', str(note_dir)]
+    if mode != 'default':
+        flags.append('--keep')
+    if mode == 'dry-run':
+        flags.append('--dry-run')
+    result = CliRunner().invoke(m.app, flags)
+    assert result.exit_code == (7 if mode == 'call-fails' else 0), result.output
+    if mode == 'dry-run':
+        assert not staged and not any(tmp_path.iterdir())
+        return
+    assert len(staged) == len(assets) and not any(path.exists() for path in staged)
+    assert (audio_dir/f'{title}.opus').read_bytes() == b'opus'
+    assert '> 00:01 Anand: Hello.' in note.read_text()
+    if mode != 'call-fails':
+        assert '**A**: Transcribed.' in note.read_text()
+    if mode == 'default':
+        assert not downloads.exists()
+        return
+    assert all(path.is_relative_to(downloads) for path in staged)
+    kept = {path.name: path.read_bytes() for path in downloads.iterdir()}
+    assert kept.pop(f'{title} - Recording.mp4') == (b'existing download' if mode == 'keep' else b'video')
+    if mode == 'keep':
+        assert kept.pop(f'{title} - Recording (2).mp4') == b'video'
+    assert kept == {
+        f'{title} - Recording.mp3': b'audio',
+        f'{title} - Transcript.md': doc,
+        f'{title} - Chat.txt': chat,
+    }
+
+
 def test_match_latest_exact_and_substring():
     m = load()
     rows = [event(), event('TDS Workshop', '2026-11-09T10:00:00+05:30'), event('tds', '2026-11-11T09:30:00+05:30')]
@@ -154,7 +233,7 @@ def test_recording_context_source_precedence(tmp_path, monkeypatch, transcript_s
     doc_turns = 'Document speaker turns' if transcript_source == 'document' else ''
     monkeypatch.setattr(m, 'CACHE', tmp_path/'cache')
     monkeypatch.setattr(m, 'export_documents', lambda *a: ('Summary', doc_turns, 'Raw document'))
-    def download(profile, recordings, audio, cache):
+    def download(profile, recordings, audio, cache, archive):
         assert bool(cache) == (transcript_source == 'captions')
         return '[00:00:01] Anand: Caption words.' if cache else ''
     monkeypatch.setattr(m, 'download_audio', download)
@@ -689,10 +768,12 @@ def test_scan_excludes_cancelled_all_day_future_and_ongoing_events(tmp_path, mon
 def test_scan_processes_through_shared_pipeline_then_rerun_is_empty(tmp_path, monkeypatch):
     from typer.testing import CliRunner
     m = load()
+    monkeypatch.setattr(m.Path, 'home', lambda: tmp_path)
     e = event('New meeting', attachments=[{'fileId': 'recording', 'mimeType': 'video/mp4'}], _profile='p', _account='me')
     monkeypatch.setattr(m, 'search', lambda *a, **kw: [e, {**e, '_profile': 'other-account'}])
     requests = []
-    def download(profile, recordings, path, caption_cache):
+    def download(profile, recordings, path, caption_cache, archive):
+        assert archive == tmp_path/'Downloads/2026-11-04 New meeting'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'fixture audio; call subprocess is mocked')
     monkeypatch.setattr(m, 'download_audio', download)
@@ -702,7 +783,7 @@ def test_scan_processes_through_shared_pipeline_then_rerun_is_empty(tmp_path, mo
         note = tmp_path/'notes/2026-11-04 New meeting.md'
         m.call.atomic_write(note, '# New meeting\n\n## Transcript\n\n**A**: [00:00] Transcribed.\n')
     monkeypatch.setattr(m, 'run', transcribe)
-    flags = ['--scan', '--date', '2026-11-04', '--input-dir', str(tmp_path/'audio'), '--out-dir', str(tmp_path/'notes')]
+    flags = ['--scan', '--keep', '--date', '2026-11-04', '--input-dir', str(tmp_path/'audio'), '--out-dir', str(tmp_path/'notes')]
     runner = CliRunner()
     first = runner.invoke(m.app, flags)
     assert first.exit_code == 0, first.output

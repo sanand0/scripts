@@ -1,6 +1,17 @@
 # meetcall
 
-## Improve re-runnability
+## Keep videos, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+Add a `meetcall --keep` option that will keep the downloaded video, transcript, chat, etc. in `~/Downloads/`, named appropriately.
+The final `.opus` still needs to end up in `~/Documents/calls/` and the transcript at `~/Dropbox/notes/transcripts/` as before. It's just the downloads from Google Drive that will be kept in `~/Downloads/` instead of being deleted.
+Hence, it might be better to use `~/Downloads/` as the location to download the files in the first place - at least when `--keep` is specified, but whether or not to download to `~/Downloads/` or elsewhere without `--keep` is up to you.
+
+## Improve re-runnability, 26 Nov 2026
 
 <!--
 cd ~/code/scripts

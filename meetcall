@@ -7,6 +7,7 @@
 
 Examples:
     meetcall --scan --days 7 --dry-run
+    meetcall TDS --keep
     meetcall TDS --dry-run
     meetcall Innovation --date 'last Wednesday' --chat messages.txt
     meetcall TDS --transcript captions.txt
@@ -27,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -34,6 +36,7 @@ import sys
 import tempfile
 from datetime import datetime, timedelta
 from importlib.machinery import SourceFileLoader
+from itertools import count
 from pathlib import Path
 from typing import Annotated
 
@@ -59,6 +62,27 @@ def run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 def gws(args: list[str], profile: str, cwd: Path) -> None:
     run(['gws', *args], env={**os.environ, 'GOOGLE_WORKSPACE_CLI_CONFIG_DIR': profile}, cwd=cwd, capture_output=True, text=True)
+
+
+def download_file(args: list[str], profile: str, path: Path, archive: Path | None, label: str) -> Path:
+    """Publish successful downloads under the meeting name when keeping Drive files."""
+    if archive is None:
+        gws([*args, '--output', path.name], profile, path.parent)
+        return path
+    archive.parent.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.meetcall-', dir=archive.parent) as temp:
+        staged = Path(temp)/path.name
+        gws([*args, '--output', staged.name], profile, staged.parent)
+        for number in count(1):
+            suffix = f' ({number})' if number > 1 else ''
+            saved = archive.with_name(f'{archive.name} - {label}{suffix}{path.suffix}')
+            try:
+                # Publish without overwriting an earlier download, even in concurrent runs.
+                saved.hardlink_to(staged)
+            except FileExistsError:
+                continue
+            log(f'Kept {saved}')
+            return saved
 
 
 def gws_json(args: list[str], *, config_dir: str) -> dict:
@@ -203,13 +227,13 @@ def clean_document(markdown: str) -> tuple[str, str]:
     return summary.strip(), '\n\n'.join(turns)
 
 
-def export_documents(profile: str, documents: list[dict]) -> tuple[str, str, str]:
+def export_documents(profile: str, documents: list[dict], archive: Path | None = None) -> tuple[str, str, str]:
     summaries, transcripts, originals = [], [], []
     with tempfile.TemporaryDirectory(prefix='meetcall-') as temp:
         for index, doc in enumerate(documents):
-            path = Path(temp)/f'{index}.md'
+            params = json.dumps({'fileId': doc['fileId'], 'mimeType': 'text/markdown'})
             try:
-                gws(['drive', 'files', 'export', '--params', json.dumps({'fileId': doc['fileId'], 'mimeType': 'text/markdown'}), '--output', path.name], profile, Path(temp))
+                path = download_file(['drive', 'files', 'export', '--params', params], profile, Path(temp)/f'{index}.md', archive, 'Transcript')
             except subprocess.CalledProcessError as exc:
                 url = doc.get('fileUrl') or f"https://docs.google.com/document/d/{doc['fileId']}/edit"
                 attachment = f"{doc['title']!r} ({url})" if doc.get('title') else url
@@ -225,7 +249,7 @@ def export_documents(profile: str, documents: list[dict]) -> tuple[str, str, str
     return '\n\n'.join(summaries).strip(), '\n\n'.join(transcripts), '\n\n'.join(originals)
 
 
-def export_chats(profile: str, chats: list[dict]) -> str:
+def export_chats(profile: str, chats: list[dict], archive: Path | None = None) -> str:
     messages = []
     with tempfile.TemporaryDirectory(prefix='meetcall-chat-') as temp:
         for index, chat in enumerate(chats):
@@ -234,8 +258,8 @@ def export_chats(profile: str, chats: list[dict]) -> str:
                 if not metadata.get('capabilities', {}).get('canDownload'):
                     log('WARNING chat download restricted. Use --chat FILE to supply its messages.')
                     continue
-                path = Path(temp)/f'{index}.txt'
-                gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': chat['fileId'], 'alt': 'media'}), '--output', path.name], profile, Path(temp))
+                params = json.dumps({'fileId': chat['fileId'], 'alt': 'media'})
+                path = download_file(['drive', 'files', 'get', '--params', params], profile, Path(temp)/f'{index}.txt', archive, 'Chat')
             except subprocess.CalledProcessError as exc:
                 unavailable_file(exc, 'chat')
                 continue
@@ -294,7 +318,7 @@ def recording_captions(video: Path) -> str:
     return ''
 
 
-def download_audio(profile: str, recordings: list[dict], target: Path, caption_cache: Path | None = None) -> str:
+def download_audio(profile: str, recordings: list[dict], target: Path, caption_cache: Path | None = None, archive: Path | None = None) -> str:
     reuse_audio = target.exists() and target.stat().st_size > 0
     cached = caption_cache is not None and caption_cache.exists()
     if reuse_audio:
@@ -313,9 +337,13 @@ def download_audio(profile: str, recordings: list[dict], target: Path, caption_c
             if reuse_audio and not needs_captions:
                 continue
             log(f'Downloading recording {index + 1}/{len(recordings)}…')
-            video, audio = Path(temp)/f'{index}.mp4', Path(temp)/f'{index}.opus'
+            extension = '.mp4'
+            if archive and (mime_type := recording.get('mimeType')):
+                extension = mimetypes.guess_extension(mime_type) or '.bin'
+            audio = Path(temp)/f'{index}.opus'
+            params = json.dumps({'fileId': recording['fileId'], 'alt': 'media'})
             try:
-                gws(['drive', 'files', 'get', '--params', json.dumps({'fileId': recording['fileId'], 'alt': 'media'}), '--output', video.name], profile, Path(temp))
+                video = download_file(['drive', 'files', 'get', '--params', params], profile, Path(temp)/f'{index}{extension}', archive, 'Recording')
             except subprocess.CalledProcessError as exc:
                 if not reuse_audio:
                     raise
@@ -388,11 +416,12 @@ def scaffold_note(note: Path, title: str, prompt: str | None = None) -> None:
         call.atomic_write(note, markdown)
 
 
-def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, chat_file: Path | None = None, local_chat: str = '', transcript_file: Path | None = None, local_transcript: str = '') -> None:
+def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, chat_file: Path | None = None, local_chat: str = '', transcript_file: Path | None = None, local_transcript: str = '', *, keep: bool = False) -> None:
     recordings = [a for a in event.get('attachments', []) if a.get('mimeType', '').startswith(('video/', 'audio/'))]
     documents = [a for a in event.get('attachments', []) if a.get('mimeType') == 'application/vnd.google-apps.document']
     chats = [a for a in event.get('attachments', []) if a.get('mimeType') == 'text/plain' and 'chat' in a.get('title', '').lower()]
     title = stem(event)
+    archive = Path.home()/'Downloads'/title if keep else None
     note = note_path(event, out_dir)
     audio = input_dir/f'{note.stem}.opus'
     _, existing, _ = call.read_existing_note(note)
@@ -409,6 +438,8 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
     if recordings:
         typer.echo(f'  Audio: {audio}')
     typer.echo(f'  Note: {note}')
+    if archive:
+        typer.echo(f'  Keep downloads in: {archive.parent}')
     if chat_file:
         typer.echo(f'  Chat: {chat_file}')
     if transcript_file:
@@ -421,14 +452,14 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
     if dry_run:
         return
     call.preflight_write(note)
-    chat = local_chat or (export_chats(event['_profile'], chats) if needs_chat else '')
+    chat = local_chat or (export_chats(event['_profile'], chats, archive) if needs_chat else '')
     if complete:
         add_chat(note, chat, replace=bool(chat_file))
         return
     if transcript_file:
         summary, transcript, original = '', local_transcript, local_transcript
     else:
-        summary, transcript, original = export_documents(event['_profile'], documents) if documents else ('', '', '')
+        summary, transcript, original = export_documents(event['_profile'], documents, archive) if documents else ('', '', '')
     if recordings:
         # Reuse saved context on a failed call. A default-only scaffold may precede a failed Luna request.
         prompt = None if chat_file or transcript_file else call.extract_prompt_metadata(existing)
@@ -438,7 +469,7 @@ def process_meeting(event: dict, input_dir: Path, out_dir: Path, dry_run: bool, 
         if not (transcript_file or transcript or prompt) and any(recording['mimeType'].startswith('video/') for recording in recordings):
             digest = hashlib.sha256(json.dumps([r['fileId'] for r in recordings]).encode()).hexdigest()
             caption_cache = CACHE/event['_account']/f'captions-{digest}.txt'
-        captions = download_audio(event['_profile'], recordings, audio, caption_cache)
+        captions = download_audio(event['_profile'], recordings, audio, caption_cache, archive)
         if captions:
             log('Using embedded recording captions for speaker context.')
             transcript = captions
@@ -495,9 +526,10 @@ def main(
     days: Annotated[int, typer.Option(min=1, help='Scan lookback in days; --date or --after overrides it.')] = 7,
     limit: Annotated[int | None, typer.Option('--limit', '-n', min=1, help='Maximum pending meetings to process with --scan.')] = None,
     transcript_file: Annotated[Path | None, typer.Option('--transcript', exists=True, dir_okay=False, readable=True, help='Use a local UTF-8 transcript for speaker context, overriding Google Docs and recording captions.')] = None,
+    keep: Annotated[bool, typer.Option('--keep', help='Keep Drive files downloaded during this run in ~/Downloads.')] = False,
 ):
     if describe:
-        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'transcript': 'local UTF-8 file; overrides Google Docs and embedded captions for speaker context; without a recording, saves the supplied transcript', 'speaker_context_sources': ['--transcript', 'Google Docs transcript', 'embedded recording captions'], 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
+        typer.echo(json.dumps({'phrase': 'case-insensitive exact date-prefixed name, then substring; latest completed occurrence in first matching calendar', 'scan': 'all calendars; only recordings without completed local transcripts; skip duplicate Drive recordings', 'days': 'scan lookback, default 7', 'limit': 'maximum pending scan meetings', 'date': 'local day, flexible dates', 'before': 'exclusive local day', 'after': 'exclusive local day', 'account': 'repeatable email', 'chat': 'local UTF-8 file; overrides downloaded chat and replaces the note Chat section', 'transcript': 'local UTF-8 file; overrides Google Docs and embedded captions for speaker context; without a recording, saves the supplied transcript', 'speaker_context_sources': ['--transcript', 'Google Docs transcript', 'embedded recording captions'], 'keep': 'keep Drive files downloaded during this run in ~/Downloads', 'dry_run': 'no downloads, model calls, or note writes', 'status': 'human-readable; scan lists all pending meetings before processing', 'outputs': ['YYYY-MM-DD Title.opus', 'YYYY-MM-DD Title.md']}))
         return
     if not scan and not phrase.strip():
         raise ValueError('Provide a meeting phrase. Example: meetcall TDS --dry-run')
@@ -529,16 +561,16 @@ def main(
         for index, event in enumerate(selected, 1):
             typer.echo(f'\n{"Previewing" if dry_run else "Processing"} [{index}/{len(selected)}]')
             sys.stdout.flush()
-            process_meeting(event, input_dir, out_dir, dry_run)
+            process_meeting(event, input_dir, out_dir, dry_run, keep=keep)
         return
-    process_meeting(event, input_dir, out_dir, dry_run, chat_file, local_chat, transcript_file, local_transcript)
+    process_meeting(event, input_dir, out_dir, dry_run, chat_file, local_chat, transcript_file, local_transcript, keep=keep)
 
 
 
 if __name__ == '__main__':
     try:
         app()
-    except (ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         log(f'Error: {exc}')
         if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
             log(exc.stderr)
