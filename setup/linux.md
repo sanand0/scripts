@@ -243,6 +243,7 @@ mise use -g zoxide                    # zoxide - Smart cd command (remembers fre
 
 npm install -g @googleworkspace/cli@latest     # gws - Google Workspace CLI for all Google APIs. Run `gws auth setup` then `gws auth login`.
 npm install -g @openai/codex@latest            # codex - AI code assistant CLI
+npm install -g @github/copilot@latest          # gopilot - GitHub Copilot CLI
 npm install -g remark-cli remark-inline-links  # remark - Markdown processing. E.g. `npx remark-cli --use remark-inline-links file.md` inlines reference links
 npm install -g trash-cli@latest                # trash - Move files to trash instead of deleting
 npm install -g agent-browser@latest            # agent-browser - Allow AI coding agents to use the browser

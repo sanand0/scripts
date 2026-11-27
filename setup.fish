@@ -283,7 +283,7 @@ abbr --add pwdclip 'pwd | sd \'/home/sanand/\' \'~/\' | xclip -selection clipboa
 # LLM Utilities
 # -----------------------------------------------
 
-abbr --add copilot 'npx -y @github/copilot'
+# abbr --add copilot 'npx -y @github/copilot'
 abbr --add opencode 'npx -y opencode-ai'
 
 function secret --description "Extract secret from .env"

@@ -285,6 +285,37 @@ set -g default-shell C:/cygwin/bin/fish.exe
 
 # Use ~/code/scripts/vscode.cmd to launch VSCode from psmux
 set -ga update-environment VSCODE_IPC_HOOK_CLI
+
+# Status line: dark charcoal bar, muted tabs, blue accent for current window
+set -g status-style "bg=colour235,fg=colour246"
+set -g status-justify left
+set -g status-left ""
+set -g status-left-length 0
+set -g status-right "#[fg=colour235,bg=colour109,bold] #S "
+set -g status-right-length 40
+set -g window-status-separator ""
+set -g window-status-format " #I #W#{?window_flags,#{window_flags},} "
+set -g window-status-current-format " #I #W#{?window_flags,#{window_flags},} "
+set -g window-status-current-style "bg=colour31,fg=colour255,bold"
+set -g window-status-activity-style "fg=colour179"
+set -g message-style "bg=colour31,fg=colour255"
+set -g mode-style "bg=colour31,fg=colour255"
+
+# Pane borders: subtle grey, active pane in the accent blue
+set -g pane-border-style "fg=colour238"
+set -g pane-active-border-style "fg=colour31"
+
+# Start numbering at 1 (0 is on the far right of phone keyboards)
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# Resize each window independently based on which client is actively viewing it
+setw -g aggressive-resize on
+
+# Keep bells/activity subtle instead of jarring visual flashes
+set -g visual-activity off
+set -g monitor-activity on
 '@ | Set-Content ~/.psmux.conf
 ```
 
