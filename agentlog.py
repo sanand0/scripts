@@ -14,6 +14,7 @@ import re
 import sqlite3
 import sys
 from collections.abc import Iterable
+from enum import StrEnum
 from pathlib import Path
 from stat import S_ISREG
 from typing import Any, Protocol
@@ -142,8 +143,16 @@ def md_code(lang: str, body: str) -> str:
     return f"```{lang}\n{body.rstrip()}\n```\n"
 
 
-def md_details(summary: str, body: str, *, open_details: bool) -> str:
-    open_attr = " open" if open_details else ""
+class Details(StrEnum):
+    OPEN = "open"
+    CLOSED = "closed"
+    NONE = "none"
+
+
+def md_details(summary: str, body: str, *, details: Details) -> str:
+    if details is Details.NONE:
+        return ""
+    open_attr = " open" if details is Details.OPEN else ""
     payload = body.rstrip()
     if payload:
         payload += "\n\n"
@@ -250,7 +259,7 @@ class Backend(Protocol):
         session_id: str,
         events: list[SessionEvent],
         include_meta: bool,
-        open_details: bool,
+        details: Details,
         kind_filter: frozenset[str],
     ) -> str: ...
 
@@ -722,7 +731,7 @@ class ClaudeBackend:
         session_id: str,
         events: list[SessionEvent],
         include_meta: bool,
-        open_details: bool,
+        details: Details,
         kind_filter: frozenset[str],
     ) -> str:
         cwd = ""
@@ -771,7 +780,7 @@ class ClaudeBackend:
             content = message.get("content") if isinstance(message, dict) else None
             text = self._normalize_text(content).strip()
             extras: list[str] = []
-            if isinstance(content, list):
+            if details is not Details.NONE and isinstance(content, list):
                 for item in content:
                     if not isinstance(item, dict):
                         continue
@@ -781,7 +790,7 @@ class ClaudeBackend:
                             md_details(
                                 f"{label}: tool: {item.get('name', '')}".strip(),
                                 md_code("json", json_pretty(item.get("input"))),
-                                open_details=open_details,
+                                details=details,
                             )
                         )
                     elif item_type == "tool_result":
@@ -794,7 +803,7 @@ class ClaudeBackend:
                             md_details(
                                 f"{actor}: tool result" if actor else "tool result",
                                 body,
-                                open_details=open_details,
+                                details=details,
                             )
                         )
                     elif item_type == "thinking":
@@ -804,7 +813,7 @@ class ClaudeBackend:
                                 md_details(
                                     f"{label}: thinking",
                                     thinking,
-                                    open_details=open_details,
+                                    details=details,
                                 )
                             )
             if text:
@@ -813,7 +822,7 @@ class ClaudeBackend:
                 parts.append(md_heading(2, label))
                 parts.append(text + "\n")
             parts.extend(extras)
-            if include_meta:
+            if include_meta and details is not Details.NONE:
                 meta = {
                     key: raw.get(key)
                     for key in (
@@ -830,7 +839,7 @@ class ClaudeBackend:
                         md_details(
                             "meta",
                             md_code("json", json_pretty(meta)),
-                            open_details=open_details,
+                            details=details,
                         )
                     )
         return "".join(parts).lstrip()
@@ -1381,7 +1390,7 @@ class CopilotBackend:
         session_id: str,
         events: list[SessionEvent],
         include_meta: bool,
-        open_details: bool,
+        details: Details,
         kind_filter: frozenset[str],
     ) -> str:
         def append_assistant_details(data: dict[str, Any]) -> None:
@@ -1391,7 +1400,7 @@ class CopilotBackend:
                     md_details(
                         "reasoning",
                         reasoning.rstrip(),
-                        open_details=open_details,
+                        details=details,
                     )
                 )
             tool_requests = data.get("toolRequests")
@@ -1407,7 +1416,7 @@ class CopilotBackend:
                         md_details(
                             label,
                             md_code("json", json_pretty(item.get("arguments"))),
-                            open_details=open_details,
+                            details=details,
                         )
                     )
 
@@ -1446,8 +1455,10 @@ class CopilotBackend:
                 if isinstance(content, str) and content.strip():
                     parts.append(md_heading(2, "assistant"))
                     parts.append(content.rstrip() + "\n")
-                if isinstance(data, dict):
+                if details is not Details.NONE and isinstance(data, dict):
                     append_assistant_details(data)
+            elif details is Details.NONE:
+                continue
             elif kind == "assistant.details":
                 data = raw.get("data")
                 if isinstance(data, dict):
@@ -1478,7 +1489,7 @@ class CopilotBackend:
                             f"**success:** {'true' if data.get('success') else 'false'}\n\n"
                             + md_code("json", json_pretty(result))
                         )
-                parts.append(md_details(label, body, open_details=open_details))
+                parts.append(md_details(label, body, details=details))
             elif kind == "skill.invoked":
                 data = raw.get("data")
                 if not isinstance(data, dict):
@@ -1494,7 +1505,7 @@ class CopilotBackend:
                 content = data.get("content")
                 if isinstance(content, str) and content.strip():
                     body += md_code("md", content)
-                parts.append(md_details(label, body, open_details=open_details))
+                parts.append(md_details(label, body, details=details))
             elif kind in {"hook.start", "hook.end"}:
                 data = raw.get("data")
                 if not isinstance(data, dict):
@@ -1503,10 +1514,10 @@ class CopilotBackend:
                     md_details(
                         kind,
                         md_code("json", json_pretty(data)),
-                        open_details=open_details,
+                        details=details,
                     )
                 )
-            if include_meta:
+            if include_meta and details is not Details.NONE:
                 meta = {
                     key: raw.get(key)
                     for key in (
@@ -1525,7 +1536,7 @@ class CopilotBackend:
                         md_details(
                             "meta",
                             md_code("json", json_pretty(meta)),
-                            open_details=open_details,
+                            details=details,
                         )
                     )
         return "".join(parts).lstrip()
@@ -1820,7 +1831,7 @@ class CodexBackend:
         session_id: str,
         events: list[SessionEvent],
         include_meta: bool,
-        open_details: bool,
+        details: Details,
         kind_filter: frozenset[str],
     ) -> str:
         cwd = ""
@@ -1847,7 +1858,7 @@ class CodexBackend:
             kind = raw.get("type")
             payload = raw.get("payload")
             if kind == "session_meta" and isinstance(payload, dict):
-                details = {
+                metadata = {
                     key: payload.get(key)
                     for key in (
                         "id",
@@ -1862,25 +1873,27 @@ class CodexBackend:
                 }
                 parts.append(md_heading(2, "session"))
                 parts.append(
-                    "\n".join(f"**{key}:** {value}" for key, value in details.items())
+                    "\n".join(f"**{key}:** {value}" for key, value in metadata.items())
                     + "\n"
                 )
                 continue
             if kind == "turn_context" and isinstance(payload, dict):
-                details = {
+                if details is Details.NONE:
+                    continue
+                metadata = {
                     key: payload.get(key)
                     for key in ("cwd", "approval_policy", "model", "effort", "summary")
                     if payload.get(key) is not None
                 }
                 sandbox = payload.get("sandbox_policy")
                 if isinstance(sandbox, dict):
-                    details["sandbox"] = sandbox.get("mode") or sandbox.get("type")
-                    details["network"] = sandbox.get("network_access")
+                    metadata["sandbox"] = sandbox.get("mode") or sandbox.get("type")
+                    metadata["network"] = sandbox.get("network_access")
                 parts.append(
                     md_details(
                         "context",
-                        "\n".join(f"**{k}:** {v}" for k, v in details.items()),
-                        open_details=False,
+                        "\n".join(f"**{k}:** {v}" for k, v in metadata.items()),
+                        details=details,
                     )
                 )
                 continue
@@ -1899,7 +1912,7 @@ class CodexBackend:
                     payload.get("text"), str
                 ):
                     parts.append(
-                        md_details("reasoning", payload["text"], open_details=True)
+                        md_details("reasoning", payload["text"], details=details)
                     )
                 continue
             if kind == "response_item" and isinstance(payload, dict):
@@ -1916,6 +1929,8 @@ class CodexBackend:
                         author = payload.get("author")
                         parts.append(md_heading(2, f"subagent {author}" if author else "subagent"))
                         parts.append(text + "\n")
+                elif details is Details.NONE:
+                    continue
                 elif payload_type == "reasoning":
                     summary = payload.get("summary")
                     if isinstance(summary, list):
@@ -1928,7 +1943,7 @@ class CodexBackend:
                     else:
                         text = ""
                     if text:
-                        parts.append(md_details("reasoning", text, open_details=True))
+                        parts.append(md_details("reasoning", text, details=details))
                 elif payload_type in {"function_call", "custom_tool_call"}:
                     args = self._tool_args(payload.get("arguments", payload.get("input")))
                     command = self._tool_command(args)
@@ -1954,7 +1969,7 @@ class CodexBackend:
                         md_details(
                             f"tool: {payload.get('name', '')}".strip(),
                             body,
-                            open_details=False,
+                            details=details,
                         )
                     )
                 elif payload_type in {
@@ -1966,9 +1981,9 @@ class CodexBackend:
                     text = output if isinstance(output, str) else json_pretty(output)
                     label = f"tool output: {call.get('name', 'unknown')}".strip()
                     parts.append(
-                        md_details(label, md_code("txt", text), open_details=False)
+                        md_details(label, md_code("txt", text), details=details)
                     )
-            if include_meta:
+            if include_meta and details is not Details.NONE:
                 meta = {
                     key: raw.get(key)
                     for key in ("timestamp", "type")
@@ -1979,7 +1994,7 @@ class CodexBackend:
                         md_details(
                             "meta",
                             md_code("json", json_pretty(meta)),
-                            open_details=open_details,
+                            details=details,
                         )
                     )
         return "".join(parts).lstrip()
@@ -2113,6 +2128,12 @@ def build_app(backend: Backend) -> typer.Typer:
         if stats:
             print(json_pretty(dataclasses.asdict(resolve_stats)), file=sys.stderr)
 
+    kind_help = {
+        "claude": "user, assistant, system. Tool calls and thinking are assistant; tool results are user.",
+        "codex": "session, context, user, assistant, reasoning, tool.",
+        "copilot": "session, user, assistant, tool, skill, hook. Reasoning is assistant.",
+    }.get(backend.name, "")
+
     @app.command("prompts")
     @app.command("md")
     def md(
@@ -2125,17 +2146,18 @@ def build_app(backend: Backend) -> typer.Typer:
         stats: bool = typer.Option(False, help="Print scan stats as JSON to stderr."),
         out: str = typer.Option("-", help="Output path or '-' for stdout."),
         include_meta: bool = typer.Option(
-            False, help="Include per-event meta <details> blocks."
+            False, help="Include per-event metadata when details are open or closed."
         ),
-        open_details: bool = typer.Option(
-            False, help="Render <details open> for easier scanning."
+        details: Details = typer.Option(
+            Details.NONE,
+            help="Optional blocks such as tool calls and reasoning: expanded, collapsed, or omitted.",
         ),
         kind: list[str] | None = typer.Option(
             None,
             "--kind",
-            help="Only include event kinds matching these comma-separated or repeated values.",
+            help=f"Filter by event kind (comma-separated or repeated). Markdown kinds: {kind_help}",
         ),
-        ) -> None:
+    ) -> None:
         total_stats = Stats()
         markdowns: list[str] = []
         for session_id in session_ids:
@@ -2152,7 +2174,7 @@ def build_app(backend: Backend) -> typer.Typer:
                     session_id=session_id,
                     events=events,
                     include_meta=include_meta,
-                    open_details=open_details,
+                    details=details,
                     kind_filter=_parse_kind_filters(kind),
                 ).rstrip()
             )

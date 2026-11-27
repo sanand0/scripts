@@ -1,5 +1,22 @@
 # Prompts
 
+## Update copilotlog, 27 Nov 2026
+
+<!--
+cd ~/code/scripts/
+codex --model gpt-6.2-sol --config model_reasoning_effort=medium
+-->
+
+Review recent `agentlog.py copilot` sessions. I haven't used copilot much recently, but will be starting.
+Are there any changes required, e.g. for compatibility with codex / claude or for newer features in copilot?
+
+Also, for the `md` sub-command:
+
+- Change the `--open-details` flag to `--details=open|closed|none` and `--details=none` is the new default.
+- In the help, show valid options for --kind (research them as required)
+
+<!-- codex resume 01a21bf1-5c55-75e0-859d-0ef979df54fb -->
+
 ## Update claudelog, 24 Nov 2026
 
 <!--

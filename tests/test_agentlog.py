@@ -14,6 +14,7 @@ from agentlog import (
     ClaudeBackend,
     CopilotBackend,
     CodexBackend,
+    Details,
     SearchPattern,
     SessionEvent,
     SessionSummary,
@@ -143,10 +144,10 @@ class FakeBackend:
         session_id: str,
         events: list[SessionEvent],
         include_meta: bool,
-        open_details: bool,
+        details: Details,
         kind_filter: frozenset[str],
     ):
-        del include_meta, open_details
+        del include_meta, details
         self.last_kind_filter = kind_filter
         return f"# {session_id}\n" + "\n".join(
             _event_kind(event.raw)
@@ -318,7 +319,7 @@ def test_claude_md_preserves_semantic_roles_thinking_and_artifacts() -> None:
         session_id="session-1",
         events=events,
         include_meta=False,
-        open_details=False,
+        details=Details.CLOSED,
         kind_filter=frozenset(),
     )
 
@@ -363,7 +364,7 @@ def test_codex_md_supports_current_schema_without_duplicating_legacy_chat() -> N
         event("response_item", {"type": "agent_message", "author": "/root/research", "content": [{"type": "input_text", "text": "Subagent finding"}]}),
     ]
     markdown = backend.render_markdown(
-        session_id="s", events=current, include_meta=False, open_details=False, kind_filter=frozenset()
+        session_id="s", events=current, include_meta=False, details=Details.CLOSED, kind_filter=frozenset()
     )
     assert "Injected instructions" not in markdown
     assert "## user\n\nHuman prompt" in markdown
@@ -379,7 +380,7 @@ def test_codex_md_supports_current_schema_without_duplicating_legacy_chat() -> N
         message("assistant", "Duplicate assistant"),
     ]
     markdown = backend.render_markdown(
-        session_id="s", events=legacy, include_meta=False, open_details=False, kind_filter=frozenset()
+        session_id="s", events=legacy, include_meta=False, details=Details.CLOSED, kind_filter=frozenset()
     )
     assert "Legacy user" in markdown and "Duplicate user" not in markdown
     assert "Legacy assistant" in markdown and "Duplicate assistant" not in markdown
@@ -500,7 +501,8 @@ def test_truncate_search_line_uses_ellipsis() -> None:
     assert _truncate_search_line("abcdefghijkl", 8) == "abcde..."
 
 
-def test_copilot_md_includes_session_state_details_for_db_sessions(tmp_path: Path) -> None:
+@pytest.mark.parametrize("option", [[], ["--details=none"], ["--details=closed"], ["--details=open"]])
+def test_copilot_md_details_modes(tmp_path: Path, option: list[str]) -> None:
     root = tmp_path / "copilot"
     root.mkdir()
     conn = sqlite3.connect(root / "session-store.db")
@@ -617,21 +619,26 @@ def test_copilot_md_includes_session_state_details_for_db_sessions(tmp_path: Pat
             handle.write(json.dumps(row))
             handle.write("\n")
 
-    backend = CopilotBackend()
-    events, _ = backend.collect_events(root=root, strict=True, session_id="session-1")
-    markdown = backend.render_markdown(
-        session_id="session-1",
-        events=events,
-        include_meta=False,
-        open_details=False,
-        kind_filter=frozenset(),
+    result = RUNNER.invoke(
+        build_app(CopilotBackend()), ["md", "session-1", "--root", str(root), *option]
     )
+    assert result.exit_code == 0, result.output
+    markdown = result.stdout
 
-    assert "## user" in markdown
-    assert "## assistant" in markdown
-    assert "<summary><strong>reasoning</strong></summary>" in markdown
-    assert "<summary><strong>tool request: read_bash (tool-1)</strong></summary>" in markdown
-    assert "<summary><strong>tool start: read_bash (tool-1)</strong></summary>" in markdown
-    assert "<summary><strong>tool result: tool-1</strong></summary>" in markdown
-    assert "<summary><strong>skill invoked: plan</strong></summary>" in markdown
-    assert "<summary><strong>hook.start</strong></summary>" in markdown
+    assert "## user\n\nUser asks" in markdown
+    assert "## assistant\n\nAssistant replies" in markdown
+    if not option or option == ["--details=none"]:
+        assert markdown.count("## assistant") == 1
+        assert "<details" not in markdown
+        assert "tool output" not in markdown
+        return
+    tag = "<details open>" if option == ["--details=open"] else "<details>"
+    for label in (
+        "reasoning",
+        "tool request: read_bash (tool-1)",
+        "tool start: read_bash (tool-1)",
+        "tool result: tool-1",
+        "skill invoked: plan",
+        "hook.start",
+    ):
+        assert f"{tag}<summary><strong>{label}</strong></summary>" in markdown
