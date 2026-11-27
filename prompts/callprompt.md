@@ -1,5 +1,18 @@
 # callprompt
 
+## Allow filename explicitly, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+copilot --model fusion
+-->
+
+Modify `callprompt` so that `--caption $CAPTION` matches the filename first. That is, if --caption is a filename / path that exists, just read the file.
+Else treat it as a search for the caption like it currently does.
+Update tests first. Use relevant skills.
+
+<!-- copilot --resume=b3fe139a-cee6-4efe-a573-08fbdaf6f2b8 -->
+
 ## Allow filename, 16 Nov 2026
 
 <!--

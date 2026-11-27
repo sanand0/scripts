@@ -101,6 +101,31 @@ def test_explicit_caption_searches_all_filenames_and_headers(m, tmp_path, monkey
     assert not m.QUEUE.exists()
 
 
+@pytest.mark.parametrize('relative', [False, True])
+def test_existing_caption_file_takes_precedence_over_search(m, tmp_path, monkeypatch, relative):
+    (tmp_path / '2026-11-13 IITM.opus').touch()
+    local = tmp_path / 'caption.md'
+    local.write_text('The requested caption')
+    search_dir = tmp_path / 'search'
+    search_dir.mkdir()
+    matching = row(search_dir, 'caption.md', '# A different caption')
+    monkeypatch.chdir(tmp_path)
+    received = []
+    monkeypatch.setattr(m.meetcall, 'context_prompt', lambda text, account: received.append(text) or 'Speaker context')
+    caption = local.name if relative else str(local)
+    assert m.match_caption(tmp_path / '2026-11-13 IITM.opus', [matching], caption)[0] == Path(caption)
+    monkeypatch.setattr(m, 'captions', lambda: pytest.fail('explicit files do not need caption discovery'))
+    runner = CliRunner()
+    preview = runner.invoke(m.app, ['IITM', '--caption', caption, '--dry-run'])
+    assert preview.exit_code == 0, preview.output
+    assert preview.stdout.split('\t')[2] == caption
+    assert not received and not m.QUEUE.exists()
+    result = runner.invoke(m.app, ['IITM', '--caption', caption])
+    assert result.exit_code == 0, result.output
+    assert received == ['The requested caption']
+    assert shlex.split(m.QUEUE.read_text())[-1] == 'Speaker context'
+
+
 def test_dry_run_and_process_then_skip(m, tmp_path, monkeypatch):
     audio = tmp_path / '2026-11-13 IITM.opus'
     audio.touch()

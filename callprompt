@@ -80,6 +80,8 @@ def words(value: str) -> set[str]:
 
 def match_caption(audio: Path, rows: list[dict], query: str | None = None) -> tuple[Path | None, str]:
     if query:
+        if Path(query).is_file():
+            return Path(query), 'explicit caption'
         exact = [r for r in rows if str(r['path']) == query or r['path'].name == query]
         found = exact or [r for r in rows if query.casefold() in (r['path'].name + '\n' + r['header']).casefold()]
         if not found:
@@ -127,14 +129,14 @@ def prepend(path: Path, line: str) -> bool:
 def main(
     phrase: Annotated[str | None, typer.Argument(help='Latest audio filename substring; also a caption header hint.')] = None,
     audio: Annotated[str | None, typer.Option(help='Audio path or latest filename substring (like call).')] = None,
-    caption: Annotated[str | None, typer.Option(help='Latest caption filename/header substring, or exact path.')] = None,
+    caption: Annotated[str | None, typer.Option(help='Existing file path, or latest caption filename/header substring.')] = None,
     dry_run: Annotated[bool, typer.Option(help='List pending matches; no model calls or writes.')] = False,
     limit: Annotated[int, typer.Option('--limit', '-n', min=1, help='Maximum calls to queue.')] = 20,
     format: Annotated[str, typer.Option(help='text (TSV) or jsonl.')] = 'text',
     describe: Annotated[bool, typer.Option(help='Print machine-readable CLI contract.')] = False,
 ):
     if describe:
-        typer.echo(json.dumps({'phrase': 'latest audio filename substring; caption header hint', 'audio': 'path or latest filename substring', 'caption': 'latest filename or first 12 lines substring; requires audio selector', 'dry_run': 'no writes or model calls', 'limit': 20, 'format': ['text', 'jsonl'], 'queue': str(QUEUE), 'model': 'gpt-6-luna/high', 'default': 'queue confident matches for pending calls', 'output_fields': ['status', 'audio', 'caption', 'reason']}))
+        typer.echo(json.dumps({'phrase': 'latest audio filename substring; caption header hint', 'audio': 'path or latest filename substring', 'caption': 'existing file path, or latest filename or first 12 lines substring; requires audio selector', 'dry_run': 'no writes or model calls', 'limit': 20, 'format': ['text', 'jsonl'], 'queue': str(QUEUE), 'model': 'gpt-6-luna/high', 'default': 'queue confident matches for pending calls', 'output_fields': ['status', 'audio', 'caption', 'reason']}))
         return
     if format not in ('text', 'jsonl'):
         raise typer.BadParameter('--format must be text or jsonl')
@@ -147,7 +149,7 @@ def main(
         files = [call.resolve_audio_path(selector, call.DEFAULT_INPUT_DIR)] if selector else list(reversed(call.list_audio_files(call.DEFAULT_INPUT_DIR)))
         completed = call.find_notes_with_transcript_content(call.DEFAULT_OUTPUT_DIR)
         queued = queued_files(QUEUE.read_text() if QUEUE.exists() else '')
-        rows = captions()
+        rows = [] if caption and Path(caption).is_file() else captions()
         plans = []
         for path in files:
             if call.DEFAULT_OUTPUT_DIR / f'{path.stem}.md' in completed or path.name in queued:
