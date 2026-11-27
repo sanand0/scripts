@@ -40,8 +40,8 @@ cat /proc/sys/fs/inotify/max_user_instances 2>/dev/null || true
 cat /proc/1/cgroup 2>/dev/null || true
 cat /proc/self/cgroup 2>/dev/null || true
 
-# --- Environment (WARNING: may include secrets) ---
-env | sort
+# --- Exported environment variable names ---
+compgen -e | sort
 
 # --- Networking (local state) ---
 cat /etc/hosts

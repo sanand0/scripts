@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+set -e
+shopt -s nullglob
+
 # Loop over first‐level directories
 for d in */; do
     dir="${d%/}"
@@ -11,7 +14,7 @@ for d in */; do
     fi
 
     # Get branch + short status
-    status=$(git -C "$dir" status --short --branch 2>/dev/null)
+    status=$(git -C "$dir" status --short --branch)
 
     # 1) Uncommitted changes?
     if [ "$(wc -l <<<"$status")" -gt 1 ]; then

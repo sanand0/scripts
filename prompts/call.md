@@ -20,6 +20,14 @@ Fix what you’re sure about and list the rest for me to review.
 
 What files did you edit in this session and why?
 
+---
+
+Commit all files related to call in one commit. The rest in another, with the commit message clearly explaining the reason.
+
+--- <!-- steering -->
+
+Skip README
+
 <!-- codex resume 01a21a3f-1829-7590-80f4-a8f0514d3873 -->
 
 ## Check scripts first, 18 Nov 2026

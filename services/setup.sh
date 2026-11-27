@@ -114,12 +114,10 @@ for t in *.timer; do
 done
 
 # Enable & start stand-alone services (no matching timer)
-standalone_services=()
 for s in *.service; do
   [[ -e "$s" ]] || continue
   [[ -e "${s%.service}.timer" ]] && continue
   [[ "$s" == *@.service ]] && continue
-  standalone_services+=("${s##*/}")
   systemctl --user enable --now "${s##*/}" >/dev/null
 done
 
