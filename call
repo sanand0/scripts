@@ -27,6 +27,7 @@ import tempfile
 import time
 import traceback
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict, dataclass
@@ -57,6 +58,7 @@ DEFAULT_PRICES_CACHE_PATH = DEFAULT_CACHE_DIR / "google-prices.json"
 AUDIO_SUFFIXES = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm"}
 CODE_FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 TRANSCRIPT_PART_SEPARATOR = "\n\n---\n\n"
+PENDING_TRANSCRIPT = "[Transcription pending: rerun call to resume.]"
 TRANSCRIPT_LINE_RE = re.compile(
     r"^\*\*[^*\n]+(?:\*\*:?|:\*\*)(?: \[(?P<timestamp>\d{2}:\d{2}(?::\d{2})?)\])? .+"
 )
@@ -72,16 +74,18 @@ app = typer.Typer(add_completion=False, no_args_is_help=False, help=__doc__)
 
 
 def load_environment(current_dir: Path | None = None, script_dir: Path | None = None) -> None:
-    """Load current .env first, then script-directory .env for a missing Gemini key."""
-    from dotenv import dotenv_values, load_dotenv
+    """Resolve the Gemini key without changing settings after a cache key has been computed."""
+    if os.environ.get("GEMINI_API_KEY"):
+        return
+    from dotenv import dotenv_values
 
     current_dir = current_dir or Path.cwd()
     script_dir = script_dir or Path(__file__).resolve().parent
-    load_dotenv(dotenv_path=current_dir / ".env")
-    if not os.environ.get("GEMINI_API_KEY"):
-        api_key = dotenv_values(script_dir / ".env").get("GEMINI_API_KEY")
+    for directory in dict.fromkeys((current_dir, script_dir)):
+        api_key = dotenv_values(directory / ".env").get("GEMINI_API_KEY")
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
+            return
 
 
 @dataclass(frozen=True)
@@ -521,7 +525,7 @@ def append_run(cache_dir: Path | None, event: str, **fields: Any) -> None:
     record = {"time": time.time(), "pid": os.getpid(), "run_id": RUN_DIR.name if RUN_DIR else None, "event": event, **fields}
     paths = ([cache_dir / "run.jsonl"] if cache_dir else []) + ([RUN_DIR / "events.jsonl"] if RUN_DIR else [])
     for path in paths:
-        with path.open("a", encoding="utf-8") as handle:
+        with open(path, "a", encoding="utf-8", opener=lambda name, flags: os.open(name, flags, 0o600)) as handle:
             handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
@@ -587,15 +591,22 @@ def run_cli() -> None:
             traceback.print_exc()
             raise
         finally:
-            events = [json.loads(line) for line in (RUN_DIR / "events.jsonl").read_text().splitlines()]
-            attempts = [row for row in events if row["event"] in {"attempt", "attempt_error"}]
-            costs = [row["usage"]["cost_usd"] if row.get("usage") else None for row in attempts]
+            events = [json.loads(line) for line in (RUN_DIR / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+            responses = [row for row in events if row["event"] == "response"]
+            generation_requests = sum(row["event"] == "generation_start" for row in events)
+            costs = [row["usage"]["cost_usd"] for row in responses]
+            if generation_requests > len(responses) or any(row["event"] == "attempt_error" for row in events):
+                costs.append(None)
             summary.update(status="complete" if exit_code == 0 else "failed", exit_code=exit_code,
                 elapsed_seconds=time.monotonic() - started, finished_at=datetime.now(UTC).isoformat(),
                 api_attempts=sum(row["event"] == "attempt_start" for row in events),
+                generation_requests=generation_requests,
+                retry_count=sum(row["event"] == "retry" for row in events),
                 cache_hits=sum(row["event"] == "cache_hit" for row in events),
+                chunk_status_counts=dict(Counter(row["status"] for row in events if row["event"] == "chunk")),
                 new_cost_usd=sum_costs(costs), saved_notes=[row for row in events if row["event"] == "saved"],
-                errors=[row for row in events if row["event"] in {"error", "attempt_error"}])
+                errors=[row for row in events if row["event"] in {"error", "attempt_error"}],
+                chunk_issues=[row for row in events if row["event"] == "chunk" and row["status"] in {"failed", "needs_review"}])
             append_run(None, "run_end", exit_code=exit_code, elapsed_seconds=summary["elapsed_seconds"])
             atomic_write(RUN_DIR / "summary.json", json.dumps(summary, indent=2))
 
@@ -603,14 +614,16 @@ def run_cli() -> None:
 def resolve_audio_path(audio_arg: str, input_dir: Path) -> Path:
     """Resolve an audio argument to a file path.
 
-    A path that exists (absolute, or relative to the cwd) is used directly. Otherwise the
+    An existing file path (absolute, or relative to the cwd) is used directly. Otherwise the
     argument is matched case-insensitively against audio filenames in `input_dir`: an exact
     stem match wins outright, else it's matched as a substring of the stem. Since filenames
     start with `YYYY-MM-DD`, ties are broken by taking the most recent (highest-sorting) name.
     """
     given = Path(audio_arg)
-    if given.exists():
+    if given.is_file():
         return given
+    if given.exists():
+        raise typer.BadParameter(f"Audio path is not a regular file: {given}")
     if given.is_absolute() or len(given.parts) > 1:
         raise typer.BadParameter(f"Audio file does not exist: {given}")
     query = (given.stem if given.suffix.lower() in AUDIO_SUFFIXES else str(given)).lower()
@@ -875,9 +888,8 @@ def read_chunk_state(cache_path: Path) -> dict[str, Any]:
         raise RuntimeError(f"Invalid chunk cache {cache_path}: {exc}. Move this file aside and rerun.") from exc
 
 
-def read_cached_chunk(cache_path: Path) -> TranscriptionResult | None:
+def cached_chunk_result(state: dict[str, Any]) -> TranscriptionResult | None:
     """Return usable raw chunk material with zero new API usage."""
-    state = read_chunk_state(cache_path)
     if state.get("status") not in {"complete", "received", "needs_review"}:
         return None
     error = state.get("error")
@@ -947,8 +959,8 @@ def probe_audio_duration(audio_path: Path) -> float:
         duration = float(result.stdout.strip())
     except ValueError as exc:
         raise RuntimeError(f"ffprobe returned invalid duration for {audio_path.name}") from exc
-    if duration <= 0:
-        raise RuntimeError(f"ffprobe returned non-positive duration for {audio_path.name}")
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError(f"ffprobe returned a non-finite or non-positive duration for {audio_path.name}")
     return duration
 
 
@@ -995,62 +1007,38 @@ def build_chunk_windows(
     return windows
 
 
-def split_audio_chunks(
+def split_audio_chunk(
     audio_path: Path,
     temp_dir: Path,
-    windows: list[tuple[float, float]],
-    section: int | None = None,
-) -> list[Path]:
-    """Extract the requested section, or all overlapping windows, with ffmpeg."""
-    if len(windows) == 1:
-        return [audio_path]
-
-    chunk_paths: list[Path] = []
-    targets = [section] if section is not None else range(1, len(windows) + 1)
-    for index in targets:
-        start, length = windows[index - 1]
-        chunk_path = temp_dir / f"{audio_path.stem}.part{index:03d}.opus"
-        started = time.monotonic()
-        append_run(None, "split_start", audio=str(audio_path), chunk=index, window=(start, length), output=str(chunk_path))
-        try:
-            result = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-ss",
-                    f"{start:.3f}",
-                    "-t",
-                    f"{length:.3f}",
-                    "-i",
-                    str(audio_path),
-                    "-vn",
-                    "-c:a",
-                    "libopus",
-                    "-b:a",
-                    "64k",
-                    str(chunk_path),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError as exc:
-            raise RuntimeError(f"ffmpeg failed for {audio_path.name}: {exc}") from exc
-        append_run(None, "split_complete", chunk=index, returncode=result.returncode,
-            stderr=result.stderr, elapsed_seconds=time.monotonic() - started)
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip() or f"ffmpeg exited {result.returncode}"
-            raise RuntimeError(f"ffmpeg failed for {audio_path.name}: {detail}")
-        chunk_paths.append(chunk_path)
-    return chunk_paths
+    window: tuple[float, float],
+    index: int,
+) -> Path:
+    """Extract one overlapping window with ffmpeg."""
+    start, length = window
+    chunk_path = temp_dir / f"{audio_path.stem}.part{index:03d}.opus"
+    started = time.monotonic()
+    append_run(None, "split_start", audio=str(audio_path), chunk=index, window=window, output=str(chunk_path))
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}",
+             "-t", f"{length:.3f}", "-i", str(audio_path), "-vn", "-c:a", "libopus", "-b:a", "64k", str(chunk_path)],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"ffmpeg failed for {audio_path.name}: {exc}") from exc
+    append_run(None, "split_complete", audio=str(audio_path), chunk=index, returncode=result.returncode,
+        stderr=result.stderr, elapsed_seconds=time.monotonic() - started)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"ffmpeg exited {result.returncode}"
+        raise RuntimeError(f"ffmpeg failed for {audio_path.name}: {detail}")
+    return chunk_path
 
 
 def plan_audio_chunks(audio_path: Path, chunk_minutes: float) -> tuple[float, list[tuple[float, float]]]:
     """Return the duration and chunk windows that would be used for this audio file."""
     chunk_seconds = chunk_minutes * 60.0
+    if not math.isfinite(chunk_seconds):
+        raise RuntimeError("--chunk must be finite.")
     if chunk_seconds <= CHUNK_OVERLAP_SECONDS:
         raise RuntimeError("--chunk must be greater than 1/60 minute because chunks overlap by 1 second.")
     duration = probe_audio_duration(audio_path)
@@ -1142,12 +1130,17 @@ def response_error(transcript: str, reasons: list[str] | tuple[str, ...], prompt
     """Name the specific check a model response failed, with the evidence that triggered it."""
     finish = ",".join(reasons) or "no candidates"
     bad_finish = next((reason for reason in reasons if reason.rsplit(".", 1)[-1] not in {"STOP", "unknown"}), None)
+    code = bad_finish.rsplit(".", 1)[-1] if bad_finish else None
+    action = {
+        "MAX_TOKENS": "To rebuild the audio windows, reduce --chunk and use --force.",
+        "MALFORMED_RESPONSE": "Gemini could not produce a valid response. If it persists, retry later or choose --model.",
+    }.get(code, "Check the provider feedback. Retry later if the cause is temporary.")
     if not transcript:
         return (f"Gemini returned empty output (finish_reason={finish}; prompt_feedback={prompt_feedback}). "
-            "Check audio/prompt for blocking; if MAX_TOKENS, reduce --chunk; otherwise retry or choose --model.")
+            f"{action}")
     if bad_finish:
         return (f"Gemini stopped early: finish_reason={bad_finish} after {len(transcript)} chars "
-            f"(prompt_feedback={prompt_feedback}). If MAX_TOKENS, reduce --chunk; otherwise retry or choose --model.")
+            f"(prompt_feedback={prompt_feedback}). {action}")
     # Speakers can say "I cannot process..."; only a response with no speaker lines is a refusal.
     refused = re.search(r"(?:cannot|can't|unable to) (?:assist|transcribe|process)", transcript, re.IGNORECASE)
     if refused and not looks_like_transcript(transcript):
@@ -1167,6 +1160,7 @@ def transcribe_single_audio(
     """Upload one audio file to Gemini and return the transcription text."""
     genai = load_genai()
     started = time.monotonic()
+    phase = "upload"
     try:
         append_run(None, "upload_start", audio=str(audio_path), size=audio_path.stat().st_size if RUN_DIR else None)
         uploaded_file = client.files.upload(file=audio_path)
@@ -1174,13 +1168,19 @@ def transcribe_single_audio(
         contents: list[object] = [uploaded_file]
         if user_prompt:
             contents = [user_prompt, uploaded_file]
+        phase = "generation"
         chat = client.chats.create(
             model=model,
             config=genai.types.GenerateContentConfig(system_instruction=system_prompt, **generation_settings(model)),
         )
+        generation_started = time.monotonic()
+        append_run(None, "generation_start", model=model, file_name=getattr(uploaded_file, "name", None))
         response = chat.send_message(contents)
     except genai.errors.APIError as exc:
         code = getattr(exc, "code", None)
+        append_run(None, "provider_error", phase=phase, model=model, http_status=code,
+            provider_status=getattr(exc, "status", None), exception_type=type(exc).__name__,
+            elapsed_seconds=time.monotonic() - started)
         action = {
             400: "Check the audio format, prompt and --model.",
             401: "Check GEMINI_API_KEY in the environment and .env.",
@@ -1188,12 +1188,18 @@ def transcribe_single_audio(
             404: "Check --model and whether the uploaded file is still available.",
             429: "Check Gemini quota/billing; wait before retrying.",
         }.get(code, "Retry later for service/network errors; use --model if this model keeps failing.")
-        raise RuntimeError(f"{exc} Action: {action}") from exc
+        raise RuntimeError(f"Gemini {phase} failed: {exc} Action: {action}") from exc
     usage = calculate_usage_cost(response, requested_model=model, pricing=pricing)
     transcript = (response.text or "").strip()
     candidates = getattr(response, "candidates", None) or []
     feedback = getattr(response, "prompt_feedback", None)
     reasons = [str(getattr(candidate, "finish_reason", "unknown")) for candidate in candidates]
+    block_reason = getattr(feedback, "block_reason", None)
+    finish_codes = {reason.rsplit(".", 1)[-1] for reason in reasons}
+    # Replay only a narrowly identified empty provider response. Keep the same request and spend at most once more.
+    retryable = not transcript and (
+        (not candidates and block_reason == "OTHER") or (not block_reason and finish_codes == {"MALFORMED_RESPONSE"})
+    )
     raw_usage = getattr(response, "usage_metadata", None)
     try:
         rates = select_price_entry(pricing=pricing, requested_model=model,
@@ -1201,13 +1207,13 @@ def transcribe_single_audio(
     except RuntimeError:
         rates = None
     append_run(None, "response", audio=str(audio_path), elapsed_seconds=time.monotonic() - started,
+        generation_seconds=time.monotonic() - generation_started,
         response_id=getattr(response, "response_id", None), model_version=getattr(response, "model_version", None),
-        finish_reasons=reasons, prompt_feedback=str(feedback),
+        finish_reasons=reasons, finish_messages=[getattr(candidate, "finish_message", None) for candidate in candidates],
+        candidate_count=len(candidates), block_reason=block_reason, prompt_feedback=str(feedback), retryable=retryable,
         usage=asdict(usage), raw_usage=raw_usage.model_dump(mode="json") if hasattr(raw_usage, "model_dump") else None,
         pricing=rates, transcript_chars=len(transcript))
     error = response_error(transcript, reasons, str(feedback))
-    # Gemini can return an unexplained block for a request that succeeds on replay.
-    retryable = not transcript and not candidates and getattr(feedback, "block_reason", None) == "OTHER"
     return TranscriptionResult(transcript, usage, error=error, finish_reasons=tuple(reasons), retryable=retryable)
 
 
@@ -1242,11 +1248,12 @@ def transcribe_audio(
     saved_costs: list[float | None] = []
     targets = [patch_section] if patch_section else list(range(1, len(windows) + 1))
     stopped = False
-    chunk_paths = None
     with tempfile.TemporaryDirectory(prefix=f"{audio_path.stem}-chunks-") as directory:
         for index in targets:
             if stopped:
-                rendered.append("[Transcription pending: rerun call to resume.]")
+                rendered.append(PENDING_TRANSCRIPT)
+                append_run(cache_dir, "chunk", audio=str(audio_path), chunk=index, status="pending",
+                    window=windows[index - 1], reason="Earlier section requires recovery.")
                 continue
             if progress_callback:
                 progress_callback(index, len(windows))
@@ -1254,7 +1261,7 @@ def transcribe_audio(
                 build_prior_chunk_context(context)) if len(windows) > 1 else user_prompt
             cache_path = chunk_cache_path(cache_dir, audio_path, windows[index - 1], index, len(windows), model, system_prompt, chunk_prompt) if cache_dir else None
             state = read_chunk_state(cache_path) if cache_path and use_cache else {"attempts": []}
-            result = read_cached_chunk(cache_path) if cache_path and use_cache else None
+            result = cached_chunk_result(state)
             if patch_section and (state.get("status") == "needs_review" or (result and result.error)):
                 result = None
             if result:
@@ -1263,6 +1270,7 @@ def transcribe_audio(
             failure = None
             local = ""
             reset_state = None
+            chunk_path = None
             for attempt in range(2):
                 fresh_response = result is None
                 if fresh_response:
@@ -1271,13 +1279,12 @@ def transcribe_audio(
                         client = build_client()
                     if pricing is None:
                         pricing = load_google_pricing()
-                    if len(windows) == 1:
-                        chunk_path = audio_path
-                    else:
-                        if chunk_paths is None:
-                            chunk_paths = split_audio_chunks(audio_path, Path(directory), windows, section=patch_section)
-                        chunk_path = chunk_paths[0 if patch_section else index - 1]
-                    append_run(cache_dir, "attempt_start", audio=str(audio_path), chunk=index, cache=str(cache_path))
+                    if chunk_path is None:
+                        chunk_path = audio_path if len(windows) == 1 else split_audio_chunk(
+                            audio_path, Path(directory), windows[index - 1], index
+                        )
+                    append_run(cache_dir, "attempt_start", audio=str(audio_path), chunk=index,
+                        attempt=len(state["attempts"]) + 1, cache=str(cache_path))
                     try:
                         result = transcribe_single_audio(chunk_path, system_prompt=system_prompt,
                             user_prompt=chunk_prompt, model=model, client=client, pricing=pricing)
@@ -1288,7 +1295,9 @@ def transcribe_audio(
                         state.update(version=2, status="failed", transcript="", raw_transcript="", error=str(exc))
                         if cache_path:
                             write_chunk_state(cache_path, state)
-                        append_run(cache_dir, "attempt_error", audio=str(audio_path), chunk=index, usage=None, reason=str(exc))
+                        append_run(cache_dir, "attempt_error", audio=str(audio_path), chunk=index,
+                            attempt=len(state["attempts"]), exception_type=type(exc.__cause__ or exc).__name__,
+                            usage=None, reason=str(exc))
                         failure = str(exc)
                         usages.append(UsageCost(0, 0, 0, None))
                         break
@@ -1302,7 +1311,8 @@ def transcribe_audio(
                             "generation_settings": generation_settings(model)})
                     if cache_path:
                         write_chunk_state(cache_path, state)
-                    append_run(cache_dir, "attempt", audio=str(audio_path), chunk=index, usage=asdict(result.usage), reason=result.error)
+                    append_run(cache_dir, "attempt", audio=str(audio_path), chunk=index, attempt=len(state["attempts"]),
+                        usage=asdict(result.usage), reason=result.error)
                 usages.append(result.usage)
                 local, timestamp_warning = normalize_chunk(result.transcript, windows[index - 1])
                 failure = result.error or timestamp_warning
@@ -1323,6 +1333,8 @@ def transcribe_audio(
                     reset_state = state.copy()
                 if cache_path:
                     write_chunk_state(cache_path, state)
+                append_run(cache_dir, "retry", audio=str(audio_path), chunk=index, attempt=len(state["attempts"]) + 1,
+                    cache=str(cache_path), reason=failure)
                 typer.echo(f"WARNING {audio_path.name}: retrying section {index}/{len(windows)}: {failure}", err=True)
                 result = None
                 if progress_callback:
@@ -1381,15 +1393,14 @@ def process_audio(
     metadata = note_metadata(existing_markdown)
     primary_complete = has_transcript_content(existing_markdown) and metadata.get("transcription_status") != "incomplete"
     candidate_path = output_path.with_suffix(".incomplete.md")
+    identity = {"path": str(audio_path.resolve()), "size": audio_path.stat().st_size, "mtime_ns": audio_path.stat().st_mtime_ns}
     recovering_replacement = False
+    owned_candidate = False
     if candidate_path.exists():
         _, candidate, _ = read_existing_note(candidate_path)
         candidate_metadata = note_metadata(candidate)
-        identity = {"path": str(audio_path.resolve()), "size": audio_path.stat().st_size, "mtime_ns": audio_path.stat().st_mtime_ns}
-        owned = candidate_metadata.get("replacement_for") == str(output_path.resolve())
-        if force and primary_complete and not owned:
-            raise RuntimeError(f"Move or rename {candidate_path} before --force; it is not a call replacement and must not be overwritten.")
-        if not force and owned and candidate_metadata.get("transcription_status") == "incomplete" and candidate_metadata.get("audio_source") == identity:
+        owned_candidate = candidate_metadata.get("replacement_for") == str(output_path.resolve())
+        if not force and owned_candidate and candidate_metadata.get("transcription_status") == "incomplete" and candidate_metadata.get("audio_source") == identity:
             if output_path.exists() and output_path.stat().st_mtime_ns > candidate_path.stat().st_mtime_ns:
                 typer.echo(f"WARNING preserved older replacement {candidate_path.name}; {output_path.name} is newer. Review the candidate manually.", err=True)
             else:
@@ -1399,8 +1410,8 @@ def process_audio(
     cleaned_prompt = user_prompt.strip() if user_prompt and user_prompt.strip() else None
     has_transcript = has_transcript_content(existing_markdown)
     incomplete = metadata.get("transcription_status") == "incomplete"
-    identity = {"path": str(audio_path.resolve()), "size": audio_path.stat().st_size, "mtime_ns": audio_path.stat().st_mtime_ns}
     source_changed = bool(metadata.get("audio_source") and metadata["audio_source"] != identity)
+    replacing_primary = primary_complete and (force or recovering_replacement or (source_changed and not patch))
     if patch and not has_transcript:
         raise RuntimeError(f"{output_path.name}: no transcript section to patch. Run without --patch.")
     if not patch and has_transcript and not incomplete and not source_changed and not force:
@@ -1447,7 +1458,9 @@ def process_audio(
         raise RuntimeError("ffmpeg is missing. Install ffmpeg before transcribing chunked recordings.")
     cache_dir = Path(os.environ.get("TRANSCRIBE_CALLS_CACHE_DIR", DEFAULT_CACHE_DIR))
     preflight_write(output_path)
-    if (force or recovering_replacement) and primary_complete:
+    if replacing_primary:
+        if candidate_path.exists() and not owned_candidate:
+            raise RuntimeError(f"Move or rename {candidate_path} before re-transcribing; it is not a call replacement and must not be overwritten.")
         preflight_write(candidate_path)
     preflight_write(cache_dir / "run.jsonl")
     append_run(cache_dir, "start", audio=str(audio_path), output=str(output_path), source=identity,
@@ -1483,6 +1496,9 @@ def process_audio(
             published_chunk_costs[section - 1] = result.chunk_costs[section - 1]
             updated = patch_transcript_section(updated, section, result.transcript, prompt=prompts.note_prompt)
             if result.warnings:
+                for pending in targets[len(results):]:
+                    append_run(cache_dir, "chunk", audio=str(audio_path), chunk=pending, status="pending",
+                        window=windows[pending - 1], reason="Earlier section requires recovery.")
                 break
     else:
         result = transcribe_audio(audio_path, prompts.system_prompt, prompts.user_prompt, model, None, None,
@@ -1509,13 +1525,16 @@ def process_audio(
         saved_cost = results[0].saved_cost_usd
         published_chunk_costs = list(results[0].chunk_costs)
     updated = set_model_cost_metadata(updated, model, saved_cost)
+    parts = split_transcript_parts(TRANSCRIPT_SECTION_RE.search(updated)["body"])
+    pending_chunks = [index for index in failed if parts[index - 1] == PENDING_TRANSCRIPT]
+    failed_or_review = sorted(set(failed) - set(pending_chunks))
     updated = set_frontmatter_fields(updated, {
         "transcription_status": "incomplete" if failed else "complete",
         "timestamp_basis": "mixed" if failed else "cumulative",
         "audio_source": json.dumps(identity), "audio_chunks": json.dumps(windows),
         "failed_chunks": json.dumps(failed), "chunk_costs": json.dumps(published_chunk_costs),
     }, prepend=False)
-    if (force or recovering_replacement) and primary_complete and failed:
+    if replacing_primary and failed:
         updated = set_frontmatter_fields(updated, {"replacement_for": json.dumps(str(output_path.resolve()))}, prepend=False)
         output_path = output_path.with_suffix(".incomplete.md")
     atomic_write(output_path, updated)
@@ -1523,9 +1542,10 @@ def process_audio(
         candidate_path.unlink()  # Its full contents have just been promoted to the primary note.
         typer.echo(f"promoted and removed replacement candidate: {candidate_path.name}")
     append_run(cache_dir, "saved", audio=str(audio_path), output=str(output_path), status="incomplete" if failed else "complete",
-        usage=asdict(usage), saved_cost_usd=saved_cost, failed_chunks=failed)
+        usage=asdict(usage), saved_cost_usd=saved_cost, failed_chunks=failed, pending_chunks=pending_chunks)
     if failed:
-        raise IncompleteTranscriptError(f"Saved incomplete transcript {output_path}; failed/pending sections {failed}.")
+        pending = f", pending sections {pending_chunks}" if pending_chunks else ""
+        raise IncompleteTranscriptError(f"Saved incomplete transcript {output_path}; failed/review sections {failed_or_review}{pending}.")
     if patch:
         typer.echo(f"patched section(s) {','.join(str(section) for section in targets)}: {output_path.name}")
     else:
@@ -1628,6 +1648,12 @@ def main(
     if missing:
         hint = " Did you forget --prompt before the prompt text?" if len(audio) > 1 else ""
         raise typer.BadParameter(f"{len(missing)}/{len(audio)} audio argument(s) not found; nothing processed.{hint}\n" + "\n".join(missing))
+    outputs: dict[Path, Path] = {}
+    for path in resolved:
+        note = (out_dir / f"{path.stem}.md").resolve()
+        previous = outputs.setdefault(note, path)
+        if previous.resolve() != path.resolve():
+            raise typer.BadParameter(f"{previous} and {path} both write to {note}; nothing processed.")
 
     failed_audio: list[str] = []
     for audio_arg, audio_path in zip(audio, resolved):

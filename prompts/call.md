@@ -1,5 +1,27 @@
 # Transcribe Calls
 
+## Improve reliability, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+See ~/.cache/sanand-scripts/transcribe_calls/runs/20261126T233832.771673Z-f534b1c8/ which has errors from `call`.
+See other such errors in the past.
+Why do these errors happen?
+What can you do to avoid them in the future - including better logging?
+
+You are the owner and long-term maintainer of this codebase. Its design is up to you.
+Read this entire project and find what's broken, inconsistent, inefficient, or no longer needed.
+Fix what you’re sure about and list the rest for me to review.
+
+---
+
+What files did you edit in this session and why?
+
+<!-- codex resume 01a21a3f-1829-7590-80f4-a8f0514d3873 -->
+
 ## Check scripts first, 18 Nov 2026
 
 <!--

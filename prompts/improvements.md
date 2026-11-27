@@ -151,3 +151,26 @@ Initial-audit temporary evidence, available for this session:
 - `/tmp/scripts-review-final-shellcheck.json`: remaining shell diagnostics with exact locations.
 
 For reproduction, use `just verify` for the durable test gate. The temporary fixture runner declares its required packages in the review tool invocation rather than adding a test requirements file to this repository.
+
+# 27 Nov 2026 reliability follow-up
+
+## Call failures
+
+The 26 Nov 23:38 UTC run stopped after Gemini returned `MALFORMED_RESPONSE` on section 1. The audio probe, all three splits and the first upload succeeded. Gemini reported 38,051 input tokens, no output tokens and no prompt feedback. Estimated cost was $0.037913. The 23:41 UTC run used the identical saved request for section 1 and finished all three sections. The earlier 16 Oct occurrence used `gemini-3-flash-preview`. Its SDK also warned that the finish reason was unrecognized. The November SDK recognized it and the generation still failed.
+
+The 288 available run summaries show 221 successful exits, 65 failed exits and two still marked running. Successful exits include skips and dry runs. The response log contains two malformed responses, 15 `OTHER` blocks without candidates, three `MAX_TOKENS` responses and two empty `STOP` responses. Twelve chunk outcomes reported non-monotonic timestamps. There are separate traces for DNS failures, a 503, and a 400 upload-finalization size mismatch. These counts describe different stages and do not sum to the number of failed runs.
+
+`call` now retries an empty malformed generation once on the same request. It also retains the existing bounded retry for `OTHER` blocks. The default model, audio windows and prompt are preserved. File splitting runs only when a section needs a request and the retry reuses that local audio. On a persistent failure, the printed command patches from the recorded windows and the logs distinguish attempted failures or review items from pending sections. For a token limit, the console explains that a smaller `--chunk` needs a rebuild with `--force`. The currently complete note stays in place during an unsuccessful replacement of its source audio.
+
+Start with the run's `summary.json` for retry count, section outcomes and cost. Use `events.jsonl` for upload and generation timing, provider status, response ID, finish detail and receipt paths. An interrupted generation with no billing response has unknown cost. New JSONL logs are private by default on Unix.
+
+## Remaining decisions
+
+- **Call fallback policy.** Benchmark smaller windows or another model on recurring `OTHER`, token-limit and timestamp failures before automating any change to the transcription request. Compare verbatim fidelity, timestamps and spend. Keep explicit provider safety blocks out of automatic replay.
+- **Call billing and cache retention.** A patch using a different request key can replace the old estimate for that section in the note. Run receipts retain the individual costs. The CLI also requires the pricing feed when it has no cached rates. Decide whether to allow unknown estimates, how to present cumulative spend across models and prompts, and how long to keep raw receipts. Review permissions on legacy cache files and the aggregate log.
+- **Concurrent writes.** `call` can be launched concurrently on the same output. Atomic replacement protects individual files, but two processes can pay for the same chunk and the last save can supersede the first. `phonemusic` and the VLC service still use an uncoordinated read/replace and append on the same history. Define the ownership or locking behavior where these jobs can overlap.
+- **External completeness.** Discourse still uses the initial `post_stream.posts` and creation timestamps. Decide whether edits belong in the export. Twitter still infers completion from a short batch and legacy metadata. Validate both with fixtures and live pagination before changing archive contracts.
+- **Metered transfers.** `daily-activities` uses the first recognized interface and `sync-plutonium.sh` rejects any recognized metered interface. Choose an effective-route policy for machines with simultaneous connections.
+- **Retirement.** `setup/touchegg.conf` is empty and the setup instructions use the root copy. Confirm there is no external reference before removing it. The earlier review also identified `.qdrant-initialized`, archived Python 2 code, overlapping Codex log utilities and Windows-era setup aliases.
+
+The earlier context-index temp-file race has since been addressed. The current rebuild uses a unique temporary directory and publishes with an atomic replacement. Rebuilding still parses every source. [Context index implementation](../context.py)

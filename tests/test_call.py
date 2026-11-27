@@ -80,16 +80,20 @@ def test_load_environment_keeps_current_dir_env_over_script_dir_env(
     script_dir = tmp_path / "script"
     current_dir.mkdir()
     script_dir.mkdir()
-    current_dir.joinpath(".env").write_text("GEMINI_API_KEY=current-key\n", encoding="utf-8")
+    current_dir.joinpath(".env").write_text(
+        "GEMINI_API_KEY=current-key\nTRANSCRIBE_CALLS_THINKING=high\n", encoding="utf-8"
+    )
     script_dir.joinpath(".env").write_text("GEMINI_API_KEY=fallback-key\n", encoding="utf-8")
     monkeypatch.setenv("GEMINI_API_KEY", "import-key")
     monkeypatch.chdir(current_dir)
 
     module = load_module()
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIBE_CALLS_THINKING", raising=False)
     module.load_environment(current_dir=current_dir, script_dir=script_dir)
 
     assert os.environ["GEMINI_API_KEY"] == "current-key"
+    assert "TRANSCRIBE_CALLS_THINKING" not in os.environ
 
 
 def write_fake_google_genai(package_root: Path) -> Path:
@@ -170,6 +174,7 @@ def write_fake_google_genai(package_root: Path) -> Path:
                     blocked = Path(audio.file).name == block_file
                     if blocked and os.environ.get("FAKE_GENAI_BLOCK_ONCE"):
                         blocked = Path(log_path).read_text().count("/" + block_file + "\\n") == 1
+                    finish_reason = os.environ.get("FAKE_GENAI_FINISH_REASON") if blocked else None
                     default_text = "\\n".join(
                         f"**Speaker**: [00:0{index}] Transcript for {Path(audio.file).name} line {index}"
                         for index in range(1, 6)
@@ -197,10 +202,12 @@ def write_fake_google_genai(package_root: Path) -> Path:
                             ),
                             "usage_metadata": usage,
                             "model_version": model,
-                            "candidates": [],
+                            "candidates": [type("Candidate", (), {
+                                "finish_reason": finish_reason, "finish_message": "test provider detail",
+                            })()] if finish_reason else [],
                             "prompt_feedback": type("Feedback", (), {
                                 "block_reason": os.environ.get("FAKE_GENAI_BLOCK_REASON", "OTHER"),
-                            })() if blocked else None,
+                            })() if blocked and not finish_reason else None,
                         },
                     )()
 
@@ -1469,7 +1476,7 @@ def test_legacy_cache_is_readable_with_unknown_historical_cost(tmp_path):
     module = load_module()
     cache = tmp_path / "chunk-legacy.json"
     cache.write_text('{"transcript": "**A**: [00:00] Cached words"}')
-    result = module.read_cached_chunk(cache)
+    result = module.cached_chunk_result(module.read_chunk_state(cache))
     assert result.transcript == "**A**: [00:00] Cached words"
     assert result.usage.total_tokens == 0
     assert module.read_chunk_state(cache)["attempts"] == [{"usage": None, "legacy": True}]
@@ -1821,7 +1828,7 @@ def test_retry_final_chunk_before_joining_and_cache_recovery(tmp_path, monkeypat
         requests.append(kwargs["user_prompt"])
         return module.TranscriptionResult(next(responses), module.UsageCost(1, 1, 2, 0.1))
     monkeypatch.setattr(module, "transcribe_single_audio", transcribe)
-    monkeypatch.setattr(module, "split_audio_chunks", lambda *args, **kwargs: [audio, audio])
+    monkeypatch.setattr(module, "split_audio_chunk", lambda *args, **kwargs: audio)
     kwargs = dict(system_prompt="Transcribe", user_prompt=None, model="test", client=object(),
                   pricing={}, chunk_minutes=20, windows=[(0, 1200), (1199, 956)], cache_dir=tmp_path / "cache")
     result = module.transcribe_audio(audio, **kwargs)
@@ -1890,7 +1897,7 @@ def test_corrupt_cache_reports_exact_file_to_repair(tmp_path) -> None:
     cache = tmp_path / "chunk-bad.json"
     cache.write_text('{"transcript": []}')
     with pytest.raises(RuntimeError, match="Invalid chunk cache.*chunk-bad.json.*Move this file aside"):
-        module.read_cached_chunk(cache)
+        module.read_chunk_state(cache)
 
 
 def test_persistently_empty_final_chunk_remains_patchable(tmp_path, monkeypatch) -> None:
@@ -1901,7 +1908,7 @@ def test_persistently_empty_final_chunk_remains_patchable(tmp_path, monkeypatch)
     responses = iter([valid, "**Speaker**: [25:00] Bad", "**Speaker**: [25:00] Bad"])
     monkeypatch.setattr(module, "transcribe_single_audio", lambda *a, **kw: module.TranscriptionResult(
         next(responses), module.UsageCost(1, 1, 2, 0.1)))
-    monkeypatch.setattr(module, "split_audio_chunks", lambda *a, **kw: [audio, audio])
+    monkeypatch.setattr(module, "split_audio_chunk", lambda *a, **kw: audio)
     result = module.transcribe_audio(audio, "Transcribe", None, "test", object(), {}, 20,
         windows=[(0, 1200), (1199, 956)], cache_dir=tmp_path / "cache")
     note = module.render_new_document("Call", result.transcript, "Transcribe")
@@ -2148,6 +2155,40 @@ def test_other_block_retries_only_failed_chunk_then_continues(revision_case):
     assert 'cost: 0.003200' in c.note.read_text()
 
 
+@pytest.mark.parametrize('reason, once, attempts, code', [
+    ('FinishReason.MALFORMED_RESPONSE', True, 4, 0),
+    ('MALFORMED_RESPONSE', False, 2, 1),
+    ('MAX_TOKENS', False, 1, 1),
+])
+def test_provider_finish_reason_retry_and_pending_evidence(revision_case, reason, once, attempts, code):
+    c = revision_case
+    splits = c.root / 'splits.log'
+    c.env.update(FAKE_FFPROBE_DURATION='3900', FAKE_GENAI_BLOCK_FILE='meeting.part001.opus',
+                 FAKE_GENAI_FINISH_REASON=reason, FAKE_FFMPEG_LOG=str(splits))
+    if once:
+        c.env['FAKE_GENAI_BLOCK_ONCE'] = '1'
+    result = c.run()
+    assert result.returncode == code, result.stderr
+    run, = (c.root / 'cache' / 'runs').iterdir()
+    summary = json.loads((run / 'summary.json').read_text())
+    events = [json.loads(line) for line in (run / 'events.jsonl').read_text().splitlines()]
+    assert summary['api_attempts'] == attempts
+    assert summary['generation_requests'] == attempts
+    assert summary['new_cost_usd'] == pytest.approx(attempts * .0008)
+    assert len(list(run.glob('chunk-*-attempt*.json'))) == attempts
+    rejected = next(event for event in events if event['event'] == 'response')
+    assert rejected['finish_reasons'] == [reason]
+    assert rejected['finish_messages'] == ['test provider detail']
+    assert rejected['candidate_count'] == 1 and rejected['block_reason'] is None
+    assert summary['retry_count'] == (reason.endswith('MALFORMED_RESPONSE'))
+    assert summary['chunk_status_counts'] == ({'failed': 1, 'pending': 2} if code else {'complete': 3})
+    assert len(splits.read_text().splitlines()) == (1 if code else 3)
+    if code:
+        assert 'failed/review sections [1]' in result.stderr and 'pending sections [2, 3]' in result.stderr
+    else:
+        assert 'transcription_status: complete' in c.note.read_text()
+
+
 @pytest.mark.parametrize('reason, attempts', [('OTHER', 3), ('SAFETY', 2)])
 def test_blocked_run_prints_working_patch_command(revision_case, reason, attempts):
     c = revision_case
@@ -2174,7 +2215,7 @@ def test_blocked_run_prints_working_patch_command(revision_case, reason, attempt
     assert requests.count('THINKING\tmedium') == attempts + 2
     assert requests.count('SYSTEM_PROMPT\tTranscribe every turn') == attempts + 2
     splits = (c.root / 'splits.log').read_text()
-    assert [splits.count(f'.part{index:03d}.opus') for index in (1, 2, 3)] == [1, 2, 2]
+    assert [splits.count(f'.part{index:03d}.opus') for index in (1, 2, 3)] == [1, 2, 1]
     assert 'transcription_status: complete' in c.note.read_text()
     module = load_module()
     before = module.split_transcript_parts(module.TRANSCRIPT_SECTION_RE.search(original)['body'])
@@ -2265,6 +2306,46 @@ def test_revision_source_change_invalidates_single_chunk_cache(revision_case):
     c.audio.write_bytes(b'new recording')
     assert c.run().returncode == 0
     assert (c.root / 'requests.log').read_text().count('AUDIO\t') == 2
+
+
+def test_failed_source_replacement_preserves_complete_note(revision_case):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = '20'
+    assert c.run().returncode == 0
+    complete = c.note.read_bytes()
+    c.audio.write_bytes(b'new recording')
+    c.env['FAKE_GENAI_ERROR_FILES'] = 'meeting.opus'
+    failed = c.run()
+    assert failed.returncode == 1
+    candidate = c.note.with_suffix('.incomplete.md')
+    assert 'replacement_for:' in candidate.read_text()
+    assert c.note.read_bytes() == complete
+    del c.env['FAKE_GENAI_ERROR_FILES']
+    assert c.run('--patch').returncode == 0
+    assert not candidate.exists()
+    assert c.note.read_bytes() != complete
+
+
+@pytest.mark.parametrize('duration, chunk, error', [
+    ('nan', '30', 'non-finite'),
+    ('inf', '30', 'non-finite'),
+    ('20', 'nan', '--chunk must be finite'),
+])
+def test_nonfinite_plan_fails_before_request(revision_case, duration, chunk, error):
+    c = revision_case
+    c.env['FAKE_FFPROBE_DURATION'] = duration
+    result = c.run('--chunk', chunk)
+    assert result.returncode == 1 and error in result.stderr
+    assert not (c.root / 'requests.log').exists()
+
+
+def test_same_note_for_two_recordings_fails_batch_preflight(revision_case):
+    c = revision_case
+    second = c.audio.with_suffix('.wav')
+    second.write_bytes(b'another recording')
+    result = c.run(str(second))
+    assert result.returncode == 2 and 'both write to' in result.stderr
+    assert not (c.root / 'requests.log').exists()
 
 
 def test_revision_local_processing_failure_resumes_raw_response_without_api(tmp_path, monkeypatch):
@@ -2445,10 +2526,15 @@ def test_run_logs_success_cache_skip_and_failure_with_separate_ids(revision_case
     assert [row['exit_code'] for row in summaries] == [0, 0, 1]
     assert [row['new_cost_usd'] for row in summaries] == [.0008, 0, None]
     assert [row['api_attempts'] for row in summaries] == [1, 0, 1]
+    assert [row['generation_requests'] for row in summaries] == [1, 0, 1]
+    if os.name != 'nt':
+        assert (c.root / 'cache' / 'run.jsonl').stat().st_mode & 0o777 == 0o600
     assert len({row['run_id'] for row in summaries}) == 3
     assert all(row['elapsed_seconds'] >= 0 and row['code_sha256'] and row['python'] for row in summaries)
     assert 'Already transcribed' in (runs[1] / 'console.log').read_text()
     assert 'forced error' in (runs[2] / 'console.log').read_text()
+    failure_events = [json.loads(line) for line in (runs[2] / 'events.jsonl').read_text().splitlines()]
+    assert next(row for row in failure_events if row['event'] == 'provider_error')['phase'] == 'generation'
     events = [json.loads(line) for line in (runs[0] / 'events.jsonl').read_text().splitlines()]
     assert all(row['run_id'] == summaries[0]['run_id'] for row in events)
     response = next(row for row in events if row['event'] == 'response')
@@ -2542,12 +2628,14 @@ def test_run_logging_interrupt_keeps_diagnostic_summary(tmp_path, monkeypatch):
     monkeypatch.setenv('TRANSCRIBE_CALLS_CACHE_DIR', str(tmp_path))
     monkeypatch.setattr(sys, 'argv', ['call', 'meeting'])
     def interrupted():
+        module.append_run(None, 'generation_start', model='test')
         raise KeyboardInterrupt()
     monkeypatch.setattr(module, 'app', interrupted)
     with pytest.raises(KeyboardInterrupt):
         module.run_cli()
     run = next((tmp_path / 'runs').iterdir())
-    assert json.loads((run / 'summary.json').read_text())['exit_code'] == 130
+    summary = json.loads((run / 'summary.json').read_text())
+    assert summary['exit_code'] == 130 and summary['new_cost_usd'] is None
     assert 'KeyboardInterrupt' in (run / 'console.log').read_text()
 
 
@@ -2606,9 +2694,9 @@ def test_cached_false_positive_error_is_rechecked_without_new_request(tmp_path) 
     state = {"version": 2, "status": "received", "transcript": speech, "raw_transcript": speech,
         "attempts": [{"usage": None, "error": legacy_error}], "error": legacy_error}
     cache.write_text(json.dumps(state))
-    assert module.read_cached_chunk(cache).error is None
+    assert module.cached_chunk_result(module.read_chunk_state(cache)).error is None
     cache.write_text(json.dumps(state | {"error": "x", "finish_reasons": ["FinishReason.STOP"]}))
-    assert module.read_cached_chunk(cache).error is None
+    assert module.cached_chunk_result(module.read_chunk_state(cache)).error is None
 
 
 def test_leaked_thought_marker_before_first_turn_is_removed() -> None:
