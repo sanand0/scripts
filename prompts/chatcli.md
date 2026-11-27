@@ -1,5 +1,19 @@
 # chatcli
 
+## Reduce stale / missing chats, 27 Nov 2026
+
+<!--
+cd ~/code/scripts
+copilot --model claude-sonnet-5.5 --effort high
+-->
+
+`chatcli backup --verbose` reports several stale and missing chats.
+It processed data from `~/code/anand-chrome-tools/`.
+What can be done to reduce or elininate these?
+Fix what you’re sure about and list the rest for me to review.
+
+<!-- copilot --resume 5640d08f-d90d-4723-b75e-3a9869e4ecb0 -->
+
 ## Allow force refresh, 23 Nov 2026
 
 <!--
