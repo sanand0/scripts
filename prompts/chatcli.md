@@ -1,5 +1,22 @@
 # chatcli
 
+## Reduce stale / missing chats v2, 27 Nov 2026
+
+<!--
+cd ~/code/anand-chrome-tools
+codex --model gpt-6.2-sol --config model_reasoning_effort=high
+-->
+
+`~/code/scripts/chatcli backup --verbose` still reports several stale and missing chats.
+What's the least I need to do to make sure that this doesn't happen? Specifically:
+A. Can capture and backup construction be improved? For example, could partial fragments be stitched together to get the full conversation reliably?
+B. Can reporting be improved, e.g. how many fragments are missing, which parts of the conversation, etc. to help explain why something is missing or stale? Better yet, to CONCISELY explain WHAT to do (a short tag with a legend at the bottom when `--verbose` is used might serve better than explaining everything in each line - I'd like the individual rows to be compact)
+Test as required.
+
+---
+
+Instead of adding an actio at the end, let's replace "stale", "missing", etc. with the action. For example, "reopen" (instead of OPEN), "scroll", "429", etc. and if no reason is known, stale / missing, is fine. (Or however is best.)
+
 ## Reduce stale / missing chats, 27 Nov 2026
 
 <!--

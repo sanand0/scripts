@@ -406,7 +406,7 @@ def read_observation(path: Path) -> dict | None:
 def snapshot_observations(raw_dir: Path, previous: dict, current: dict) -> tuple[dict, dict]:
     observations = defaultdict(list)
     stamps = defaultdict(list)
-    for path in (raw_dir / "observations").glob("*.json"):
+    for path in sorted((raw_dir / "observations").glob("*.json")):
         try:
             obs = cached_file(path, previous, current, read_observation)
         except OSError:
@@ -436,25 +436,54 @@ def cursor_window(path: Path, cid: str, *, older: bool) -> dict | None:
     return None
 
 
+def same_message(old: dict, new: dict, *, overlap: bool = False) -> bool:
+    attachments = ("attachments", "files", "files_v2", "sync_sources")
+    fields = ("id", "content", "author", "channel", "recipient", "status", *attachments)
+    metadata = (*attachments, "is_visually_hidden_from_conversation")
+    if overlap:
+        fields += ("create_time",)
+        metadata += ("parent_id", "content_references")
+    return all(old.get(k) == new.get(k) for k in fields) and all(
+        (old.get("metadata") or {}).get(k) == (new.get("metadata") or {}).get(k) for k in metadata
+    )
+
+
+def complete_window(head: dict, messages: list[dict]) -> dict:
+    return dict(head, messages=messages, page_info=dict(has_previous_page=False, has_next_page=False))
+
+
+def join_window(previous: list[dict], head: dict) -> dict | None:
+    """Fill the missing beginning only when the new window includes the old tip."""
+    messages = head["messages"]
+    ids = [m["id"] for m in messages]
+    start = next((i for i, m in enumerate(previous) if m["id"] == ids[0]), 0)
+    if not start or len(ids) <= len(previous) - start:
+        return None
+    if (len(set(ids)) != len(ids) or set(ids).intersection(m["id"] for m in previous[:start]) or
+        not all(same_message(old, new, overlap=True) for old, new in zip(previous[start:], messages))):
+        return None
+    combined = previous[:start] + messages
+    if not unfinished_snapshot(combined, head["current_node"]):
+        return complete_window(head, combined)
+    return None
+
+
 def recover_cursor_pages(version_dir: Path, cid: str, observations: list[dict], previous: dict,
-                         source_time: float, update: float, dependencies: dict) -> tuple[dict | None, str | None]:
-    """Reconstruct one observed active branch while preserving the native captures."""
+                         previous_complete: bool, source_time: float, update: float,
+                         dependencies: dict) -> tuple[dict | None, str | None, dict]:
+    """Reconstruct an active branch from cursor chains or a verified overlap."""
     base_pattern = rf"/backend-api/conversations?/{cid}"
     bases = [obs for obs in observations if re.fullmatch(base_pattern, obs["path"])]
     dated = [obs for obs in bases if type(obs.get("updateTime")) in (int, float) and
              math.isfinite(obs["updateTime"]) and obs["updateTime"] > 0 and
              obs["updateTime"] >= source_time and obs["updateTime"] + 1 >= update]
     if not dated:
-        return None, None
+        return None, None, {}
     newest = max(dated, key=lambda obs: (obs["updateTime"], obs["startedAt"]))
-    if newest.get("coverage") in {"tree", "branch"}:
-        decision = newest.get("decision")
-        held = decision and decision not in {"promote", "unchanged", "reviewed"}
-        return None, f"Newer snapshot preserved in version history ({decision})" if held else None
-    if not isinstance(previous.get("messages"), list):
-        return None, None
-    if set(newest["queryKeys"]) != newest["query"].keys() or newest["query"].keys() - {"num_turns", "include_has_versions"}:
-        return None, None
+
+    def standard_query(obs):
+        return set(obs["queryKeys"]) == obs["query"].keys() and not obs["query"].keys() - {"num_turns", "include_has_versions"}
+
     windows_by_hash = {}
 
     def load_window(obs, *, older):
@@ -466,20 +495,38 @@ def recover_cursor_pages(version_dir: Path, cid: str, observations: list[dict], 
             windows_by_hash[key] = cursor_window(path, cid, older=older)
         return windows_by_hash[key]
 
-    head = load_window(newest, older=False)
-    if (not head or not head["page_info"]["has_previous_page"] or head.get("update_time") != newest["updateTime"] or
-        head.get("current_node") != head["messages"][-1]["id"]):
-        return None, None
+    def valid_head(obs, *, partial=True):
+        head = load_window(obs, older=False)
+        if (head and head["page_info"]["has_previous_page"] is partial and head.get("update_time") == obs["updateTime"] and
+            head.get("current_node") == head["messages"][-1]["id"]):
+            return head
+        return None
 
-    recovered = None
-    for anchor in dated:
-        if (anchor["updateTime"] != newest["updateTime"] or set(anchor["queryKeys"]) != anchor["query"].keys() or
-            anchor["query"].keys() - {"num_turns", "include_has_versions"}):
-            continue
-        base = load_window(anchor, older=False)
-        # The same window may be served again with different advisory URL metadata.
-        if not base or any(base.get(k) != head.get(k) for k in ("messages", "current_node", "page_info", "update_time")):
-            continue
+    def same_head(a, b):
+        return a and all(a.get(k) == b.get(k) for k in ("messages", "current_node", "page_info", "update_time"))
+
+    def agrees_with_other_heads(head, *, partial):
+        return all(
+            same_head(valid_head(obs, partial=partial), head)
+            for obs in dated if obs["updateTime"] == newest["updateTime"] and standard_query(obs)
+        )
+
+    if newest.get("coverage") in {"tree", "branch"}:
+        decision = newest.get("decision")
+        # The accepted tree retains alternate branches. Markdown renders only the active branch.
+        if (decision == "lower-coverage" and newest["coverage"] == "branch" and previous_complete and
+            "mapping" in previous and newest["updateTime"] > source_time and standard_query(newest)):
+            head = valid_head(newest, partial=False)
+            if (head and agrees_with_other_heads(head, partial=False) and
+                len({m["id"] for m in head["messages"]}) == len(head["messages"]) and
+                not unfinished_snapshot(head["messages"], head["current_node"])):
+                return head, "retained-branch", {}
+        held = decision and decision not in {"promote", "unchanged", "reviewed"}
+        return None, f"Newer snapshot preserved in version history ({decision})" if held else None, {}
+    if not standard_query(newest) or (not isinstance(previous.get("messages"), list) and not previous_complete):
+        return None, None, {}
+
+    def visit(anchor, base):
         # A new base request in this tab may switch versions, even for the same conversation.
         visit_end = min((other["startedAt"] for other in bases if other is not anchor and
                          other["tabId"] == anchor["tabId"] and other["startedAt"] >= anchor["startedAt"]), default=math.inf)
@@ -497,41 +544,124 @@ def recover_cursor_pages(version_dir: Path, cid: str, observations: list[dict], 
         while windows[-1]["page_info"]["has_previous_page"]:
             cursor = windows[-1]["page_info"]["start_cursor"]
             options = [p for p in pages[cursor] if p["startedAt"] >= finished]
+            gap = dict(kind="older-page", savedPages=len(windows) - 1, beforeMessageId=cursor)
+            if not options:
+                return None, dict(gap, missingPagesAtLeast=1)
             if len({p["hash"] for p in options}) != 1:
-                break
+                return None, dict(gap, kind="page-conflict")
             obs = min(options, key=lambda p: p["finishedAt"])
             page = load_window(obs, older=True)
             if (not page or page.get("current_node") not in (None, base["current_node"]) or
                 page.get("update_time") not in (None, base["update_time"])):
-                break
+                return None, dict(gap, kind="page-conflict")
             ids = {m["id"] for m in page["messages"]}
             if len(ids) != len(page["messages"]) or ids & seen:
-                break
+                return None, dict(gap, kind="page-conflict")
             seen.update(ids)
             windows.append(page)
             finished = obs["finishedAt"]
-        if windows[-1]["page_info"]["has_previous_page"]:
-            continue
         messages = [m for page in reversed(windows) for m in page["messages"]]
         if len(seen) != len(messages) or unfinished_snapshot(messages, base["current_node"]):
-            continue
-        # Preserve the accepted branch in order, including content and attachment references.
-        before = previous["messages"]
+            return None, dict(kind="page-conflict", savedPages=len(windows) - 1)
+        return messages, {}
+
+    def assemble(head, anchors, before):
+        recovered = None
+        best_gap = {}
         before_ids = {m["id"] for m in before}
-        shared = [m for m in messages if m["id"] in before_ids]
-        attachments = ("attachments", "files", "files_v2", "sync_sources")
-        fields = ("id", "content", "author", "channel", "recipient", "status", *attachments)
-        metadata_fields = (*attachments, "is_visually_hidden_from_conversation")
-        if len(before) != len(shared) or any(
-            any(old.get(k) != new.get(k) for k in fields) or
-            any((old.get("metadata") or {}).get(k) != (new.get("metadata") or {}).get(k) for k in metadata_fields)
-            for old, new in zip(before, shared)
-        ):
-            return None, "Complete pages conflict with the accepted snapshot"
-        if recovered and recovered["messages"] != messages:
-            return None, "Conflicting older pages for the same snapshot"
-        recovered = dict(head, messages=messages, page_info=dict(has_previous_page=False, has_next_page=False))
-    return recovered, None if recovered else "No complete, consistent cursor chain in the saved pages"
+        for anchor in anchors:
+            if anchor["updateTime"] != head["update_time"] or not standard_query(anchor):
+                continue
+            base = valid_head(anchor)
+            # The same window may be served again with different advisory URL metadata.
+            if not same_head(base, head):
+                continue
+            messages, gap = visit(anchor, base)
+            if not messages:
+                if (gap["savedPages"], gap["kind"] == "page-conflict") > (
+                    best_gap.get("savedPages", -1), best_gap.get("kind") == "page-conflict"
+                ):
+                    best_gap = gap
+                continue
+            shared = [m for m in messages if m["id"] in before_ids]
+            if len(shared) != len(before) or not all(same_message(a, b) for a, b in zip(before, shared)):
+                return None, "Complete pages conflict with the accepted snapshot", dict(kind="page-conflict")
+            if recovered and recovered != messages:
+                return None, "Conflicting older pages for the same snapshot", dict(kind="page-conflict")
+            recovered = messages
+        return recovered, None, best_gap
+
+    head = valid_head(newest)
+    if not head:
+        return None, None, {}
+    before = raw_messages(previous, complete=previous_complete)
+    recovered, reason, gap = assemble(head, dated, before)
+    if recovered:
+        return complete_window(head, recovered), "cursor-pages", {}
+    if reason:
+        return None, reason, gap
+    if source_time >= head["update_time"] or not agrees_with_other_heads(head, partial=True):
+        return None, "No complete, consistent cursor chain in the saved pages", gap
+    # Reuse an earlier visit only after proving its chain independently.
+    if not previous_complete:
+        earlier = [obs for obs in bases if obs.get("updateTime") == source_time]
+        before, _, _ = assemble(previous, earlier, before)
+    if before:
+        if joined := join_window(before, head):
+            return joined, "overlap", {}
+    return None, "No complete, consistent cursor chain in the saved pages", gap
+
+
+def snapshot_attempts(events_dir: Path) -> dict:
+    """Find the latest unsuccessful base fetch for each known conversation."""
+    attempts = {}
+    for path in events_dir.glob("*/diagnostic.json"):
+        try:
+            start = json.loads(path.with_name("00000.json").read_bytes())
+            match = re.fullmatch(rf"/backend-api/conversations?/({UUID_PATTERN})", start["path"])
+            if not match or start["method"] != "GET" or type(start["startedAt"]) is not int:
+                continue
+            cid, = match.groups()
+            if cid in attempts and attempts[cid][0] >= start["startedAt"]:
+                continue
+            diagnostic = json.loads(path.read_bytes())
+            status = diagnostic.get("httpStatus")
+            gap = dict(kind="snapshot-incomplete")
+            if type(status) is int and status != 200:
+                gap = dict(kind="http", httpStatus=status)
+            elif diagnostic.get("contiguous") is False or diagnostic.get("hasEnd") is False:
+                missing = chatgpt_streams.fragment_gap(sorted(p for p in path.parent.glob("*.json") if p.stem.isdecimal()))
+                gap.update(missing)
+            attempts[cid] = [start["startedAt"], gap]
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+    return attempts
+
+
+BACKUP_ACTIONS = {
+    "reopen": "Open or reload the chat to capture its current messages.",
+    "scroll": "Open the chat and scroll upward to load older messages.",
+    "429": "The last fetch was rate-limited. Wait, then reopen one chat at a time.",
+    "wait": "Let the reply finish, including any images, then reload if needed.",
+    "check": "See the warning or use --verbose --format jsonl for details.",
+}
+
+
+def backup_action(status: str, pending: str, gap: dict) -> str | None:
+    if status in {"error", "unknown-markdown-version", "replay-held"}:
+        return "check"
+    if status not in {"missing", "stale-capture", "deferred"}:
+        return None
+    if gap.get("httpStatus") == 429 or gap.get("lastFailedFetch", {}).get("httpStatus") == 429:
+        return "429"
+    kind = gap.get("kind")
+    if kind in {"older-page", "page-conflict"}:
+        return "scroll"
+    if status == "deferred" and pending in {"img", "wip"}:
+        return "wait"
+    if kind in {"snapshot-incomplete", "stream-incomplete", "stream-unlinked", "stream-unverified"} or gap.get("capturedTurns"):
+        return "reopen"
+    return None
 
 
 @contextmanager
@@ -636,6 +766,8 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
     observations, observation_stamps = snapshot_observations(
         raw_dir, previous.get("observations", {}), current["observations"]
     )
+    attempts = snapshot_attempts(raw_dir / "events")
+    actions = set()
     label_width = len("would-update" if dry_run else "missing")
     failures = 0
     with tempfile.TemporaryDirectory(prefix="chatgpt-render-") as tmp, snapshot_renderer(Path(tmp)) as render_snapshot:
@@ -648,11 +780,16 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             pending_label = "part"
             update = latest_update = catalog_times.get(cid, 0)
             known_turns = turns.get(cid, [])
+            seen_snapshots = observations.get(cid, [])
+            attempt = attempts.get(cid)
+            if attempt and any(obs["startedAt"] >= attempt[0] and not obs["path"].endswith("/messages")
+                               for obs in seen_snapshots):
+                attempt = None
             versions_dir = raw_dir / "versions" / cid
             key = [update, catalog_title, None if path is None else
                    [file_stamp(path), file_stamp(path.with_suffix(".backup.json"))],
                    [[p.name, current["markdown"][p.name][0]] for p in matches],
-                   [list(turn.signature) for turn in known_turns]]
+                   [list(turn.signature) for turn in known_turns], attempt]
             saved_key, saved_pages, saved_result = previous.get("chats", {}).get(cid, (None, None, None))
             if key == saved_key and (saved_pages is None or (
                 saved_pages[0] == observation_stamps.get(cid, []) and
@@ -666,6 +803,7 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             else:
                 replay = False
                 page_dependencies = None
+                gap = {}
                 try:
                     versions = [markdown_version(p) for p in matches]
                     ready = False
@@ -694,8 +832,9 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                         if (not unfinished and status in {"deferred", "stale-capture"} and
                             type(source_time) in (int, float) and math.isfinite(source_time)):
                             page_dependencies = [observation_stamps.get(cid, []), {}]
-                            assembled, reason = recover_cursor_pages(
-                                versions_dir, cid, observations.get(cid, []), value, source_time, update, page_dependencies[1]
+                            assembled, detail, gap = recover_cursor_pages(
+                                versions_dir, cid, seen_snapshots, value, info.get("coverage") in {"branch", "tree"},
+                                source_time, update, page_dependencies[1]
                             )
                             if assembled:
                                 value = assembled
@@ -703,16 +842,17 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                                 source_time, tip = value["update_time"], value["current_node"]
                                 latest_update = max(latest_update, source_time)
                                 title = value.get("title") or title
-                                message["sourceType"] = "cursor-pages"
+                                message["sourceType"] = detail
                                 status, ready = "", True
-                            elif reason:
-                                message["reason"] = reason
+                            elif detail:
+                                message["reason"] = detail
                                 if status == "deferred" and value.get("page_info", {}).get("has_previous_page") is True:
                                     pending_label = "pages"
                     if known_turns and status != "deferred":
                         if path is not None:
                             messages = raw_messages(value, complete=True)
-                        recovered = replay_branch(known_turns, messages, tip, source_time, update)
+                        stream_gap = {}
+                        recovered = replay_branch(known_turns, messages, tip, source_time, update, stream_gap)
                         if recovered:
                             messages, stream_title, source_time = recovered
                             title = catalog_title or stream_title or (title if title != "—" else cid)
@@ -723,9 +863,22 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                             message.pop("reason", None)
                             message["sourceType"] = "stream-replay"
                             ready = replay = True
+                        elif not gap:
+                            gap = stream_gap
                     if status == "missing" and not replay and update and any(t is not None and t >= update - .001 for t, _ in versions):
                         current["chats"][cid] = [key, page_dependencies, None]
                         continue
+                    if not ready:
+                        if attempt and gap and gap.get("kind") not in {"older-page", "page-conflict"}:
+                            gap["lastFailedFetch"] = attempt[1]
+                        elif not gap and attempt:
+                            gap = attempt[1]
+                        if not gap:
+                            kind = {"missing": "catalog-only", "stale-capture": "newer-update"}.get(status, "partial")
+                            if pending_label in {"img", "wip"}:
+                                kind = "image-pending" if pending_label == "img" else "generation-pending"
+                            gap = dict(kind=kind)
+                        message["gap"] = gap
                     if ready:
                         if any(markdown_blocks(v, source_time, native=not replay) for v in versions):
                             if replay:
@@ -767,6 +920,8 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                     status = "error"
                     message["error"] = str(exc)
                 message["status"] = status
+                if action := backup_action(status, pending_label, gap):
+                    message["action"] = action
                 if status in {"up-to-date", "unknown-markdown-version", "deferred", "missing", "stale-capture", "replay-held"}:
                     current["chats"][cid] = [key, page_dependencies, [message, replay, latest_update, title, pending_label]]
             severity = "error" if "error" in message else "warning" if "warning" in message else None
@@ -783,6 +938,9 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
                                          "stale-capture": "stale", "replay-held": "held"}[status]
                 else:
                     icon, label = "🟢", status if status.startswith("would-") else "replay" if replay else "done"
+                action = message.get("action")
+                if action:
+                    label = action
                 try:
                     updated_at = dt.datetime.fromtimestamp(latest_update, dt.UTC).isoformat().replace("+00:00", "Z") if latest_update else None
                 except (OverflowError, OSError, ValueError):
@@ -791,9 +949,16 @@ def raw_backup(raw_dir: Path, markdown_dir: Path, dry_run: bool, output_format: 
             if output_format == "jsonl":
                 print(encoded(message), flush=True)
             elif verbose:
+                if action:
+                    actions.add(action)
                 print(f"{icon} {label:<{label_width}}\t{cid}\t{updated_at or '—'}\t{message['title']}", flush=True)
             elif not severity:
                 print(f"{cid}\t{status}\t{message.get('file', '')}", flush=True)
+    if actions:
+        print()
+        for action, meaning in BACKUP_ACTIONS.items():
+            if action in actions:
+                print(f"{action:<6} {meaning}")
     if cache_path is not None and not dry_run and current != previous:
         try:
             atomic(cache_path, encoded(current) + "\n")
@@ -1446,7 +1611,7 @@ def backup_raw(
     markdown_dir: Path = typer.Option(Path.home() / "Documents/chatgpt", help="Markdown publication directory."),
     dry_run: bool = typer.Option(False, help="Show proposed changes without publishing."),
     format: str = typer.Option("text", help="Output format: text (TSV) or jsonl."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show each chat’s status, ID, latest known update in UTC, and title."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show each chat’s status, ID, UTC update, title, and any action needed."),
 ):
     """Update Markdown from local ChatGPT snapshots and completed generation streams.
 

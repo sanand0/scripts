@@ -1100,16 +1100,18 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys, m
                                            placeholder: "deferred", working: "deferred", image_working: "deferred",
                                            missing: "missing", legacy: "missing", stale: "stale-capture"})
     assert b.raw_backup(raw, output, True, "text", verbose=True) == 1
+    table, legend = capsys.readouterr().out.split("\n\n", 1)
+    assert "wait" in legend and "check" in legend and "reopen" not in legend
     rows = {cid: (label, updated, title) for label, cid, updated, title in (
-        line.split("\t") for line in capsys.readouterr().out.splitlines()
+        line.split("\t") for line in table.splitlines()
     )}
     assert {len(label) for label, _, _ in rows.values()} == {len("🟢 would-update")}
     rows = {cid: (label.rstrip(), updated, title) for cid, (label, updated, title) in rows.items()}
     updated = "1970-01-01T00:00:30Z"
     assert rows == {
         released: ("🟢 would-update", updated, "Same title"), current: ("🟢 done", updated, "Same title"),
-        partial: ("🟡 part", updated, "Same title"), placeholder: ("🟡 img", updated, "Same title"),
-        working: ("🟡 wip", updated, "Working chat"), image_working: ("🟡 img", updated, "Working chat"),
+        partial: ("🟡 part", updated, "Same title"), placeholder: ("🟡 wait", updated, "Same title"),
+        working: ("🟡 wait", updated, "Working chat"), image_working: ("🟡 wait", updated, "Working chat"),
         missing: ("🟡 missing", "1970-01-01T00:00:40Z", "Catalog chat"),
         legacy: ("🟡 missing", "1970-01-01T00:00:40Z", "—"),
         stale: ("🟡 stale", "1970-01-01T00:00:31.250000Z", "Renamed in ChatGPT"),
@@ -1126,7 +1128,7 @@ def test_raw_publication_preserves_exports_and_is_idempotent(tmp_path, capsys, m
     stamp = rendered.stat().st_mtime_ns
     assert statuses(False)[released] == "up-to-date"
     assert b.raw_backup(raw, output, False, "text", verbose=True) == 1
-    labels = {line.split("\t", 1)[0] for line in capsys.readouterr().out.splitlines()}
+    labels = {line.split("\t", 1)[0] for line in capsys.readouterr().out.split("\n\n", 1)[0].splitlines()}
     assert {"🟢 done   ", "🟡 missing"} <= labels
     assert {len(label) for label in labels} == {len("🟡 missing")}
     assert rendered.stat().st_mtime_ns == stamp
@@ -1224,10 +1226,18 @@ def test_raw_backup_replays_linked_streams_and_preserves_conflicts(tmp_path, cap
     assert run(False)["status"] == "up-to-date"
 
     incomplete, _, _ = stream(reply_id, follow_id, answer_id, 30, terminal=False)
-    assert run(False)["status"] == "missing"
+    row = run(False)
+    assert row["label"] == "reopen" and row["gap"]["kind"] == "stream-incomplete"
     assert path.read_text() == first
     fragment = incomplete / "00003.json"
     partial_fragment = json.loads(fragment.read_bytes())
+    fragment.unlink()
+    assert run(False)["gap"]["missingFragments"] == 1
+    end = incomplete / "00004.json"
+    end_record = end.read_text()
+    end.unlink()
+    assert run(False)["gap"]["endMissing"] is True
+    end.write_text(end_record)
     complete_fragment = dict(partial_fragment, text=partial_fragment["text"] + (
         f'data: {b.encoded(dict(type="message_stream_complete", conversation_id=cid))}\n\ndata: [DONE]\n\n'
     ))
@@ -1384,6 +1394,9 @@ def test_raw_backup_recovers_only_a_proven_page_chain(tmp_path, capsys, problem)
         assert row["status"] == ("stale-capture" if problem in {"changed-branch", "hidden-message", "held-branch"} else "deferred")
         if problem == "held-branch":
             assert "preserved in version history" in row["reason"]
+        if problem == "gap":
+            assert row["label"] == "scroll"
+            assert row["gap"] == dict(kind="older-page", savedPages=1, beforeMessageId="b", missingPagesAtLeast=1)
         assert not output.exists()
         if problem in {"bad-hash", "gap"}:
             cache = tmp_path / "cache.json"
@@ -1405,3 +1418,101 @@ def test_raw_backup_recovers_only_a_proven_page_chain(tmp_path, capsys, problem)
         capsys.readouterr()
         assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
         assert json.loads(capsys.readouterr().out)["status"] == "up-to-date"
+
+
+@pytest.mark.parametrize("prefix", ["accepted", "saved-pages", "partial", "changed", "unfinished", "duplicate", "conflict"])
+def test_raw_backup_joins_new_window_to_proven_history(tmp_path, capsys, prefix):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    cid = str(uuid4())
+    versions, observations = raw / "versions" / cid, raw / "observations"
+    versions.mkdir(parents=True)
+    observations.mkdir()
+
+    def snapshot(ids, older, newer, **fields):
+        messages = [dict(id=mid, author=dict(role="user"), content=dict(content_type="text", parts=[f"Message {mid}"]))
+                    for mid in ids]
+        return dict(messages=messages, page_info=dict(start_cursor=ids[0], end_cursor=ids[-1],
+                    has_previous_page=older, has_next_page=newer), **fields)
+
+    def save(value, start, before=None):
+        data = b.encoded(value)
+        fingerprint = b.hashlib.sha256(data.encode()).hexdigest()
+        (versions / f"{fingerprint}.json").write_text(data)
+        query = {"before": before} if before else {}
+        meta = dict(id=cid, path=f"/backend-api/conversations/{cid}" + ("/messages" if before else ""),
+                    tabId=1, startedAt=start, finishedAt=start+1, query=query, queryKeys=list(query),
+                    hash=fingerprint, updateTime=value.get("update_time"),
+                    coverage="partial" if value["page_info"]["has_previous_page"] or before else "branch", format=1)
+        (observations / f"{start}.json").write_text(b.encoded(meta))
+        return data, meta
+
+    partial = prefix in {"saved-pages", "partial"}
+    before = snapshot("bc" if partial else "abc", partial, False, conversation_id=cid, current_node="c", update_time=20,
+                      title="Overlap")
+    data, meta = save(before, 10)
+    (raw / f"{cid}.json").write_text(data)
+    (raw / f"{cid}.backup.json").write_text(b.encoded(meta))
+    if prefix == "saved-pages":
+        save(snapshot("a", False, True), 12, before="b")
+    head = snapshot("bcd" if prefix != "duplicate" else "bcad", True, False, conversation_id=cid, current_node="d",
+                    update_time=30, title="Overlap")
+    if prefix == "changed":
+        head["messages"][0]["metadata"] = {"attachments": [{"name": "Changed"}]}
+    if prefix == "unfinished":
+        head["messages"][-1]["status"] = "in_progress"
+    if prefix == "conflict":
+        save(snapshot("bce", True, False, conversation_id=cid, current_node="e", update_time=30), 18)
+    save(head, 20)
+    (raw / "catalog.json").write_text(b.encoded({cid: 30}))
+    assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
+    row = json.loads(capsys.readouterr().out)
+    if prefix in {"accepted", "saved-pages"}:
+        assert row["sourceType"] == "overlap"
+        markdown = (output / "Overlap.md").read_text()
+        assert [markdown.index(f"Message {mid}") for mid in "abcd"] == sorted(markdown.index(f"Message {mid}") for mid in "abcd")
+        assert (raw / f"{cid}.json").read_text() == data
+    else:
+        assert row["status"] in {"deferred", "stale-capture"}
+        assert not output.exists()
+
+
+def test_raw_backup_reports_latest_failed_snapshot_http_status(tmp_path, capsys):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    cid = str(uuid4())
+    events = raw / "events" / f"1-{uuid4()}"
+    events.mkdir(parents=True)
+    (raw / "catalog.json").write_text(b.encoded({cid: 30}))
+    (events / "00000.json").write_text(b.encoded(dict(path=f"/backend-api/conversations/{cid}", method="GET", startedAt=31000)))
+    (events / "diagnostic.json").write_text(b.encoded(dict(httpStatus=429, hasEnd=True, contiguous=True)))
+    assert b.raw_backup(raw, output, True, "jsonl", verbose=True) == 0
+    row = json.loads(capsys.readouterr().out)
+    assert row["label"] == row["action"] == "429"
+    assert row["gap"] == dict(kind="http", httpStatus=429)
+
+
+def test_raw_backup_renders_newer_retained_branch_beside_accepted_tree(tmp_path, capsys):
+    raw, output = tmp_path / "raw", tmp_path / "md"
+    cid = str(uuid4())
+    versions, observations = raw / "versions" / cid, raw / "observations"
+    versions.mkdir(parents=True)
+    observations.mkdir()
+    old = dict(id="a", author=dict(role="user"), content=dict(content_type="text", parts=["Earlier"]))
+    latest = dict(old, id="b", content=dict(content_type="text", parts=["Latest"]))
+    tree = b.encoded(dict(conversation_id=cid, title="Tree", update_time=20, current_node="a",
+                          mapping=dict(a=dict(message=old, parent=None))))
+    (raw / f"{cid}.json").write_text(tree)
+    (raw / f"{cid}.backup.json").write_text(b.encoded(dict(
+        coverage="tree", updateTime=20, hash=b.hashlib.sha256(tree.encode()).hexdigest())))
+    (raw / "catalog.json").write_text(b.encoded({cid: 30}))
+    branch = dict(conversation_id=cid, title="Branch", update_time=30, current_node="b", messages=[old, latest],
+                  page_info=dict(start_cursor="a", end_cursor="b", has_previous_page=False, has_next_page=False))
+    data = b.encoded(branch)
+    fingerprint = b.hashlib.sha256(data.encode()).hexdigest()
+    (versions / f"{fingerprint}.json").write_text(data)
+    (observations / "1.json").write_text(b.encoded(dict(
+        id=cid, path=f"/backend-api/conversations/{cid}", coverage="branch", decision="lower-coverage",
+        updateTime=30, hash=fingerprint, query={}, queryKeys=[], tabId=1, format=1, startedAt=30, finishedAt=31)))
+    assert b.raw_backup(raw, output, False, "jsonl", verbose=True) == 0
+    assert json.loads(capsys.readouterr().out)["sourceType"] == "retained-branch"
+    assert "Latest" in (output / "Branch.md").read_text()
+    assert (raw / f"{cid}.json").read_text() == tree

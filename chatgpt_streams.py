@@ -209,11 +209,29 @@ def reload_turn(start: Path, files: list[Path], cid: str, started: float) -> Tur
     return None
 
 
+def fragment_gap(files: list[Path]) -> dict:
+    """Count holes between numbered records. Without an end, the tail is unknown."""
+    if not files:
+        return {}
+    last_index = int(files[-1].stem)
+    missing = last_index + 1 - len(files)
+    try:
+        tail = json.loads(files[-1].read_bytes())
+        if tail.get("kind") == "end" and tail.get("index") == last_index:
+            stream = tail.get("stream")
+            complete = isinstance(stream, dict) and stream.get("doneSeen") is True and stream.get("messageStreamComplete") is True
+            return {"missingFragments": missing, **({"streamComplete": True} if complete else {})}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"missingFragmentsAtLeast": missing, "endMissing": True}
+
+
 @dataclass(frozen=True)
 class CapturedTurn:
     started: float
     signature: tuple[str, str]
     load: Callable[[], Turn | None]
+    files: list[Path]
 
 
 def captured_turns(events_dir: Path, previous: dict, current: dict) -> dict[str, list[CapturedTurn]]:
@@ -240,7 +258,7 @@ def captured_turns(events_dir: Path, previous: dict, current: dict) -> dict[str,
             current[name] = old
             if old[2] is not None:
                 cid, started = old[2]
-                turns[cid].append(CapturedTurn(started, (name, signature), partial(reload_turn, start, files, cid, started)))
+                turns[cid].append(CapturedTurn(started, (name, signature), partial(reload_turn, start, files, cid, started), files))
             continue
         try:
             record = record or read_start(start)
@@ -257,32 +275,40 @@ def captured_turns(events_dir: Path, previous: dict, current: dict) -> dict[str,
             continue
         current[name] = [stamp, signature, [cid, started] if cid is not None else None]
         if cid is not None:
-            turns[cid].append(CapturedTurn(started, (name, signature), load))
+            turns[cid].append(CapturedTurn(started, (name, signature), load, files))
     return turns
 
 
 def replay_branch(turns: list[CapturedTurn], messages: list[dict], tip: str,
-                  snapshot_time: float, catalog_time: float) -> tuple[list[dict], str, float] | None:
+                  snapshot_time: float, catalog_time: float, gap: dict) -> tuple[list[dict], str, float] | None:
     """Extend only the active tip. An unlinked or unfinished later turn blocks publication."""
     seen = {msg["id"] for msg in messages}
     added = []
     last = None
     title = ""
-    for capture in sorted(turns, key=lambda item: item.started):
-        # Older captures, including the original stream for a saved snapshot, are superseded.
-        if capture.started <= snapshot_time:
-            continue
+    # Older captures, including the original stream for a saved snapshot, are superseded.
+    later = sorted((item for item in turns if item.started > snapshot_time), key=lambda item: item.started)
+    for number, capture in enumerate(later, 1):
         turn = capture.load()
         if turn and turn.messages[-1]["id"] in seen:
             continue
         if turn is None or turn.parent != tip or seen.intersection(msg["id"] for msg in turn.messages):
+            gap.update(kind="stream-incomplete" if turn is None else "stream-unlinked",
+                       afterMessageId=tip, capturedTurns=len(later), blockedTurn=number)
+            if turn is None:
+                gap.update(fragment_gap(capture.files))
+                if gap.get("streamComplete") and gap.get("missingFragments") == 0:
+                    gap["kind"] = "stream-unverified"
             return None
         added.extend(turn.messages)
         seen.update(msg["id"] for msg in turn.messages)
         tip = turn.messages[-1]["id"]
         last = turn
         title = turn.title or title
-    if last is None or catalog_time > last.finished + 1:
+    if last is None:
+        return None
+    if catalog_time > last.finished + 1:
+        gap.update(kind="newer-update", afterMessageId=tip, capturedTurns=len(later))
         return None
     # Local receipt time proves when a capture was observed. The Markdown date comes from the server.
     updated = max(v for msg in last.messages for v in (msg.get("create_time"), msg.get("update_time"))
