@@ -42,18 +42,38 @@ app = typer.Typer(add_completion=False, help=__doc__)
 QUEUE = Path.home() / 'Downloads/transcribe.sh'
 
 
+def caption_time(header: str, field: str) -> datetime | None:
+    """Read timezone-aware timestamps from automatic exports."""
+    value = re.search(rf'^- \*\*{field}\*\*: (\S+)\s*$', header, re.M)
+    if value:
+        try:
+            stamp = datetime.fromisoformat(value[1])
+            if stamp.tzinfo:
+                return stamp.astimezone()
+        except ValueError:
+            pass
+    return None
+
+
 def captions() -> list[dict]:
-    """Read headers once; exporter filenames encode UTC start, not local time."""
+    """Discover automatic exports and legacy files in their immediate folders."""
     rows = []
-    for directory in ('Downloads', 'Documents'):
-        for pattern in ('gmeet*.md', 'teams*.md'):
+    auto = 'Documents/data/anand-chrome-tools/meetcaptions'
+    for directory in ('Downloads', 'Documents', auto):
+        for pattern in (('gmeet*.md',) if directory == auto else ('gmeet*.md', 'teams*.md')):
             for path in (Path.home() / directory).glob(pattern):
                 with path.open(encoding='utf-8') as handle:
                     header = ''.join(next(handle, '') for _ in range(12))
+                mtime = path.stat().st_mtime
                 stamp = re.search(r'(\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d)', path.name)
-                started = (datetime.strptime(stamp[1], '%Y-%m-%d-%H-%M-%S').replace(tzinfo=UTC).astimezone()
-                           if stamp else datetime.fromtimestamp(path.stat().st_mtime).astimezone())
-                rows.append({'path': path, 'header': header, 'started': started, 'mtime': path.stat().st_mtime})
+                started = caption_time(header, 'Started') or (
+                    datetime.strptime(stamp[1], '%Y-%m-%d-%H-%M-%S').replace(tzinfo=UTC).astimezone()
+                    if stamp else datetime.fromtimestamp(mtime).astimezone())
+                observed = caption_time(header, 'Last observed')
+                ended = caption_time(header, 'Ended')
+                rows.append({'path': path, 'header': header, 'started': started, 'mtime': mtime,
+                             'observed': observed, 'ended': ended,
+                             'automatic': directory == auto or bool(observed)})
     return rows
 
 
@@ -88,20 +108,35 @@ def match_caption(audio: Path, rows: list[dict], query: str | None = None) -> tu
             raise ValueError(f'No caption matching {query!r}; search uses filenames and first 12 lines.')
         return max(found, key=lambda r: (r['started'], r['mtime']))['path'], 'explicit caption'
     day = re.match(r'\d{4}-\d\d-\d\d', audio.name)
-    day = day[0] if day else datetime.fromtimestamp(audio.stat().st_mtime).date().isoformat()
-    same_day = [r for r in rows if r['started'].date().isoformat() == day]
+    audio_mtime = audio.stat().st_mtime
+    day = day[0] if day else datetime.fromtimestamp(audio_mtime).date().isoformat()
+    same_day = [r for r in rows if (not r.get('automatic') or r.get('observed')) and any(
+        time and time.date().isoformat() == day for time in (r['started'], r.get('observed'), r.get('ended')))]
+
+    def distance(r: dict) -> float:
+        evidence = r.get('ended') or r.get('observed')
+        return abs((evidence.timestamp() if evidence else r['mtime']) - audio_mtime)
+
+    def unique_close(candidates: list[dict]) -> Path | None:
+        close = [r for r in candidates if distance(r) <= 600]
+        return close[0]['path'] if len(close) == 1 else None
+
     hints = words(audio.stem)
     ranked = sorted(((len(hints & words(r['header'])), r) for r in same_day), key=lambda pair: pair[0], reverse=True)
     if ranked and ranked[0][0]:
         best = [r for score, r in ranked if score == ranked[0][0]]
+        if len(best) > 1 and any(r.get('automatic') for r in best):
+            matched = unique_close(best)
+            if matched:
+                return matched, 'same day + header hint + unique recording time within 10m'
+            return None, 'ambiguous caption times; use --audio TEXT --caption TEXT'
         # Ignore Started/Participants changes when identifying repeated exports.
-        identities = {r['header'].splitlines()[0] + str(re.findall(r'Meeting code.*', r['header'])) for r in best}
+        identities = {r['header'].partition('\n')[0] + str(re.findall(r'Meeting code.*', r['header'])) for r in best}
         if len(identities) == 1:
             return max(best, key=lambda r: (r['started'], r['mtime']))['path'], 'same day + header hint'
-    close = sorted(same_day, key=lambda r: abs(r['mtime'] - audio.stat().st_mtime))
-    if (close and abs(close[0]['mtime'] - audio.stat().st_mtime) <= 600
-            and (len(close) == 1 or abs(close[1]['mtime'] - audio.stat().st_mtime) > 600)):
-        return close[0]['path'], 'same day + unique file time within 10m'
+    matched = unique_close(same_day)
+    if matched:
+        return matched, 'same day + unique recording or legacy file time within 10m'
     return None, 'no confident match; use --audio TEXT --caption TEXT'
 
 

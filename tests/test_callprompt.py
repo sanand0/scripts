@@ -88,6 +88,38 @@ def test_caption_export_utc_date_and_header_search(m, tmp_path, monkeypatch):
         m.match_caption(tmp_path / 'anything.opus', rows, 'BodyOnly')
 
 
+def test_recovered_caption_dry_run_uses_recorded_time(m, tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(m.meetcall, 'context_prompt', lambda *a: pytest.fail('dry-run called the model'))
+    exports = tmp_path / 'Documents/data/anand-chrome-tools/meetcaptions'
+    exports.mkdir(parents=True)
+    downloads = tmp_path / 'Downloads'
+    downloads.mkdir()
+    old = downloads / 'teams-code-2026-11-13-07-00-00.md'
+    old.write_text('# Legacy brief\n\n## Speaker [0:00]\nLegacy captions\n')
+    stamp = datetime.fromisoformat('2026-11-13T02:30:00+00:00').timestamp()
+    matched = exports / 'gmeet-code-2026-11-13-02-00-00.md'
+    later = exports / 'gmeet-code-2026-11-13-06-00-00.md'
+    for path, started, observed in [(matched, '02:00', '02:30'), (later, '06:00', '06:30')]:
+        path.write_text(f'# Product sync\n- **Meeting code**: code\n- **Started**: 2026-11-13T{started}:00.000Z\n'
+                        f'- **Last observed**: 2026-11-13T{observed}:00.000Z\n'
+                        '\n## Speaker [0:00]\nRecovered captions\n')
+    os.utime(matched, (stamp + 86400, stamp + 86400))
+    os.utime(later, (stamp, stamp))
+    os.utime(old, (stamp + 16200, stamp + 16200))
+    for name, time in [('Product sync', stamp), ('Legacy brief', stamp + 16200)]:
+        audio = tmp_path / f'2026-11-13 {name}.opus'
+        audio.touch()
+        os.utime(audio, (time, time))
+    rows = m.captions()
+    assert {r['path'] for r in rows} == {matched, later, old}
+    result = CliRunner().invoke(m.app, ['--dry-run', '--format', 'jsonl'])
+    assert result.exit_code == 0, result.output
+    assert str(matched) in result.output and str(old) in result.output
+    assert str(later) not in result.output
+    assert not m.QUEUE.exists()
+
+
 @pytest.mark.parametrize('query', ['filename-only', 'HEADER-ONLY'])
 @pytest.mark.parametrize('selector', [['IITM'], ['--audio', 'IITM']])
 def test_explicit_caption_searches_all_filenames_and_headers(m, tmp_path, monkeypatch, query, selector):

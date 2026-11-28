@@ -1,5 +1,9 @@
 # callprompt
 
+## Discover automatic Meet captions, 28 Nov 2026
+
+Search the extension’s default `~/Documents/data/anand-chrome-tools/meetcaptions/` folder alongside the legacy Google Meet and Teams locations. Match recovered transcripts using their recorded timestamps even when the file is written later. Leave ambiguous repeated meetings for `--caption`. Verify discovery and matching with `callprompt --dry-run` without model calls or queue writes.
+
 ## Allow filename explicitly, 27 Nov 2026
 
 <!--
